@@ -6,6 +6,7 @@ export class SettingsView {
   private readonly panel = element('settings-view', HTMLElement);
   private readonly form = element('settings-form', HTMLFormElement);
   private readonly tools = element('settings-tools', HTMLElement);
+  private readonly appearance = element('settings-appearance', HTMLSelectElement);
   private readonly tool = element('settings-tool', HTMLSelectElement);
   private readonly worktree = element('settings-worktree', HTMLInputElement);
   private readonly base = element('settings-base', HTMLInputElement);
@@ -15,7 +16,7 @@ export class SettingsView {
   private dirty = false;
   private saving = false;
 
-  constructor(private readonly server: () => ServerInfo | null) {
+  constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void) {
     this.form.oninput = () => { this.dirty = true; this.status.textContent = 'Unsaved settings'; };
     element('tool-add', HTMLButtonElement).onclick = () => {
       if (!this.settings) return;
@@ -34,6 +35,7 @@ export class SettingsView {
     if (!server) return;
     if (!this.dirty) {
       this.settings = await call(server, { operation: 'settings-get' });
+      this.appearance.value = this.settings.appearance;
       this.worktree.checked = this.settings.worktree;
       this.base.value = this.settings.base;
       this.renderTools();
@@ -46,6 +48,7 @@ export class SettingsView {
 
   private capture(): void {
     if (!this.settings) return;
+    this.settings.appearance = this.appearance.value;
     this.settings.defaultTool = this.tool.value;
     this.settings.worktree = this.worktree.checked;
     this.settings.base = this.base.value;
@@ -105,6 +108,8 @@ export class SettingsView {
     for (const field of this.form.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input,button,select')) field.disabled = true;
     try {
       this.settings = await call(server, { operation: 'settings-save', settings: this.settings });
+      document.documentElement.dataset.appearance = this.settings.appearance;
+      this.updateAppearance();
       this.dirty = false; this.status.textContent = 'Settings saved';
     } catch (error) { this.error.textContent = errorMessage(error); this.error.hidden = false; }
     finally {

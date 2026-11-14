@@ -17,7 +17,7 @@ export interface Project { id: string; name: string; workspace: string; created:
 
 // A continue command contains {prompt} once. BonBon puts the quoted handoff prompt there.
 export interface Tool { id: string; name: string; command: string; continueCommand?: string }
-export interface Settings { revision: number; defaultTool: string; worktree: boolean; base: string; tools: Tool[] }
+export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[] }
 export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }
 export interface Worktree { path: string; repository: string; base: string; commit: string; branch: string; state: string }
 export interface Run { id: string; status: string }

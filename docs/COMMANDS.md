@@ -310,14 +310,14 @@ The tables are:
 | `projects` | `id`, `name`, `workspace`, `created` |
 | `sessions` | `id`, `title`, `workspace`, `created`, `project_id` (NULL for standalone), `archived` (0 or 1) |
 | `runs` | `id`, `session_id`, `status`, `started`, `ended`, `pid`, `detail` |
-| `settings` | `id`, `revision`, `data` (JSON defaults and tool presets) |
+| `settings` | `id`, `revision`, `data` (JSON appearance, defaults, and tool presets) |
 | `preparations` | `session_id`, `revision`, `state`, `data` (JSON launch choices) |
 | `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
 
-The schema uses format 7. Server startup upgrades formats 3–6 automatically. Format 7
-needs no migration. The upgrade adds indexes for run events, nonempty output, and start
-events. Formats 1 and 2, nonempty unversioned databases, and newer formats are rejected
+The schema uses format 8. Server startup upgrades formats 3–7 automatically. Format 8
+needs no migration. The upgrade adds the instance appearance to settings.
+Formats 1 and 2, nonempty unversioned databases, and newer formats are rejected
 without changing their contents. Downgrades are not supported.
 
 No separate migration command or SQLite CLI is needed. Manage projects in the UI. There

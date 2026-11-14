@@ -1,6 +1,6 @@
 import { EditorState, type Extension } from '@codemirror/state';
 import { EditorView, highlightSpecialChars, lineNumbers } from '@codemirror/view';
-import { defaultHighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
+import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { MergeView, unifiedMergeView } from '@codemirror/merge';
 import { css } from '@codemirror/lang-css';
 import { go } from '@codemirror/lang-go';
@@ -13,6 +13,7 @@ import { rust } from '@codemirror/lang-rust';
 import { yaml } from '@codemirror/lang-yaml';
 import { scala } from '@codemirror/legacy-modes/mode/clike';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
+import { tags } from '@lezer/highlight';
 import { languageName, type DiffLayout } from './diff-model.js';
 
 // The diff and file views are read-only. CodeMirror renders file text as DOM text, never
@@ -25,20 +26,46 @@ const collapse = { margin: 3, minSize: 4 };
 const diffConfig = { scanLimit: 5000, timeout: 1500 };
 
 const theme = EditorView.theme({
-  '&': { fontSize: '12px', backgroundColor: '#fff', color: '#232a30' },
+  '&': { fontSize: '12px', backgroundColor: 'var(--diff-background)', color: 'var(--text)' },
   '.cm-content': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
-  '.cm-gutters': { backgroundColor: '#f6f7f4', color: '#9aa29a', borderRight: '1px solid #e6e8e3' },
-  '.cm-collapsedLines': { backgroundColor: '#eef3ef', color: '#477257', fontFamily: 'inherit' },
-  '&.cm-focused': { outline: 'none' },
-  // Changed lines get a light fill. Changed words inside them get a deeper fill of the
-  // same color. These rules replace the underline of @codemirror/merge.
-  '&.cm-merge-a .cm-changedLine, .cm-deletedChunk': { backgroundColor: '#ffebe9' },
-  '&.cm-merge-b .cm-changedLine, .cm-inlineChangedLine': { backgroundColor: '#e6ffec' },
+  '.cm-gutters': { backgroundColor: 'var(--inset)', color: 'var(--text-muted)', borderRight: '1px solid var(--divider)' },
+  '.cm-content ::selection, .cm-content::selection': { background: 'var(--selected-border)', color: 'var(--text)' },
+  '.cm-collapsedLines': { background: 'var(--inset)', color: 'var(--accent-text)', fontFamily: 'inherit' },
+  '&.cm-focused': { outline: '2px solid var(--accent)', outlineOffset: '-2px' },
+  // Use stronger fills for changed text within each changed line.
+  '&.cm-merge-a .cm-changedLine, .cm-deletedChunk': { backgroundColor: 'var(--diff-remove-line)' },
+  '&.cm-merge-b .cm-changedLine': { backgroundColor: 'var(--diff-add-line)' },
   '&.cm-merge-a .cm-changedText, .cm-deletedChunk .cm-deletedText, &.cm-merge-b .cm-deletedText': {
-    background: '#ffcecb', borderRadius: '2px',
+    background: 'var(--diff-remove-text)', borderRadius: '2px',
   },
-  '&.cm-merge-b .cm-changedText': { background: '#abf2bc', borderRadius: '2px' },
+  '&.cm-merge-b .cm-changedText': { background: 'var(--diff-add-text)', borderRadius: '2px' },
+  '.cm-changeGutter': { width: '1.3em', padding: '0', textAlign: 'center' },
+  '&.cm-merge-a .cm-changedLineGutter, .cm-deletedLineGutter': {
+    background: 'var(--diff-remove-line)', color: 'var(--danger)',
+  },
+  '&.cm-merge-b .cm-changedLineGutter': { background: 'var(--diff-add-line)', color: 'var(--positive)' },
+  '&.cm-merge-a .cm-changedLineGutter::before, .cm-deletedLineGutter::before': { content: '"−"' },
+  '&.cm-merge-b .cm-changedLineGutter::before': { content: '"+"' },
 });
+
+const codeHighlight = HighlightStyle.define([
+  { tag: [tags.meta, tags.labelName, tags.contentSeparator], color: 'var(--code-meta)' },
+  { tag: [tags.link, tags.url], textDecoration: 'underline' },
+  { tag: tags.heading, textDecoration: 'underline', fontWeight: 'bold' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
+  { tag: tags.strong, fontWeight: 'bold' },
+  { tag: tags.strikethrough, textDecoration: 'line-through' },
+  { tag: tags.keyword, color: 'var(--code-keyword)' },
+  { tag: [tags.literal, tags.atom, tags.bool, tags.inserted], color: 'var(--code-literal)' },
+  { tag: [tags.string, tags.regexp, tags.escape, tags.deleted], color: 'var(--code-string)' },
+  {
+    tag: [tags.definition(tags.variableName), tags.local(tags.variableName), tags.special(tags.variableName),
+      tags.definition(tags.propertyName), tags.typeName, tags.namespace, tags.className, tags.macroName],
+    color: 'var(--code-name)',
+  },
+  { tag: tags.comment, color: 'var(--code-comment)' },
+  { tag: tags.invalid, color: 'var(--danger)' },
+]);
 
 function language(path: string): Extension {
   switch (languageName(path)) {
@@ -65,7 +92,7 @@ function extensions(path: string): Extension[] {
     lineNumbers(),
     highlightSpecialChars(),
     EditorState.readOnly.of(true),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    syntaxHighlighting(codeHighlight),
     language(path),
     theme,
   ];

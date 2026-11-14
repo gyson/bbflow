@@ -19,8 +19,8 @@ operations and health checks reject unsupported versions. Shutdown uses the veri
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
 
-There is no fallback for previous transports. SQLite format 7 is current. The server
-upgrades formats 3–6 before it accepts requests. Older supported database formats do not
+There is no fallback for previous transports. SQLite format 8 is current. The server
+upgrades formats 3–7 before it accepts requests. Older supported database formats do not
 imply support for their previous WebSocket protocols.
 
 ## Connections and requests
@@ -126,6 +126,9 @@ If `$SHELL` is unset, it uses `/bin/sh`. It rejects relative shell paths. It sta
 shell with `-i`, using its startup environment and `TERM=xterm-256color`. Clients do not
 supply shell settings or environment.
 
+Settings include `appearance` with a value of `system`, `light`, or `dark`. A save
+with an empty or omitted value uses `system`.
+
 A startup command is one shell line of at most 1,000 bytes, without control characters.
 The server submits it once after the PTY opens. It records the command as input,
 separate from the composer draft.
@@ -142,7 +145,7 @@ columns and 1–256 rows.
 Protocol 15 supports multiple drafts per project, archive/restore, and paginated
 collection search. Project records no longer contain a draftId. Session records and
 summaries include an archived boolean. SQLite format 6 stores this independent flag.
-Server startup upgrades formats 3–6 automatically using embedded migrations.
+Server startup applies the embedded migrations for supported formats.
 
 Protocol 16 removes the controller role and the `control` and `take-control` messages.
 Every view can send input. It adds `composer-watch` and the latest-save rule for

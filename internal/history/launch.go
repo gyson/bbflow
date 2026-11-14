@@ -25,6 +25,7 @@ const PromptPlaceholder = "{prompt}"
 
 type Settings struct {
 	Revision    int64  `json:"revision"`
+	Appearance  string `json:"appearance"`
 	DefaultTool string `json:"defaultTool"`
 	Worktree    bool   `json:"worktree"`
 	Base        string `json:"base"`
@@ -90,6 +91,13 @@ func (s *Store) Settings() (Settings, error) {
 }
 
 func (s *Store) SaveSettings(settings Settings) (Settings, error) {
+	switch settings.Appearance {
+	case "":
+		settings.Appearance = "system"
+	case "system", "light", "dark":
+	default:
+		return settings, errors.New("appearance must be system, light, or dark")
+	}
 	if len(settings.Tools) > 100 {
 		return settings, errors.New("at most 100 tools are supported")
 	}

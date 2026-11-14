@@ -52,7 +52,10 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 	defer instance.RemoveOwned(s.info)
 	upgrader := websocket.Upgrader{HandshakeTimeout: 5 * time.Second}
 	mux := http.NewServeMux()
-	webui.Register(mux)
+	webui.Register(mux, func() (string, error) {
+		settings, err := s.store.Settings()
+		return settings.Appearance, err
+	})
 	mux.HandleFunc("GET /client-config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(s.info)

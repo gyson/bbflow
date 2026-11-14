@@ -9,7 +9,8 @@ import (
 
 func TestPagePaths(t *testing.T) {
 	mux := http.NewServeMux()
-	Register(mux)
+	appearance := "dark"
+	Register(mux, func() (string, error) { return appearance, nil })
 	for path, want := range map[string]int{
 		"/":                    http.StatusOK,
 		"/sessions/31a54e53":   http.StatusOK,
@@ -26,8 +27,15 @@ func TestPagePaths(t *testing.T) {
 			t.Errorf("GET %s: status %d, want %d", path, recorder.Code, want)
 			continue
 		}
-		if want == http.StatusOK && !strings.Contains(recorder.Body.String(), "<title>BonBon</title>") {
-			t.Errorf("GET %s did not serve the UI page", path)
+		if want == http.StatusOK && (!strings.Contains(recorder.Body.String(), "<title>BonBon</title>") ||
+			!strings.Contains(recorder.Body.String(), `data-appearance="dark"`)) {
+			t.Errorf("GET %s did not serve the dark UI page", path)
 		}
+	}
+	appearance = "light"
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(recorder.Body.String(), `data-appearance="light"`) {
+		t.Fatal("UI did not use the updated appearance")
 	}
 }

@@ -3,6 +3,7 @@ package history
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -107,14 +108,33 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 		if !includeSchema && (query == "PRAGMA user_version" || strings.Contains(query, "FROM sqlite_schema")) {
 			continue
 		}
-		if got := sqlRows(t, db, query); !reflect.DeepEqual(got, want) {
+		got := sqlRows(t, db, query)
+		if !includeSchema && query == "SELECT id,revision,data FROM settings ORDER BY rowid" {
+			var saved map[string]any
+			if err := json.Unmarshal([]byte(got[0][2].(string)), &saved); err != nil {
+				t.Fatal(err)
+			}
+			if saved["appearance"] != "system" {
+				t.Fatal("invalid appearance after migration", saved)
+			}
+			delete(saved, "appearance")
+			var original map[string]any
+			if err := json.Unmarshal([]byte(want[0][2].(string)), &original); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(saved, original) {
+				t.Fatal("migration changed existing settings", saved, original)
+			}
+			got[0][2] = want[0][2]
+		}
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("changed %s:\ngot  %#v\nwant %#v", query, got, want)
 		}
 	}
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6} {
+	for _, version := range []int{3, 4, 5, 6, 7} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -129,7 +149,7 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 				t.Fatal("wrong version", got)
 			}
 			settings, err := store.Settings()
-			if err != nil || (version < 5 && !reflect.DeepEqual(settings, Settings{Base: "HEAD", Tools: []Tool{}})) {
+			if err != nil || settings.Appearance != "system" || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
@@ -201,6 +221,20 @@ func TestMigrationFailureRollsBackEntireUpgrade(t *testing.T) {
 	}
 }
 
+func TestAppearanceUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 6)
+	execSQL(t, db, "CREATE TRIGGER reject_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted blocked appearance update")
+	} else if !strings.Contains(err.Error(), "apply history migration 8") {
+		t.Fatal(err)
+	}
+	assertSnapshot(t, rawDatabase(t, path), before, true)
+}
+
 func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 	for _, test := range []struct {
 		name, schema, message string
@@ -230,7 +264,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6} {
+	for _, version := range []int{3, 6, 7} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }
@@ -292,7 +326,7 @@ func TestCurrentFormatRequiresRunIndexesWithoutChangingData(t *testing.T) {
 	store.Close()
 	if store, err = Open(path); err == nil {
 		store.Close()
-		t.Fatal("accepted incomplete format 7 schema")
+		t.Fatal("accepted current format without the required index")
 	}
 	assertSnapshot(t, rawDatabase(t, path), before, true)
 }
