@@ -233,3 +233,61 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
   .history-context { flex: none; overflow: visible; padding: 16px; }
   .history-help { padding: 12px 16px; }
 }
+/* The session row holds the session column and the read-only Changes pane. */
+#session-row { flex: 1; min-height: 480px; display: flex; min-width: 0; }
+#session-row:not(:has(> #session-view:not([hidden]))) { display: none; }
+#session-row > #session-view { min-width: 0; }
+#diff-open[aria-pressed="true"] { background: #e8eee7; border-color: #a8b7ae; }
+#diff-divider { flex: 0 0 9px; margin: 20px -4px 18px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; user-select: none; }
+#diff-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; transition: background-color .1s; }
+#diff-divider:hover::after, #diff-divider:focus-visible::after, .resizing-diff #diff-divider::after { background: #468565; }
+#diff-divider:focus-visible { outline: none; }
+body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-select: none !important; }
+#diff-pane { flex: 0 0 46%; min-width: 320px; display: flex; flex-direction: column; margin: 20px 26px 18px 0; border: 1px solid #dce3da; border-radius: 12px; background: #fff; overflow: hidden; }
+#diff-pane[hidden], #diff-divider[hidden] { display: none; }
+.diff-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid #e6e8e3; font-size: 12px; }
+/* A fixed width keeps the layout buttons in place when the selected baseline changes. */
+#diff-baseline { width: 19em; flex: none; padding: 5px 8px; font-size: 12px; text-overflow: ellipsis; }
+.segmented { display: inline-flex; }
+.segmented button { padding: 5px 10px; font-size: 12px; border-radius: 0; background: transparent; }
+.segmented button:first-child { border-radius: 7px 0 0 7px; }
+.segmented button:last-child { border-radius: 0 7px 7px 0; margin-left: -1px; }
+.segmented button[aria-pressed="true"] { background: #e8eee7; border-color: #a8b7ae; position: relative; }
+#diff-summary { margin-left: auto; color: #6a786c; }
+.icon-button { padding: 3px 8px; font-size: 15px; line-height: 1.2; }
+#diff-status { margin: 0; padding: 8px 12px; background: #fff5dd; color: #755823; font-size: 12px; line-height: 1.5; }
+.diff-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(140px, 24%) minmax(0, 1fr); }
+.diff-files { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 10px 0 0; border-right: 1px solid #e6e8e3; background: #f6f7f4; }
+.diff-files .segmented { margin: 0 8px; }
+.diff-files .segmented button { flex: 1; }
+#diff-filter { width: auto; margin: 0 8px; padding: 6px 8px; font-size: 12px; }
+#diff-list { flex: 1; min-height: 0; margin: 0; padding: 0 0 8px; list-style: none; overflow-y: auto; }
+.diff-file { display: flex; align-items: center; gap: 7px; width: 100%; padding: 5px 10px; border: 0; border-radius: 0; background: transparent; font-size: 12px; text-align: left; }
+.diff-file[aria-current="true"] { background: #fff; box-shadow: inset 2px 0 #468565; }
+.diff-file.unchanged .diff-name { color: #7b857c; }
+/* The folder shrinks much faster than the file name. A long path keeps its file name. */
+.diff-name { flex: 1; min-width: 0; display: flex; white-space: pre; }
+.diff-folder { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #7b857c; }
+.diff-base { flex: 0 1 auto; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; }
+.diff-status-letter { flex: none; width: 12px; font-family: Menlo, Monaco, monospace; font-size: 11px; font-weight: 600; color: #9aa29a; }
+.status-A { color: #2f7a4f; } .status-D { color: #a24139; } .status-M, .status-T { color: #a06b12; } .status-R { color: #4a64a8; }
+.segmented button.waiting { border-style: dashed; }
+.diff-empty { padding: 12px; font-size: 12px; color: #7b857c; }
+.diff-view { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.diff-file-header { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 10px; border-bottom: 1px solid #e6e8e3; font-size: 12px; }
+.diff-file-header button { padding: 4px 8px; font-size: 11px; }
+#diff-path { flex: 1; min-width: 0; display: flex; font-family: Menlo, Monaco, monospace; font-size: 11px; }
+#diff-counts { display: flex; gap: 6px; font-size: 11px; }
+#diff-counts .added { color: #2f7a4f; } #diff-counts .removed { color: #a24139; }
+.diff-tag { padding: 1px 6px; border-radius: 5px; background: #eef0ec; color: #6a786c; }
+#diff-note { margin: 0; padding: 10px 12px; font-size: 12px; color: #65736a; border-bottom: 1px solid #e6e8e3; }
+#diff-editor { flex: 1; min-height: 0; overflow: hidden; }
+#diff-editor > .cm-editor, #diff-editor > .cm-mergeView { height: 100%; }
+@media (max-width: 950px) { #diff-pane { margin: 16px 16px 16px 0; } #diff-divider { margin: 16px -4px; } }
+@media (max-width: 620px) {
+  #session-row { flex-direction: column; }
+  #diff-divider { display: none; }
+  #diff-pane { flex: none; height: 600px; min-width: 0; margin: 0 16px 16px; }
+  .diff-body { grid-template-columns: 1fr; grid-template-rows: 180px minmax(0, 1fr); }
+  .diff-files { border-right: 0; border-bottom: 1px solid #e6e8e3; }
+}

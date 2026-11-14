@@ -12,9 +12,12 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
   deployment builds.
 - Frontend sources are under `web/`, with strict TypeScript and CSS under `web/src`.
   Source builds require Node.js 22+ and npm. The TypeScript compiler checks types.
-  esbuild bundles the application, xterm.js 6.0.0, and FitAddon 0.11.0 into one ES2022
-  JavaScript file and one CSS file. The build also includes HTML and dependency
-  licenses.
+  esbuild bundles the application, xterm.js 6.0.0, FitAddon 0.11.0, CodeMirror 6 with
+  `@codemirror/merge` 6.12.3, and a fixed set of language modes into one ES2022
+  JavaScript file and one CSS file. The build also includes HTML and the licenses of
+  every bundled npm package, which it reads from the esbuild metafile. The JavaScript
+  file is about 1.1 MB. CodeMirror adds about 290 KB and its language modes about 400
+  KB.
 - Generated assets are in `internal/webui/dist`, which Go embeds. Git ignores this
   directory, test compiler output in `web/dist`, and npm dependencies. The deployed
   binary needs neither Node.js nor external frontend files.
@@ -187,7 +190,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/20`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/21`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -494,9 +497,9 @@ not a process or native agent context. Terminal dimensions are limited to 2–51
 and 1–256 rows to bound emulator memory.
 
 Session views show the server-rendered terminal and message editor. The UI also provides
-sent messages and recorded-output search. There is no browser SQL client. The `bonbon
-query` command reads archived events. There is no semantic chat transcript or file/diff
-view.
+sent messages, recorded-output search, and a read-only Changes pane. There is no browser
+SQL client. The `bonbon query` command reads archived events. There is no semantic chat
+transcript.
 
 ### History search
 
@@ -687,6 +690,66 @@ of each run. Start events from BonBon 0.0.4 and earlier have no tool, so the fir
 uses the tool of the preparation. A new terminal has no run record until its process
 starts. Until then, the list ends with a `starting` terminal without a run ID. The UI
 reads the list again every five seconds until that terminal has a run.
+
+### Changes pane
+
+**Changes** in the session toolbar opens a read-only pane to the right of the terminal
+and the message editor. It shows the files of the session workspace. Drafts have no
+Changes pane. The pane never changes files, the Git index, or SQLite. Ended sessions
+keep the pane while their workspace exists.
+
+- **Compare with** selects the baseline. **Since worktree base** compares the recorded
+  commit of a ready managed worktree with the current files. It includes commits that
+  the agent made, and it is the default for a managed worktree. **Uncommitted changes**
+  compares `HEAD` with the current files. A repository without commits uses the empty
+  tree. The labels do not claim that one session made the changes, because other
+  sessions and tools can share a workspace.
+- **Split** shows the old and new file side by side. **Unified** shows one column with
+  removed and added lines. When the editor area is narrower than 520 pixels, the pane
+  shows Unified and marks it as pressed. Split keeps a dashed border until the pane is
+  wide enough. Unchanged regions fold into bars. Click a bar to show its lines.
+- **Changed** lists the changed files with Git status letters A, M, D, R, and T. An
+  untracked file has A. After `git rm --cached`, the path has one row with M. An
+  untracked nested repository shows as one folder row. **All files** adds the paths that
+  Git tracks or does not ignore. The filter box matches any part of a path without case.
+  A long path keeps its file name in view and shortens its folder.
+- The file header shows the path and the line counts. **View file** shows the current
+  file. It changes to **View diff**. An unchanged file opens in the file view. **Copy
+  path** copies the path relative to the workspace.
+- The pane reads the list when it opens, on **Refresh**, and when the window gets focus.
+  It does not watch files. A refresh keeps the shown file when its content is the same.
+
+A drag on the divider or the Left and Right arrow keys change the pane width. The pane
+width, the layout, the scope, the baseline, and the selected file belong to the view.
+Other browser tabs keep their own state. A visit to Settings or the home page keeps the
+state. A different session or a reload resets it.
+
+The server resolves the workspace and the baseline commit from the session ID. It never
+accepts a workspace path from the client. A repository subfolder session sees only its
+own folder, with paths relative to it. The server reads current files through `os.Root`.
+`..`, absolute paths, and symlinks that leave the workspace are refused. A symlink shows
+its target text on both sides, as in Git, and is not followed. Special files are not
+opened.
+
+Git runs with `GIT_OPTIONAL_LOCKS=0`. Thus it does not take `index.lock` from a live
+agent. It also runs with literal pathspecs, `core.fsmonitor=false`, `--no-ext-diff`,
+`--no-textconv`, and a 10-second timeout. A client disconnect cancels the Git work, and
+the scan of untracked files stops at the file limit. Clean filters from the repository
+configuration, such as Git LFS, still run when Git compares work files. Git messages use
+the C locale. Only a "not a git repository" message from Git shows "Not a Git
+repository." Other failures, such as a missing Git executable or a `safe.directory`
+refusal, show their error.
+
+Limits:
+
+- Each side of a file holds at most 1 MiB. A larger side shows a note instead of text.
+- A side with a NUL byte in its first 8000 bytes, or with invalid UTF-8, is binary. The
+  pane shows a note instead of its content.
+- The changed list holds at most 5,000 files, and All files at most 20,000 paths. A
+  longer list shows a note.
+- Line counts of untracked files use at most 32 MiB of reads for each list. Later
+  untracked files show no count.
+- A folder that is not a Git repository shows "Not a Git repository." and no file list.
 
 ### Message editor
 
@@ -997,6 +1060,21 @@ integrations in this version.
 
 ## Validation
 
+Changes pane fixtures use temporary Git repositories. They cover added, modified,
+deleted, renamed, binary, and untracked files, and names with spaces, Unicode, and
+newlines. They also cover files above 1 MiB, invalid UTF-8, symlinks inside and outside
+the workspace, `..` and absolute paths, and folders. Other fixtures cover subfolder
+sessions, repositories without commits, folders outside Git, missing workspaces, and
+both baselines of a managed worktree after an agent commit. A WebSocket fixture sends
+`workspace-file` through the server. Web fixtures cover the file list, the filter, the
+language choice, the layout width rule, and late replies.
+
+A browser check used a temporary instance, a fixture repository, and a shell session in
+a managed worktree. It checked Split, Unified, folded regions, View file, deleted files,
+symlinks, binary files, both baselines, a non-Git General session, and an ended
+session. It also checked two tabs with separate selections, a phone width without
+horizontal scroll, and an empty browser console. Script text in a file showed as text.
+
 History search fixtures cover scope, archived sessions, older terminals, literal wildcard
 characters, Unicode folding, split output, overlapping matches, bounded context, and fixed
 pagination cutoffs. Reopen checks preserve original recording bytes. A concurrent read
@@ -1269,6 +1347,12 @@ only the last screen of a program that uses the alternate screen, such as Codex 
 The session header shows the tool of the original launch, also after a continue with
 another tool. The prompt gives the new agent a record of earlier work. It does not
 restore the internal state of the earlier agent.
+
+The Changes pane reads files only when it opens, on Refresh, and on window focus. It
+shows one file at a time and has no commit list. It shows images as binary files. It
+cannot show changes in a folder that is not a Git repository. Git detects a rename only
+between tracked files with similar content. An untracked new file and its deleted
+original show as two changes.
 
 Each session has one shared draft. Other views update after each save, about half a
 second after typing stops. They do not show each keystroke. When two views edit at the

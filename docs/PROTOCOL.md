@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/20`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/21`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/20",
+    "protocol": "bonbon/21",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/20",
+    "protocol": "bonbon/21",
     "operation": "session-list",
     "limit": 10
   }
@@ -86,6 +86,9 @@ operations.
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
+| `workspace-changes` | `session` ID, `diff` object with optional `baseline` | `result`, containing `repository`, `base`, `baseline`, `files`, and `truncated` |
+| `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
+| `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath` and `baseline` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped` |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
@@ -298,6 +301,60 @@ chunk replay differs from stored text, display keeps its original spacing.
 Render all returned text as plain text. It can contain redraws, missing spaces, markup,
 and historical instructions. It is derived output, not an exact conversation transcript.
 These operations change no schema, events, or live terminal state.
+
+## Workspace changes
+
+Protocol 21 adds three read-only operations for the Changes pane. The server finds the
+workspace and the managed worktree from `session`. A request cannot name a workspace
+path. A client disconnect cancels the Git work.
+
+The `diff` object has these fields:
+
+- `baseline`: `base` for the commit of a ready managed worktree, or `head` for `HEAD`.
+  An empty value selects `base` when it is available, and `head` otherwise. `base`
+  fails for a session without a managed worktree.
+- `path`: a clean path relative to the session workspace. `.`, `..`, absolute paths,
+  and empty paths fail.
+- `oldPath`: the old path of a rename. The old side uses it instead of `path`.
+
+`workspace-changes` returns:
+
+```json
+{
+  "repository": true,
+  "base": true,
+  "baseline": { "kind": "base", "label": "Since worktree base", "commit": "98a11f8…" },
+  "files": [
+    { "path": "src/main.go", "status": "M", "added": 6, "removed": 2 },
+    { "path": "new.txt", "status": "A", "added": 1, "removed": 0, "untracked": true },
+    { "path": "image.png", "status": "M", "added": -1, "removed": -1, "binary": true }
+  ],
+  "truncated": false
+}
+```
+
+`status` is the Git status letter: `A`, `M`, `D`, `R`, or `T`. A rename also has
+`oldPath`. An untracked file has `untracked`, with `A`, or with `M` when the baseline has
+the path, for example after `git rm --cached`. An untracked nested repository is one
+path without a final slash. `added` and
+`removed` are -1 when they are unknown. For a folder that Git does not manage,
+`repository` is false, `reason` explains it, and `files` is empty.
+
+`workspace-files` returns the sorted paths that Git tracks or does not ignore, at most
+20,000. `workspace-file` returns both sides of one file:
+
+```json
+{
+  "path": "src/main.go",
+  "baseline": { "kind": "head", "label": "Uncommitted changes", "commit": "…" },
+  "old": { "state": "text", "text": "package main\n", "size": 13 },
+  "new": { "state": "missing", "size": 0 }
+}
+```
+
+`state` is `text`, `missing`, `binary`, `tooLarge`, or `other` for a folder, a
+submodule, or a special file. Only `text` has `text`. A symlink has `symlink` and its
+target as text. Each side holds at most 1 MiB.
 
 ## Settings and prepared launches
 
@@ -530,13 +587,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/20") {
+    if (message.server.protocol !== "bonbon/21") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/20", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/21", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/20';
+export const VERSION = 'bonbon/21';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -66,6 +66,21 @@ export interface HistoryContext { display?: HistoryDisplay; before: string; matc
 export interface HistoryHit { anchor: HistoryAnchor; title: string; workspace: string; terminal: number; tool: string; created: string; context: HistoryContext }
 export interface HistoryCursor { seq: number; offset: number }
 export interface HistoryPage { matches: HistoryHit[]; more: boolean; incomplete: boolean; through: number; cursor?: HistoryCursor }
+// Read-only diff and file views. The server resolves the workspace from the session.
+// baseline "base" uses the managed worktree commit. "head" uses HEAD.
+export type BaselineKind = 'base' | 'head';
+export interface DiffRequest { baseline?: BaselineKind; path?: string; oldPath?: string }
+export interface Baseline { kind: BaselineKind; label: string; commit: string }
+// added and removed are -1 when they are unknown. An untracked file has status A.
+export interface ChangedFile { path: string; oldPath?: string; status: string; added: number; removed: number; binary?: boolean; untracked?: boolean }
+export interface WorkspaceChanges { repository: boolean; reason?: string; base: boolean; baseline: Baseline; files: ChangedFile[]; truncated: boolean }
+export interface WorkspaceFiles { repository: boolean; reason?: string; paths: string[]; truncated: boolean }
+export interface FileSide { state: 'text' | 'missing' | 'binary' | 'tooLarge' | 'other'; text?: string; size: number; symlink?: boolean }
+export interface WorkspaceFile { path: string; baseline: Baseline; old: FileSide; new: FileSide }
+type ChangesRequest = { operation: 'workspace-changes'; session: string; diff: DiffRequest };
+type FilesRequest = { operation: 'workspace-files'; session: string };
+type FileRequest = { operation: 'workspace-file'; session: string; diff: DiffRequest };
+export type DiffRPC = ChangesRequest | FilesRequest | FileRequest;
 type HistorySearchRequest = { operation: 'history-search'; search: HistoryFilter };
 type HistoryContextRequest = { operation: 'history-context'; context: { anchor: HistoryAnchor; before: number; after: number } };
 type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draft };
@@ -86,7 +101,7 @@ type ConfigRequest = { operation: 'session-config'; session: string; preparation
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
 type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
-type RPCRequest = HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = DiffRPC | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -289,6 +304,9 @@ export function call(server: ServerInfo, request: SentRequest): Promise<SentPage
 export function call(server: ServerInfo, request: HistorySearchRequest, signal?: AbortSignal): Promise<HistoryPage>;
 export function call(server: ServerInfo, request: HistoryContextRequest, signal?: AbortSignal): Promise<HistoryContext>;
 export function call(server: ServerInfo, request: UploadRequest): Promise<Attachment>;
+export function call(server: ServerInfo, request: ChangesRequest, signal?: AbortSignal): Promise<WorkspaceChanges>;
+export function call(server: ServerInfo, request: FilesRequest, signal?: AbortSignal): Promise<WorkspaceFiles>;
+export function call(server: ServerInfo, request: FileRequest, signal?: AbortSignal): Promise<WorkspaceFile>;
 export function call(server: ServerInfo, request: RPCRequest, signal?: AbortSignal): Promise<unknown> {
   if (signal?.aborted) return Promise.reject(new DOMException('Request canceled.', 'AbortError'));
   return new Promise<unknown>((resolve, reject) => {

@@ -21,8 +21,7 @@ services. Do not add a separate browser session store or database writer.
   soft-wrap copy semantics. Test the actual agent CLI versions before claiming support.
 - Profile broader searches on daily-use archives. Evaluate full-text indexing if bounded
   scans do not meet search needs. Preserve original events and source references.
-- Add read-only code diff and file views for the selected workspace. File access belongs
-  in the core, scoped to that workspace.
+- Extend the read-only Changes pane. See [Diff and file views](#diff-and-file-views).
 - Add verified agent-specific attachment delivery where plain file references are
   insufficient. Add imports and session forks when their core operations exist.
 - Validate daily use with real agent CLIs in the browser. Synthetic terminal checks do
@@ -44,6 +43,20 @@ implemented. See [SPEC.md](SPEC.md#projects-and-launches).
   must not replay input. It must not treat uncertain delivery as proof that a send
   failed.
 - Verify development use does not modify production data.
+
+## Diff and file views
+
+The read-only Changes pane is implemented. See [SPEC.md](SPEC.md#changes-pane). The
+following work remains.
+
+- Insert a file path and a line range into the message editor from the diff.
+- Show the list of commits since the worktree base.
+- Show image previews as blobs in `<img>` elements. Never put SVG inline.
+- Record `HEAD` at the start of each run, to add a "Since this terminal started"
+  baseline. This needs a migration.
+- Show all changed files on one page, like a pull request, with lazy editors.
+- Preview files in a folder that is not a Git repository.
+- Evaluate a smaller set of language modes if the bundle size becomes a problem.
 
 ## Continuation follow-ups
 

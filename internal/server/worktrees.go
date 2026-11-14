@@ -26,13 +26,7 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	for _, item := range os.Environ() {
-		// Git state belongs to the selected repository, never the server's launcher.
-		if !strings.HasPrefix(item, "GIT_") {
-			cmd.Env = append(cmd.Env, item)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = gitEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(string(out)))

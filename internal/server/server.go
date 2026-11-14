@@ -213,13 +213,19 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 			s.reply(conn, nil, errors.New("missing history search"))
 			return
 		}
-		s.historyRead(ctx, conn, func(ctx context.Context) (any, error) { return s.store.Search(ctx, *request.Search) })
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.store.Search(ctx, *request.Search) })
 	case "history-context":
 		if request.Context == nil {
 			s.reply(conn, nil, errors.New("missing history context"))
 			return
 		}
-		s.historyRead(ctx, conn, func(ctx context.Context) (any, error) { return s.store.SearchContext(ctx, *request.Context) })
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.store.SearchContext(ctx, *request.Context) })
+	case "workspace-changes":
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.workspaceChanges(ctx, request.Session, request.Diff) })
+	case "workspace-files":
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.workspaceFiles(ctx, request.Session) })
+	case "workspace-file":
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.workspaceFile(ctx, request.Session, request.Diff) })
 	case "composer-draft":
 		result, err := s.composer(request.Session, request.Draft)
 		s.reply(conn, result, err)
@@ -249,8 +255,8 @@ func (s *Server) reply(conn *protocol.Conn, result any, err error) {
 	conn.Send(protocol.Message{Type: "result", Result: data})
 }
 
-// A history connection carries one request. Disconnecting cancels its SQLite work.
-func (s *Server) historyRead(ctx context.Context, conn *protocol.Conn, read func(context.Context) (any, error)) {
+// A read connection carries one request. Disconnecting cancels its SQLite or Git work.
+func (s *Server) cancelableRead(ctx context.Context, conn *protocol.Conn, read func(context.Context) (any, error)) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stopClose := context.AfterFunc(ctx, func() { conn.Close() })

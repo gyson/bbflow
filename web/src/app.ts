@@ -2,6 +2,7 @@ import { call, encodeBytes, errorMessage, VERSION } from './protocol.js';
 import type { Handoff, Project, Preparation, Run, TerminalInfo, Tool, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
 import { HistorySearch } from './history-search.js';
+import { DiffPane } from './diff-pane.js';
 import { canContinue, continueHint, defaultContinueTool } from './continue.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -137,6 +138,7 @@ const terminalPicker = new TerminalPicker({
   refresh: () => { if (selected?.id) void loadTerminals(selected.id); },
 });
 const historySearch = new HistorySearch(() => server);
+const diffPane = new DiffPane(() => server);
 new Sidebar();
 
 let showingSettings = false;
@@ -450,6 +452,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   $('welcome').hidden = true;
   $('session-view').hidden = false;
   const preparing = session.status === 'draft' && !start;
+  diffPane.select(preparing ? '' : session.id ?? '');
   heading(session.title || (preparing ? 'Untitled draft' : 'Untitled session'));
   $('workspace').textContent = session.workspace;
   $('workspace').title = session.workspace;
@@ -493,6 +496,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
       switch (message.type) {
         case 'session':
           selected.id = message.session;
+          diffPane.select(message.session);
           // The status of an earlier terminal is not the status of the session.
           if (!terminalPicker.shownRun) selected.status = message.active ? 'running' : (message.status ?? 'ended');
           $('session-id').textContent = message.session;
@@ -604,6 +608,7 @@ async function showWelcome(): Promise<void> {
   await preparation.close();
   await composer.select('');
   selected = null;
+  diffPane.select('');
   terminalPicker.update([]); terminalPicker.show('');
   terminal?.dispose(); terminal = null; fit = null;
   sessionSplit.setEnabled(false);
@@ -620,6 +625,7 @@ async function showSettings(): Promise<void> {
   await leaveView();
   await settingsView.open();
   showingSettings = true;
+  diffPane.select('');
   $('session-view').hidden = $('welcome').hidden = true;
   heading('Settings');
   $('workspace').textContent = 'Defaults and tools for this instance';
