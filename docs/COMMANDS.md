@@ -178,9 +178,10 @@ inspect the printed log path.
 
 On macOS, a new server also launches a menu bar companion from this same executable.
 **Open UI** opens the verified server's home page. **Quit BonBon** stops that server and
-its active sessions, then closes the menu. Quit retains and verifies the original server
-connection, so missing or replaced `server.json` files do not prevent it. It has no
-separate Stop, Settings, or Logs action. There is no persistent Running label.
+its active sessions, then closes the menu. Its label includes the running version.
+Quit retains and verifies the original server connection, so missing or replaced
+`server.json` files do not prevent it. The menu has no separate Stop, Settings, or Logs
+action. There is no persistent Running label.
 
 Pass `--no-menubar` to start without the menu, for example on a headless Mac or in
 automated checks. The flag also applies to restart. Linux never launches the menu. A

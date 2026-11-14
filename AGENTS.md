@@ -121,8 +121,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   of a session show its latest saved draft.
 - Use `./bin/bonbon ui` to open the running instance's home page in the default browser.
   It uses the same instance selection and server verification as other clients.
-- On macOS, server start also launches a menu companion from the same executable. Keep
-  only Open UI and Quit BonBon in its menu. Quit stops the server and its sessions.
+- On macOS, server start also launches a menu companion from the same executable. The
+  menu shows Open UI and Quit BonBon with a separator between them. The Quit BonBon
+  label includes the running version. Quit BonBon stops the server and its sessions.
 - Use `server start --no-menubar` for headless checks. Automated runtime tests disable
   native menus. A separate helper uses a pipe to test the companion lifecycle. Keep menu
   code in macOS-specific Go files and retain `CGO_ENABLED=0` builds.

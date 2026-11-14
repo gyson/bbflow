@@ -97,14 +97,13 @@ There is no `bonbon session` command or terminal attachment through the CLI.
 
 ## macOS menu bar
 
-On macOS, `bonbon server start` also launches a candy icon in the menu bar. Its menu has
-only **Open UI** and **Quit BonBon**. Open UI opens the home page in the default
-browser. Quit BonBon stops the server and all its active sessions, saves their final
-history, and closes the menu. Closing a browser tab still leaves work running.
+On macOS, `bonbon server start` also launches a candy icon in the menu bar. **Open UI**
+opens the home page in the default browser. A separator divides it from **Quit BonBon**,
+which shows the running version. Quit BonBon stops the server and all active sessions,
+saves their final history, and closes the menu. Closing a browser tab leaves work running.
 
-The menu is a separate process launched from the same `bonbon` executable. The menu does
-not need an `.app` bundle, a Swift build, or an extra runtime. `gogpu/systray` provides
-the native menu, and deployment builds still use `CGO_ENABLED=0`. The server's lifetime
+The menu is a separate process launched from the same `bonbon` executable. It calls
+AppKit through `gogpu/systray` and builds with `CGO_ENABLED=0`. The server's lifetime
 pipe closes the menu after shutdown and also when the server crashes.
 
 A repeated start keeps the existing server and menu. Restart replaces both. Quit

@@ -14,6 +14,9 @@ import (
 
 const menuBarSupported = true
 
+// Preview builds can set a display version at link time.
+var menuVersion string
+
 // systray locks the initial OS thread during init. Only this child enters AppKit. The
 // CLI and server remain independent of the native event loop.
 func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
@@ -24,18 +27,24 @@ func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
 	}
 	tray := systray.New()
 	menu := systray.NewMenu()
+	displayVersion := version
+	if menuVersion != "" {
+		displayVersion = menuVersion
+	}
+	quitLabel := "Quit BonBon (" + displayVersion + ")"
 	var busy atomic.Bool
 	var openItem, quitItem *systray.MenuItem
 	action := func(item *systray.MenuItem, label string, fn func() error, quitting bool) {
 		if !busy.CompareAndSwap(false, true) {
 			return
 		}
-		openItem.SetDisabled(true)
-		quitItem.SetDisabled(true)
-		if quitting {
-			item.SetLabel("Quitting BonBon…")
-		}
+		// Menu updates dispatch to the native thread. Return from its callback first.
 		go func() {
+			openItem.SetDisabled(true)
+			quitItem.SetDisabled(true)
+			if quitting {
+				item.SetLabel("Quitting BonBon…")
+			}
 			err := fn()
 			select {
 			case <-ended:
@@ -57,7 +66,7 @@ func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
 	}
 	openItem = menu.Add("Open UI", func() { action(openItem, "Open UI", openUI, false) })
 	menu.AddSeparator()
-	quitItem = menu.Add("Quit BonBon", func() { action(quitItem, "Quit BonBon", quit, true) })
+	quitItem = menu.Add(quitLabel, func() { action(quitItem, quitLabel, quit, true) })
 	tray.SetTemplateIcon(webui.MenuBarIcon).SetTooltip("BonBon").SetMenu(menu).Show()
 	finished := make(chan struct{})
 	defer close(finished)
