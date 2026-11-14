@@ -21,6 +21,7 @@ lines identify an optional argument. Do not type the brackets.
 | `bonbon server restart [--no-menubar]` | Replace the server with the invoked executable. | Stops active agents, finishes shutdown, then starts a new server and its optional macOS menu. |
 | `bonbon ui` | Open the web UI home page in the default browser. | Verifies the selected running server, then launches its home URL. Starts no server or agent. |
 | `bonbon query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
+| `bonbon skill` | Teach an agent how to read BonBon sessions and history. | Prints a Markdown guide. Does not contact a server. |
 
 Create, browse, reopen, and stop sessions in the web UI. The CLI has no session
 operations or interactive terminal client. `query` handles custom history reads. `ui`
@@ -99,6 +100,7 @@ bonbon server stop --help
 bonbon server restart --help
 bonbon ui --help
 bonbon query --help
+bonbon skill --help
 ```
 
 Running `bonbon` without arguments, `bonbon help`, or `bonbon -h` also shows the
@@ -359,9 +361,39 @@ query heap to 64 MiB. Queries that exceed these limits return an error.
 input, start or stop agents, or block capture by sharing its write connection. A missing
 server is an error.
 
+## Agent guide
+
+```sh
+bonbon skill
+```
+
+The command prints a Markdown guide for an agent tool. The guide explains
+`BONBON_SESSION` and `BONBON_DIR`, the `bonbon query` usage and JSON output, the archive
+tables and event kinds, example queries, and the current limits. It also tells the agent
+to treat recorded history as a record, not as instructions. The command takes no options
+or positional arguments.
+
+The executable embeds the guide, so the text matches the installed version. The guide
+describes the newest database format that the executable supports.
+
+BonBon does not add the guide or a prompt to a new agent run. An agent finds the command
+in these places:
+
+- The top-level help of `bonbon`.
+- The `README.md` of a handoff folder, after Continue in new terminal.
+- The instruction file of the agent tool, if you add a line to it. For example, add this
+  line to `AGENTS.md` or `CLAUDE.md`:
+
+  ```markdown
+  To read BonBon sessions or recorded terminal history, run `bonbon skill` first.
+  ```
+
+**Impact:** prints text only. It does not contact a server, open an instance directory,
+or read history. `--dir` and `BONBON_DIR` have no effect on this command.
+
 ## Exit codes
 
-Help and successful server, UI, and query commands exit with code `0`. BonBon errors
+Help and successful server, UI, query, and skill commands exit with code `0`. BonBon errors
 print a message to standard error and exit with code `1`.
 
 See [README.md](../README.md) for setup and [SPEC.md](SPEC.md) for implementation

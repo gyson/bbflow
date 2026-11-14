@@ -136,6 +136,7 @@ func TestHandoffFolderKeepsEveryEarlierTerminalAndMessage(t *testing.T) {
 		"`terminals/2-" + second.ID + ".txt`: the transcript of the latest terminal", "Tool: Fixture", "Tool: Other",
 		"Started from a handoff folder after terminal 1.", "`bonbon/fixture`", "`0123abcd`", "`git status`",
 		`'/opt/bonbon/bonbon' --dir '` + strings.ReplaceAll(s.info.DataDir, "'", `'\''`) + `' query`,
+		"run `'/opt/bonbon/bonbon' skill`",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("README misses %q:\n%s", want, readme)

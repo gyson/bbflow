@@ -317,6 +317,7 @@ func handoffReadme(session history.Session, terminals []handoffTerminal, info pr
 	b.WriteString("- To read the original recorded output of a terminal, run this command with its run ID. The command connects to the BonBon server, so an agent sandbox can block it.\n\n")
 	fmt.Fprintf(&b, "  ```sh\n  %s --dir %s query \"SELECT seq,created,text FROM events WHERE session_id='%s' AND run_id='RUN_ID' AND kind='output' ORDER BY seq LIMIT 500\"\n  ```\n",
 		shellQuote(executable), shellQuote(info.DataDir), session.ID)
+	fmt.Fprintf(&b, "\n- To learn the archive tables and more query examples, run `%s skill`. It prints a guide and does not connect to the server.\n", shellQuote(executable))
 	return b.String()
 }
 

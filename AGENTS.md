@@ -62,6 +62,8 @@ and APIs may still change, but durable data needs a supported migration path.
 - Update [docs/COMMANDS.md](docs/COMMANDS.md) when BonBon commands, options, defaults,
   or their effects change. This reference covers `bonbon` commands only. Keep developer
   build and test commands in the README. Clearly identify unavailable commands.
+- Update `cmd/bonbon/skill.md` when the archive tables, event kinds, or `bonbon query`
+  behavior change. `bonbon skill` prints this guide for agents.
 - Keep product intent in `GOAL.md` and planned implementation work in
   [docs/PLAN.md](docs/PLAN.md). Keep `SPEC.md` limited to implemented behavior,
   architecture, interfaces, and verified limitations. Do not put proposals or plans
