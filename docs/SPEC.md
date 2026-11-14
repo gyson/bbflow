@@ -231,11 +231,14 @@ New servers launch a menu companion by default on macOS. `server start --no-menu
 `server restart --no-menubar` disable it for that server process. A repeated start keeps
 the existing server and its menu choice. Restart replaces both processes.
 
-The menu contains **Open UI**, a separator, and **Quit BonBon** under the BonBon logo: a
-soft candy wrapper with a terminal prompt inside. There are no settings, logs, separate
-stop action, or persistent status text. The icon is rendered from `web/src/bonbon.svg`
-at build time, embedded, and uses macOS template coloring. Open UI calls the same
-verified home-page opener as the CLI.
+The menu contains **Open UI**, a separator, and **Quit BonBon**. The Quit BonBon label
+shows the running version, such as **Quit BonBon (0.0.5)** or **Quit BonBon (dev)**.
+Preview builds can set a version label at build time, such as **Quit BonBon (0.0.5
+dev-1af9)**. Open UI calls the same verified home-page opener as the CLI.
+
+The build renders the menu icon from `web/src/bonbon.svg` and embeds it in the
+executable. The icon shows a candy wrapper with a terminal prompt and uses macOS
+template coloring.
 
 Quit retains the connection information verified when the companion starts. It
 reconnects to that endpoint and verifies the original server identity on the shutdown
@@ -244,8 +247,9 @@ the server's lifetime pipe to close. Missing or replaced connection files do not
 Quit. A replacement instance, including one reusing the original port, cannot be stopped
 by an old menu.
 
-The action stays disabled during shutdown. If it fails, the menu shows a retry label and
-writes diagnostics to the server log. Actions run outside the native UI thread.
+BonBon accepts one menu action at a time. During shutdown, the menu shows
+**Quitting BonBon…**. If an action fails, the menu shows a retry label and writes
+diagnostics to the server log. Actions run outside the native UI thread.
 
 The server owns an inherited pipe to its menu. On normal shutdown it finishes session
 cleanup and closes SQLite, closes the pipe, waits for the companion, then releases the
