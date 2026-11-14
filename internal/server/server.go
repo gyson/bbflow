@@ -153,14 +153,14 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.reply(conn, inspectRepository(ctx, request.Workspace), nil)
 	case "project-draft":
 		result, err := s.prepareProject(ctx, request.Project)
-		s.reply(conn, result, err)
+		s.reply(conn, s.sessionDetail(result), err)
 	case "session-config":
 		if request.Preparation == nil {
 			result, err := s.store.Session(request.Session)
-			s.reply(conn, result, err)
+			s.reply(conn, s.sessionDetail(result), err)
 		} else {
 			result, err := s.savePreparation(request)
-			s.reply(conn, result, err)
+			s.reply(conn, s.sessionDetail(result), err)
 		}
 	case "session-start":
 		s.startPrepared(ctx, conn, request)

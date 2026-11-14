@@ -124,7 +124,9 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .session-item small { font-size: 11px; color: var(--text-muted); margin-top: 7px; }
 .session-item .run-state { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-muted); margin-top: 10px; }
 .dot { background: var(--inactive); width: 6px; height: 6px; border-radius: 50%; }
-.dot.running, .dot.starting { background: var(--running); }
+.dot.running { background: var(--running); }
+/* A ring shows a live terminal without recent output. */
+.dot.idle { background: none; box-shadow: inset 0 0 0 1.5px var(--running); }
 .instance { padding: 12px 8px 0; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
 .instance span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.8; }
 #instance-dir { font-size: 10px; color: var(--text-muted); }

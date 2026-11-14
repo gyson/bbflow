@@ -10,11 +10,11 @@ const tools = [
 
 test('only an ended, unarchived session without a live view can continue', () => {
   const run = { id: 'run-1' };
-  for (const status of ['exited', 'stopped', 'failed', 'interrupted']) assert.equal(canContinue({ status, run }, false), true, status);
-  for (const status of ['running', 'starting', 'draft', 'creating', 'launched']) assert.equal(canContinue({ status, run }, false), false, status);
-  assert.equal(canContinue({ status: 'stopped' }, false), false, 'a session without a run');
-  assert.equal(canContinue({ status: 'stopped', run, archived: true }, false), false, 'an archived session');
-  assert.equal(canContinue({ status: 'stopped', run }, true), false, 'a live view');
+  assert.equal(canContinue({ status: 'ended', run }, false), true);
+  for (const status of ['running', 'idle', 'draft']) assert.equal(canContinue({ status, run }, false), false, status);
+  assert.equal(canContinue({ status: 'ended' }, false), false, 'a session without a run');
+  assert.equal(canContinue({ status: 'ended', run, archived: true }, false), false, 'an archived session');
+  assert.equal(canContinue({ status: 'ended', run }, true), false, 'a live view');
   assert.equal(canContinue(null, false), false);
 });
 

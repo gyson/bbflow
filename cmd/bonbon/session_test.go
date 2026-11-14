@@ -132,6 +132,7 @@ type sessionView struct {
 	done        chan protocol.Message
 	mu          sync.Mutex
 	output      bytes.Buffer
+	statuses    []string // The session statuses that the server sent, in order.
 	launchInput []byte
 }
 
@@ -160,6 +161,10 @@ func openSessionView(t *testing.T, request protocol.Request) *sessionView {
 				}
 			}
 			switch m.Type {
+			case "status":
+				c.mu.Lock()
+				c.statuses = append(c.statuses, m.Status)
+				c.mu.Unlock()
 			case "exit", "history-end", "error":
 				c.done <- m
 				return
@@ -205,6 +210,11 @@ func (c *sessionView) Write(data []byte) (int, error) {
 }
 func (c *sessionView) Close() error { return c.conn.Close() }
 func (c *sessionView) text() string { c.mu.Lock(); defer c.mu.Unlock(); return c.output.String() }
+func (c *sessionView) status() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return strings.Join(c.statuses, ",")
+}
 
 func fixtureInput(executable string, args ...string) []byte {
 	command := []string{executable, "--fixture-agent"}

@@ -189,7 +189,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/21`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/22`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -207,6 +207,10 @@ change.
 Protocol 20 adds `history-search` and `history-context`. These operations read existing
 recordings. SQLite format 7 adds run indexes through migration 7 without changing
 records.
+
+Protocol 22 adds the derived [session status](#session-status) to session summaries and
+session details. It also adds the `status` message of a live terminal stream. The SQLite
+format does not change.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
 its static files, and `GET /client-config` for browser connection information. All
@@ -942,9 +946,40 @@ screens do not change recency. Fresh application output still counts, including 
 while detached or after a real size change. Summaries contain ID, title, project ID
 (empty for standalone), workspace, update time, status, archive flag, and view count.
 
-Statuses include `draft`, `creating`, `launched`, `starting`, `running`, `exited`,
-`stopped`, `failed`, and `interrupted`. A running process does not imply model activity
-or readiness. No completion or message boundaries are inferred from silence.
+### Session status
+
+Each session shows one status. The server derives it. SQLite keeps the run status and
+the preparation state without change, so `bonbon query` results do not change.
+
+| Status | Meaning |
+| --- | --- |
+| `draft` | The session did not start. |
+| `running` | The live terminal had application output in the last 3 seconds. Worktree creation and process start also show as `running`. |
+| `idle` | The live terminal had no application output in the last 3 seconds. |
+| `ended` | No terminal is live. The latest run `exited`, `stopped`, `failed`, or was `interrupted`. |
+
+The server records the time of each output of a live terminal in memory. It does this
+without views too. Output in the 300 milliseconds after an input, a PTY size change, or
+a signal from a view does not count. Thus the echo of typed input and the redraw after a
+size change do not make a session `running`. The detection does not depend on the tool.
+
+`idle` means only that there was no recent output. The application can be complete, can
+wait for an answer or a permission, or can work without output. A spinner or other
+repeated output shows as `running`, also without progress. No completion, readiness, or
+message boundaries are inferred from silence. BonBon never sends input because of a
+status.
+
+The sidebar shows the status of each session with a dot: filled for `running`, a ring
+for `idle`, and gray for `draft` and `ended`. It reads the statuses with `session-list`
+every 5 seconds. The session header shows **Running**, **Idle**, or **Ended**. An ended
+session adds the reason, for example **Ended · exit 0**, **Ended · stopped**, or
+**Ended · interrupted**. A live view gets each status change on its terminal stream, so
+its header and its sidebar entry change at once.
+
+**Stop session** is available for `running` and `idle` sessions. **Archive** is
+available for `draft` and `ended` sessions. **Continue in new terminal** is available
+for `ended` sessions. The terminal selector shows the stored status of each run, where
+`running` means a live process.
 
 ## Concurrency and recovery
 
@@ -1344,7 +1379,32 @@ kept the full reply, with some repeated rows from dialog redraws. The agents als
 their own folder trust questions and, for Codex, a shared background server question.
 These are agent behavior, not BonBon behavior.
 
+Session status fixtures use fixed times and a real PTY. Time fixtures cover the start of
+a terminal, background output, the idle delay, typed input at short intervals, and
+output after the echo window. A server fixture covers `draft`, worktree creation, a
+launch without a process, a starting terminal, recent and old output, each stored end
+status, and a new terminal in an ended session. A PTY fixture starts an application that
+writes on a trigger file. It checks `running` and `idle` in the list and on the stream,
+that typed input keeps `idle`, that a later view gets the current status, and `ended`
+after stop. Web fixtures cover the status text and the continue rule.
+
+A live check used a temporary instance and a Shell session in the browser UI. A shell
+loop that wrote a line each half second showed `running` from 0.6 seconds after Send
+until 3 seconds after its last line. Claude Code 2.1.312 at its folder trust question
+and Codex CLI 0.160.0 at its background server question both showed `idle` for 14
+seconds. Stop session showed **Ended · stopped**. The check sent no prompt to a model,
+so `running` during agent work is not verified.
+
 ## Limitations
+
+The session status uses output times only. It cannot tell a completed task from a
+permission question, and it shows `idle` for a command that works without output. An
+application that writes output while it waits shows as `running`. Typed input at short
+intervals for more than 3 seconds can show `idle` while the application works. The
+sidebar can show a status change of another session up to 5 seconds late. A start
+screen that an application draws in the 300 milliseconds after its command does not
+show `running`. The 3 second and 300 millisecond values are not verified with an agent
+that works on a task.
 
 Native session mapping/resume, forks, imports, native agent attachments, and Windows
 support are absent. Recording bytes does not preserve hidden agent state or guarantee

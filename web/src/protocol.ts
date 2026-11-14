@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/21';
+export const VERSION = 'bonbon/22';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -24,12 +24,15 @@ export interface Run { id: string; status: string }
 // One terminal of a session. number counts from 1 in start order. A new terminal has an
 // empty run until its process starts.
 export interface TerminalInfo { number: number; run: string; tool: string; status: string; started: string; ended: string }
-export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
+// status is the session status that the server derives. run.status is the stored status
+// of the latest run.
+export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; status: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
 // BonBon writes the handoff folder before it starts a new terminal in an ended session.
 // available means that the folder has a README, so the prompt can be used now.
 export interface Handoff { folder: string; prompt: string; available: boolean }
 export interface RepositoryInfo { available: boolean; root: string; head: string; branch: string; reason: string }
 
+// status is draft, running, idle, or ended.
 export interface SessionInfo {
   archived: boolean;
   preparation?: Preparation;
@@ -114,6 +117,8 @@ export type Request = RPCRequest | StreamRequest | DraftWatchRequest;
 export type ServerMessage =
   | { type: 'server'; server: ServerInfo }
   | { type: 'session'; session: string; active?: boolean; status?: string }
+  // A live view gets running or idle after it joins and after each change.
+  | { type: 'status'; status: string }
   | { type: 'frame'; data?: string; size: Size; revision: number; full?: boolean }
   | { type: 'pong' }
   | { type: 'input-ack'; id: string; error?: string }

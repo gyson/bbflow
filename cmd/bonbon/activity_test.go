@@ -93,3 +93,35 @@ func TestSessionViewsDoNotChangeActivityOrder(t *testing.T) {
 		t.Fatal("detached terminal output did not promote the first session")
 	}
 }
+
+func TestSessionStatusFollowsApplicationOutput(t *testing.T) {
+	startTestServer(t, t.TempDir())
+	trigger := filepath.Join(t.TempDir(), "emit")
+	view := launchAgent(t, t.TempDir(), "activity", trigger)
+	waitFor(t, func() bool { return strings.Contains(view.text(), "READY") })
+	listed := func() string { return sessionInfos(t, 10)[0].Status }
+	// The fixture writes no more output. The session becomes idle without a view action.
+	waitFor(t, func() bool { return listed() == "idle" && view.status() == "running,idle" })
+	// The terminal echoes typed input. This echo is not application activity.
+	if _, err := view.Write([]byte("typed")); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(view.text(), "typed") })
+	time.Sleep(500 * time.Millisecond)
+	if got := listed(); got != "idle" {
+		t.Fatalf("typed input changed the status to %s", got)
+	}
+	// Output without a view action is application activity.
+	if err := os.WriteFile(trigger, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return listed() == "running" && view.status() == "running,idle,running" })
+	waitFor(t, func() bool { return listed() == "idle" && view.status() == "running,idle,running,idle" })
+	// A view that joins later gets the current status.
+	second := resumeView(t, sessionInfos(t, 10)[0].ID)
+	waitFor(t, func() bool { return second.status() == "idle" })
+	stopTestSession(t, sessionInfos(t, 10)[0].ID)
+	if got := listed(); got != "ended" {
+		t.Fatalf("a stopped session has status %s", got)
+	}
+}

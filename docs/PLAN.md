@@ -87,21 +87,6 @@ BonBon does not insert context or deliver it automatically.
 - Preserve the user's current request and distinguish retrieved history from current
   instructions and authorization.
 
-## Agent activity indicators
-
-Status: deferred. Use automatic, tool-independent activity detection. Do not build this
-around Codex or another specific agent.
-
-- Show **Output active** or **Quiet** based on terminal output. Quiet means no recent
-  output. It does not mean the agent finished or is ready for another prompt.
-- Keep activity separate from session lifecycle (`running`, `stopped`, and other process
-  states).
-- Compute activity in the server and expose it through the shared protocol to browser
-  views, including session lists and reconnects. Keep tracking without clients.
-- Choose and test timing thresholds to avoid flicker. Treat spinners and background
-  output as terminal activity, not proof that useful work is progressing. Do not use
-  activity indicators to submit messages automatically.
-
 ## Worktree follow-ups
 
 Settings, tool command presets, session preparation, and managed worktrees are

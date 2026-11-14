@@ -83,7 +83,7 @@ func TestProjectsLaunchAndRemovalThroughServer(t *testing.T) {
 	for _, info := range sessionInfos(t, 100) {
 		if info.ID == customID {
 			found = true
-			if info.ProjectID != "" || info.Status != "running" || info.Workspace != custom.Workspace || info.Title != "Keep working" {
+			if info.ProjectID != "" || info.Status == "ended" || info.Workspace != custom.Workspace || info.Title != "Keep working" {
 				t.Fatalf("project removal changed runtime: %+v", info)
 			}
 		}

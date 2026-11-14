@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/21"
+const Version = "bonbon/22"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -206,6 +206,16 @@ type Terminal struct {
 	Ended   string `json:"ended"`
 }
 
+// SessionDetail is a session with its Status.
+type SessionDetail struct {
+	history.Session
+	Status string `json:"status"`
+}
+
+// SessionInfo is a session summary. Status is draft, running, idle, or ended. The
+// server derives it. Running means that a live terminal had application output in the
+// last seconds, or that the session starts. Idle means a live terminal without recent
+// output. It does not mean that the application is ready for input.
 type SessionInfo struct {
 	Archived    bool                 `json:"archived"`
 	Preparation *history.Preparation `json:"preparation,omitempty"`

@@ -312,9 +312,12 @@ func TestServerStopClosesIdleAndStalledClients(t *testing.T) {
 	if err := stalled.WriteJSON(protocol.Message{Type: "request", Request: &request}); err != nil {
 		t.Fatal(err)
 	}
-	var session, frame protocol.Message
+	var session, status, frame protocol.Message
 	if err := stalled.ReadJSON(&session); err != nil || session.Type != "session" {
 		t.Fatalf("stalled session: %+v %v", session, err)
+	}
+	if err := stalled.ReadJSON(&status); err != nil || status.Type != "status" || status.Status != "running" {
+		t.Fatalf("stalled status: %+v %v", status, err)
 	}
 	if err := stalled.ReadJSON(&frame); err != nil || frame.Type != "frame" {
 		t.Fatalf("stalled frame: %+v %v", frame, err)
