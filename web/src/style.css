@@ -264,15 +264,18 @@ body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-s
 .diff-file { display: flex; align-items: center; gap: 7px; width: 100%; padding: 5px 10px; border: 0; border-radius: 0; background: transparent; font-size: 12px; text-align: left; }
 .diff-file[aria-current="true"] { background: #fff; box-shadow: inset 2px 0 #468565; }
 .diff-file.unchanged .diff-name { color: #7b857c; }
-/* Show the end of a long path. The file name is the most useful part. */
-.diff-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; direction: rtl; text-align: left; unicode-bidi: plaintext; }
+/* The folder shrinks much faster than the file name. A long path keeps its file name. */
+.diff-name { flex: 1; min-width: 0; display: flex; white-space: pre; }
+.diff-folder { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #7b857c; }
+.diff-base { flex: 0 1 auto; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; }
 .diff-status-letter { flex: none; width: 12px; font-family: Menlo, Monaco, monospace; font-size: 11px; font-weight: 600; color: #9aa29a; }
-.status-A { color: #2f7a4f; } .status-D { color: #a24139; } .status-M, .status-T { color: #a06b12; } .status-R { color: #4a64a8; } .status-U { color: #a24139; }
+.status-A { color: #2f7a4f; } .status-D { color: #a24139; } .status-M, .status-T { color: #a06b12; } .status-R { color: #4a64a8; }
+.segmented button.waiting { border-style: dashed; }
 .diff-empty { padding: 12px; font-size: 12px; color: #7b857c; }
 .diff-view { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .diff-file-header { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 10px; border-bottom: 1px solid #e6e8e3; font-size: 12px; }
 .diff-file-header button { padding: 4px 8px; font-size: 11px; }
-#diff-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; font-family: Menlo, Monaco, monospace; font-size: 11px; }
+#diff-path { flex: 1; min-width: 0; display: flex; font-family: Menlo, Monaco, monospace; font-size: 11px; }
 #diff-counts { display: flex; gap: 6px; font-size: 11px; }
 #diff-counts .added { color: #2f7a4f; } #diff-counts .removed { color: #a24139; }
 .diff-tag { padding: 1px 6px; border-radius: 5px; background: #eef0ec; color: #6a786c; }

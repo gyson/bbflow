@@ -372,3 +372,82 @@ func TestWorkspaceFileRequestOverWebSocket(t *testing.T) {
 	peer.Close()
 	<-done
 }
+
+func TestWorkspaceChangesLimitUntrackedScan(t *testing.T) {
+	defer func(limit int) { maxDiffFiles = limit }(maxDiffFiles)
+	maxDiffFiles = 3
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"tracked.txt": "old\n"})
+	writeFiles(t, repo, map[string]string{"tracked.txt": "new\n", "u1": "1\n", "u2": "2\n", "u3": "3\n", "u4": "4\n"})
+	id := diffSession(t, s, repo)
+	changes, err := s.workspaceChanges(context.Background(), id, nil)
+	if err != nil || len(changes.Files) != 3 || !changes.Truncated {
+		t.Fatalf("limited changes: %+v, %v", changes, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err = s.workspaceChanges(ctx, id, nil); err == nil {
+		t.Fatal("a canceled request listed changes")
+	}
+}
+
+func TestWorkspaceChangesShowNestedRepositoryAndUntrackedDeletion(t *testing.T) {
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"kept.txt": "one\n"})
+	fixtureGit(t, repo, "rm", "-q", "--cached", "kept.txt")
+	nested := filepath.Join(repo, "vendor", "lib")
+	if err := os.MkdirAll(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	fixtureGit(t, nested, "init", "-q")
+	id := diffSession(t, s, repo)
+	changes, err := s.workspaceChanges(context.Background(), id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]protocol.ChangedFile{
+		"kept.txt":   {Path: "kept.txt", Status: "M", Added: -1, Removed: -1, Untracked: true},
+		"vendor/lib": {Path: "vendor/lib", Status: "A", Added: -1, Untracked: true},
+	}
+	if files := changesByPath(t, changes); !reflect.DeepEqual(files, want) || len(changes.Files) != 2 {
+		t.Fatalf("files:\n got %+v\nwant %+v", changes.Files, want)
+	}
+	file, err := s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Path: "vendor/lib"})
+	if err != nil || file.New.State != "other" || file.Old.State != "missing" {
+		t.Fatalf("nested repository: %+v, %v", file, err)
+	}
+	file, err = s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Path: "kept.txt"})
+	if err != nil || file.Old.Text != "one\n" || file.New.Text != "one\n" {
+		t.Fatalf("untracked deletion: %+v, %v", file, err)
+	}
+	list, err := s.workspaceFiles(context.Background(), id)
+	if err != nil || !reflect.DeepEqual(list.Paths, []string{"kept.txt", "vendor/lib"}) {
+		t.Fatalf("files: %+v, %v", list, err)
+	}
+}
+
+func TestWorkspaceViewsReportGitFailures(t *testing.T) {
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"a.txt": "a\n"})
+	id := diffSession(t, s, repo)
+	t.Setenv("PATH", t.TempDir())
+	changes, err := s.workspaceChanges(context.Background(), id, nil)
+	if err == nil || changes.Reason == notRepository {
+		t.Fatalf("missing Git was reported as no repository: %+v, %v", changes, err)
+	}
+	list, err := s.workspaceFiles(context.Background(), id)
+	if err == nil || list.Reason == notRepository {
+		t.Fatalf("missing Git was reported as no repository: %+v, %v", list, err)
+	}
+}
+
+func TestRevisionSeparatesMissingCommitFromFailure(t *testing.T) {
+	repo := diffRepository(t, nil)
+	commit, err := revision(context.Background(), repo, "HEAD")
+	if err != nil || commit != "" {
+		t.Fatalf("unborn HEAD: %q, %v", commit, err)
+	}
+	if _, err = revision(context.Background(), filepath.Join(repo, "missing"), "HEAD"); err == nil {
+		t.Fatal("a failed Git command was reported as a missing commit")
+	}
+}

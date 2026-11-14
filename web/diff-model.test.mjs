@@ -42,6 +42,7 @@ test('counts and titles describe each status', () => {
   assert.deepEqual(countText(change('a.txt', 'A', { added: -1, removed: 0 })), { added: '', removed: '' });
   assert.equal(statusTitle(change('new', 'R', { oldPath: 'old' })), 'Renamed from old');
   assert.equal(statusTitle(change('new', 'A', { untracked: true })), 'Added, not tracked by Git');
+  assert.equal(statusTitle(change('kept', 'M', { untracked: true })), 'Modified, not tracked by Git');
   assert.equal(statusTitle(change('x', 'D')), 'Deleted');
 });
 

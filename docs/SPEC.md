@@ -706,11 +706,13 @@ keep the pane while their workspace exists.
   sessions and tools can share a workspace.
 - **Split** shows the old and new file side by side. **Unified** shows one column with
   removed and added lines. When the editor area is narrower than 520 pixels, the pane
-  shows Unified and keeps Split as the choice. Unchanged regions fold into bars. Click a
-  bar to show its lines.
-- **Changed** lists the changed files with Git status letters A, M, D, R, T, and U. An
-  untracked file has A. **All files** adds the paths that Git tracks or does not ignore.
-  The filter box matches any part of a path without case.
+  shows Unified and marks it as pressed. Split keeps a dashed border until the pane is
+  wide enough. Unchanged regions fold into bars. Click a bar to show its lines.
+- **Changed** lists the changed files with Git status letters A, M, D, R, and T. An
+  untracked file has A. After `git rm --cached`, the path has one row with M. An
+  untracked nested repository shows as one folder row. **All files** adds the paths that
+  Git tracks or does not ignore. The filter box matches any part of a path without case.
+  A long path keeps its file name in view and shortens its folder.
 - The file header shows the path and the line counts. **View file** shows the current
   file. It changes to **View diff**. An unchanged file opens in the file view. **Copy
   path** copies the path relative to the workspace.
@@ -719,7 +721,8 @@ keep the pane while their workspace exists.
 
 A drag on the divider or the Left and Right arrow keys change the pane width. The pane
 width, the layout, the scope, the baseline, and the selected file belong to the view.
-Other browser tabs keep their own state, and a reload resets it.
+Other browser tabs keep their own state. A visit to Settings or the home page keeps the
+state. A different session or a reload resets it.
 
 The server resolves the workspace and the baseline commit from the session ID. It never
 accepts a workspace path from the client. A repository subfolder session sees only its
@@ -730,7 +733,12 @@ opened.
 
 Git runs with `GIT_OPTIONAL_LOCKS=0`. Thus it does not take `index.lock` from a live
 agent. It also runs with literal pathspecs, `core.fsmonitor=false`, `--no-ext-diff`,
-`--no-textconv`, and a 10-second timeout. A client disconnect cancels the Git work.
+`--no-textconv`, and a 10-second timeout. A client disconnect cancels the Git work, and
+the scan of untracked files stops at the file limit. Clean filters from the repository
+configuration, such as Git LFS, still run when Git compares work files. Git messages use
+the C locale. Only a "not a git repository" message from Git shows "Not a Git
+repository." Other failures, such as a missing Git executable or a `safe.directory`
+refusal, show their error.
 
 Limits:
 

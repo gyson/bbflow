@@ -333,8 +333,10 @@ The `diff` object has these fields:
 }
 ```
 
-`status` is the Git status letter: `A`, `M`, `D`, `R`, `T`, or `U` for an unmerged file.
-A rename also has `oldPath`. An untracked file has `A` and `untracked`. `added` and
+`status` is the Git status letter: `A`, `M`, `D`, `R`, or `T`. A rename also has
+`oldPath`. An untracked file has `untracked`, with `A`, or with `M` when the baseline has
+the path, for example after `git rm --cached`. An untracked nested repository is one
+path without a final slash. `added` and
 `removed` are -1 when they are unknown. For a folder that Git does not manage,
 `repository` is false, `reason` explains it, and `files` is empty.
 

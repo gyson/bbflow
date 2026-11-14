@@ -22,8 +22,9 @@ import (
 )
 
 // Limits of the read-only diff and file views.
+var maxDiffFiles = 5000 // Changed files in one list. Tests make it smaller.
+
 const (
-	maxDiffFiles      = 5000     // Changed files in one list.
 	maxWorkspaceFiles = 20000    // Paths in the All files list.
 	maxFileSide       = 1 << 20  // Bytes of one side of one file.
 	maxGitList        = 16 << 20 // Bytes of one Git list output.
@@ -46,13 +47,15 @@ func gitEnv() []string {
 // gitRead runs a read-only Git command in dir and returns at most limit bytes of
 // stdout. More reports that Git wrote more output. The command does not take optional
 // locks, so it does not block Git commands of a live agent. Paths are literal, and an
-// fsmonitor hook from the repository configuration does not run.
+// fsmonitor hook from the repository configuration does not run. Clean filters from the
+// repository configuration, such as Git LFS, still run when Git compares work files.
+// Messages use the C locale, so that callers can identify a missing repository.
 func gitRead(ctx context.Context, dir string, limit int, args ...string) (out []byte, more bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, gitReadTimeout)
 	defer cancel()
 	base := []string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "core.quotePath=false"}
 	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
-	cmd.Env = append(gitEnv(), "GIT_OPTIONAL_LOCKS=0", "GIT_LITERAL_PATHSPECS=1")
+	cmd.Env = append(gitEnv(), "GIT_OPTIONAL_LOCKS=0", "GIT_LITERAL_PATHSPECS=1", "LC_ALL=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{buffer: &stderr, limit: 4096}
 	stdout, err := cmd.StdoutPipe()
@@ -75,9 +78,34 @@ func gitRead(ctx context.Context, dir string, limit int, args ...string) (out []
 		return nil, false, fmt.Errorf("git %s took more than %s", args[0], gitReadTimeout)
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+		return nil, false, &gitError{command: args[0], err: err, stderr: strings.TrimSpace(stderr.String())}
 	}
 	return out, false, readErr
+}
+
+// gitError is a failed Git command. Stderr holds the first part of its error output.
+type gitError struct {
+	command string
+	err     error
+	stderr  string
+}
+
+func (e *gitError) Error() string { return fmt.Sprintf("git %s: %v: %s", e.command, e.err, e.stderr) }
+func (e *gitError) Unwrap() error { return e.err }
+
+// isNotRepository reports that Git found no repository. Other failures, such as a
+// missing Git executable, a timeout, or a safe.directory refusal, are real errors.
+func isNotRepository(err error) bool {
+	var failure *gitError
+	return errors.As(err, &failure) && strings.Contains(strings.ToLower(failure.stderr), "not a git repository")
+}
+
+// isQuietMiss reports that `git rev-parse --verify --quiet` found no commit. Git then
+// exits with status 1 and writes no error.
+func isQuietMiss(err error) bool {
+	var failure *gitError
+	var exit *exec.ExitError
+	return errors.As(err, &failure) && failure.stderr == "" && errors.As(err, &exit) && exit.ExitCode() == 1
 }
 
 type limitedWriter struct {
@@ -116,7 +144,10 @@ func (s *Server) resolveDiff(ctx context.Context, id string, request *protocol.D
 		return target, fmt.Errorf("the session workspace is not available: %w", err)
 	}
 	if _, _, err = gitRead(ctx, target.workspace, 4096, "rev-parse", "--show-toplevel"); err != nil {
-		return target, errNotRepository
+		if isNotRepository(err) {
+			return target, errNotRepository
+		}
+		return target, err
 	}
 	w := session.Worktree
 	target.base = w != nil && w.State == "ready" && w.Commit != "" && within(w.Path, target.workspace)
@@ -130,6 +161,9 @@ func (s *Server) resolveDiff(ctx context.Context, id string, request *protocol.D
 			return target, errors.New("this session has no managed worktree baseline")
 		}
 		commit, err := revision(ctx, target.workspace, w.Commit)
+		if err == nil && commit == "" {
+			err = errors.New("Git has no such commit")
+		}
 		if err != nil {
 			return target, fmt.Errorf("the worktree base commit is not available: %w", err)
 		}
@@ -137,6 +171,9 @@ func (s *Server) resolveDiff(ctx context.Context, id string, request *protocol.D
 	case kind == "" || kind == "head":
 		commit, err := revision(ctx, target.workspace, "HEAD")
 		if err != nil {
+			return target, err
+		}
+		if commit == "" {
 			// Compare with the empty tree in a repository without commits.
 			out, _, treeErr := gitRead(ctx, target.workspace, 4096, "hash-object", "-t", "tree", os.DevNull)
 			if treeErr != nil {
@@ -151,8 +188,13 @@ func (s *Server) resolveDiff(ctx context.Context, id string, request *protocol.D
 	return target, nil
 }
 
+// revision resolves a commit. It returns an empty commit, without an error, when Git
+// has no such commit. Other failures are errors.
 func revision(ctx context.Context, dir, name string) (string, error) {
 	out, _, err := gitRead(ctx, dir, 4096, "rev-parse", "--verify", "--quiet", "--end-of-options", name+"^{commit}")
+	if isQuietMiss(err) {
+		return "", nil
+	}
 	return strings.TrimSpace(string(out)), err
 }
 
@@ -183,20 +225,40 @@ func (s *Server) workspaceChanges(ctx context.Context, id string, request *proto
 	}
 	result.Files = parseNameStatus(names)
 	applyNumstat(result.Files, parseNumstat(counts))
+	result.Truncated = moreNames || moreCounts || moreUntracked
+	if len(result.Files) > maxDiffFiles {
+		result.Files, result.Truncated = result.Files[:maxDiffFiles], true
+	}
 	root, err := os.OpenRoot(target.workspace)
 	if err != nil {
 		return result, err
 	}
 	defer root.Close()
+	// After `git rm --cached`, a path is deleted from Git and also untracked. Show one row.
+	deleted := map[string]int{}
+	for i, file := range result.Files {
+		if file.Status == "D" {
+			deleted[file.Path] = i
+		}
+	}
 	budget := maxCountBudget
 	for _, path := range splitZ(untracked) {
+		if err = ctx.Err(); err != nil {
+			return result, err
+		}
+		// Git lists an untracked nested repository as a folder with a final slash.
+		path = strings.TrimSuffix(path, "/")
+		if i, ok := deleted[path]; ok {
+			result.Files[i] = protocol.ChangedFile{Path: path, Status: "M", Added: -1, Removed: -1, Untracked: true}
+			continue
+		}
+		if len(result.Files) >= maxDiffFiles {
+			result.Truncated = true
+			break
+		}
 		file := protocol.ChangedFile{Path: path, Status: "A", Untracked: true}
 		file.Added, file.Binary = countLines(root, path, &budget)
 		result.Files = append(result.Files, file)
-	}
-	result.Truncated = moreNames || moreCounts || moreUntracked
-	if len(result.Files) > maxDiffFiles {
-		result.Files, result.Truncated = result.Files[:maxDiffFiles], true
 	}
 	return result, nil
 }
@@ -310,15 +372,17 @@ func (s *Server) workspaceFiles(ctx context.Context, id string) (protocol.Worksp
 		return result, fmt.Errorf("the session workspace is not available: %w", err)
 	}
 	out, more, err := gitRead(ctx, workspace, maxGitList, "ls-files", "--cached", "--others", "--exclude-standard", "--deduplicate", "-z")
+	if isNotRepository(err) {
+		result.Reason = notRepository
+		return result, nil
+	}
 	if err != nil {
-		if _, _, repoErr := gitRead(ctx, workspace, 4096, "rev-parse", "--show-toplevel"); repoErr != nil {
-			result.Reason = notRepository
-			return result, nil
-		}
 		return result, err
 	}
 	result.Repository = true
-	result.Paths = splitZ(out)
+	for _, path := range splitZ(out) {
+		result.Paths = append(result.Paths, strings.TrimSuffix(path, "/"))
+	}
 	slices.Sort(result.Paths)
 	result.Truncated = more
 	if len(result.Paths) > maxWorkspaceFiles {

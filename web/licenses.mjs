@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFile, readdir } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -18,14 +18,16 @@ async function noticeFiles(directory) {
   return paths.sort();
 }
 
-// Return the npm packages that the esbuild metafile shows in the bundle.
-export function bundledPackages(metafile) {
-  const names = new Set();
+// Return the npm packages that the esbuild metafile shows in the bundle. The last
+// node_modules segment of a path names the package, so nested packages count too.
+// Paths in the metafile are relative to the build's working directory.
+export function bundledPackages(metafile, cwd = process.cwd()) {
+  const packages = new Map();
   for (const input of Object.keys(metafile.inputs)) {
-    const match = /(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(input);
-    if (match) names.add(match[1]);
+    const match = /^(.*(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+))\//.exec(input);
+    if (match) packages.set(match[1], { name: match[2], directory: resolve(cwd, match[1]) });
   }
-  return [...names].sort();
+  return [...packages.values()].sort((a, b) => a.directory < b.directory ? -1 : 1);
 }
 
 // Embed notices to keep them with the executable after installation or updates. List
@@ -36,8 +38,7 @@ export async function licenseNotices(packages) {
     notices.push(`${label}\n\n${await readFile(path, 'utf8')}`);
   }
   await add('BonBon — MIT License', join(root, 'LICENSE'));
-  for (const name of packages) {
-    const directory = join(root, 'web/node_modules', name);
+  for (const { name, directory } of packages) {
     const paths = (await readdir(directory, { withFileTypes: true }))
       .filter(entry => entry.isFile() && /^(licen[cs]e|notice|copying)([.-].*)?$/i.test(entry.name))
       .map(entry => join(directory, entry.name)).sort();

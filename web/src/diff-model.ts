@@ -33,13 +33,12 @@ export function fileEntries(changes: ChangedFile[], paths: string[], scope: File
 }
 
 export function statusTitle(change: ChangedFile): string {
-  if (change.untracked) return 'Added, not tracked by Git';
+  if (change.untracked) return change.status === 'M' ? 'Modified, not tracked by Git' : 'Added, not tracked by Git';
   switch (change.status) {
     case 'A': return 'Added';
     case 'D': return 'Deleted';
     case 'R': return `Renamed from ${change.oldPath ?? ''}`;
     case 'T': return 'Type changed';
-    case 'U': return 'Unmerged';
     default: return 'Modified';
   }
 }

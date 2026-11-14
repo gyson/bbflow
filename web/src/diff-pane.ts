@@ -38,6 +38,7 @@ export class DiffPane {
   private readonly editorParent = element('diff-editor', HTMLElement);
 
   private session = '';
+  private visible = false;
   private isOpen = false;
   private layout: DiffLayout = 'split';
   private shownLayout: DiffLayout | null = null;
@@ -109,9 +110,15 @@ export class DiffPane {
     this.show();
   }
 
-  // Select the session of this view. A draft or no session hides the pane.
+  // Select the session of this view. An empty session, for a draft, Settings, or the
+  // home page, hides the pane. The state stays until the view selects another session.
   select(session: string): void {
-    if (session === this.session) return;
+    this.visible = !!session;
+    if (!session || session === this.session) {
+      this.show();
+      if (session && this.isOpen) void this.refresh();
+      return;
+    }
     this.session = session;
     this.listAbort?.abort();
     this.fileAbort?.abort();
@@ -138,7 +145,7 @@ export class DiffPane {
 
   async refresh(): Promise<void> {
     const server = this.server();
-    if (!this.isOpen || !this.session || !server) return;
+    if (!this.isOpen || !this.visible || !this.session || !server) return;
     this.refreshedAt = Date.now();
     const generation = this.listGeneration.next();
     this.listAbort?.abort();
@@ -179,11 +186,17 @@ export class DiffPane {
   }
 
   private show(): void {
-    this.openButton.hidden = !this.session;
+    this.openButton.hidden = !this.visible;
     this.openButton.setAttribute('aria-pressed', String(this.isOpen));
-    this.pane.hidden = this.divider.hidden = !this.isOpen || !this.session;
-    this.splitButton.setAttribute('aria-pressed', String(this.layout === 'split'));
-    this.unifiedButton.setAttribute('aria-pressed', String(this.layout === 'unified'));
+    this.pane.hidden = this.divider.hidden = !this.isOpen || !this.visible;
+    // The pressed button is the shown layout. A narrow pane shows Unified, and Split
+    // waits for a wider pane.
+    const shown = effectiveLayout(this.layout, this.editorParent.clientWidth || Infinity);
+    const waiting = this.layout === 'split' && shown === 'unified';
+    this.splitButton.setAttribute('aria-pressed', String(shown === 'split'));
+    this.unifiedButton.setAttribute('aria-pressed', String(shown === 'unified'));
+    this.splitButton.classList.toggle('waiting', waiting);
+    this.splitButton.title = waiting ? 'The pane is too narrow for Split. Drag the divider to the left to widen the pane.' : '';
     this.changedButton.setAttribute('aria-pressed', String(this.scope === 'changed'));
     this.allButton.setAttribute('aria-pressed', String(this.scope === 'all'));
   }
@@ -214,8 +227,7 @@ export class DiffPane {
 
   // Use Unified when the pane is too narrow for Split. Keep the preferred layout.
   private relayout(): void {
-    const narrow = effectiveLayout('split', this.editorParent.clientWidth) === 'unified';
-    this.splitButton.title = narrow ? 'The pane is too narrow. Unified is shown until the pane is wider.' : '';
+    this.show();
     if (this.shownLayout && this.shownLayout !== effectiveLayout(this.layout, this.editorParent.clientWidth)) this.renderFile();
   }
 
@@ -253,10 +265,7 @@ export class DiffPane {
     const status = document.createElement('span');
     status.className = `diff-status-letter status-${entry.change ? entry.change.status : 'none'}`;
     status.textContent = entry.change ? entry.change.status : '·';
-    const name = document.createElement('span');
-    name.className = 'diff-name';
-    name.textContent = entry.path;
-    button.append(status, name);
+    button.append(status, pathLabel(entry.path));
     button.onclick = () => {
       this.selected = entry.path;
       for (const other of this.list.querySelectorAll('button')) other.setAttribute('aria-current', String(other === button));
@@ -303,7 +312,7 @@ export class DiffPane {
 
   private renderHeader(): void {
     const change = this.changes?.files.find(file => file.path === this.selected);
-    this.path.textContent = this.selected;
+    this.path.replaceChildren(pathLabel(this.selected));
     this.path.title = change?.oldPath ? `${change.oldPath} → ${this.selected}` : this.selected;
     const counts = change ? countText(change) : { added: '', removed: '' };
     const added = document.createElement('span');
@@ -361,9 +370,28 @@ export class DiffPane {
   private clearFile(): void {
     this.destroyView();
     this.file = null;
-    this.path.textContent = '';
+    this.path.replaceChildren();
     this.counts.replaceChildren();
     this.toggleButton.hidden = this.copyButton.hidden = true;
     this.showNote('');
   }
+}
+
+// Show the file name in full and shorten its folder first. A long path then keeps its
+// most useful part in view.
+function pathLabel(path: string): HTMLSpanElement {
+  const label = document.createElement('span');
+  label.className = 'diff-name';
+  const slash = path.lastIndexOf('/') + 1;
+  if (slash > 0) {
+    const folder = document.createElement('span');
+    folder.className = 'diff-folder';
+    folder.textContent = path.slice(0, slash);
+    label.append(folder);
+  }
+  const name = document.createElement('span');
+  name.className = 'diff-base';
+  name.textContent = path.slice(slash);
+  label.append(name);
+  return label;
 }

@@ -94,8 +94,9 @@ type WorkspaceChanges struct {
 	Truncated  bool          `json:"truncated"`
 }
 
-// ChangedFile is one changed path. Status is the Git status letter: A, M, D, R, T, or
-// U for an unmerged file. An untracked file has status A and Untracked.
+// ChangedFile is one changed path. Status is the Git status letter: A, M, D, R, or T.
+// An untracked file has Untracked. Its status is A, or M when the baseline has the
+// path, for example after `git rm --cached`.
 type ChangedFile struct {
 	Path      string `json:"path"`
 	OldPath   string `json:"oldPath,omitempty"`
