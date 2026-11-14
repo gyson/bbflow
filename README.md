@@ -141,8 +141,8 @@ This version uses protocol `bonbon/21`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the
-current protocol. SQLite format 7 adds run indexes to the existing history and settings.
-The new server automatically upgrades formats 3–6 at startup. You do not need a fresh
+current protocol. SQLite format 8 adds the instance appearance setting.
+The new server automatically upgrades formats 3–7 at startup. You do not need a fresh
 `--dir`. See [database upgrades](#database-upgrades) for details.
 
 The sidebar groups sessions and drafts under saved projects, with 100 items per page,
@@ -154,6 +154,10 @@ names, and draft saves do not affect the order.
 Use **Add project** to save an existing folder, with an optional name that defaults to
 its basename. Git is optional. Click **＋** beside a project to create and select a new
 draft in the sidebar.
+
+In **Settings → Appearance**, choose **System**, **Light**, or **Dark**. Click
+**Save settings** to apply the theme. System follows your device appearance.
+Browsers without CSS `light-dark()` support use the Light palette.
 
 Use **Changes** in the session toolbar to see the changed files of the session
 workspace in a read-only pane. Choose **Since worktree base** or **Uncommitted
@@ -463,8 +467,8 @@ started.
 
 ## Database upgrades
 
-The current SQLite format is 7. Formats 3 (from v0.0.1), 4, 5, and 6 upgrade
-automatically to 7 on server start or restart. Format 7 databases need no schema
+The current SQLite format is 8. Formats 3 (from v0.0.1) through 7 upgrade
+automatically to 8 on server start or restart. Format 8 databases need no
 migration. Upgrades preserve sessions, runs, original events, drafts, attachments,
 project membership, settings, and worktree metadata. Format 3 sessions remain standalone
 and keep their recorded workspace paths.
@@ -476,6 +480,7 @@ rolls back the upgrade and stops startup. Inspect `server.log` for the failed st
 Reopening an upgraded database does not repeat completed migrations. Format 7 builds
 indexes for run events, nonempty output, and start events. Startup waits up to two
 minutes for readiness, including large index upgrades.
+Format 8 adds System appearance to existing settings and preserves other values.
 
 Formats 1 and 2, nonempty unversioned databases, and formats newer than this executable
 are rejected without changing their contents. Use a newer executable for a newer format.
@@ -483,7 +488,7 @@ Downgrades are not implemented. These migrations do not provide backups. Cloud b
 remains planned separately.
 
 For contributors: keep released migration files unchanged. For each schema or durable
-data format change, add the next numbered SQL file (for example, `008.sql`). Increase
+data format change, add the next numbered SQL file (for example, `009.sql`). Increase
 `schemaVersion`. This also applies to stored JSON changes. Scripts must stay inside the
 migration runner's transaction.
 
@@ -511,7 +516,7 @@ Project fixtures cover canonical folder uniqueness, protected General identity,
 launching shells in both project types, removal while running, and restart persistence.
 These use synthetic shells, not a real agent. Storage tests cover read-only SQL,
 cancellation, result limits, and database reopen. They also cover upgrades from frozen
-formats 3–6 and preservation of original records and event sequences. Other checks cover
+formats 3–7 and preservation of original records and event sequences. Other checks cover
 rollback, concurrent upgrades, and rejection of unsupported formats. Server subprocess
 fixtures verify startup migration, history queries, and interruption recovery after
 upgrade.

@@ -51,11 +51,10 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 The SQLite driver exposes query authorization and cancellation through supported APIs.
 This keeps read-only query enforcement in SQLite and avoids a custom SQL parser.
 
-Storage uses format version 7 with projects, sessions, runs, events, settings,
+Storage uses format version 8 with projects, sessions, runs, events, settings,
 preparations, worktree metadata, archive flags, and run indexes. Embedded SQL migrations
-upgrade formats 3–6 automatically at server startup. Format 7 needs no migration. Each
-tool in the settings JSON can have an optional continue command. Saved settings without
-this field read as tools without a continue command, so the field needs no migration.
+upgrade formats 3–7 automatically at server startup. Format 8 needs no migration.
+Settings include the instance appearance. Each tool can have an optional continue command.
 Commands and APIs may still change during early development. Database upgrades preserve
 durable data.
 
@@ -198,8 +197,8 @@ The server rejects binary messages and invalid JSON. There is no extra length pr
 Protocol 15 creates independent project drafts and adds archive/restore, collection
 search, and pagination. SQLite format 6 adds a session archive flag.
 
-Settings, preparations, and worktree metadata remain server-owned. Formats 3–6 upgrade
-automatically to 7 at server startup. Reload the UI after starting the new server.
+Settings, preparations, and worktree metadata remain server-owned. Formats 3–7 upgrade
+automatically to 8 at server startup. Reload the UI after starting the new server.
 Protocol 18 adds `session-continue` and `session-handoff` for a new terminal in an ended
 session. Protocol 19 adds `session-terminals` and an optional `run` for
 `session-resume`, so a view can show an earlier terminal. SQLite format 6 does not
@@ -338,11 +337,22 @@ type and send messages. The PTY uses the size of the tab that most recently sent
 
 ### Session preparation, settings, and worktrees
 
-Settings is an instance-wide page at `/settings`. Its URL has no session ID. The page
-has a default tool, default worktree choice, default Git base, and an ordered list of
-named commands. Shell is built in and sends no startup command. Users can add, edit,
-reorder, and remove other presets. A command is one line of shell syntax, at most 1,000
-UTF-8 bytes, without control characters. Each preset can also have an optional continue
+Settings is an instance-wide page at `/settings`. Its URL has no session ID.
+**Appearance** offers **System**, **Light**, and **Dark**. System is the default and
+follows the device appearance. **Save settings** applies the theme to the current view
+and stores it in SQLite. Other views read the saved theme on reload or when they open
+Settings without unsaved edits. The server includes the theme in each page so it applies
+before the first render. If the server cannot read the settings, the page uses System.
+
+The theme covers the workspace, dialogs, terminal, and Changes pane. Dark uses charcoal
+surfaces, a near-black terminal, and blue for primary actions and focus. The terminal
+renders the colors supplied by each program. Light also uses a dark terminal. A browser
+without CSS `light-dark()` support uses the Light palette.
+
+Settings also has a default tool, default worktree choice, default Git base, and an
+ordered list of named commands. Shell is built in and sends no startup command.
+Users can add, edit, reorder, and remove other presets. A command is one line of shell
+syntax, at most 1,000 UTF-8 bytes, without control characters. Each preset can have a continue
 command for [Continue in a new terminal](#continue-in-a-new-terminal). It has the same
 limits and contains `{prompt}` once, without quotes around it. BonBon does not install
 tools, choose models, or check provider-specific arguments. Commands may contain secrets
@@ -712,6 +722,10 @@ keep the pane while their workspace exists.
   removed and added lines. When the editor area is narrower than 520 pixels, the pane
   shows Unified and marks it as pressed. Split keeps a dashed border until the pane is
   wide enough. Unchanged regions fold into bars. Click a bar to show its lines.
+- Both layouts use green for added lines and red for removed lines. Stronger fills mark
+  changed text. Split shows a gutter marker for each changed line. Unified shows one
+  `−` per block of removed lines and one `+` per added line. Syntax colors, line numbers,
+  and folded regions follow Appearance. The file view uses the same syntax colors.
 - **Changed** lists the changed files with Git status letters A, M, D, R, and T. An
   untracked file has A. After `git rm --cached`, the path has one row with M. An
   untracked nested repository shows as one folder row. **All files** adds the paths that
@@ -997,7 +1011,7 @@ as one transaction after column, index, and foreign-key checks. Any failure roll
 the entire upgrade and stops startup. A failed SQL step reports its migration number.
 WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4 through 7.
+- Empty databases run the format 3 baseline, then migrations 4 through 8.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
   Existing sessions remain standalone, with their original workspace and history.
 - Format 4 gains settings, preparations, and managed worktree tables. Defaults use
@@ -1007,7 +1021,9 @@ WAL is enabled after the schema transaction commits.
   start unarchived so normal listing and restoration preserve their prior visibility.
 - Format 6 gains indexes on run event sequences, nonempty output sequences, and start
   events through migration 7. Existing records and allocated sequences remain unchanged.
-- Format 7 opens without running scripts or rewriting history, settings, or metadata.
+- Format 7 gains `appearance: "system"` in the settings JSON through migration 8.
+  The upgrade preserves the settings revision and existing values.
+- Format 8 opens without running scripts or rewriting history, settings, or metadata.
 
 The upgrade preserves IDs, timestamps, event sequences, original blobs, text, drafts,
 and attachments. It also preserves the highest allocated event sequence. Migration
@@ -1016,7 +1032,7 @@ afterward. Repeated or concurrent opens see the committed version and skip compl
 steps.
 
 Formats 1 and 2 have no known migration path in this repository. They, nonempty
-unversioned databases, and formats newer than 7 are rejected without changing their
+unversioned databases, and formats newer than 8 are rejected without changing their
 schema or records. A newer format error asks for a newer executable. There is no
 downgrade path, external migration command, or automatic backup.
 
@@ -1210,13 +1226,18 @@ launch in a worktree, and separate drafts for subsequent sessions.
 
 No real agent CLI was used for these project checks.
 
-Frozen schemas from repository history test formats 3–6 upgrades to format 7 and
-unchanged format 7 reopening. Fixtures compare stored records, original blobs, archive
+Frozen schemas from repository history test upgrades from formats 3–7 to format 8 and
+verify that reopen preserves the upgraded data. Fixtures compare original blobs, archive
 flags, metadata, and event allocation state. They test rollback of the entire upgrade
 after SQL, schema, or foreign-key failures. They also cover repeated opens, concurrent
 upgrades, and unsupported formats. Server subprocess fixtures test migration before
 queries, interruption recovery, and restart without duplicate notices. These checks use
 temporary synthetic databases.
+
+Appearance fixtures verify the System default, successful Dark saves, and rejection of
+an invalid value. The migration tests preserve other settings and verify rollback and
+concurrent opens. A Chrome check with a synthetic Shell session verified Light, Dark,
+and System, saved appearance on reload, terminal replay, dialogs, and both diff layouts.
 
 A compiled release binary also passed startup, SQL queries, restart, and shutdown with
 temporary format 3–6 fixtures, running outside the repository. Checks confirmed format

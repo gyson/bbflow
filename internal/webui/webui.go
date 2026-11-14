@@ -2,16 +2,29 @@
 package webui
 
 import (
+	"bytes"
 	"embed"
+	"html/template"
 	"net/http"
 )
 
 //go:embed dist
 var files embed.FS
 
-func Register(mux *http.ServeMux) {
+func Register(mux *http.ServeMux, appearance func() (string, error)) {
+	index := template.Must(template.ParseFS(files, "dist/index.html"))
 	page := func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFileFS(w, r, files, "dist/index.html")
+		mode, err := appearance()
+		if err != nil {
+			mode = "system"
+		}
+		var body bytes.Buffer
+		if err := index.Execute(&body, mode); err != nil {
+			http.Error(w, "Cannot render the UI page.", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(body.Bytes())
 	}
 	// The client selects the view from these paths.
 	mux.HandleFunc("GET /{$}", page)

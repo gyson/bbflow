@@ -107,6 +107,7 @@ type Launch = { kind: 'start' } | { kind: 'continue'; tool: string };
 let server: ServerInfo | null = null;
 let connection: SessionConnection | null = null;
 let terminal: Terminal | null = null;
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
 let fit: FitAddon | null = null;
 let sessions: SessionInfo[] = [];
 let projects: Project[] = [];
@@ -142,7 +143,7 @@ const diffPane = new DiffPane(() => server);
 new Sidebar();
 
 let showingSettings = false;
-const settingsView = new SettingsView(() => server);
+const settingsView = new SettingsView(() => server, updateTerminalTheme);
 const preparation = new PreparationEditor({
   server: () => server,
   changed(session) {
@@ -383,13 +384,30 @@ function requestFit() {
   }
 }
 
+function terminalTheme() {
+  const background = getComputedStyle($('terminal')).backgroundColor;
+  const scheme = getComputedStyle(document.documentElement).colorScheme;
+  const dark = scheme === 'dark' || (scheme === 'light dark' && systemDark.matches);
+  return dark
+    ? { background, foreground: '#efeff1', cursor: '#d6d6dc', selectionBackground: '#46536b' }
+    : { background, foreground: '#d7e4dc', cursor: '#b8dcc3', selectionBackground: '#486e59' };
+}
+
+function updateTerminalTheme(): void {
+  if (!terminal) return;
+  const theme = terminalTheme();
+  if (terminal.options.theme?.background !== theme.background) {
+    terminal.options.theme = theme;
+  }
+}
+
 function makeTerminal(): Terminal {
   terminal?.dispose();
   $('terminal').replaceChildren();
   const view = terminal = new Terminal({
     cursorBlink: true, fontSize: 13, lineHeight: 1.25, scrollback: 10000,
     fontFamily: 'Menlo, Monaco, Consolas, monospace', disableStdin: true, screenReaderMode: true,
-    theme: { background: '#18201e', foreground: '#d7e4dc', cursor: '#b8dcc3', selectionBackground: '#486e59' },
+    theme: terminalTheme(),
     // Terminal output must not open links, read the browser clipboard, or write to it.
     linkHandler: { activate() {} },
   });
@@ -649,6 +667,7 @@ function showProject(project: Project | null = null) {
 }
 
 async function initialize() {
+  systemDark.addEventListener('change', updateTerminalTheme);
   controls();
   $('archive-session').onclick = () => action(async () => {
     if (!server || !selected?.id) return;

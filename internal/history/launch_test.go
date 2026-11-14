@@ -14,12 +14,17 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings, err := store.Settings()
-	if err != nil || len(settings.Tools) != 0 || settings.Worktree || settings.Base != "HEAD" {
+	if err != nil || len(settings.Tools) != 0 || settings.Worktree || settings.Base != "HEAD" || settings.Appearance != "system" {
 		t.Fatal(settings, err)
 	}
 	settings.Tools = []Tool{{ID: "astra", Name: "Codex 6 Astra", Command: "codex --model=gpt-6-astra"}, {ID: "default", Name: "Codex", Command: "codex"}}
 	settings.DefaultTool = "astra"
 	settings.Worktree = true
+	settings.Appearance = "invalid"
+	if _, err := store.SaveSettings(settings); err == nil {
+		t.Fatal("accepted invalid appearance")
+	}
+	settings.Appearance = "dark"
 	saved, err := store.SaveSettings(settings)
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +49,7 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 	}
 	defer store.Close()
 	got, err := store.Settings()
-	if err != nil || got.Revision != saved.Revision || got.Tools[0].Command != "codex --model=gpt-6-astra" || !got.Worktree {
+	if err != nil || got.Revision != saved.Revision || got.Tools[0].Command != "codex --model=gpt-6-astra" || !got.Worktree || got.Appearance != "dark" {
 		t.Fatal(got, err)
 	}
 	restored, err := store.Session(session.ID)
