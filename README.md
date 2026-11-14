@@ -157,6 +157,7 @@ draft in the sidebar.
 
 In **Settings → Appearance**, choose **System**, **Light**, or **Dark**. Click
 **Save settings** to apply the theme. System follows your device appearance.
+Browsers without CSS `light-dark()` support use the Light palette.
 
 Use **Changes** in the session toolbar to see the changed files of the session
 workspace in a read-only pane. Choose **Since worktree base** or **Uncommitted

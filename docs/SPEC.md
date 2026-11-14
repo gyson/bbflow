@@ -340,12 +340,14 @@ type and send messages. The PTY uses the size of the tab that most recently sent
 Settings is an instance-wide page at `/settings`. Its URL has no session ID.
 **Appearance** offers **System**, **Light**, and **Dark**. System is the default and
 follows the device appearance. **Save settings** applies the theme to the current view
-and stores it in SQLite. Other views read the saved theme on reload. The server includes
-the theme in each page so it applies before the first render.
+and stores it in SQLite. Other views read the saved theme on reload or when they open
+Settings without unsaved edits. The server includes the theme in each page so it applies
+before the first render. If the server cannot read the settings, the page uses System.
 
 The theme covers the workspace, dialogs, terminal, and Changes pane. Dark uses charcoal
 surfaces, a near-black terminal, and blue for primary actions and focus. The terminal
-renders the colors supplied by each program. Light also uses a dark terminal.
+renders the colors supplied by each program. Light also uses a dark terminal. A browser
+without CSS `light-dark()` support uses the Light palette.
 
 Settings also has a default tool, default worktree choice, default Git base, and an
 ordered list of named commands. Shell is built in and sends no startup command.
@@ -721,9 +723,9 @@ keep the pane while their workspace exists.
   shows Unified and marks it as pressed. Split keeps a dashed border until the pane is
   wide enough. Unchanged regions fold into bars. Click a bar to show its lines.
 - Both layouts use green for added lines and red for removed lines. Stronger fills mark
-  changed text. The gutter shows `+` for additions and `−` for removals. Syntax colors,
-  line numbers, and folded regions follow Appearance. The file view uses the same syntax
-  colors.
+  changed text. Split shows a gutter marker for each changed line. Unified shows one
+  `−` per block of removed lines and one `+` per added line. Syntax colors, line numbers,
+  and folded regions follow Appearance. The file view uses the same syntax colors.
 - **Changed** lists the changed files with Git status letters A, M, D, R, and T. An
   untracked file has A. After `git rm --cached`, the path has one row with M. An
   untracked nested repository shows as one folder row. **All files** adds the paths that

@@ -35,7 +35,7 @@ export class SettingsView {
     if (!server) return;
     if (!this.dirty) {
       this.settings = await call(server, { operation: 'settings-get' });
-      this.appearance.value = this.settings.appearance;
+      this.applyAppearance(this.settings.appearance);
       this.worktree.checked = this.settings.worktree;
       this.base.value = this.settings.base;
       this.renderTools();
@@ -45,6 +45,12 @@ export class SettingsView {
   }
 
   close(): void { this.panel.hidden = true; }
+
+  private applyAppearance(appearance: string): void {
+    this.appearance.value = appearance;
+    document.documentElement.dataset.appearance = appearance;
+    this.updateAppearance();
+  }
 
   private capture(): void {
     if (!this.settings) return;
@@ -108,8 +114,7 @@ export class SettingsView {
     for (const field of this.form.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input,button,select')) field.disabled = true;
     try {
       this.settings = await call(server, { operation: 'settings-save', settings: this.settings });
-      document.documentElement.dataset.appearance = this.settings.appearance;
-      this.updateAppearance();
+      this.applyAppearance(this.settings.appearance);
       this.dirty = false; this.status.textContent = 'Settings saved';
     } catch (error) { this.error.textContent = errorMessage(error); this.error.hidden = false; }
     finally {

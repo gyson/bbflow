@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,5 +38,15 @@ func TestPagePaths(t *testing.T) {
 	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 	if !strings.Contains(recorder.Body.String(), `data-appearance="light"`) {
 		t.Fatal("UI did not use the updated appearance")
+	}
+}
+
+func TestPageUsesSystemWhenAppearanceReadFails(t *testing.T) {
+	mux := http.NewServeMux()
+	Register(mux, func() (string, error) { return "", errors.New("cannot read settings") })
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `data-appearance="system"`) {
+		t.Fatalf("cannot load the UI with System appearance: %d", recorder.Code)
 	}
 }

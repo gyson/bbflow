@@ -27,7 +27,8 @@ const diffConfig = { scanLimit: 5000, timeout: 1500 };
 
 const theme = EditorView.theme({
   '&': { fontSize: '12px', backgroundColor: 'var(--diff-background)', color: 'var(--text)' },
-  '.cm-content': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
+  '.cm-content': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', caretColor: 'var(--text)' },
+  '.cm-specialChar': { color: 'var(--danger)' },
   '.cm-gutters': { backgroundColor: 'var(--inset)', color: 'var(--text-muted)', borderRight: '1px solid var(--divider)' },
   '.cm-content ::selection, .cm-content::selection': { background: 'var(--selected-border)', color: 'var(--text)' },
   '.cm-collapsedLines': { background: 'var(--inset)', color: 'var(--accent-text)', fontFamily: 'inherit' },

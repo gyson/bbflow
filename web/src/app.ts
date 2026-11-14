@@ -386,8 +386,8 @@ function requestFit() {
 
 function terminalTheme() {
   const background = getComputedStyle($('terminal')).backgroundColor;
-  const appearance = document.documentElement.dataset.appearance;
-  const dark = appearance === 'dark' || (appearance === 'system' && systemDark.matches);
+  const scheme = getComputedStyle(document.documentElement).colorScheme;
+  const dark = scheme === 'dark' || (scheme === 'light dark' && systemDark.matches);
   return dark
     ? { background, foreground: '#efeff1', cursor: '#d6d6dc', selectionBackground: '#46536b' }
     : { background, foreground: '#d7e4dc', cursor: '#b8dcc3', selectionBackground: '#486e59' };

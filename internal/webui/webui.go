@@ -2,6 +2,7 @@
 package webui
 
 import (
+	"bytes"
 	"embed"
 	"html/template"
 	"net/http"
@@ -15,11 +16,15 @@ func Register(mux *http.ServeMux, appearance func() (string, error)) {
 	page := func(w http.ResponseWriter, r *http.Request) {
 		mode, err := appearance()
 		if err != nil {
-			http.Error(w, "Cannot read appearance settings.", http.StatusInternalServerError)
+			mode = "system"
+		}
+		var body bytes.Buffer
+		if err := index.Execute(&body, mode); err != nil {
+			http.Error(w, "Cannot render the UI page.", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		index.Execute(w, mode)
+		w.Write(body.Bytes())
 	}
 	// The client selects the view from these paths.
 	mux.HandleFunc("GET /{$}", page)
