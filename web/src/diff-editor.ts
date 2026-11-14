@@ -30,6 +30,14 @@ const theme = EditorView.theme({
   '.cm-gutters': { backgroundColor: '#f6f7f4', color: '#9aa29a', borderRight: '1px solid #e6e8e3' },
   '.cm-collapsedLines': { backgroundColor: '#eef3ef', color: '#477257', fontFamily: 'inherit' },
   '&.cm-focused': { outline: 'none' },
+  // Changed lines get a light fill. Changed words inside them get a deeper fill of the
+  // same color. These rules replace the underline of @codemirror/merge.
+  '&.cm-merge-a .cm-changedLine, .cm-deletedChunk': { backgroundColor: '#ffebe9' },
+  '&.cm-merge-b .cm-changedLine, .cm-inlineChangedLine': { backgroundColor: '#e6ffec' },
+  '&.cm-merge-a .cm-changedText, .cm-deletedChunk .cm-deletedText, &.cm-merge-b .cm-deletedText': {
+    background: '#ffcecb', borderRadius: '2px',
+  },
+  '&.cm-merge-b .cm-changedText': { background: '#abf2bc', borderRadius: '2px' },
 });
 
 function language(path: string): Extension {
