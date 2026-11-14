@@ -11,6 +11,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
 import { rust } from '@codemirror/lang-rust';
 import { yaml } from '@codemirror/lang-yaml';
+import { scala } from '@codemirror/legacy-modes/mode/clike';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { languageName, type DiffLayout } from './diff-model.js';
 
@@ -45,6 +46,7 @@ function language(path: string): Extension {
     case 'html': return html();
     case 'yaml': return yaml();
     case 'rust': return rust();
+    case 'scala': return StreamLanguage.define(scala);
     case 'shell': return StreamLanguage.define(shell);
     default: return [];
   }

@@ -29,6 +29,9 @@ test('split changes to unified only in a narrow pane', () => {
 test('languages come from the file name', () => {
   assert.equal(languageName('internal/server/diff.go'), 'go');
   assert.equal(languageName('web/src/App.TSX'), 'tsx');
+  assert.equal(languageName('src/main/scala/Board.scala'), 'scala');
+  assert.equal(languageName('scripts/Setup.sc'), 'scala');
+  assert.equal(languageName('build.sbt'), 'scala');
   assert.equal(languageName('scripts/release.sh'), 'shell');
   assert.equal(languageName('home/.zshrc'), 'shell');
   assert.equal(languageName('Makefile'), '');

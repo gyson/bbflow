@@ -62,13 +62,13 @@ export function sideNote(side: FileSide): string {
   }
 }
 
-export type Language = 'javascript' | 'jsx' | 'typescript' | 'tsx' | 'go' | 'python' | 'json' | 'markdown' | 'css' | 'html' | 'yaml' | 'rust' | 'shell' | '';
+export type Language = 'javascript' | 'jsx' | 'typescript' | 'tsx' | 'go' | 'python' | 'json' | 'markdown' | 'css' | 'html' | 'yaml' | 'rust' | 'scala' | 'shell' | '';
 
 const extensions: Record<string, Language> = {
   js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', ts: 'typescript', mts: 'typescript',
   cts: 'typescript', tsx: 'tsx', go: 'go', py: 'python', json: 'json', md: 'markdown', markdown: 'markdown',
-  css: 'css', html: 'html', htm: 'html', yaml: 'yaml', yml: 'yaml', rs: 'rust', sh: 'shell', bash: 'shell',
-  zsh: 'shell',
+  css: 'css', html: 'html', htm: 'html', yaml: 'yaml', yml: 'yaml', rs: 'rust', scala: 'scala', sc: 'scala',
+  sbt: 'scala', sh: 'shell', bash: 'shell', zsh: 'shell',
 };
 
 export function languageName(path: string): Language {
