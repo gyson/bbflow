@@ -16,11 +16,13 @@ const usage = `Usage:
   bonbon [--dir DIR] server start|stop|restart
   bonbon [--dir DIR] ui
   bonbon [--dir DIR] query SQL
+  bonbon skill
 
 --dir selects a BonBon instance, not the agent's working directory.
 Start the server with bonbon server start, then open bonbon ui.
 Create and manage interactive shell sessions in the web UI.
-Closing a browser view leaves its session running.`
+Closing a browser view leaves its session running.
+Agents: run bonbon skill to learn how to read sessions and recorded history.`
 
 // Local builds use development storage. The release target sets this at link time.
 var instanceDirName = ".bonbon-dev"
@@ -55,8 +57,11 @@ func run(args []string) error {
 		fmt.Println(usage)
 		return nil
 	}
-	if args[0] == "update" {
+	switch args[0] {
+	case "update":
 		return update(args[1:])
+	case "skill":
+		return skill(args[1:])
 	}
 	path, err := filepath.Abs(*directory)
 	if err != nil {

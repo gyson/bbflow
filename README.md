@@ -415,6 +415,10 @@ separate read-only connection with a five-second timeout and bounded results. Th
 rejects writes, PRAGMAs, attachment of other databases, and multiple statements. See the
 [query reference](docs/COMMANDS.md#query-sqlite) for limits, tables, and pagination.
 
+An agent tool can run `bonbon skill` to learn these queries. The command prints a
+Markdown guide with the archive tables, event kinds, and examples. See the
+[agent guide reference](docs/COMMANDS.md#agent-guide).
+
 Communication uses JSON over WebSocket at `ws://127.0.0.1:PORT/ws`. The browser uses
 this for session views and composition. The CLI uses it for server checks, shutdown, and
 SQL queries.

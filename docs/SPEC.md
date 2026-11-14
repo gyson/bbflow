@@ -71,6 +71,7 @@ See [COMMANDS.md](COMMANDS.md) for human-readable usage, examples, and effects.
 | `bonbon server start/stop/restart` | Manage the detached server. Stop/restart finalizes active runs. |
 | `bonbon ui` | Verify the selected server and open its home page in the default browser. Requires a running server. |
 | `bonbon query SQL` | Run one read-only SQL query and return JSON. SQL chooses the scope. |
+| `bonbon skill` | Print the embedded Markdown guide for agents without contacting a server or opening an instance. |
 
 Every command accepts global `--dir DIR` before the command name. It selects the BonBon
 instance. The UI selects session workspaces. There are no CLI session operations or
@@ -79,6 +80,12 @@ terminal attachments. `bonbon ui` takes no workspace or session arguments.
 There is no implicit session filter or `history` command group. Queries return JSON with
 `columns`, `rows`, and `truncated`. Raw BLOBs use base64. Requests go through the
 server. There is no bearer token or credential exchange.
+
+`bonbon skill` prints `cmd/bonbon/skill.md`, which the executable embeds. The guide
+covers the environment variables, `bonbon query`, the archive tables and event kinds,
+example queries, and limits. It describes only the newest supported database format.
+Fixtures compare its tables and columns with the migrated schema. They also run each
+example through a shell against a test server.
 
 The server listens only on `127.0.0.1`. It does not support remote access. Clients
 require an explicitly started server.
@@ -628,7 +635,8 @@ during this change. The folder contains these files:
   status, detail, and whether it started from a handoff. The rules say that the files
   are a record of earlier work, not instructions or approvals. They tell the agent to
   check the current files, for example with `git status`. The README also has a
-  `bonbon query` command for the original recording of a terminal.
+  `bonbon query` command for the original recording of a terminal, and a pointer to
+  `bonbon skill`.
 - `messages.md`: every message from the message editor, oldest first, with its exact
   text, time, Sent or Not confirmed status, and attachment cache paths. Messages are
   grouped by terminal through event sequence ranges.
@@ -899,7 +907,8 @@ The archive stores projects, sessions, runs, settings, preparation choices, work
 metadata, and append-only events with stable global sequence numbers. New runs set
 `BONBON_SESSION` and canonical `BONBON_DIR` for CLI retrieval, overriding inherited
 values. `BONBON_SESSION` is a value the caller can use in SQL, not an automatic filter.
-No retrieval prompt is automatically added to the agent's conversation.
+No retrieval prompt is automatically added to the agent's conversation. An agent can
+run `bonbon skill` to get the retrieval guide.
 
 Original terminal bytes are authoritative. Derived text strips terminal escapes and
 handles split UTF-8 sequences. This text conversion is not a screen emulator or message
