@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/20"
+const Version = "bonbon/21"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -61,6 +61,76 @@ type Request struct {
 
 	Search  *history.SearchFilter   `json:"search,omitempty"`
 	Context *history.ContextRequest `json:"context,omitempty"`
+	Diff    *DiffRequest            `json:"diff,omitempty"`
+}
+
+// DiffRequest selects a baseline and a file in the workspace of the request session.
+// Baseline is "base" for the managed worktree commit or "head" for HEAD. An empty
+// baseline selects "base" when it is available. Path and OldPath are relative to the
+// session workspace. OldPath names the old side of a rename.
+type DiffRequest struct {
+	Baseline string `json:"baseline,omitempty"`
+	Path     string `json:"path,omitempty"`
+	OldPath  string `json:"oldPath,omitempty"`
+}
+
+// Baseline identifies the commit that a diff compares with the current files. Commit
+// is the empty tree in a repository without commits.
+type Baseline struct {
+	Kind   string `json:"kind"`
+	Label  string `json:"label"`
+	Commit string `json:"commit"`
+}
+
+// WorkspaceChanges lists the changed files of a session workspace. Repository is
+// false, with a reason, for a folder that Git does not manage. Base reports that the
+// "base" baseline is available. Added and Removed are -1 when they are unknown.
+type WorkspaceChanges struct {
+	Repository bool          `json:"repository"`
+	Reason     string        `json:"reason,omitempty"`
+	Base       bool          `json:"base"`
+	Baseline   Baseline      `json:"baseline"`
+	Files      []ChangedFile `json:"files"`
+	Truncated  bool          `json:"truncated"`
+}
+
+// ChangedFile is one changed path. Status is the Git status letter: A, M, D, R, T, or
+// U for an unmerged file. An untracked file has status A and Untracked.
+type ChangedFile struct {
+	Path      string `json:"path"`
+	OldPath   string `json:"oldPath,omitempty"`
+	Status    string `json:"status"`
+	Added     int    `json:"added"`
+	Removed   int    `json:"removed"`
+	Binary    bool   `json:"binary,omitempty"`
+	Untracked bool   `json:"untracked,omitempty"`
+}
+
+// WorkspaceFiles lists the paths that Git tracks or does not ignore.
+type WorkspaceFiles struct {
+	Repository bool     `json:"repository"`
+	Reason     string   `json:"reason,omitempty"`
+	Paths      []string `json:"paths"`
+	Truncated  bool     `json:"truncated"`
+}
+
+// WorkspaceFile holds both sides of one file. Old comes from the baseline commit. New
+// comes from the current workspace files.
+type WorkspaceFile struct {
+	Path     string   `json:"path"`
+	Baseline Baseline `json:"baseline"`
+	Old      FileSide `json:"old"`
+	New      FileSide `json:"new"`
+}
+
+// FileSide is one version of a file. State is "text", "missing", "binary", "tooLarge",
+// or "other" for a directory, a submodule, or a special file. Text is set only for
+// "text". A symlink holds its target text, as in Git.
+type FileSide struct {
+	State   string `json:"state"`
+	Text    string `json:"text,omitempty"`
+	Size    int64  `json:"size"`
+	Symlink bool   `json:"symlink,omitempty"`
 }
 
 // Drafts contain editable text and attachments. They are not agent messages. Pending

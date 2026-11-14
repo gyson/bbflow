@@ -8,13 +8,13 @@ import (
 	"bonbon/internal/protocol"
 )
 
-func TestHistoryReadCancelsWhenClientDisconnects(t *testing.T) {
+func TestCancelableReadCancelsWhenClientDisconnects(t *testing.T) {
 	conn, peer := attachmentPair(t)
 	started, canceled, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	s := &Server{}
 	go func() {
 		defer close(done)
-		s.historyRead(context.Background(), conn, func(ctx context.Context) (any, error) {
+		s.cancelableRead(context.Background(), conn, func(ctx context.Context) (any, error) {
 			close(started)
 			<-ctx.Done()
 			close(canceled)
@@ -32,13 +32,13 @@ func TestHistoryReadCancelsWhenClientDisconnects(t *testing.T) {
 	}
 }
 
-func TestHistoryReadSendsResultAndStopsDisconnectReader(t *testing.T) {
+func TestCancelableReadSendsResultAndStopsDisconnectReader(t *testing.T) {
 	conn, peer := attachmentPair(t)
 	defer peer.Close()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		(&Server{}).historyRead(context.Background(), conn, func(context.Context) (any, error) { return map[string]bool{"complete": true}, nil })
+		(&Server{}).cancelableRead(context.Background(), conn, func(context.Context) (any, error) { return map[string]bool{"complete": true}, nil })
 	}()
 	peer.SetReadDeadline(time.Now().Add(5 * time.Second))
 	var result protocol.Message

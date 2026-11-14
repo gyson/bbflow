@@ -138,7 +138,7 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the
 server. After a build, use `server restart` to serve the new embedded assets. Restart
 stops active sessions. Ports can change after restart, so use the newly printed URL.
-This version uses protocol `bonbon/20`.
+This version uses protocol `bonbon/21`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the
@@ -155,6 +155,13 @@ names, and draft saves do not affect the order.
 Use **Add project** to save an existing folder, with an optional name that defaults to
 its basename. Git is optional. Click **＋** beside a project to create and select a new
 draft in the sidebar.
+
+Use **Changes** in the session toolbar to see the changed files of the session
+workspace in a read-only pane. Choose **Since worktree base** or **Uncommitted
+changes**. Choose **Split** or **Unified** for the diff. **All files** also lists
+unchanged files, and **View file** shows the current file. The pane does not edit files.
+It does not watch files. Click **Refresh** or return to the window to read them again. A
+folder that is not a Git repository has no file list.
 
 Use **Search history** to search recorded output in SQLite. Command+Shift+F on macOS
 or Ctrl+Shift+F opens the same dialog. The default scope includes every terminal of the
@@ -349,8 +356,9 @@ in the archive.
 ## Frontend development
 
 Frontend sources are under `web/`. They include `index.html`, TypeScript and CSS in
-`src/`, and tests. The UI uses [xterm.js](https://xtermjs.org/) from pinned npm
-dependencies. The server uses the pure-Go
+`src/`, and tests. The UI uses [xterm.js](https://xtermjs.org/) for terminals and
+[CodeMirror 6](https://codemirror.net/) for the read-only Changes pane. Both come from
+pinned npm dependencies. The server uses the pure-Go
 [xterm-go](https://github.com/gitpod-io/xterm-go) core. The UI loads no libraries from a
 content delivery network (CDN).
 
@@ -364,7 +372,9 @@ make web-check
 
 `make build` and `make release` type-check TypeScript, bundle the UI with esbuild, then
 compile Go. The frontend produces one `app.js` and one `app.css`, plus HTML, logo
-assets, and dependency license notices, under `internal/webui/dist/`. Go embeds that
+assets, and dependency license notices, under `internal/webui/dist/`. The build reads
+the esbuild metafile and adds the license notices of every bundled npm package. Go
+embeds that
 directory. The shared logo source is `web/src/bonbon.svg`. The npm build uses
 `@resvg/resvg-js` to render its transparent menu bar PNG.
 
@@ -506,6 +516,10 @@ formats 3–6 and preservation of original records and event sequences. Other ch
 rollback, concurrent upgrades, and rejection of unsupported formats. Server subprocess
 fixtures verify startup migration, history queries, and interruption recovery after
 upgrade.
+
+Changes pane fixtures use temporary Git repositories. They cover each Git status,
+untracked and unusual file names, binary and large files, symlinks, paths outside the
+workspace, subfolder sessions, repositories without commits, and worktree baselines.
 
 Native agent resume and fresh continuation with history retrieval are not implemented. A
 recording preserves evidence. It does not restore internal model state. Browser views
