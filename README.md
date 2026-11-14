@@ -547,9 +547,9 @@ npm --prefix web ci --ignore-scripts
 make test
 make check
 make web-check
-make release VERSION=0.0.5
-sh scripts/smoke-release.sh "$PWD/bin/release/bonbon" 0.0.5
-make release-assets VERSION=0.0.5
+make release VERSION=0.0.6
+sh scripts/smoke-release.sh "$PWD/bin/release/bonbon" 0.0.6
+make release-assets VERSION=0.0.6
 ```
 
 `make release` without `VERSION` reports `dev`. A release tag supplies `X.Y.Z`.
