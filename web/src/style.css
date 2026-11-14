@@ -246,7 +246,8 @@ body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-s
 #diff-pane { flex: 0 0 46%; min-width: 320px; display: flex; flex-direction: column; margin: 20px 26px 18px 0; border: 1px solid #dce3da; border-radius: 12px; background: #fff; overflow: hidden; }
 #diff-pane[hidden], #diff-divider[hidden] { display: none; }
 .diff-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid #e6e8e3; font-size: 12px; }
-#diff-baseline { width: auto; max-width: 260px; padding: 5px 8px; font-size: 12px; }
+/* A fixed width keeps the layout buttons in place when the selected baseline changes. */
+#diff-baseline { width: 19em; flex: none; padding: 5px 8px; font-size: 12px; text-overflow: ellipsis; }
 .segmented { display: inline-flex; }
 .segmented button { padding: 5px 10px; font-size: 12px; border-radius: 0; background: transparent; }
 .segmented button:first-child { border-radius: 7px 0 0 7px; }

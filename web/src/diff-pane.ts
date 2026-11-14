@@ -44,6 +44,9 @@ export class DiffPane {
   private shownLayout: DiffLayout | null = null;
   private scope: FileScope = 'changed';
   private baseline: BaselineKind | undefined;
+  // The worktree base commit from the latest reply that had it. The label keeps it when
+  // the user selects Uncommitted changes, so the menu text stays the same.
+  private baseCommit = '';
   private changes: WorkspaceChanges | null = null;
   private paths: WorkspaceFiles | null = null;
   private selected = '';
@@ -125,6 +128,7 @@ export class DiffPane {
     this.listGeneration.next();
     this.fileGeneration.next();
     this.baseline = undefined;
+    this.baseCommit = '';
     this.changes = this.paths = this.file = null;
     this.selected = '';
     this.previews.clear();
@@ -234,7 +238,8 @@ export class DiffPane {
   private renderBaseline(): void {
     const changes = this.changes;
     const options: HTMLOptionElement[] = [];
-    if (changes?.base) options.push(new Option(changes.baseline.kind === 'base' ? `Since worktree base (${changes.baseline.commit.slice(0, 7)})` : 'Since worktree base', 'base'));
+    if (changes?.baseline.kind === 'base') this.baseCommit = changes.baseline.commit.slice(0, 7);
+    if (changes?.base) options.push(new Option(this.baseCommit ? `Since worktree base (${this.baseCommit})` : 'Since worktree base', 'base'));
     options.push(new Option('Uncommitted changes', 'head'));
     this.baselineSelect.replaceChildren(...options);
     this.baselineSelect.value = changes?.baseline.kind ?? 'head';
