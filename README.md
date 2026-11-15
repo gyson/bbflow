@@ -137,7 +137,7 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the
 server. After a build, use `server restart` to serve the new embedded assets. Restart
 stops active sessions. Ports can change after restart, so use the newly printed URL.
-This version uses protocol `bonbon/21`.
+This version uses protocol `bonbon/22`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the
@@ -195,6 +195,12 @@ resource limits and large-archive limitations.
 Each project can have several drafts. Click a draft entry to reopen it. Starting keeps
 the same session entry and ID. Project names are plain text. Use the small arrow to
 expand or collapse sessions.
+
+Each session shows one status: **Draft**, **running**, **idle**, or **ended**. A running
+session had terminal output in the last 3 seconds. An idle session has a live terminal
+without recent output. Idle does not mean that the agent completed its task. The agent
+can also wait for an answer, or work without output. The echo of your typed input does
+not count as output.
 
 Use **⋯** to rename or remove a custom project. Removing a project moves its sessions
 and unfinished drafts to **Standalone** and keeps their history, files, and processes.

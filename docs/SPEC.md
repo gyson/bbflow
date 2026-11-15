@@ -189,7 +189,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/21`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/22`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -207,6 +207,11 @@ change.
 Protocol 20 adds `history-search` and `history-context`. These operations read existing
 recordings. SQLite format 7 adds run indexes through migration 7 without changing
 records.
+
+Protocol 22 adds the derived [session status](#session-status) to session summaries and
+session details. It also adds the `status` message of a live terminal stream, the
+`status-watch` stream, and the run status and run ID in the `exit` message. The SQLite
+format does not change.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
 its static files, and `GET /client-config` for browser connection information. All
@@ -942,9 +947,61 @@ screens do not change recency. Fresh application output still counts, including 
 while detached or after a real size change. Summaries contain ID, title, project ID
 (empty for standalone), workspace, update time, status, archive flag, and view count.
 
-Statuses include `draft`, `creating`, `launched`, `starting`, `running`, `exited`,
-`stopped`, `failed`, and `interrupted`. A running process does not imply model activity
-or readiness. No completion or message boundaries are inferred from silence.
+### Session status
+
+Each session shows one status. The server derives it. SQLite keeps the run status and
+the preparation state without change, so `bonbon query` results do not change.
+
+| Status | Meaning |
+| --- | --- |
+| `draft` | The session did not start. |
+| `running` | The live terminal had application output in the last 3 seconds. Worktree creation and process start also show as `running`. |
+| `idle` | The live terminal had no application output in the last 3 seconds. |
+| `ended` | No terminal is live. The latest run `exited`, `stopped`, `failed`, or was `interrupted`. |
+
+The server records the time of each output of a live terminal in memory. It does this
+without views too. Output in the 300 milliseconds after an input, a PTY size change, or
+a signal from a view does not count. Thus the echo of typed input and the redraw after a
+size change do not make a session `running`. A view that joins or reconnects sends its
+size again. The PTY ignores an unchanged size, so that size does not hide the output
+that follows. The detection does not depend on the tool.
+
+`idle` means only that there was no recent output. The application can be complete, can
+wait for an answer or a permission, or can work without output. A spinner or other
+repeated output shows as `running`, also without progress. No completion, readiness, or
+message boundaries are inferred from silence. BonBon never sends input because of a
+status.
+
+The sidebar shows the status of each session with a dot: filled for `running`, a ring
+for `idle`, and gray for `draft` and `ended`. Each page keeps one `status-watch` stream
+open. The server pushes the statuses of all live terminals on it, at most 200
+milliseconds after a change. Thus the sidebar shows brief activity of each session,
+also without a view of that session. The `session-list` refresh every five seconds
+supplies all other session data. It also supplies the statuses while the watch
+reconnects. When a terminal starts or ends, the page reads the list at once.
+
+A status change updates the dot and the status text of a session button in place. The
+button stays, so the keyboard focus stays on it. Other list changes replace the buttons
+of the list. The page then moves the keyboard focus to the new button of the same
+session or project control.
+
+The session header shows **Running**, **Idle**, or **Ended**. A live view gets each
+status change on its terminal stream. An ended session adds the reason. The `exit`
+message carries the recorded run status, so each view shows the same reason:
+**Ended · exit 0** for a normal exit with its code, and **Ended · stopped** or
+**Ended · failed** for the other ends. A saved terminal shows the stored run status, for
+example **Ended · interrupted**.
+
+The `exit` message also carries the run ID. A view shows the reason from an `exit`
+message only while that run is the latest run. After another view starts and ends a
+later terminal, each view shows the stored status of the later run.
+
+**Stop session** is available when the session has a live terminal. It is not available
+during worktree creation, which shows as `running` without a terminal. When the server
+reports that it stopped no terminal, the page says so and does not show an end.
+**Archive** is available for `draft` and `ended` sessions. **Continue in new terminal** is available
+for `ended` sessions. The terminal selector shows the stored status of each run, where
+`running` means a live process.
 
 ## Concurrency and recovery
 
@@ -1344,7 +1401,57 @@ kept the full reply, with some repeated rows from dialog redraws. The agents als
 their own folder trust questions and, for Codex, a shared background server question.
 These are agent behavior, not BonBon behavior.
 
+Session status fixtures use fixed times and a real PTY. Time fixtures cover the start of
+a terminal, background output, the idle delay, typed input at short intervals, and
+output after the echo window. A server fixture covers `draft`, worktree creation, a
+launch without a process, a starting terminal, recent and old output, each stored end
+status, and a new terminal in an ended session. A PTY fixture starts an application that
+writes on a trigger file. It checks `running` and `idle` in the list and on the stream,
+that typed input keeps `idle`, that a later view gets the current status, and `ended`
+after stop. A status watch in the same fixture gets each change and then loses the
+session after stop. A second PTY fixture sends an unchanged size and then triggers
+output. It checks that the application got no size change and that the session shows
+`running`. A server fixture checks the same rule and a changed size with fixed state.
+A PTY fixture with three shells checks that a view that did not stop a terminal gets
+`stopped` with code 129, and `exited` with code 3. It also checks that each `exit`
+message carries the ID of its run. Web fixtures cover the status text, the continue
+rule, the terminal rule for **Stop session**, the priority of a pushed status, the
+status line of a list entry, the end reason and its run, and the reconnection of a
+watch stream.
+
+A live check used a temporary instance and a Shell session in the browser UI. A shell
+loop that wrote a line each half second showed `running` from 0.6 seconds after Send
+until 3 seconds after its last line. Claude Code 2.1.312 at its folder trust question
+and Codex CLI 0.160.0 at its background server question both showed `idle` for 14
+seconds. Stop session showed **Ended · stopped**. The check sent no prompt to a model,
+so `running` during agent work is not verified.
+
+A second live check used a temporary instance and two browser tabs. A shell loop wrote
+one line each 7 seconds in a session that no tab showed. Its sidebar dot showed
+`running` for 3.0 seconds after each line, in three cycles. One tab then stopped the
+session, and both tabs showed **Ended · stopped**. Stop session during worktree
+creation has fixture coverage only.
+
+A third live check used a temporary instance and the same shell loop. The keyboard
+focus was on the sidebar button of a session that the tab did not show. In 30 seconds,
+nine pushed status changes updated the dot without new buttons. Six list refreshes
+replaced the buttons, and the focus stayed on the button of that session.
+
+In the same check, one tab showed **Ended · exit 3** for the first terminal. A second
+tab continued the session and stopped the new terminal. Both tabs then showed
+**Ended · stopped**.
+
 ## Limitations
+
+The session status uses output times only. It cannot tell a completed task from a
+permission question, and it shows `idle` for a command that works without output. An
+application that writes output while it waits shows as `running`. Typed input at short
+intervals for more than 3 seconds can show `idle` while the application works. While
+the status watch reconnects, the sidebar can show a status change up to five seconds
+late. A start
+screen that an application draws in the 300 milliseconds after its command does not
+show `running`. The 3 second and 300 millisecond values are not verified with an agent
+that works on a task.
 
 Native session mapping/resume, forks, imports, native agent attachments, and Windows
 support are absent. Recording bytes does not preserve hidden agent state or guarantee

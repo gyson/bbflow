@@ -33,6 +33,7 @@ type runningSession struct {
 	tool      string // The tool of the run. It does not change.
 	ended     bool
 	exit      protocol.Message
+	activity  activity
 }
 
 type attachment struct {
@@ -124,6 +125,11 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 		}
 		controls = append(controls, control)
 	}
+	// The runtime ignores a resize to the current PTY size, so the application does not
+	// redraw. Such a resize must not hide the application output that follows it.
+	if len(controls) > 0 && (message.Type != "resize" || message.Size != r.terminal.Size()) {
+		r.activity.viewAction(time.Now())
+	}
 	r.mu.Unlock()
 	for _, control := range controls {
 		select {
@@ -146,19 +152,25 @@ func (r *runningSession) publish(event history.Event) ([]byte, error) {
 		return nil, err
 	}
 	r.runID = event.RunID
+	if event.Kind == "output" {
+		r.activity.applicationOutput(time.Now())
+	}
 	r.revision++
 	for client := range r.clients {
 		client.wake()
 	}
 	return responses, nil
 }
-func (r *runningSession) finish(code int, err error) {
+
+// finish ends the terminal. Each view gets the exit code, the recorded run status, and
+// the run ID.
+func (r *runningSession) finish(code int, status string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ended = true
 	r.sizeOwner = nil
 	r.revision++
-	r.exit = protocol.Message{Type: "exit", Code: code}
+	r.exit = protocol.Message{Type: "exit", Code: code, Status: status, Run: r.runID}
 	if err != nil {
 		r.exit.Error = err.Error()
 	}
@@ -170,7 +182,7 @@ func (r *runningSession) finish(code int, err error) {
 func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, session history.Session, run *agent.Launch) func() {
 	s.mu.Lock()
 	runContext, cancel := context.WithCancel(ctx)
-	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool}
+	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool, activity: activity{output: time.Now()}}
 	s.sessions[session.ID] = r
 	s.mu.Unlock()
 	launch := func() {
@@ -180,7 +192,12 @@ func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, ses
 			defer cancel()
 			code, err := agent.Run(runContext, s.store, session, *run, r.controls, r.publish)
 			err = errors.Join(err, s.saveScreen(r))
-			r.finish(code, err)
+			// A run that failed before its start event has no recorded status.
+			status := ""
+			if run, lookupErr := s.store.SessionRun(session.ID, r.run()); lookupErr == nil {
+				status = run.Status
+			}
+			r.finish(code, status, err)
 			s.mu.Lock()
 			delete(s.sessions, session.ID)
 			s.mu.Unlock()
@@ -311,6 +328,19 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 	if err := conn.Send(protocol.Message{Type: "session", Session: r.id, Active: true}); err != nil {
 		return
 	}
+	// Each live view gets the session status now and after each change.
+	status := ""
+	sendStatus := func() error {
+		next := r.status(time.Now())
+		if next == status || next == "ended" {
+			return nil
+		}
+		status = next
+		return conn.Send(protocol.Message{Type: "status", Status: status})
+	}
+	if sendStatus() != nil {
+		return
+	}
 	if launch == nil {
 		r.control(a, protocol.Message{Type: "resize", Size: size})
 	}
@@ -369,6 +399,9 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 			if sent != acked && time.Since(sentAt) > 30*time.Second {
 				return
 			}
+			if sendStatus() != nil {
+				return
+			}
 			// Combine output while a frame is outstanding. Render at most 20 times per second.
 			if dirty && sent == acked {
 				continue
@@ -420,21 +453,12 @@ func (s *Server) listSessions(filter history.SessionFilter) ([]protocol.SessionI
 		return nil, err
 	}
 	result := make([]protocol.SessionInfo, 0, len(sessions))
+	now := time.Now()
 	for _, session := range sessions {
-		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Archived: session.Archived, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: "ended", Preparation: session.Preparation, Worktree: session.Worktree}
-		if session.Preparation != nil {
-			info.Status = session.Preparation.State
-		}
-		if session.Run != nil {
-			info.Status = session.Run.Status
-		}
+		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Archived: session.Archived, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: s.sessionStatus(session.Session, now), Preparation: session.Preparation, Worktree: session.Worktree}
 		if r := s.running(session.ID); r != nil {
 			r.mu.Lock()
 			info.Viewers = len(r.clients)
-			// A new terminal has no run record until its process starts.
-			if !r.ended && (session.Run == nil || endedRun[session.Run.Status]) {
-				info.Status = "starting"
-			}
 			r.mu.Unlock()
 		}
 		result = append(result, info)

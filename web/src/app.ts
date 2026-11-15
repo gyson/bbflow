@@ -1,9 +1,12 @@
 import { call, encodeBytes, errorMessage, VERSION } from './protocol.js';
-import type { Handoff, Project, Preparation, Run, TerminalInfo, Tool, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
+import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Tool, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
 import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
 import { canContinue, continueHint, defaultContinueTool } from './continue.js';
+import { endReasonText, exitReason, hasTerminal, listStatus, listStatusText, live, statusText, terminalsChanged } from './session-status.js';
+import type { EndReason } from './session-status.js';
+import { Watch } from './watch.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -110,15 +113,23 @@ let terminal: Terminal | null = null;
 const systemDark = matchMedia('(prefers-color-scheme: dark)');
 let fit: FitAddon | null = null;
 let sessions: SessionInfo[] = [];
+// The status of each session that has a live terminal, from the status watch.
+let liveStatuses: Record<string, string> = {};
 let projects: Project[] = [];
 let editingProject: Project | null = null;
 const collapsedProjects = new Set<string>();
 let renderedSidebar = '';
+// The status elements of each session button in the list. A status change updates them
+// in place, so the buttons and the keyboard focus stay.
+const statusMarks: { session: SessionInfo; dot: HTMLElement; text: Text }[] = [];
 let selected: SessionView | null = null;
 let continueTools: Tool[] = [];
 // The handoff prompt of the selected session. It stays available after a new terminal
 // starts, so the user can copy or send it later.
 let handoff: { session: string; info: Handoff } | null = null;
+// The reason that this view saw for the end of a run of the selected session: an exit
+// code, or the recorded run status.
+let endReason: EndReason | null = null;
 let terminalsGeneration = 0;
 let busy = false, refreshing = false;
 let archivedList = false, pageOffset = 0, hasNextPage = false, refreshGeneration = 0;
@@ -171,6 +182,17 @@ function clearNotice(source: typeof noticeSource) {
   if (noticeSource === source) notice();
 }
 
+// A live view gets status changes on its stream. Keep that status over a slower read.
+function withDetail(session: SessionView, detail: PreparedSession): SessionView {
+  return { ...session, ...detail, status: connection?.peer?.active ? session.status : detail.status };
+}
+
+// Show the status of the selected session. An ended session adds the reason that this
+// view saw for the latest run, or the stored status of that run.
+function showStatus() {
+  if (selected && selected.status !== 'draft') $('status').textContent = statusText(selected.status, endReasonText(endReason, selected.run));
+}
+
 // Show the view name in the page heading and in the browser tab.
 function heading(title: string, tab = title) {
   $('session-title').textContent = title;
@@ -187,7 +209,7 @@ function controls() {
   $('sessions-open').disabled = $('archives-open').disabled = busy || !server;
   $('sessions-previous').disabled = busy || refreshing || pageOffset === 0;
   $('sessions-next').disabled = busy || refreshing || !hasNextPage;
-  $('archive-session').hidden = showingSettings || !selected?.id || ['starting', 'running', 'creating', 'launched'].includes(selected.status);
+  $('archive-session').hidden = showingSettings || !selected?.id || live(selected.status);
   $('archive-session').disabled = busy;
   $('archive-session').textContent = selected?.archived ? 'Restore' : 'Archive';
   if (!showingSettings && selected?.status === 'draft') $('status').textContent = selected.archived ? 'Draft · Archived' : 'Draft';
@@ -195,10 +217,12 @@ function controls() {
   $('settings-close').disabled = busy;
   composer.controls(busy, !!connection?.ready && !!connection.peer?.active);
   $('add-project').disabled = busy || !server;
-  $('stop').disabled = busy || showingSettings || !selected || !['running', 'starting'].includes(selected.status);
+  // Worktree creation shows as running, but only a terminal can stop or reconnect.
+  const terminalLive = !!connection?.peer?.active || hasTerminal(selected);
+  $('stop').disabled = busy || showingSettings || !terminalLive;
   // A view of an earlier terminal uses Back to live terminal instead.
   $('reconnect').hidden = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active || !!terminalPicker.shownRun;
-  $('reconnect').textContent = ['running', 'starting'].includes(selected?.status ?? '') ? 'Reconnect' : 'Reload output';
+  $('reconnect').textContent = terminalLive ? 'Reconnect' : 'Reload output';
   $('reconnect').disabled = busy;
   $('continue-session').hidden = showingSettings || !canContinue(selected, !!connection?.peer?.active);
   $('continue-session').disabled = $('continue-submit').disabled = busy;
@@ -208,7 +232,7 @@ function controls() {
   $('project-submit').disabled = $('project-remove').disabled = $('rename-submit').disabled = busy;
   $('rename-session').hidden = showingSettings || !selected?.id || selected.status === 'draft';
   $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed';
-  $('remove-worktree').disabled = busy || ['running','starting','creating'].includes(selected?.status ?? '');
+  $('remove-worktree').disabled = busy || live(selected?.status);
   $('rename-session').disabled = busy;
   $('project-name').disabled = $('project-workspace').disabled = $('rename-name').disabled = busy;
   for (const button of $('sessions').querySelectorAll('button')) button.disabled = busy;
@@ -231,9 +255,10 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
   title.textContent = session.title || (session.status === 'draft' ? 'Untitled draft' : 'Untitled session');
   const status = document.createElement('span');
   status.className = 'run-state';
-  const dot = document.createElement('span');
-  dot.className = 'dot' + (['starting', 'running'].includes(session.status) ? ' running' : '');
-  status.append(dot, document.createTextNode((session.status === 'draft' ? 'Draft' : session.status) + (session.archived ? ' · Archived' : '') + (session.viewers ? ` · ${session.viewers} view${session.viewers === 1 ? '' : 's'}` : '')));
+  const dot = document.createElement('span'), text = document.createTextNode('');
+  status.append(dot, text);
+  statusMarks.push({ session, dot, text });
+  button.dataset.focus = `session:${session.id}`;
   button.append(title);
   if (showWorkspace) {
     const workspace = document.createElement('small');
@@ -250,11 +275,26 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
   return button;
 }
 
+// Show the current status of each session in the list, without new buttons.
+function showListStatuses() {
+  for (const { session, dot, text } of statusMarks) {
+    // A live view and the status watch get status changes at once. The list is older.
+    const shown = connection?.peer?.active && selected?.id === session.id ? selected.status : listStatus(session, liveStatuses);
+    const className = `dot ${shown}`, line = listStatusText(shown, session);
+    if (dot.className !== className) dot.className = className;
+    if (text.data !== line) text.data = line;
+  }
+}
+
 function renderSessions() {
   const query = $('filter').value.toLowerCase();
-  const fingerprint = JSON.stringify([projects, sessions, query, archivedList, pageOffset, hasNextPage, selected?.id, selected?.status, showingSettings, [...collapsedProjects]]);
-  if (fingerprint === renderedSidebar) { controls(); return; }
+  // A status is not part of the fingerprint. A status change must not replace the buttons.
+  const fingerprint = JSON.stringify([projects, sessions, query, archivedList, pageOffset, hasNextPage, selected?.id, showingSettings, [...collapsedProjects]]);
+  if (fingerprint === renderedSidebar) { showListStatuses(); controls(); return; }
   renderedSidebar = fingerprint;
+  // New buttons replace the list. Give the keyboard focus to the new button of the same item.
+  const focused = document.activeElement instanceof HTMLElement && $('sessions').contains(document.activeElement) ? document.activeElement.dataset.focus : undefined;
+  statusMarks.length = 0;
   $('sessions').replaceChildren();
   $('sessions-open').setAttribute('aria-pressed', String(!archivedList));
   $('archives-open').setAttribute('aria-pressed', String(archivedList));
@@ -286,6 +326,7 @@ function renderSessions() {
       toggle.setAttribute('aria-label', `${list.hidden ? 'Expand' : 'Collapse'} ${name}`);
       toggle.setAttribute('aria-expanded', String(!list.hidden));
     };
+    toggle.dataset.focus = `toggle:${id}`;
     toggle.setAttribute('aria-controls', list.id);
     toggle.onclick = () => {
       if (collapsedProjects.has(id)) collapsedProjects.delete(id); else collapsedProjects.add(id);
@@ -299,6 +340,7 @@ function renderSessions() {
       add.textContent = '＋';
       add.title = `New draft in ${name}`;
       add.setAttribute('aria-label', add.title);
+      add.dataset.focus = `add:${id}`;
       add.onclick = () => action(() => showLaunch(project.id));
       heading.append(add);
       if (id !== 'general') {
@@ -307,6 +349,7 @@ function renderSessions() {
         edit.textContent = '⋯';
         edit.title = `Edit ${name}`;
         edit.setAttribute('aria-label', edit.title);
+        edit.dataset.focus = `edit:${id}`;
         edit.onclick = () => showProject(project);
         heading.append(edit);
       }
@@ -327,7 +370,33 @@ function renderSessions() {
     empty.textContent = archivedList ? 'No archived sessions found.' : 'No matching projects or sessions.';
     $('sessions').append(empty);
   }
+  showListStatuses();
+  if (focused) {
+    for (const button of $('sessions').querySelectorAll<HTMLElement>('[data-focus]')) {
+      if (button.dataset.focus === focused) { button.focus({ preventScroll: true }); break; }
+    }
+  }
   controls();
+}
+
+// Show brief activity of each session in the list. The list refresh is too slow for it.
+function watchStatuses(info: ServerInfo) {
+  new Watch(info, { operation: 'status-watch' }, {
+    message(message) {
+      if (message.type !== 'statuses') return;
+      const next = message.statuses ?? {};
+      const changed = terminalsChanged(liveStatuses, next);
+      liveStatuses = next;
+      renderSessions();
+      // A terminal started or ended. Read the stored session data again.
+      if (changed && !busy) void refreshSessions();
+    },
+    // Without the watch, the list refresh supplies each status.
+    failed() {
+      liveStatuses = {};
+      renderSessions();
+    },
+  });
 }
 
 async function refreshSessions() {
@@ -350,7 +419,10 @@ async function refreshSessions() {
     $('connection').textContent = '● Local server connected';
     clearNotice('list');
     if (selected && !showingSettings && !preparation.visible) {
-      if (detail && selected.id === detail.id) selected = { ...selected, ...detail, status: detail.run?.status ?? detail.preparation?.state ?? 'ended' };
+      if (detail && selected.id === detail.id) {
+        selected = withDetail(selected, detail);
+        if (connection?.ready) showStatus();
+      }
       heading(selected.title || 'Untitled session');
       $('workspace').textContent = selected.workspace;
       $('workspace').title = selected.workspace;
@@ -456,8 +528,9 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   settingsView.close(); showingSettings = false;
   if (!start && session.id) {
     const detail = await call(server, { operation: 'session-config', session: session.id });
-    session = { ...session, ...detail, status: detail.run?.status ?? detail.preparation?.state ?? 'ended' };
+    session = { ...session, ...detail };
   }
+  endReason = null;
   await composer.select('');
   notice();
   if (selected?.id !== session.id) terminalPicker.update([]);
@@ -505,7 +578,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
     ready() {
       clearNotice('stream');
       view.options.disableStdin = !connection?.peer?.active;
-      $('status').textContent = connection?.peer?.active ? 'Running' : (selected?.status ?? 'ended');
+      showStatus();
       requestFit();
       controls();
     },
@@ -515,8 +588,11 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
         case 'session':
           selected.id = message.session;
           diffPane.select(message.session);
-          // The status of an earlier terminal is not the status of the session.
-          if (!terminalPicker.shownRun) selected.status = message.active ? 'running' : (message.status ?? 'ended');
+          // A status message follows for a live terminal. A saved screen of the latest
+          // terminal means that the session ended. A saved screen of an earlier terminal
+          // does not change the status of the session.
+          if (message.active) { if (!live(selected.status)) selected.status = 'running'; }
+          else if (!terminalPicker.shownRun) selected.status = 'ended';
           $('session-id').textContent = message.session;
           $('status').textContent = 'Restoring';
           $('terminal-hint').textContent = message.active ? 'Click the terminal to type. Ctrl+C reaches the application.' :
@@ -527,10 +603,19 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           refreshSessions();
           view.focus();
           break;
+        case 'status':
+          selected.status = message.status;
+          if (connection?.ready) showStatus();
+          renderSessions();
+          break;
         case 'exit':
-          selected.status = 'exited';
+          selected.status = 'ended';
+          // The exit message names its run. This view can have an earlier run, or no run,
+          // because the run of a new terminal starts after the view reads the session.
+          if (message.run) selected.run = { id: message.run, status: message.status ?? '' };
+          endReason = { run: message.run ?? '', text: exitReason(message.code, message.status) };
           view.options.disableStdin = true;
-          $('status').textContent = `Exit ${message.code || 0}`;
+          showStatus();
           $('terminal-hint').textContent = 'Process ended. Showing saved terminal output.';
           if (message.error) notice(message.error);
           refreshSessions();
@@ -593,7 +678,7 @@ async function showContinue(): Promise<void> {
     call(server, { operation: 'session-handoff', session: id }),
   ]);
   if (selected?.id !== id) return;
-  selected = { ...selected, ...detail, status: detail.run?.status ?? detail.preparation?.state ?? 'ended' };
+  selected = withDetail(selected, detail);
   if (!canContinue(selected, !!connection?.peer?.active)) {
     notice('This session cannot start a new terminal now. Another view may have started one. Reload the session.');
     return;
@@ -604,7 +689,7 @@ async function showContinue(): Promise<void> {
   $('continue-hint').textContent = continueHint(continueTools.find(tool => tool.id === $('continue-tool').value));
   $('continue-prompt').value = handoff.prompt;
   $('continue-workspace').textContent = selected.worktree ? `⑂ ${selected.worktree.branch} · ${selected.workspace}` : selected.workspace;
-  $('continue-warning').hidden = selected.status !== 'interrupted';
+  $('continue-warning').hidden = selected.run?.status !== 'interrupted';
   $('continue-error').hidden = true;
   $('continue-copy').textContent = 'Copy prompt';
   $('continue-dialog').showModal();
@@ -816,12 +901,17 @@ async function initialize() {
   };
   $('stop').onclick = () => action(async () => {
     if (!server || !selected?.id) return;
-    await call(server, { operation: 'session-stop', session: selected.id });
-    selected.status = 'stopped';
-    $('status').textContent = 'Stopped';
-    notice('Session stopped. Terminal output is saved.');
+    const { stopped } = await call(server, { operation: 'session-stop', session: selected.id });
+    if (stopped) {
+      selected.status = 'ended';
+      notice('Session stopped. Terminal output is saved.');
+    } else {
+      notice('The session has no live terminal. Nothing was stopped.');
+    }
+    // A view of an earlier terminal gets no exit message. The refresh reads the stored
+    // status of the stopped run.
     await refreshSessions();
-    // A view of an earlier terminal gets no exit message.
+    if (stopped) showStatus();
     await loadTerminals(selected.id);
   });
   new ResizeObserver(requestFit).observe($('terminal'));
@@ -835,6 +925,7 @@ async function initialize() {
     $('instance-dir').textContent = server.dataDir;
     $('instance-dir').title = server.dataDir;
     await refreshSessions();
+    watchStatuses(info);
     const route = parseRoute(location.pathname);
     if (route.page === 'settings') await action(showSettings);
     else if (route.page === 'session') await action(() => openSession(sessions.find(s => s.id === route.id) || { id: route.id, title: 'Session', workspace: '', status: 'unknown' }));

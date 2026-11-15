@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/21"
+const Version = "bonbon/22"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -206,6 +206,16 @@ type Terminal struct {
 	Ended   string `json:"ended"`
 }
 
+// SessionDetail is a session with its Status.
+type SessionDetail struct {
+	history.Session
+	Status string `json:"status"`
+}
+
+// SessionInfo is a session summary. Status is draft, running, idle, or ended. The
+// server derives it. Running means that a live terminal had application output in the
+// last seconds, or that the session starts. Idle means a live terminal without recent
+// output. It does not mean that the application is ready for input.
 type SessionInfo struct {
 	Archived    bool                 `json:"archived"`
 	Preparation *history.Preparation `json:"preparation,omitempty"`
@@ -229,24 +239,28 @@ type ServerInfo struct {
 }
 
 // Message carries one request, reply, or terminal event. Set only the fields that its
-// Type needs. Input bytes and rendered frames use base64 in JSON.
+// Type needs. Input bytes and rendered frames use base64 in JSON. Statuses holds running
+// or idle for each session that has a live terminal. Run identifies the run that an exit
+// message is about.
 type Message struct {
-	Type     string          `json:"type"`
-	Revision int64           `json:"revision,omitempty"`
-	Full     bool            `json:"full,omitempty"`
-	ID       string          `json:"id,omitempty"`
-	Request  *Request        `json:"request,omitempty"`
-	Server   *ServerInfo     `json:"server,omitempty"`
-	Session  string          `json:"session,omitempty"`
-	Active   bool            `json:"active,omitempty"`
-	Status   string          `json:"status,omitempty"`
-	Data     []byte          `json:"data,omitempty"`
-	Size     Size            `json:"size,omitempty"`
-	Signal   int             `json:"signal,omitempty"`
-	Code     int             `json:"code,omitempty"`
-	Error    string          `json:"error,omitempty"`
-	Composer *Composer       `json:"composer,omitempty"`
-	Result   json.RawMessage `json:"result,omitempty"`
+	Type     string            `json:"type"`
+	Revision int64             `json:"revision,omitempty"`
+	Full     bool              `json:"full,omitempty"`
+	ID       string            `json:"id,omitempty"`
+	Request  *Request          `json:"request,omitempty"`
+	Server   *ServerInfo       `json:"server,omitempty"`
+	Session  string            `json:"session,omitempty"`
+	Active   bool              `json:"active,omitempty"`
+	Status   string            `json:"status,omitempty"`
+	Statuses map[string]string `json:"statuses,omitempty"`
+	Data     []byte            `json:"data,omitempty"`
+	Size     Size              `json:"size,omitempty"`
+	Signal   int               `json:"signal,omitempty"`
+	Code     int               `json:"code,omitempty"`
+	Run      string            `json:"run,omitempty"`
+	Error    string            `json:"error,omitempty"`
+	Composer *Composer         `json:"composer,omitempty"`
+	Result   json.RawMessage   `json:"result,omitempty"`
 }
 
 type Conn struct {

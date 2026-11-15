@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/21`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/22`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/21",
+    "protocol": "bonbon/22",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/21",
+    "protocol": "bonbon/22",
     "operation": "session-list",
     "limit": 10
   }
@@ -82,7 +82,7 @@ operations.
 | `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
 | `project-remove` | `project` ID | `result`, containing `removed`. Sessions become standalone. |
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
-| `session-list` | `limit` (default 10, 1–1000), `offset` (default 0), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing session summaries |
+| `session-list` | `limit` (default 10, 1–1000), `offset` (default 0), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing session summaries. Each has a derived [`status`](#session-status). |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
@@ -90,7 +90,8 @@ operations.
 | `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
 | `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath` and `baseline` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
-| `session-stop` | `session` ID | `result`, containing `stopped` |
+| `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
+| `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal first, then all of them again after each change |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
 | `composer-watch` | `session` ID | A stream of `draft` messages: the latest draft first, then each newer saved draft |
 | `composer-sent` | `session` ID, optional `revision` (list sends older than this revision) | `result`, containing `messages` (at most 20, newest first) and `more` |
@@ -99,8 +100,8 @@ operations.
 | `settings-get` | none | `result`, saved settings and revision |
 | `settings-save` | `settings`, including current revision | `result`, updated settings and revision |
 | `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
-| `project-draft` | `project` ID | `result`, a new independent draft with saved defaults. Starts no process. |
-| `session-config` | `session`, optional `preparation` plus `name` | `result`, session. Configuration saves require the current revision. |
+| `project-draft` | `project` ID | `result`, a new independent draft with saved defaults and `status`. Starts no process. |
+| `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
 | `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. |
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
 | `session-resume` | `session` ID, `size`, and optional `run` (an earlier run of the session) | `session`, then a terminal stream or recorded history. With `run`, the recorded history of that run. |
@@ -428,11 +429,52 @@ BonBon workspaces and modified, untracked, or ignored files. It keeps the branch
 [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees) for supported
 repositories.
 
+## Session status
+
+Protocol 22 gives each session one derived `status`. Session summaries, `project-draft`
+replies, and `session-config` replies contain it. The SQLite format does not change.
+The stored status of a run and the state of a preparation keep their values.
+
+| `status` | Meaning |
+| --- | --- |
+| `draft` | The session did not start. |
+| `running` | A live terminal had application output in the last 3 seconds. Worktree creation and process start also show as `running`. |
+| `idle` | A live terminal had no application output in the last 3 seconds. |
+| `ended` | No terminal is live. The latest run `exited`, `stopped`, `failed`, or was `interrupted`, or the launch made no process. |
+
+The server derives `running` and `idle` from output times only. It keeps the times in
+memory and tracks them without views. Output in the 300 milliseconds after an `input`,
+a `resize` that changes the PTY size, or a `signal` is not application output. This
+excludes the echo of typed input and the redraw after a size change. A `resize` to the
+current PTY size has no such effect, because the application does not redraw.
+
+`idle` means only that there was no recent output. The application can be complete,
+can wait for an answer, or can work without output. `idle` does not show that the
+application is ready for input. Do not send input automatically because of this status.
+
+A live view also gets the status in `status` messages on its
+[terminal stream](#terminal-streams). The `status` of `session-terminals` entries, of
+an ended `session` message, and of an `exit` message is the stored run status, not this
+session status.
+
+`status-watch` keeps one stream open for all sessions. The server first sends a
+`statuses` message. Its `statuses` object maps the ID of each session that has a live
+terminal to `running` or `idle`. The server omits the object when no terminal is live.
+The server reads the statuses from memory five times each second. It sends the complete
+object again after each change. A session is absent before its terminal starts and
+after its terminal ends. Read `session-list` for those sessions. The client sends `ping`
+at least every 30 seconds and gets `pong`. Closing the stream only removes the watch.
+
 ## Terminal streams
 
 After a session request, the server sends `session` with its ID and `active: true` for a
-live process. Ended replies instead include `status`. Multiple views share one process
-and emulator. Every view can send `input` and `signal`. There is no controller role.
+live process. Ended replies instead include the `status` of the shown run. Multiple
+views share one process and emulator. Every view can send `input` and `signal`. There is
+no controller role.
+
+After `session`, a live view gets a `status` message with the
+[session status](#session-status), `running` or `idle`. The server sends the message
+again after each change. An ended session sends `exit` and no `status` message.
 
 The PTY uses the viewport size of one view, the size owner. A view becomes the size owner
 when it joins and no view owns the size. A view also becomes the size owner when it sends
@@ -454,8 +496,9 @@ everyone.
 | Client → server | `ping` | Keep the attachment alive |
 | Server → client | `pong` | Reply to `ping` |
 | Server → client | `frame` | Base64 rendered ANSI in `data`, `size`, `revision`, and optional `full` |
+| Server → client | `status` | The session `status` of a live process: `running` or `idle` |
 | Server → client | `input-ack` | Matching `id`. An optional `error` indicates uncertain delivery. |
-| Server → client | `exit` | Exit `code` and optional `error`. Follows the final frame acknowledgment. |
+| Server → client | `exit` | Exit `code`, the recorded run `status` (`exited`, `stopped`, or `failed`), the `run` ID, and optional `error`. `status` and `run` are absent when the terminal failed before its run started. Each view gets the same message. Follows the final frame acknowledgment. |
 | Server → client | `history-end` | End of a read-only ended-session view |
 | Server → client | `error` | Error description in `error` |
 
@@ -590,13 +633,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/21") {
+    if (message.server.protocol !== "bonbon/22") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/21", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/22", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

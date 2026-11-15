@@ -132,6 +132,7 @@ type sessionView struct {
 	done        chan protocol.Message
 	mu          sync.Mutex
 	output      bytes.Buffer
+	statuses    []string // The session statuses that the server sent, in order.
 	launchInput []byte
 }
 
@@ -160,6 +161,10 @@ func openSessionView(t *testing.T, request protocol.Request) *sessionView {
 				}
 			}
 			switch m.Type {
+			case "status":
+				c.mu.Lock()
+				c.statuses = append(c.statuses, m.Status)
+				c.mu.Unlock()
 			case "exit", "history-end", "error":
 				c.done <- m
 				return
@@ -205,6 +210,11 @@ func (c *sessionView) Write(data []byte) (int, error) {
 }
 func (c *sessionView) Close() error { return c.conn.Close() }
 func (c *sessionView) text() string { c.mu.Lock(); defer c.mu.Unlock(); return c.output.String() }
+func (c *sessionView) status() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return strings.Join(c.statuses, ",")
+}
 
 func fixtureInput(executable string, args ...string) []byte {
 	command := []string{executable, "--fixture-agent"}
@@ -226,16 +236,19 @@ func waitFor(t *testing.T, check func() bool) {
 	t.Fatal("timed out")
 }
 
-func (c *sessionView) wait(t *testing.T, expected int) {
+// wait checks the exit code of the terminal. It returns the exit message.
+func (c *sessionView) wait(t *testing.T, expected int) protocol.Message {
 	t.Helper()
 	select {
 	case m := <-c.done:
 		if m.Error != "" || m.Code != expected {
 			t.Fatalf("session end = %+v, expected %d: %s", m, expected, c.text())
 		}
+		return m
 	case <-time.After(8 * time.Second):
 		t.Fatalf("session did not end: %s", c.text())
 	}
+	return protocol.Message{}
 }
 
 func archive(t *testing.T, dataDir string) *history.Store {
@@ -410,18 +423,24 @@ func TestConcurrentShellsShareSameAndOverlappingWorkspaces(t *testing.T) {
 		t.Fatal(sessions, err)
 	}
 	pids := map[int]bool{}
-	ids := map[string]string{}
+	ids, runs := map[string]string{}, map[string]string{}
 	for _, s := range sessions {
 		if s.Run == nil || s.Run.Status != "running" || pids[s.Run.PID] {
 			t.Fatal("sessions did not run independently", s)
 		}
 		pids[s.Run.PID] = true
-		ids[s.Title] = s.ID
+		ids[s.Title], runs[s.Title] = s.ID, s.Run.ID
 	}
+	// A view that did not stop the terminal gets the recorded reason for its end and the
+	// run that the reason is about.
 	stopTestSession(t, ids["shell-1"])
-	clients[1].wait(t, 129)
+	if exit := clients[1].wait(t, 129); exit.Status != "stopped" || exit.Run != runs["shell-1"] {
+		t.Fatalf("a stopped terminal ended with %+v", exit)
+	}
 	clients[2].Write([]byte("exit 3\r"))
-	clients[2].wait(t, 3)
+	if exit := clients[2].wait(t, 3); exit.Status != "exited" || exit.Run != runs["shell-2"] {
+		t.Fatalf("an exited terminal ended with %+v", exit)
+	}
 	for _, title := range []string{"shell-0", "shell-3", "shell-4"} {
 		run, err := store.LatestRun(ids[title])
 		if err != nil || run.Status != "running" {

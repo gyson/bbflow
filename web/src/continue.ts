@@ -1,12 +1,10 @@
 import type { Tool } from './protocol.js';
 
-// A new terminal can start only after the latest terminal of a session ended.
-export const endedStatuses: readonly string[] = ['exited', 'stopped', 'failed', 'interrupted'];
-
 export interface ContinueTarget { status: string; archived?: boolean; run?: { id: string } }
 
+// A new terminal can start only after the latest terminal of a session ended.
 export function canContinue(session: ContinueTarget | null, live: boolean): boolean {
-  return !!session?.run && !session.archived && !live && endedStatuses.includes(session.status);
+  return !!session?.run && !session.archived && !live && session.status === 'ended';
 }
 
 // Prefer the tool that the session started with, if it still exists.

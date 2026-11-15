@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/21';
+export const VERSION = 'bonbon/22';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -24,12 +24,15 @@ export interface Run { id: string; status: string }
 // One terminal of a session. number counts from 1 in start order. A new terminal has an
 // empty run until its process starts.
 export interface TerminalInfo { number: number; run: string; tool: string; status: string; started: string; ended: string }
-export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
+// status is the session status that the server derives. run.status is the stored status
+// of the latest run.
+export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; status: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
 // BonBon writes the handoff folder before it starts a new terminal in an ended session.
 // available means that the folder has a README, so the prompt can be used now.
 export interface Handoff { folder: string; prompt: string; available: boolean }
 export interface RepositoryInfo { available: boolean; root: string; head: string; branch: string; reason: string }
 
+// status is draft, running, idle, or ended.
 export interface SessionInfo {
   archived: boolean;
   preparation?: Preparation;
@@ -108,18 +111,25 @@ export type StreamRequest =
   | { operation: 'session-resume'; session: string; size: Size; run?: string }
   // latestRun is the latest run that this view saw. An empty tool selects Shell.
   | { operation: 'session-continue'; session: string; latestRun: string; tool: string; size: Size };
-export type DraftWatchRequest = { operation: 'composer-watch'; session: string };
-export type Request = RPCRequest | StreamRequest | DraftWatchRequest;
+// A watch stream stays open. The server pushes its latest state and each later change.
+export type WatchRequest = { operation: 'composer-watch'; session: string } | { operation: 'status-watch' };
+export type Request = RPCRequest | StreamRequest | WatchRequest;
 
 export type ServerMessage =
   | { type: 'server'; server: ServerInfo }
   | { type: 'session'; session: string; active?: boolean; status?: string }
+  // A live view gets running or idle after it joins and after each change.
+  | { type: 'status'; status: string }
   | { type: 'frame'; data?: string; size: Size; revision: number; full?: boolean }
   | { type: 'pong' }
   | { type: 'input-ack'; id: string; error?: string }
-  | { type: 'exit'; code?: number; error?: string }
+  // status is the recorded status of the run: exited, stopped, or failed. run is empty
+  // when the terminal failed before its run started.
+  | { type: 'exit'; code?: number; status?: string; run?: string; error?: string }
   | { type: 'history-end' }
   | { type: 'draft'; session: string; composer: ComposerState }
+  // A status watch gets running or idle for each session that has a live terminal.
+  | { type: 'statuses'; statuses?: Record<string, string> }
   | { type: 'result'; result: unknown }
   | { type: 'error'; error: string };
 
@@ -204,9 +214,9 @@ export class Peer {
           this.fail(message.error || 'Request failed.');
           return;
         }
-        // A live session or a draft watch keeps the connection open with ping.
+        // A live session or a watch keeps the connection open with ping.
         if (message.type === 'session') this.active = !!message.active;
-        if (message.type === 'draft') this.active = true;
+        if (message.type === 'draft' || message.type === 'statuses') this.active = true;
         if (message.type === 'input-ack' && message.id === this.input?.id) this.input.settle(message.error);
         if (['exit', 'history-end', 'result'].includes(message.type)) {
           this.input?.settle('Input delivery was not confirmed. Check the terminal before submitting again.');

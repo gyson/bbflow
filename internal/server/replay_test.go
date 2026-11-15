@@ -101,7 +101,7 @@ func TestSharedViewsSizeOwnerAndIndependentFlow(t *testing.T) {
 	second.ack(initial)
 	none("a new view changed the PTY size")
 	for i := 0; i < 1000; i++ {
-		if _, err := r.publish(history.Event{Kind: "output", Data: []byte(fmt.Sprintf("\x1b[24;1H\x1b[2KAnswer %d", i))}); err != nil {
+		if _, err := r.publish(history.Event{RunID: "run-fixture", Kind: "output", Data: []byte(fmt.Sprintf("\x1b[24;1H\x1b[2KAnswer %d", i))}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -174,7 +174,7 @@ func TestSharedViewsSizeOwnerAndIndependentFlow(t *testing.T) {
 	if control := next(); control.Type != "resize" || control.Size != small {
 		t.Fatalf("remaining view did not take the PTY size: %+v", control)
 	}
-	r.finish(7, nil)
+	r.finish(7, "exited", nil)
 	for {
 		m := second.read("frame")
 		second.ack(m)
@@ -185,7 +185,8 @@ func TestSharedViewsSizeOwnerAndIndependentFlow(t *testing.T) {
 			break
 		}
 	}
-	if m := second.read("exit"); m.Code != 7 {
+	// The exit message names its run, so a view does not apply it to a later run.
+	if m := second.read("exit"); m.Code != 7 || m.Status != "exited" || m.Run != "run-fixture" {
 		t.Fatal(m)
 	}
 }
