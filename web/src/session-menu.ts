@@ -16,8 +16,8 @@ export class SessionMenu {
     this.menu.addEventListener('click', event => { if (onItem(event)) this.button.focus(); }, true);
     // An item runs its own action next. Then the click reaches the menu and closes it.
     this.menu.addEventListener('click', event => { if (onItem(event)) this.open(false); });
-    // Tab can move the focus out of the menu. A focus loss without a new target means
-    // that the window lost the focus, and the menu stays open.
+    // Other code can move the focus out of the menu. A focus loss without a new target
+    // means that the window lost the focus, and the menu stays open.
     this.box.addEventListener('focusout', event => {
       if (this.expanded && event.relatedTarget instanceof Node && !this.box.contains(event.relatedTarget)) this.open(false);
     });
@@ -33,6 +33,11 @@ export class SessionMenu {
         const index = items.indexOf(document.activeElement as HTMLButtonElement);
         const step = event.key === 'ArrowDown' ? 1 : -1;
         items[(index + step + items.length) % items.length]?.focus();
+      } else if (event.key === 'Tab') {
+        // Close the menu and continue from the menu button. The browser then moves the
+        // focus to the control after or before that button.
+        this.open(false);
+        this.button.focus();
       }
     });
     document.addEventListener('click', event => {
