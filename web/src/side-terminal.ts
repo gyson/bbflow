@@ -51,11 +51,13 @@ export class SideTerminal {
   }
 
   // The workspace pane shows or hides this view. With start, a click of the user showed
-  // the view. Then the server starts a shell when the session has none.
+  // the view. Then the server starts a shell when the session has none. A click after
+  // the shown shell ended opens a new connection. It joins the live shell of the session
+  // or starts one.
   setShown(shown: boolean, start: boolean): void {
     this.isOpen = shown;
     if (!shown || !this.session) return;
-    if (!this.connection) this.connect(start);
+    if (!this.connection || (start && !this.live && !this.pending)) this.connect(start);
     else if (start) this.view?.focus();
   }
 

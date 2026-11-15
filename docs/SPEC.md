@@ -870,6 +870,8 @@ workspace exists.
 - Each shell has an ID. A view reconnects and stops only the shell that it showed. When
   another view started a new shell after that shell ended, the view shows "The shell
   ended." It does not join or stop the new shell.
+- After the shown shell ended, a click on the terminal icon connects again. The view
+  joins the live shell of the session, or it starts a new shell.
 - Only a click moves the keyboard focus to the side terminal. A reconnection keeps the
   focus where it is.
 - Stop session ends only the session terminal. Archive stops the side terminal. Server
