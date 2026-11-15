@@ -3,6 +3,21 @@ import { ConnectionError, Peer } from './protocol.js';
 import type { ServerInfo, ServerMessage, Size, StreamRequest } from './protocol.js';
 import { TerminalStream } from './terminal-stream.js';
 
+const rejoins = (request: StreamRequest) => request.operation === 'session-resume' || request.operation === 'side-terminal-resume';
+
+// After the ID is known, retries can only rejoin that session. A view of an earlier
+// terminal keeps showing that terminal. A side terminal retry never starts a new shell.
+// It rejoins only the shell that it showed, not a later shell of the session.
+function rejoin(request: StreamRequest, message: { session: string; shell?: string }, size: Size): StreamRequest {
+  const session = message.session;
+  if (request.operation === 'side-terminal-open' || request.operation === 'side-terminal-resume') {
+    const shell = message.shell ?? (request.operation === 'side-terminal-resume' ? request.shell : undefined);
+    return { operation: 'side-terminal-resume', session, size, ...(shell ? { shell } : {}) };
+  }
+  const run = request.operation === 'session-resume' ? request.run : undefined;
+  return { operation: 'session-resume', session, size, ...(run ? { run } : {}) };
+}
+
 // One selected session owns its connection, frame baseline, and reconnect timer. When
 // it closes, it cancels retries and ignores callbacks from the old view.
 export class SessionConnection {
@@ -33,7 +48,7 @@ export class SessionConnection {
     this.stream?.stop();
     this.peer?.close();
     this.ready = false;
-    if (this.request.operation === 'session-resume') this.request.size = this.host.size();
+    if (rejoins(this.request)) this.request = { ...this.request, size: this.host.size() };
     return new Promise<void>((resolve, reject) => {
       const stream = this.stream = new TerminalStream(this.view, {
         current: () => !this.closed && this.peer === peer,
@@ -49,10 +64,7 @@ export class SessionConnection {
         message: message => {
           if (this.closed || this.peer !== peer) return;
           if (message.type === 'session') {
-            // After the ID is known, retries can only rejoin that session. A view of an
-            // earlier terminal keeps showing that terminal.
-            const run = this.request.operation === 'session-resume' ? this.request.run : undefined;
-            this.request = { operation: 'session-resume', session: message.session, size: this.host.size(), ...(run ? { run } : {}) };
+            this.request = rejoin(this.request, message, this.host.size());
             resolve();
           }
           stream.push(message);
@@ -63,7 +75,7 @@ export class SessionConnection {
           if (this.closed || this.peer !== peer) return;
           stream.stop();
           this.ready = false;
-          const retrying = error instanceof ConnectionError && error.retryable && this.request.operation === 'session-resume';
+          const retrying = error instanceof ConnectionError && error.retryable && rejoins(this.request);
           if (retrying) {
             const delay = Math.min(30000, 500 * 2 ** Math.min(this.attempt++, 6));
             this.timer = setTimeout(() => { this.connect().catch(() => {}); }, delay);

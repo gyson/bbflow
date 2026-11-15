@@ -1,6 +1,5 @@
 import { call, errorMessage } from './protocol.js';
 import type { BaselineKind, ChangedFile, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles } from './protocol.js';
-import { dragDivider } from './divider-drag.js';
 import { element } from './dom.js';
 import { countText, effectiveLayout, fileEntries, FolderTree, Generation, sideNote, statusTitle } from './diff-model.js';
 import type { DiffLayout, FileEntry, FileScope, TreeRow } from './diff-model.js';
@@ -10,26 +9,26 @@ import type { CodeView } from './diff-editor.js';
 type Send = typeof call;
 export interface Editor { showDiff: typeof showDiff; showFile: typeof showFile }
 
-const minPaneWidth = 320;
-const minSessionWidth = 360;
 const maxFolderRequest = 200; // The server lists at most this number of folders in one request.
 const listLimit = 'The file list is incomplete. BonBon limits the number of files that it lists.';
 
-// DiffPane shows the changed files and the folders of the selected session workspace.
-// It is read-only. Its layout, width, file selection, file list scope, and open folders
-// belong to this view. Other browser tabs keep their own state.
+// One selected file of a view. preview shows the current file, not its diff.
+interface Pick { path: string; preview: boolean }
+
+// DiffPane fills the Changes and Files views of the workspace pane. They share the
+// change list and the folder tree. Changes shows the changed files and their diffs.
+// Files shows the folders of the workspace and the current files. Each view has its own
+// selected file and filter text. Both are read-only. The layout, the selections, and the
+// open folders belong to this view. Other browser tabs keep their own state.
 export class DiffPane {
-  private readonly openButton = element('diff-open', HTMLButtonElement);
-  private readonly row = element('session-row', HTMLElement);
   private readonly pane = element('diff-pane', HTMLElement);
-  private readonly divider = element('diff-divider', HTMLElement);
+  private readonly title = element('diff-title', HTMLElement);
+  private readonly controls = element('diff-controls', HTMLElement);
   private readonly baselineSelect = element('diff-baseline', HTMLSelectElement);
   private readonly splitButton = element('diff-split', HTMLButtonElement);
   private readonly unifiedButton = element('diff-unified', HTMLButtonElement);
   private readonly summary = element('diff-summary', HTMLElement);
   private readonly status = element('diff-status', HTMLElement);
-  private readonly changedButton = element('diff-changed', HTMLButtonElement);
-  private readonly filesButton = element('diff-files-tab', HTMLButtonElement);
   private readonly filter = element('diff-filter', HTMLInputElement);
   private readonly list = element('diff-list', HTMLElement);
   private readonly path = element('diff-path', HTMLElement);
@@ -44,6 +43,7 @@ export class DiffPane {
   private isOpen = false;
   private layout: DiffLayout = 'split';
   private shownLayout: DiffLayout | null = null;
+  private shownMode: 'file' | 'diff' | null = null; // What the editor shows now.
   private scope: FileScope = 'changed';
   private baseline: BaselineKind | undefined;
   // The worktree base commit from the latest reply that had it. The label keeps it when
@@ -56,11 +56,10 @@ export class DiffPane {
   private readonly tree = new FolderTree();
   private filesError = '';
   private ignoreError = '';
-  private selected = '';
-  private preview = false; // Show the current file, not its diff.
+  private picks: Record<FileScope, Pick> = { changed: { path: '', preview: false }, files: { path: '', preview: true } };
+  private filters: Record<FileScope, string> = { changed: '', files: '' };
   private file: WorkspaceFile | null = null;
   private view: CodeView | null = null;
-  private width = 0;
   private refreshedAt = 0;
   private readonly listGeneration = new Generation();
   private readonly fileGeneration = new Generation();
@@ -72,13 +71,10 @@ export class DiffPane {
     private readonly send: Send = call,
     private readonly editor: Editor = { showDiff, showFile },
   ) {
-    this.openButton.onclick = () => this.toggle();
-    element('diff-close', HTMLButtonElement).onclick = () => this.toggle(false);
     element('diff-refresh', HTMLButtonElement).onclick = () => void this.refresh();
+    element('diff-close', HTMLButtonElement).onclick = () => this.close();
     this.splitButton.onclick = () => this.setLayout('split');
     this.unifiedButton.onclick = () => this.setLayout('unified');
-    this.changedButton.onclick = () => this.setScope('changed');
-    this.filesButton.onclick = () => this.setScope('files');
     this.filter.oninput = () => {
       if (this.searching() && !this.paths) return void this.refresh();
       // The next search reads the paths again.
@@ -92,7 +88,14 @@ export class DiffPane {
     };
     this.toggleButton.onclick = () => {
       if (!this.selected) return;
-      this.preview = !this.preview;
+      // Files shows no diffs. Its button opens the diff of the file in Changes.
+      if (this.scope === 'files') {
+        this.picks.changed = { path: this.selected, preview: false };
+        this.filters.changed = '';
+        this.openChanges();
+        return;
+      }
+      this.pick.preview = !this.pick.preview;
       this.renderFile();
     };
     this.copyButton.onclick = async () => {
@@ -105,18 +108,6 @@ export class DiffPane {
       }
       setTimeout(() => { this.copyButton.textContent = 'Copy path'; this.copyButton.title = ''; }, 1500);
     };
-    dragDivider(this.divider, 'x', 'resizing-diff', {
-      start: () => this.pane.getBoundingClientRect().width,
-      // A drag to the left makes the pane wider.
-      move: (width, offset) => this.resize(width - offset),
-    });
-    this.divider.onkeydown = event => {
-      const width = this.pane.getBoundingClientRect().width;
-      if (event.key === 'ArrowLeft') this.resize(width + 20);
-      else if (event.key === 'ArrowRight') this.resize(width - 20);
-      else return;
-      event.preventDefault();
-    };
     new ResizeObserver(() => this.relayout()).observe(this.pane);
     // Files change while agents work. Read them again when the user comes back.
     window.addEventListener('focus', () => {
@@ -126,7 +117,7 @@ export class DiffPane {
   }
 
   // Select the session of this view. An empty session, for a draft, Settings, or the
-  // home page, hides the pane. The state stays until the view selects another session.
+  // home page, has no changes. The state stays until the view selects another session.
   select(session: string): void {
     this.visible = !!session;
     if (!session || session === this.session) {
@@ -144,8 +135,8 @@ export class DiffPane {
     this.changes = this.paths = this.file = null;
     this.changesError = this.filesError = this.ignoreError = '';
     this.tree.clear();
-    this.selected = '';
-    this.preview = false;
+    this.picks = { changed: { path: '', preview: false }, files: { path: '', preview: true } };
+    this.filters = { changed: '', files: '' };
     this.filter.value = '';
     this.clearFile();
     this.list.replaceChildren();
@@ -155,11 +146,31 @@ export class DiffPane {
     if (this.isOpen) void this.refresh();
   }
 
-  toggle(open = !this.isOpen): void {
+  // The workspace pane sets these. close closes the pane. openChanges shows Changes.
+  close: () => void = () => {};
+  openChanges: () => void = () => {};
+
+  // The workspace pane shows or hides the Changes or Files view. Without a scope, the
+  // pane keeps its scope.
+  setShown(open: boolean, scope = this.scope): void {
+    if (open === this.isOpen && scope === this.scope) return;
     this.isOpen = open;
+    if (scope !== this.scope) {
+      this.filters[this.scope] = this.filter.value;
+      this.scope = scope;
+      this.filter.value = this.filters[scope];
+      this.paths = null;
+      this.renderList();
+      this.renderStatus();
+    }
     this.show();
+    // A refresh also loads the selected file of the shown view.
     if (open) void this.refresh();
   }
+
+  private get pick(): Pick { return this.picks[this.scope]; }
+  private get selected(): string { return this.pick.path; }
+  private get outsideGit(): boolean { return this.changes?.repository === false; }
 
   async refresh(): Promise<void> {
     const server = this.server();
@@ -170,7 +181,7 @@ export class DiffPane {
     const abort = this.listAbort = new AbortController();
     const session = this.session;
     if (!this.changes && !this.changesError) this.setStatus('Reading changes…');
-    const files = this.shownScope() === 'files';
+    const files = this.scope === 'files';
     // Take the folders now. A click can open or close a folder during the request.
     const folderPaths = files ? this.tree.refreshPaths(maxFolderRequest) : [];
     const token = this.tree.request(folderPaths);
@@ -186,8 +197,6 @@ export class DiffPane {
     const failure = (result: PromiseSettledResult<unknown>): string => result.status === 'rejected' ? errorMessage(result.reason) : '';
     this.changesError = failure(changes);
     if (changes.status === 'fulfilled') this.changes = changes.value;
-    // A folder outside Git shows Files. Read them now.
-    if (!files && this.shownScope() === 'files') return this.refresh();
     if (files) {
       this.filesError = failure(folders) || failure(paths);
       this.paths = paths.status === 'fulfilled' ? paths.value : null;
@@ -209,14 +218,10 @@ export class DiffPane {
     void this.loadFile();
   }
 
-  // A folder outside Git has no changes. It always shows Files.
-  private shownScope(): FileScope {
-    return this.changes?.repository === false ? 'files' : this.scope;
-  }
 
   // A filter in Files searches all paths that Git knows. It shows a list, not the tree.
   private searching(): boolean {
-    return this.shownScope() === 'files' && this.changes?.repository !== false && !!this.filter.value.trim();
+    return this.scope === 'files' && !this.outsideGit && !!this.filter.value.trim();
   }
 
   private change(path: string): ChangedFile | undefined {
@@ -224,7 +229,7 @@ export class DiffPane {
   }
 
   private entries(): FileEntry[] {
-    return fileEntries(this.changes?.files ?? [], this.paths?.paths ?? [], this.shownScope(), this.filter.value);
+    return fileEntries(this.changes?.files ?? [], this.paths?.paths ?? [], this.scope, this.filter.value);
   }
 
   // Changed always shows one of its files. Select the first file when the selected file
@@ -232,8 +237,7 @@ export class DiffPane {
   private selectChanged(): void {
     const entries = this.entries();
     if (entries.some(entry => entry.path === this.selected)) return;
-    this.selected = entries[0]?.path ?? '';
-    this.preview = false;
+    this.picks.changed = { path: entries[0]?.path ?? '', preview: false };
   }
 
   private toggleFolder(path: string): void {
@@ -283,12 +287,12 @@ export class DiffPane {
   }
 
   private show(): void {
-    this.openButton.hidden = !this.visible;
-    this.openButton.setAttribute('aria-pressed', String(this.isOpen));
-    const label = this.isOpen ? 'Hide changes and files' : 'Show changes and files';
-    this.openButton.setAttribute('aria-label', label);
-    this.openButton.dataset.tip = label;
-    this.pane.hidden = this.divider.hidden = !this.isOpen || !this.visible;
+    const changes = this.scope === 'changed';
+    this.title.textContent = changes ? 'Changes' : 'Files';
+    this.pane.setAttribute('aria-label', changes ? 'Changes' : 'Files');
+    this.controls.hidden = !changes;
+    this.filter.placeholder = changes ? 'Filter changes' : 'Filter files';
+    this.filter.setAttribute('aria-label', this.filter.placeholder);
     // The pressed button is the shown layout. A narrow pane shows Unified, and Split
     // waits for a wider pane.
     const shown = effectiveLayout(this.layout, this.editorParent.clientWidth || Infinity);
@@ -297,13 +301,8 @@ export class DiffPane {
     this.unifiedButton.setAttribute('aria-pressed', String(shown === 'unified'));
     this.splitButton.classList.toggle('waiting', waiting);
     this.splitButton.title = waiting ? 'The pane is too narrow for Split. Drag the divider to the left to widen the pane.' : '';
-    const scope = this.shownScope();
-    const outside = this.changes?.repository === false;
-    this.changedButton.setAttribute('aria-pressed', String(scope === 'changed'));
-    this.filesButton.setAttribute('aria-pressed', String(scope === 'files'));
-    this.changedButton.disabled = this.filter.disabled = outside;
-    this.changedButton.title = outside ? this.changes?.reason || 'Not a Git repository.' : '';
-    this.filter.title = outside ? 'The filter needs a Git repository.' : '';
+    this.filter.disabled = this.outsideGit;
+    this.filter.title = this.outsideGit ? 'The filter needs a Git repository.' : '';
   }
 
   private setStatus(text: string): void {
@@ -314,7 +313,7 @@ export class DiffPane {
   // Show the most important problem of the shown file list.
   private renderStatus(): void {
     let text = '';
-    if (this.shownScope() === 'changed') {
+    if (this.scope === 'changed') {
       if (this.changesError) text = `Cannot read the changes: ${this.changesError}`;
       else if (this.changes?.truncated) text = listLimit;
     } else if (this.filesError) text = `Cannot read the files: ${this.filesError}`;
@@ -327,20 +326,6 @@ export class DiffPane {
     this.layout = layout;
     this.show();
     this.relayout();
-  }
-
-  private setScope(scope: FileScope): void {
-    this.scope = scope;
-    this.show();
-    this.renderList();
-    this.renderStatus();
-    void this.refresh();
-  }
-
-  private resize(width: number): void {
-    const max = Math.max(minPaneWidth, this.row.clientWidth - minSessionWidth);
-    this.width = Math.round(Math.max(minPaneWidth, Math.min(max, width)));
-    this.pane.style.flexBasis = `${this.width}px`;
   }
 
   // Use Unified when the pane is too narrow for Split. Keep the preferred layout.
@@ -364,7 +349,7 @@ export class DiffPane {
   }
 
   private renderList(): void {
-    if (this.shownScope() === 'files' && !this.searching()) {
+    if (this.scope === 'files' && !this.searching()) {
       this.setRows(this.tree.rows(this.changes?.files ?? []).map(row => this.treeItem(row)));
       return;
     }
@@ -372,7 +357,8 @@ export class DiffPane {
     if (entries.length === 0) {
       const empty = document.createElement('li');
       empty.className = 'diff-empty';
-      empty.textContent = this.filter.value.trim() ? 'No files match the filter.' : 'No changes.';
+      empty.textContent = this.filter.value.trim() ? 'No files match the filter.' :
+        this.outsideGit ? `${this.changes?.reason || 'Not a Git repository.'} Files shows the workspace.` : 'No changes.';
       this.setRows([empty]);
       return;
     }
@@ -430,11 +416,10 @@ export class DiffPane {
     return item;
   }
 
-  // Select a file. A file from Files opens in the file view. A file from Changed opens
+  // Select a file. A file from Files opens in the file view. A file from Changes opens
   // as a diff.
   private open(path: string, preview: boolean): void {
-    this.selected = path;
-    this.preview = preview;
+    this.picks[this.scope] = { path, preview };
     for (const button of this.list.querySelectorAll('button')) {
       if (button.dataset.file !== undefined) button.setAttribute('aria-current', String(button.dataset.file === path));
     }
@@ -454,7 +439,7 @@ export class DiffPane {
     status.className = `diff-status-letter status-${entry.change ? entry.change.status : 'none'}`;
     status.textContent = entry.change ? entry.change.status : '·';
     button.append(status, pathLabel(entry.path));
-    button.onclick = () => this.open(entry.path, this.shownScope() === 'files');
+    button.onclick = () => this.open(entry.path, this.scope === 'files');
     item.append(button);
     return item;
   }
@@ -483,8 +468,9 @@ export class DiffPane {
       const diff = { ...baseline, path, ...(change?.oldPath ? { oldPath: change.oldPath } : {}) };
       const file = await this.send(server, { operation: 'workspace-file', session: this.session, diff }, abort.signal);
       if (!this.fileGeneration.current(generation)) return;
-      // Keep the scroll position when a refresh finds the same content.
-      if (this.view && JSON.stringify(file) === JSON.stringify(this.file)) return;
+      // Keep the scroll position when a refresh finds the same content in the same mode.
+      // Changes and Files can show the same file as a diff and as plain text.
+      if (this.view && this.shownMode === this.mode(file) && JSON.stringify(file) === JSON.stringify(this.file)) return;
       this.file = file;
       this.renderFile();
     } catch (error) {
@@ -499,7 +485,8 @@ export class DiffPane {
     const change = this.change(this.selected);
     this.path.replaceChildren(pathLabel(this.selected));
     this.path.title = change?.oldPath ? `${change.oldPath} → ${this.selected}` : this.selected;
-    const counts = change ? countText(change) : { added: '', removed: '' };
+    // Files shows no line counts. It shows the current file only.
+    const counts = change && this.scope === 'changed' ? countText(change) : { added: '', removed: '' };
     const added = document.createElement('span');
     added.className = 'added';
     added.textContent = counts.added;
@@ -507,14 +494,15 @@ export class DiffPane {
     removed.className = 'removed';
     removed.textContent = counts.removed;
     this.counts.replaceChildren(added, removed);
-    if (!change && this.changes?.repository) {
+    if (!change && this.changes?.repository && this.scope === 'changed') {
       const tag = document.createElement('span');
       tag.className = 'diff-tag';
       tag.textContent = 'Unchanged';
       this.counts.append(tag);
     }
     this.toggleButton.hidden = !change;
-    this.toggleButton.textContent = this.preview ? 'View diff' : 'View file';
+    this.toggleButton.textContent = this.pick.preview ? 'View diff' : 'View file';
+    this.toggleButton.title = this.scope === 'files' ? 'Show the diff of this file in Changes' : '';
     this.copyButton.hidden = !this.selected;
   }
 
@@ -523,7 +511,8 @@ export class DiffPane {
     this.renderHeader();
     const file = this.file;
     if (!file || file.path !== this.selected) return;
-    if (!this.change(file.path) || this.preview) {
+    this.shownMode = this.mode(file);
+    if (this.shownMode === 'file') {
       const side = file.new;
       if (side.state === 'missing') return this.showNote('This file is not in the workspace now.');
       if (side.state !== 'text') return this.showNote(sideNote(side));
@@ -539,6 +528,11 @@ export class DiffPane {
     this.shownLayout = layout;
   }
 
+  // A file without a change, or a file that the view previews, shows as plain text.
+  private mode(file: WorkspaceFile): 'file' | 'diff' {
+    return !this.change(file.path) || this.pick.preview ? 'file' : 'diff';
+  }
+
   private showNote(text: string): void {
     this.note.textContent = text;
     this.note.hidden = !text;
@@ -547,7 +541,7 @@ export class DiffPane {
   private destroyView(): void {
     this.view?.destroy();
     this.view = null;
-    this.shownLayout = null;
+    this.shownLayout = this.shownMode = null;
     this.editorParent.replaceChildren();
   }
 

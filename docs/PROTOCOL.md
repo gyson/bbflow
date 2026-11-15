@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/23`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/24`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/23",
+    "protocol": "bonbon/24",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/23",
+    "protocol": "bonbon/24",
     "operation": "session-list",
     "limit": 10
   }
@@ -109,6 +109,9 @@ operations.
 | `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, `status`, `started`, and `ended`. |
 | `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
 | `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
+| `side-terminal-open` | `session` ID, terminal `size` | `session` with the `shell` ID, then a [side terminal](#side-terminals) stream. Starts a shell when the session has no live side terminal. |
+| `side-terminal-resume` | `session` ID, terminal `size`, optional `shell` ID | `session` with the `shell` ID, then the side terminal stream. Without a live side terminal, or when the live shell has another ID, `session` without `active`, then `history-end`. Starts no process. |
+| `side-terminal-stop` | `session` ID, optional `shell` ID | `result`, containing `stopped`. `stopped` is false when the session has no live side terminal, or when the live shell has another ID. |
 
 Ordinary operations send one reply, then close the connection. Replies use
 `{"type":"result","result":...}` or `{"type":"error","error":"..."}`. RPC requests have
@@ -163,6 +166,9 @@ does not change.
 
 Protocol 19 adds `session-terminals` and the optional `run` field of `session-resume`.
 A view can show an earlier terminal of a session. The SQLite format does not change.
+
+Protocol 24 adds `side-terminal-open`, `side-terminal-resume`, and `side-terminal-stop`
+for [side terminals](#side-terminals). The SQLite format does not change.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -473,6 +479,38 @@ BonBon workspaces and modified, untracked, or ignored files. It keeps the branch
 [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees) for supported
 repositories.
 
+## Side terminals
+
+A side terminal is an interactive shell for ad hoc commands in the workspace of a
+session. The server starts it with the same `$SHELL -i`, environment, `BONBON_SESSION`,
+and `BONBON_DIR` as a session terminal. It submits no startup command. Each session has
+at most one live side terminal. It is separate from the terminal of the session.
+
+- The server writes no SQLite events, run, or saved screen for a side terminal. It keeps
+  the screen only in its memory emulator.
+- A side terminal has no session `status`, `status` messages, view count, handoff, or
+  history search. It does not change the session order.
+- The stream uses the same `frame`, `frame-ack`, `input`, `input-ack`, `resize`,
+  `signal`, and `ping` messages as a session terminal. The size owner rules are also
+  the same. The PTY size of the side terminal is independent of the session terminal.
+- `exit` has the exit `code` and an optional `error`. It has no `status` or `run`.
+- The `session` message of a live side terminal has a `shell` ID. Each new shell gets a
+  new ID.
+
+`side-terminal-open` needs a session that started a terminal. It rejects drafts,
+archived sessions, and a missing workspace. The server holds the launch lock, so two
+views that open at the same time join one shell. A lost view rejoins with
+`side-terminal-resume` and the `shell` ID that it showed. Do not send
+`side-terminal-open` again only because a connection was lost. It can start a new shell
+when the earlier shell ended. Send the `shell` ID with `side-terminal-stop` too. Then a
+view of an ended shell cannot join or stop a shell that another view started later.
+
+Closing a view leaves the shell running. Stop session leaves it running too. The shell
+ends when it exits, on `side-terminal-stop`, when the session is archived, and when the
+server stops. `side-terminal-stop` sends SIGHUP to the shell and its foreground job, as
+session stop does. `worktree-remove` rejects a managed worktree while a side terminal
+uses it.
+
 ## Session status
 
 Protocol 22 gives each session one derived `status`. Session summaries, `project-draft`
@@ -677,13 +715,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/23") {
+    if (message.server.protocol !== "bonbon/24") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/23", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/24", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

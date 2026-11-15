@@ -35,9 +35,9 @@ function fixture(t, request = resume) {
   });
   t.after(() => connection.close());
   const greet = socket => socket.receive({ type: 'server', server });
-  const attach = socket => {
+  const attach = (socket, extra = {}) => {
     greet(socket);
-    socket.receive({ type: 'session', session: 'one', active: true });
+    socket.receive({ type: 'session', session: 'one', active: true, ...extra });
     socket.receive({ type: 'frame', revision: 1, full: true, size });
   };
   return { connection, sockets, frames, errors, greet, attach };
@@ -124,4 +124,37 @@ test('a lost view of an earlier terminal reconnects to the same terminal', async
   greet(sockets[1]);
   assert.deepEqual(sockets[1].sent, [{ type: 'request', request: { ...earlier, protocol: VERSION } }]);
   assert.equal(frames.length, 0);
+});
+
+test('a lost side terminal rejoins its shell and never starts another shell', async t => {
+  const open = { operation: 'side-terminal-open', session: 'one', size };
+  const { connection, sockets, frames, attach, greet } = fixture(t, open);
+  const opened = connection.connect();
+  attach(sockets[0], { shell: 'first' });
+  await opened;
+  frames.shift()();
+  sockets[0].close();
+  t.mock.timers.tick(500);
+  assert.equal(sockets.length, 2);
+  greet(sockets[1]);
+  const rejoin = { type: 'request', request: { operation: 'side-terminal-resume', session: 'one', size, shell: 'first', protocol: VERSION } };
+  assert.deepEqual(sockets[1].sent, [rejoin]);
+  // A later retry still names the first shell. It cannot join a shell of another view.
+  sockets[1].close();
+  t.mock.timers.tick(1000);
+  assert.equal(sockets.length, 3);
+  greet(sockets[2]);
+  assert.deepEqual(sockets[2].sent, [rejoin]);
+});
+
+test('a lost side terminal open before its session message is not retried', async t => {
+  const open = { operation: 'side-terminal-open', session: 'one', size };
+  const { connection, sockets, errors, greet } = fixture(t, open);
+  const opened = assert.rejects(connection.connect(), /Connection lost/);
+  greet(sockets[0]);
+  sockets[0].close();
+  await opened;
+  t.mock.timers.tick(30000);
+  assert.equal(sockets.length, 1);
+  assert.equal(errors[0].retrying, false);
 });

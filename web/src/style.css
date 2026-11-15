@@ -141,7 +141,7 @@ body.resizing-sidebar, body.resizing-sidebar * { cursor: col-resize !important; 
 .toolbar-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .toolbar-icon .panel { stroke: none; }
 .toolbar-icon .dots { fill: currentColor; stroke: none; }
-#sidebar-toggle[aria-expanded="true"] .panel, #diff-open[aria-pressed="true"] .panel { fill: currentColor; opacity: .3; }
+#sidebar-toggle[aria-expanded="true"] .panel { fill: currentColor; opacity: .3; }
 /* A tooltip shows the data-tip text below its control, on hover and on keyboard focus. */
 [data-tip] { position: relative; }
 [data-tip]::after { content: attr(data-tip) / ""; position: absolute; top: calc(100% + 7px); right: 0; z-index: 20; width: max-content; max-width: min(300px, 70vw); padding: 5px 9px; border-radius: 6px; background: var(--text); color: var(--workspace); font-size: 11px; font-weight: 400; line-height: 1.45; letter-spacing: 0; text-align: left; white-space: normal; opacity: 0; pointer-events: none; transition: opacity .1s; }
@@ -350,18 +350,23 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
   .history-context { flex: none; overflow: visible; padding: 16px; }
   .history-help { padding: 12px 16px; }
 }
-/* The session row holds the session column and the read-only Changes pane. */
+/* The session row holds the session and the workspace pane with its Changes and Terminal tabs. */
 #session-row { flex: 1; min-height: 480px; display: flex; min-width: 0; }
 #session-row:not(:has(> #session-view:not([hidden]))) { display: none; }
 #session-row > #session-view { min-width: 0; }
-#diff-open[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); }
-#diff-divider { flex: 0 0 9px; margin: 20px -4px 18px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; user-select: none; }
-#diff-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; transition: background-color .1s; }
-#diff-divider:hover::after, #diff-divider:focus-visible::after, .resizing-diff #diff-divider::after { background: var(--accent); }
-#diff-divider:focus-visible { outline: none; }
+#pane-changes[aria-pressed="true"], #pane-files[aria-pressed="true"], #pane-terminal[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); }
+#workspace-divider { flex: 0 0 9px; margin: 20px -4px 18px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; user-select: none; }
+#workspace-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; transition: background-color .1s; }
+#workspace-divider:hover::after, #workspace-divider:focus-visible::after, .resizing-diff #workspace-divider::after { background: var(--accent); }
+#workspace-divider:focus-visible { outline: none; }
 body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-select: none !important; }
-#diff-pane { flex: 0 0 46%; min-width: 320px; display: flex; flex-direction: column; margin: 20px 26px 18px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
-#diff-pane[hidden], #diff-divider[hidden] { display: none; }
+#workspace-pane { flex: 0 0 46%; min-width: 320px; display: flex; flex-direction: column; margin: 20px 26px 18px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+#workspace-pane[hidden], #workspace-divider[hidden], #diff-pane[hidden], #side-terminal[hidden] { display: none; }
+.pane-title { flex: none; color: var(--text-muted); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+#diff-controls { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#diff-controls[hidden] { display: none; }
+#diff-refresh { margin-left: auto; }
+#diff-pane, #side-terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .diff-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid var(--divider); font-size: 12px; }
 /* A fixed width keeps the layout buttons in place when the selected baseline changes. */
 #diff-baseline { width: 19em; flex: none; padding: 5px 8px; font-size: 12px; text-overflow: ellipsis; }
@@ -375,8 +380,6 @@ body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-s
 #diff-status { margin: 0; padding: 8px 12px; background: var(--warning-surface); color: var(--warning-text); font-size: 12px; line-height: 1.5; }
 .diff-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(140px, 24%) minmax(0, 1fr); }
 .diff-files { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 10px 0 0; border-right: 1px solid var(--divider); background: var(--inset); }
-.diff-files .segmented { margin: 0 8px; }
-.diff-files .segmented button { flex: 1; }
 #diff-filter { width: auto; margin: 0 8px; padding: 6px 8px; font-size: 12px; }
 #diff-list { flex: 1; min-height: 0; margin: 0; padding: 0 0 8px; list-style: none; overflow-y: auto; }
 .diff-file { display: flex; align-items: center; gap: 7px; width: 100%; padding: 5px 10px; border: 0; border-radius: 0; background: transparent; font-size: 12px; text-align: left; }
@@ -407,11 +410,17 @@ body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-s
 #diff-editor > .cm-editor, #diff-editor > .cm-mergeView { height: 100%; }
 #diff-editor > .cm-mergeView { background: var(--diff-background); }
 #diff-editor .cm-mergeViewEditor + .cm-mergeViewEditor { border-left: 1px solid var(--border); }
-@media (max-width: 950px) { #diff-pane { margin: 16px 16px 16px 0; } #diff-divider { margin: 16px -4px; } }
+@media (max-width: 950px) { #workspace-pane { margin: 16px 16px 16px 0; } #workspace-divider { margin: 16px -4px; } }
 @media (max-width: 620px) {
   #session-row { flex-direction: column; }
-  #diff-divider { display: none; }
-  #diff-pane { flex: none; height: 600px; min-width: 0; margin: 0 16px 16px; }
+  #workspace-divider { display: none; }
+  #workspace-pane { flex: none; height: 600px; min-width: 0; margin: 0 16px 16px; }
   .diff-body { grid-template-columns: 1fr; grid-template-rows: 180px minmax(0, 1fr); }
   .diff-files { border-right: 0; border-bottom: 1px solid var(--divider); }
 }
+
+/* The Terminal tab of the workspace pane. */
+.side-toolbar { display: flex; align-items: center; gap: 10px; min-height: 45px; padding: 6px 10px; border-bottom: 1px solid var(--divider); color: var(--text-muted); font-size: 11px; }
+#side-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-toolbar button:not(.icon-button) { padding: 3px 9px; font-size: 11px; }
+#side-screen { flex: 1; min-height: 0; padding: 8px 12px; background: var(--terminal-background); overflow: hidden; }

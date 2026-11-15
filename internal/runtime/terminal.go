@@ -36,15 +36,45 @@ type Launch struct {
 	Handoff   string // The handoff folder that BonBon wrote for a new terminal.
 }
 
+// recording commits terminal events and run states. A side terminal keeps nothing.
+type recording struct {
+	append func(kind string, data []byte, text string) (history.Event, error)
+	save   func(*history.Run) error
+}
+
 // Run owns an agent PTY on the server. Terminal controls arrive from the client. The
 // server commits original output before emulation and input before delivery.
 func Run(ctx context.Context, store *history.Store, session history.Session, request Launch, controls <-chan Control, publish func(history.Event) ([]byte, error)) (int, error) {
-	command := []string{request.Shell, "-i"}
-	size := &pty.Winsize{Rows: request.Size.Rows, Cols: request.Size.Cols}
 	run, err := store.NewRun(session.ID)
 	if err != nil {
 		return 1, err
 	}
+	record := recording{
+		append: func(kind string, data []byte, text string) (history.Event, error) {
+			return store.Append(session.ID, run.ID, kind, data, text)
+		},
+		save: store.SaveRun,
+	}
+	return runPTY(ctx, record, run, filepath.Dir(store.Path), session, request, controls, publish)
+}
+
+// Side owns the PTY of a side terminal: an interactive shell for ad hoc work in the
+// session workspace. It keeps no events or run in the archive. The server emulator gets
+// the events in the same order as for a recorded run.
+func Side(ctx context.Context, dataDir string, session history.Session, request Launch, controls <-chan Control, publish func(history.Event) ([]byte, error)) (int, error) {
+	record := recording{
+		append: func(kind string, data []byte, text string) (history.Event, error) {
+			return history.Event{SessionID: session.ID, Kind: kind, Data: data}, nil
+		},
+		save: func(*history.Run) error { return nil },
+	}
+	request.Command, request.Tool, request.Continues, request.Handoff = "", "", "", ""
+	return runPTY(ctx, record, &history.Run{SessionID: session.ID}, dataDir, session, request, controls, publish)
+}
+
+func runPTY(ctx context.Context, record recording, run *history.Run, dataDir string, session history.Session, request Launch, controls <-chan Control, publish func(history.Event) ([]byte, error)) (int, error) {
+	command := []string{request.Shell, "-i"}
+	size := &pty.Winsize{Rows: request.Size.Rows, Cols: request.Size.Cols}
 	// Commit and publish in the same order, including concurrent output and resize.
 	// The server emulator must see the same ordering as durable reconstruction.
 	var eventMu sync.Mutex
@@ -60,14 +90,14 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 	appendEvent := func(kind string, data []byte, text string) error {
 		eventMu.Lock()
 		defer eventMu.Unlock()
-		event, err := store.Append(session.ID, run.ID, kind, data, text)
+		event, err := record.append(kind, data, text)
 		if err == nil && (kind == "start" || kind == "resize" || kind == "output") {
 			responses, renderErr := publish(event)
 			if renderErr != nil {
 				return renderErr
 			}
 			if len(responses) > 0 {
-				if _, err = store.Append(session.ID, run.ID, "terminal-response", responses, ""); err == nil {
+				if _, err = record.append("terminal-response", responses, ""); err == nil {
 					err = write(responses)
 				}
 			}
@@ -75,7 +105,7 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 		return err
 	}
 	status := func() error {
-		if err := store.SaveRun(run); err != nil {
+		if err := record.save(run); err != nil {
 			return err
 		}
 		data, _ := json.Marshal(run)
@@ -88,15 +118,15 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 		}
 	}
 	metadata, _ := json.Marshal(start)
-	if err = appendEvent("start", metadata, ""); err != nil {
+	if err := appendEvent("start", metadata, ""); err != nil {
 		run.Status, run.Ended, run.Detail = "failed", history.Now(), err.Error()
 		return 1, errors.Join(err, status())
 	}
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Dir = session.Workspace
 	// Inherit the server's environment and normal interactive shell startup.
-	cmd.Env = append(request.Env, "BONBON_SESSION="+session.ID, "BONBON_DIR="+filepath.Dir(store.Path))
-	tty, err = pty.StartWithSize(cmd, size)
+	cmd.Env = append(request.Env, "BONBON_SESSION="+session.ID, "BONBON_DIR="+dataDir)
+	tty, err := pty.StartWithSize(cmd, size)
 	if err != nil {
 		run.Status, run.Ended, run.Detail = "failed", history.Now(), err.Error()
 		return 1, errors.Join(err, status())

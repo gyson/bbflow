@@ -189,7 +189,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/23`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/24`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -216,6 +216,9 @@ format does not change.
 Protocol 23 adds `workspace-folders` for the Files tree of the
 [Changes pane](#changes-pane). `workspace-file` also reads a file in a folder that is
 not a Git repository. The SQLite format does not change.
+
+Protocol 24 adds `side-terminal-open`, `side-terminal-resume`, and `side-terminal-stop`
+for the [side terminal](#side-terminal). The SQLite format does not change.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
 its static files, and `GET /client-config` for browser connection information. All
@@ -520,7 +523,8 @@ not a process or native agent context. Terminal dimensions are limited to 2–51
 and 1–256 rows to bound emulator memory.
 
 Session views show the server-rendered terminal and message editor. The UI also provides
-sent messages, recorded-output search, and a read-only Changes pane. There is no browser
+sent messages, recorded-output search, a read-only Changes pane, and a side terminal.
+There is no browser
 SQL client. The `bonbon query` command reads archived events. There is no semantic chat
 transcript.
 
@@ -714,13 +718,32 @@ uses the tool of the preparation. A new terminal has no run record until its pro
 starts. Until then, the list ends with a `starting` terminal without a run ID. The UI
 reads the list again every five seconds until that terminal has a run.
 
+### Workspace pane
+
+The workspace pane is to the right of the terminal and the message editor. It shows one
+of three views:
+
+- **Changes** lists the changed files and shows their diffs.
+- **Files** shows the workspace folder as a tree and the current files.
+- **Terminal** shows the [side terminal](#side-terminal).
+
+Each view has an icon in the session toolbar, after the search icon. The tooltips are
+**Show changes**, **Show files**, and **Show terminal**. A click on an icon opens the
+pane with its view, or changes to its view. The icon of the shown view is pressed. A
+click on it closes the pane. **×** in the header of each view also closes the pane.
+Each view has a header with its name and only its own controls.
+
+Drafts have no workspace pane. Ended sessions keep it while their workspace exists. A
+drag on the divider or the Left and Right arrow keys change the pane width. The open
+state, the view, and the width belong to the browser tab. A different session keeps
+them. A reload resets them.
+
 ### Changes pane
 
-The pane icon in the session toolbar has the tooltip **Show changes and files**. It
-opens a read-only pane to the right of the terminal and the message editor. It shows
-the changes and the files of the session workspace. Drafts have no Changes pane. The
-pane never changes files, the Git index, or SQLite. Ended sessions keep the pane while
-their workspace exists.
+The Changes and Files views of the [workspace pane](#workspace-pane) are read-only.
+They never change files, the Git index, or SQLite. Each view has its own selected file
+and its own filter text. **Compare with**, **Split**, **Unified**, and the file count
+are only in the Changes header. The Files header has **Refresh** and **×** only.
 
 - **Compare with** selects the baseline. **Since worktree base** compares the recorded
   commit of a ready managed worktree with the current files. It includes commits that
@@ -736,12 +759,13 @@ their workspace exists.
   changed text. Split shows a gutter marker for each changed line. Unified shows one
   `−` per block of removed lines and one `+` per added line. Syntax colors, line numbers,
   and folded regions follow Appearance. The file view uses the same syntax colors.
-- **Changed** lists the changed files with Git status letters A, M, D, R, and T. An
+- The **Changes** view lists the changed files with Git status letters A, M, D, R, and T. An
   untracked file has A. After `git rm --cached`, the path has one row with M. An
   untracked nested repository shows as one folder row. The filter box matches any part
   of a path without case. A long path keeps its file name in view and shortens its
   folder.
-- **Files** shows the workspace folder as a tree. Click a folder to open or close it.
+- The **Files** view shows the workspace folder as a tree. Click a folder to open or
+  close it.
   The pane reads a folder when it opens. The tree puts folders first and sorts names
   without case. It omits `.git`. It includes the entries that Git ignores, in a muted
   color. A changed file shows its status letter. A folder with a change below it shows
@@ -750,27 +774,28 @@ their workspace exists.
 - With text in the filter box, **Files** shows a list in place of the tree. The list has
   the paths that match, from the paths that Git tracks or does not ignore, and from the
   deleted files.
-- A file that you select in **Files** opens in the file view. A file that you select in
-  **Changed** opens as a diff. A symlink opens as a file with its target text.
-- The file header shows the path and the line counts. For a changed file, **View file**
-  and **View diff** change between the file view and the diff. An unchanged file has
-  only the file view. **Copy path** copies the path relative to the workspace.
-- The pane reads its lists when it opens, on **Refresh**, on a click on **Changed** or
-  **Files**, and when the window gets focus. It does not watch files. A refresh reads
+- A file that you select in **Files** shows its current text. A file that you select in
+  **Changes** opens as a diff. A symlink opens as a file with its target text.
+- In Changes, the file header shows the path and the line counts. **View file** and
+  **View diff** change between the current text and the diff.
+- In Files, the file header shows the path only. For a changed file, **View diff**
+  opens the diff of that file in the Changes view. **Copy path** copies the path
+  relative to the workspace in both views.
+- The pane reads its lists when it opens, on **Refresh**, on a change of the view, and
+  when the window gets focus. It does not watch files. A refresh reads
   each open folder again. It closes a folder that is gone. A refresh keeps the shown
   file when its content is the same.
 - Only the latest request for a folder changes its entries. A reply or a failure of an
   earlier request does nothing, also after the folder closes and opens again.
 - The keyboard focus stays on its row when the list changes. Thus Tab moves from an
   opened folder to its entries.
-- A folder that is not a Git repository shows **Files** only. **Changed**, **Compare
-  with**, and the filter box are off there, and the file view shows the current file.
-  When the server has no Git executable, **Files** and the file view work in the same
-  way, and **Changed** shows the error.
+- In a folder that is not a Git repository, the Changes view shows "Not a Git
+  repository. Files shows the workspace." **Compare with** and the filter box are off
+  there. The Files view shows the tree and the current files. When the server has no
+  Git executable, Files works in the same way, and Changes shows the error.
 
-A drag on the divider or the Left and Right arrow keys change the pane width. The pane
-width, the layout, the scope, the baseline, the open folders, and the selected file
-belong to the view.
+The layout, the baseline, the open folders, and the selected file of each view belong
+to the browser tab.
 Other browser tabs keep their own state. A visit to Settings or the home page keeps the
 state. A different session or a reload resets it.
 
@@ -820,8 +845,45 @@ Limits:
   folder. Click Refresh to try again." in place of "Reading…".
 - Line counts of untracked files use at most 32 MiB of reads for each list. Later
   untracked files show no count.
-- A folder that is not a Git repository has no changes and no filter. The tooltip of
-  **Changed** is "Not a Git repository."
+- A folder that is not a Git repository has no changes and no filter.
+
+### Side terminal
+
+The side terminal is a shell for ad hoc commands in the session workspace. It is the
+Terminal view of the [workspace pane](#workspace-pane). Thus the session terminal keeps
+its full height. Drafts have no side terminal. Ended sessions have one while their
+workspace exists.
+
+- When you click the terminal icon, the server starts `$SHELL -i` in the session
+  workspace. When the session already has a live side terminal, the view joins it. Each session has at most one live side terminal. All views of a session
+  share it.
+- The server does not record the side terminal. SQLite has no events, run, or screen of
+  it. Search history, the handoff folder, and `bonbon query` cannot read it. The view
+  shows "Not recorded. Runs in the session workspace."
+- The side terminal does not change the session status, the view count, or the session
+  order.
+- Type directly in the view. The message editor sends only to the session terminal.
+- Another view, the pressed terminal icon, and **×** hide the terminal. The shell
+  continues, and the browser tab stays connected. A hidden terminal keeps its PTY size.
+  **Stop shell** ends the shell and its foreground job for every view. When the shell
+  ends, the view shows its exit code and **Start shell**.
+- Each shell has an ID. A view reconnects and stops only the shell that it showed. When
+  another view started a new shell after that shell ended, the view shows "The shell
+  ended." It does not join or stop the new shell.
+- After the shown shell ended, a click on the terminal icon connects again. The view
+  joins the live shell of the session, or it starts a new shell.
+- Only a click moves the keyboard focus to the side terminal. A reconnection keeps the
+  focus where it is.
+- Stop session ends only the session terminal. Archive stops the side terminal. Server
+  stop ends it as well. A managed worktree cannot be removed while a side terminal uses
+  it.
+- A shown Terminal view stays shown when you select another session. It joins the
+  shell of that session, but it does not start one. Click **Start shell** to start a
+  shell there.
+
+After a lost connection, the view rejoins the same shell. It never starts a new shell on
+reconnection. When the shell ended during the disconnection, the view shows
+**Start shell**.
 
 ### Message editor
 
@@ -1046,7 +1108,8 @@ message only while that run is the latest run. After another view starts and end
 later terminal, each view shows the stored status of the later run.
 
 The session toolbar shows the status next to the session title. At the right, a search
-icon opens **Search history** and a pane icon shows or hides the Changes pane. The text
+icon opens **Search history**. Three icons show the Changes, Files, and Terminal views of
+the workspace pane. The text
 buttons after them follow the session status:
 
 - **Stop session** shows when the session has a live terminal. It does not show during
@@ -1247,6 +1310,25 @@ refresh, the pane still read that folder after the failure. It also read that fo
 after a failure of the refresh request.
 A simulated failure of the first read of the workspace folder showed the failed note
 and the error. A slow refresh then showed "Reading…", and the tree came back.
+
+A side terminal fixture uses a live server and `/bin/sh`. It checks the workspace and
+`BONBON_SESSION` of the shell, and that two views share one shell. It checks that the
+shell continues after its views close and after Stop session. It also checks
+`side-terminal-stop`, a shell that exits, archive, and refusal for drafts, archived
+sessions, and unknown sessions. It checks that a resume or stop with the ID of an ended
+shell does not join or stop a later shell. It checks that SQLite has no side terminal
+events and that the session gets no status messages or view count from them. Web
+fixtures check that a lost side terminal rejoins with `side-terminal-resume` and the ID
+of its shell, and never starts another shell.
+
+A browser check of the side terminal used a temporary instance and a shell session. It
+checked commands in the session workspace, hide and reopen with the same shell, the fit
+to a larger window, Stop shell with its exit code, and **Start shell**. It also checked
+that a return to the session joins without a start. A query found no side terminal
+output in SQLite. A later check of the workspace pane checked the three icons, a separate selected file
+in each view, **View diff** from Files, the Changes header only in Changes, a folder
+outside Git, and an empty browser console. It also checked that a hidden terminal stays
+connected and keeps its size.
 
 A browser check of the session toolbar used a temporary instance, a fixture repository,
 and a Shell session. It checked the draft, running, and ended states, the tooltips, the
@@ -1566,7 +1648,9 @@ and prevent cleanup. Provider-owned daemons retain their lifecycle.
 BonBon stops the launched group and a shell's foreground job. It does not track other
 background groups. Linux runtime behavior and large archives are unverified.
 
-A session has at most one live terminal. The UI shows an earlier terminal only as its
+A session has at most one live session terminal, and at most one live side terminal.
+The side terminal keeps its screen only in server memory. Its output is lost when it
+ends, and no history can read it. The UI shows an earlier terminal only as its
 saved final screen, one terminal at a time. It cannot show two terminals side by side.
 The terminal list reads every start event of the session, so a long session makes the
 list slower to load.

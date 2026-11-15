@@ -28,6 +28,7 @@ type Server struct {
 	mu       sync.Mutex
 	launchMu sync.Mutex
 	sessions map[string]*runningSession
+	sides    map[string]*runningSession // Side terminals by session ID.
 	watchMu  sync.Mutex
 	watchers map[string]map[*draftWatcher]struct{} // Draft watchers by session ID.
 }
@@ -38,7 +39,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	executable, _ := os.Executable()
-	s := &Server{store: store, cancel: cancel, sessions: make(map[string]*runningSession), info: protocol.ServerInfo{
+	s := &Server{store: store, cancel: cancel, sessions: make(map[string]*runningSession), sides: make(map[string]*runningSession), info: protocol.ServerInfo{
 		Protocol: protocol.Version, Instance: history.ID(), PID: os.Getpid(),
 		DataDir: filepath.Dir(store.Path), Port: listener.Addr().(*net.TCPAddr).Port,
 		Executable: executable,
@@ -199,6 +200,13 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.reply(conn, result, err)
 	case "session-continue":
 		s.continueSession(ctx, conn, request)
+	case "side-terminal-open":
+		s.openSide(ctx, conn, request.Session, "", request.Size, true)
+	case "side-terminal-resume":
+		s.openSide(ctx, conn, request.Session, request.Shell, request.Size, false)
+	case "side-terminal-stop":
+		result, err := s.stopSide(request.Session, request.Shell)
+		s.reply(conn, result, err)
 	case "session-list":
 		result, err := s.listSessions(history.SessionFilter{Limit: request.Limit, Offset: request.Offset, Archived: request.Archived, Query: request.Query})
 		s.reply(conn, result, err)

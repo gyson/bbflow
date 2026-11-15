@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/23"
+const Version = "bonbon/24"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -53,6 +53,7 @@ type Request struct {
 	Session     string             `json:"session,omitempty"`
 	LatestRun   string             `json:"latestRun,omitempty"` // The latest run that the view saw.
 	Run         string             `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
+	Shell       string             `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
 	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
 	Limit       int                `json:"limit,omitempty"`
 	Size        Size               `json:"size,omitempty"`
@@ -286,6 +287,7 @@ type Message struct {
 	Signal   int               `json:"signal,omitempty"`
 	Code     int               `json:"code,omitempty"`
 	Run      string            `json:"run,omitempty"`
+	Shell    string            `json:"shell,omitempty"` // Identifies a side terminal shell.
 	Error    string            `json:"error,omitempty"`
 	Composer *Composer         `json:"composer,omitempty"`
 	Result   json.RawMessage   `json:"result,omitempty"`

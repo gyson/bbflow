@@ -133,6 +133,7 @@ type sessionView struct {
 	mu          sync.Mutex
 	output      bytes.Buffer
 	statuses    []string // The session statuses that the server sent, in order.
+	shell       string   // The side terminal shell of the session message.
 	launchInput []byte
 }
 
@@ -161,6 +162,10 @@ func openSessionView(t *testing.T, request protocol.Request) *sessionView {
 				}
 			}
 			switch m.Type {
+			case "session":
+				c.mu.Lock()
+				c.shell = m.Shell
+				c.mu.Unlock()
 			case "status":
 				c.mu.Lock()
 				c.statuses = append(c.statuses, m.Status)
