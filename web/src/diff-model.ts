@@ -46,8 +46,9 @@ export interface TreeRow {
 }
 
 // List the rows of the Files tree in display order. The key of the workspace folder is
-// an empty path. An open folder shows its entries, or a note until its list arrives.
-export function treeRows(folders: ReadonlyMap<string, WorkspaceFolder>, expanded: ReadonlySet<string>, changes: ChangedFile[]): TreeRow[] {
+// an empty path. An open folder shows its entries, or a note until its list arrives. A
+// folder in failed has no list and no request in progress.
+export function treeRows(folders: ReadonlyMap<string, WorkspaceFolder>, expanded: ReadonlySet<string>, changes: ChangedFile[], failed: ReadonlySet<string> = new Set()): TreeRow[] {
   const byPath = new Map(changes.map(change => [change.path, change]));
   // A deleted file is not in a folder list. The mark on its folder shows the change.
   const changedFolders = new Set<string>();
@@ -60,7 +61,7 @@ export function treeRows(folders: ReadonlyMap<string, WorkspaceFolder>, expanded
       rows.push({ path: parent, name, depth, kind: 'note', ignored: false, expanded: false, change: undefined, changed: false });
     };
     const folder = folders.get(parent);
-    if (!folder) return note('Reading…');
+    if (!folder) return note(failed.has(parent) ? 'Cannot read this folder. Click Refresh to try again.' : 'Reading…');
     if (folder.missing) return note('This folder is not available now.');
     for (const entry of folder.entries) {
       const path = parent ? `${parent}/${entry.name}` : entry.name;
@@ -88,11 +89,15 @@ export class FolderTree {
   private readonly folders = new Map<string, WorkspaceFolder>();
   private readonly expanded = new Set<string>();
   private readonly reads = new Map<string, object>();
+  // The workspace folder when its latest request failed before it had a list. It cannot
+  // close, so it shows a note in place of "Reading…".
+  private readonly failed = new Set<string>();
 
   clear(): void {
     this.folders.clear();
     this.expanded.clear();
     this.reads.clear();
+    this.failed.clear();
   }
 
   isOpen(path: string): boolean { return this.expanded.has(path); }
@@ -121,7 +126,10 @@ export class FolderTree {
   // Start a request for these folders. Earlier requests for them become obsolete.
   request(paths: string[]): object {
     const token = {};
-    for (const path of paths) this.reads.set(path, token);
+    for (const path of paths) {
+      this.reads.set(path, token);
+      this.failed.delete(path);
+    }
     return token;
   }
 
@@ -154,12 +162,14 @@ export class FolderTree {
 
   // Record the failure of the latest request for one folder. A folder with a list stays
   // open with its shown entries. A folder without a list has nothing to show, so it
-  // closes.
+  // closes. The workspace folder cannot close. It shows that its read failed.
   fail(path: string): void {
-    if (path && !this.folders.has(path)) this.close(path);
+    if (this.folders.has(path)) return;
+    if (path) this.close(path);
+    else this.failed.add(path);
   }
 
-  rows(changes: ChangedFile[]): TreeRow[] { return treeRows(this.folders, this.expanded, changes); }
+  rows(changes: ChangedFile[]): TreeRow[] { return treeRows(this.folders, this.expanded, changes, this.failed); }
 }
 
 export function statusTitle(change: ChangedFile): string {

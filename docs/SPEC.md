@@ -816,6 +816,8 @@ Limits:
   their own. The pane keeps the first error of that refresh in view. When the request
   of the refresh fails, the pane reads each open folder that has no entries yet in a
   request of its own. Thus no folder stays on "Reading…" without a request.
+- When the first read of the workspace folder fails, the tree shows "Cannot read this
+  folder. Click Refresh to try again." in place of "Reading…".
 - Line counts of untracked files use at most 32 MiB of reads for each list. Later
   untracked files show no count.
 - A folder that is not a Git repository has no changes and no filter. The tooltip of
@@ -1222,7 +1224,8 @@ executable, and a failed ignore check. A WebSocket fixture sends `workspace-file
 the tree rows and their notes and marks, the folders of a refresh, the language choice,
 the layout width rule, and late replies. They also cover replies for a folder that
 closed or opened again, a refresh at the shared entry limit, a folder that is gone, a
-failed request for one folder, and the unread folders of a failed refresh.
+failed request for one folder, the unread folders of a failed refresh, and a failed
+first read of the workspace folder.
 
 A browser check used a temporary instance, a fixture repository, and a shell session in
 a managed worktree. It checked Split, Unified, folded regions, View file, deleted files,
@@ -1242,6 +1245,8 @@ A simulated connection failure of the request for one folder kept that folder op
 with its entries and showed the error. With a folder that opened just before the
 refresh, the pane still read that folder after the failure. It also read that folder
 after a failure of the refresh request.
+A simulated failure of the first read of the workspace folder showed the failed note
+and the error. A slow refresh then showed "Reading…", and the tree came back.
 
 A browser check of the session toolbar used a temporary instance, a fixture repository,
 and a Shell session. It checked the draft, running, and ended states, the tooltips, the

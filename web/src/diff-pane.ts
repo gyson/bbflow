@@ -174,6 +174,8 @@ export class DiffPane {
     // Take the folders now. A click can open or close a folder during the request.
     const folderPaths = files ? this.tree.refreshPaths(maxFolderRequest) : [];
     const token = this.tree.request(folderPaths);
+    // A folder whose read failed shows "Reading…" again during this request.
+    if (files) this.renderList();
     const results = await Promise.allSettled([
       this.send(server, { operation: 'workspace-changes', session, diff: this.baseline ? { baseline: this.baseline } : {} }, abort.signal),
       files ? this.send(server, { operation: 'workspace-folders', session, diff: { folders: folderPaths } }, abort.signal) : null,
@@ -193,6 +195,8 @@ export class DiffPane {
         this.ignoreError = folders.value.ignoreError ?? '';
         void this.readAlone(this.tree.apply(folders.value, token, true), generation);
       } else if (folders.status === 'rejected') {
+        // The workspace folder has no list after a failure of its first read.
+        if (this.tree.current('', token)) this.tree.fail('');
         // This request replaced the request of a folder that opened a moment ago.
         void this.readAlone(this.tree.unread(token), generation);
       }

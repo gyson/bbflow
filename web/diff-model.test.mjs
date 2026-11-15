@@ -155,6 +155,28 @@ test('a failed request keeps the shown entries of a folder and closes a folder w
   assert.equal(names(tree).length, 5);
 });
 
+test('a failed first read of the workspace folder shows a note until the next request', () => {
+  const tree = new FolderTree();
+  tree.request(['']);
+  assert.deepEqual(names(tree), ['note:Reading…']);
+  tree.fail('');
+  assert.deepEqual(names(tree), ['note:Cannot read this folder. Click Refresh to try again.']);
+  // A refresh starts a new request. The note shows that the read is in progress again.
+  const token = tree.request(tree.refreshPaths(200));
+  assert.deepEqual(names(tree), ['note:Reading…']);
+  tree.apply(reply(folder('', [entry('a.txt')])), token, true);
+  assert.deepEqual(names(tree), ['file:a.txt']);
+  // A later failure keeps the shown entries.
+  tree.request(['']);
+  tree.fail('');
+  assert.deepEqual(names(tree), ['file:a.txt']);
+  // A new session starts without the note.
+  tree.fail('');
+  tree.clear();
+  tree.request(['']);
+  assert.deepEqual(names(tree), ['note:Reading…']);
+});
+
 test('a failed refresh names the open folders that have no list', () => {
   const tree = new FolderTree();
   tree.apply(reply(folder('', [entry('a', 'folder'), entry('b', 'folder'), entry('c', 'folder')])), tree.request(['']), true);
