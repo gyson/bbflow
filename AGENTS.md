@@ -114,7 +114,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   an optional worktree. Click Start session. Edit startup commands only in Settings.
 - After the latest terminal of a session ends, use Continue in new terminal. It starts a
   new run in the same session and workspace. It first rebuilds a read-only handoff
-  folder with every earlier terminal. Allow one live terminal per session.
+  folder with every earlier terminal. Allow one live session terminal per session.
+- The Terminal view of the workspace pane is an ad hoc shell in the session workspace. Do
+  not record it in SQLite. It must not change session status, order, or handoff.
 - A closed tab leaves its view. The session and history capture continue. Use the UI's
   Stop session action to stop work. Archive hides drafts or finished sessions. Archived
   lets users find and restore them. Each session has one saved message editor. All views

@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/23"
+const Version = "bonbon/24"
 const Path = "/ws"
 const maxMessage = 16 << 20
 

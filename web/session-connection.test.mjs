@@ -125,3 +125,29 @@ test('a lost view of an earlier terminal reconnects to the same terminal', async
   assert.deepEqual(sockets[1].sent, [{ type: 'request', request: { ...earlier, protocol: VERSION } }]);
   assert.equal(frames.length, 0);
 });
+
+test('a lost side terminal rejoins its shell and never starts another shell', async t => {
+  const open = { operation: 'side-terminal-open', session: 'one', size };
+  const { connection, sockets, frames, attach, greet } = fixture(t, open);
+  const opened = connection.connect();
+  attach(sockets[0]);
+  await opened;
+  frames.shift()();
+  sockets[0].close();
+  t.mock.timers.tick(500);
+  assert.equal(sockets.length, 2);
+  greet(sockets[1]);
+  assert.deepEqual(sockets[1].sent, [{ type: 'request', request: { operation: 'side-terminal-resume', session: 'one', size, protocol: VERSION } }]);
+});
+
+test('a lost side terminal open before its session message is not retried', async t => {
+  const open = { operation: 'side-terminal-open', session: 'one', size };
+  const { connection, sockets, errors, greet } = fixture(t, open);
+  const opened = assert.rejects(connection.connect(), /Connection lost/);
+  greet(sockets[0]);
+  sockets[0].close();
+  await opened;
+  t.mock.timers.tick(30000);
+  assert.equal(sockets.length, 1);
+  assert.equal(errors[0].retrying, false);
+});

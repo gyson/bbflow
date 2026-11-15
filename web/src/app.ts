@@ -3,6 +3,8 @@ import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo,
 import { HandoffPrompt } from './handoff-prompt.js';
 import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
+import { SideTerminal } from './side-terminal.js';
+import { WorkspacePane } from './workspace-pane.js';
 import { canContinue, continueHint, defaultContinueTool } from './continue.js';
 import { endReasonText, exitReason, hasTerminal, listStatus, listStatusText, live, statusText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
@@ -154,6 +156,8 @@ const terminalPicker = new TerminalPicker({
 });
 const historySearch = new HistorySearch(() => server);
 const diffPane = new DiffPane(() => server);
+const sideTerminal = new SideTerminal(() => server, terminalTheme);
+const workspacePane = new WorkspacePane(diffPane, sideTerminal);
 new Sidebar();
 
 let showingSettings = false;
@@ -473,6 +477,7 @@ function terminalTheme() {
 }
 
 function updateTerminalTheme(): void {
+  sideTerminal.updateTheme();
   if (!terminal) return;
   const theme = terminalTheme();
   if (terminal.options.theme?.background !== theme.background) {
@@ -550,7 +555,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   $('welcome').hidden = true;
   $('session-view').hidden = false;
   const preparing = session.status === 'draft' && !start;
-  diffPane.select(preparing ? '' : session.id ?? '');
+  workspacePane.select(preparing ? '' : session.id ?? '');
   heading(session.title || (preparing ? 'Untitled draft' : 'Untitled session'));
   $('workspace').textContent = session.workspace;
   $('workspace').title = session.workspace;
@@ -594,7 +599,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
       switch (message.type) {
         case 'session':
           selected.id = message.session;
-          diffPane.select(message.session);
+          workspacePane.select(message.session);
           // A status message follows for a live terminal. A saved screen of the latest
           // terminal means that the session ended. A saved screen of an earlier terminal
           // does not change the status of the session.
@@ -718,7 +723,7 @@ async function showWelcome(): Promise<void> {
   await preparation.close();
   await composer.select('');
   selected = null;
-  diffPane.select('');
+  workspacePane.select('');
   terminalPicker.update([]); terminalPicker.show('');
   terminal?.dispose(); terminal = null; fit = null;
   sessionSplit.setEnabled(false);
@@ -735,7 +740,7 @@ async function showSettings(): Promise<void> {
   await leaveView();
   await settingsView.open();
   showingSettings = true;
-  diffPane.select('');
+  workspacePane.select('');
   $('session-view').hidden = $('welcome').hidden = true;
   heading('Settings');
   $('workspace').textContent = 'Defaults and tools for this instance';

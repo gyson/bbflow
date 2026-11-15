@@ -181,8 +181,11 @@ func (s *Server) removeWorktree(ctx context.Context, id string) error {
 	}
 	// Include sessions opened manually in this checkout or any of its subfolders.
 	s.mu.Lock()
-	ids := make([]string, 0, len(s.sessions))
+	ids := make([]string, 0, len(s.sessions)+len(s.sides))
 	for sid := range s.sessions {
+		ids = append(ids, sid)
+	}
+	for sid := range s.sides {
 		ids = append(ids, sid)
 	}
 	s.mu.Unlock()
@@ -192,7 +195,7 @@ func (s *Server) removeWorktree(ctx context.Context, id string) error {
 			return err
 		}
 		if within(w.Path, active.Workspace) || within(active.Workspace, w.Path) {
-			return errors.New("stop all sessions using this worktree before removing it")
+			return errors.New("stop all sessions and side terminals using this worktree before removing it")
 		}
 	}
 	root, err := git(ctx, w.Path, "rev-parse", "--show-toplevel")

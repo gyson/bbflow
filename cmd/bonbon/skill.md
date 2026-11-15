@@ -27,6 +27,9 @@ BonBon sets two environment variables in each terminal that it starts:
 If `BONBON_SESSION` is empty, the terminal is not a BonBon terminal. Then ask the user
 for a session ID, or list the sessions with SQL.
 
+A side terminal sets the same variables for its session. BonBon does not record a side
+terminal, so the archive has no events of its commands.
+
 ## Run a query
 
 ```sh

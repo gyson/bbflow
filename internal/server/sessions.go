@@ -34,6 +34,7 @@ type runningSession struct {
 	ended     bool
 	exit      protocol.Message
 	activity  activity
+	side      bool // A side terminal has no run, no recording, and no session status.
 }
 
 type attachment struct {
@@ -221,23 +222,31 @@ func prepareRun(request *protocol.Run) (*agent.Launch, error) {
 		return nil, err
 	}
 	run.Workspace = workspace
-	run.Shell = os.Getenv("SHELL")
-	if run.Shell == "" {
-		run.Shell = "/bin/sh"
-	}
-	if !filepath.IsAbs(run.Shell) && filepath.Base(run.Shell) != run.Shell {
-		return nil, errors.New("SHELL must be an absolute path or a name on the server PATH")
-	}
-	path, err := exec.LookPath(run.Shell)
-	if err != nil {
+	if run.Shell, run.Env, err = serverShell(); err != nil {
 		return nil, err
 	}
-	run.Shell, err = filepath.Abs(path)
-	if err != nil {
-		return nil, err
-	}
-	run.Env = append(os.Environ(), "TERM=xterm-256color")
 	return &run, nil
+}
+
+// serverShell resolves $SHELL, or /bin/sh when it is unset, and the environment of a
+// new terminal.
+func serverShell() (string, []string, error) {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	if !filepath.IsAbs(shell) && filepath.Base(shell) != shell {
+		return "", nil, errors.New("SHELL must be an absolute path or a name on the server PATH")
+	}
+	path, err := exec.LookPath(shell)
+	if err != nil {
+		return "", nil, err
+	}
+	shell, err = filepath.Abs(path)
+	if err != nil {
+		return "", nil, err
+	}
+	return shell, append(os.Environ(), "TERM=xterm-256color"), nil
 }
 
 // run returns the ID of the run, or an empty string before its process starts.
@@ -331,6 +340,9 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 	// Each live view gets the session status now and after each change.
 	status := ""
 	sendStatus := func() error {
+		if r.side {
+			return nil
+		}
 		next := r.status(time.Now())
 		if next == status || next == "ended" {
 			return nil
@@ -473,7 +485,12 @@ func (s *Server) archiveSession(id string, archived bool) error {
 	if archived && s.running(id) != nil {
 		return errors.New("stop the session before archiving it")
 	}
-	return s.store.SetSessionArchived(id, archived)
+	if err := s.store.SetSessionArchived(id, archived); err != nil || !archived {
+		return err
+	}
+	// An archived session keeps no side terminal.
+	_, err := s.stopSide(id)
+	return err
 }
 
 func (s *Server) stopSession(id string) (any, error) {
