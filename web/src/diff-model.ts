@@ -146,6 +146,12 @@ export class FolderTree {
     return alone;
   }
 
+  // The open folders of this request that have no list. They show "Reading…". After a
+  // failed request, each of them needs a request of its own.
+  unread(token: object): string[] {
+    return [...this.expanded].filter(path => this.current(path, token) && !this.folders.has(path)).sort();
+  }
+
   // Record the failure of the latest request for one folder. A folder with a list stays
   // open with its shown entries. A folder without a list has nothing to show, so it
   // closes.

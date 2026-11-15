@@ -812,6 +812,10 @@ Limits:
   again in a request of its own.
 - A failed request for one folder shows its error. A folder with shown entries stays
   open and keeps them. A folder that opened without entries closes.
+- After a failure, a refresh continues with the other folders that need a request of
+  their own. The pane keeps the first error of that refresh in view. When the request
+  of the refresh fails, the pane reads each open folder that has no entries yet in a
+  request of its own. Thus no folder stays on "Reading…" without a request.
 - Line counts of untracked files use at most 32 MiB of reads for each list. Later
   untracked files show no count.
 - A folder that is not a Git repository has no changes and no filter. The tooltip of
@@ -1217,8 +1221,8 @@ executable, and a failed ignore check. A WebSocket fixture sends `workspace-file
 `workspace-folders` through the server. Web fixtures cover the file list, the filter,
 the tree rows and their notes and marks, the folders of a refresh, the language choice,
 the layout width rule, and late replies. They also cover replies for a folder that
-closed or opened again, a refresh at the shared entry limit, a folder that is gone, and
-a failed request for one folder.
+closed or opened again, a refresh at the shared entry limit, a folder that is gone, a
+failed request for one folder, and the unread folders of a failed refresh.
 
 A browser check used a temporary instance, a fixture repository, and a shell session in
 a managed worktree. It checked Split, Unified, folded regions, View file, deleted files,
@@ -1235,7 +1239,9 @@ phone width without horizontal scroll, and an empty browser console. A later che
 opened a folder with Enter and moved to its first entry with Tab. It also refreshed the
 tree with an open folder of 20,000 files, and each open folder kept its entries.
 A simulated connection failure of the request for one folder kept that folder open
-with its entries and showed the error.
+with its entries and showed the error. With a folder that opened just before the
+refresh, the pane still read that folder after the failure. It also read that folder
+after a failure of the refresh request.
 
 A browser check of the session toolbar used a temporary instance, a fixture repository,
 and a Shell session. It checked the draft, running, and ended states, the tooltips, the

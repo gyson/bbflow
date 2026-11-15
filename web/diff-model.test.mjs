@@ -155,6 +155,24 @@ test('a failed request keeps the shown entries of a folder and closes a folder w
   assert.equal(names(tree).length, 5);
 });
 
+test('a failed refresh names the open folders that have no list', () => {
+  const tree = new FolderTree();
+  tree.apply(reply(folder('', [entry('a', 'folder'), entry('b', 'folder'), entry('c', 'folder')])), tree.request(['']), true);
+  tree.open('a');
+  tree.apply(reply(folder('a', [entry('a.go')])), tree.request(['a']), false);
+  // The refresh replaces the first request of b. Then c opens with a request of its own.
+  tree.open('b');
+  const first = tree.request(['b']);
+  const refresh = tree.request(tree.refreshPaths(200));
+  tree.open('c');
+  tree.request(['c']);
+  assert.equal(tree.current('b', first), false);
+  assert.deepEqual(tree.unread(refresh), ['b']);
+  // A reply of the refresh for b ends the wait.
+  tree.apply(reply(folder('b', [entry('b.go')])), refresh, true);
+  assert.deepEqual(tree.unread(refresh), []);
+});
+
 test('a refresh closes a folder that is gone and the folders above the request limit', () => {
   const tree = new FolderTree();
   tree.apply(reply(folder('', [entry('a', 'folder'), entry('b', 'folder')])), tree.request(['']), true);

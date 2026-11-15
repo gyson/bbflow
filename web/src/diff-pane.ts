@@ -192,6 +192,9 @@ export class DiffPane {
       if (folders.status === 'fulfilled' && folders.value) {
         this.ignoreError = folders.value.ignoreError ?? '';
         void this.readAlone(this.tree.apply(folders.value, token, true), generation);
+      } else if (folders.status === 'rejected') {
+        // This request replaced the request of a folder that opened a moment ago.
+        void this.readAlone(this.tree.unread(token), generation);
       }
     }
     this.renderBaseline();
@@ -242,36 +245,36 @@ export class DiffPane {
 
   // Read one folder in its own request. A later request for the folder, or a close of
   // the folder, makes this request obsolete. Then its reply and its failure do nothing.
-  // A failure keeps the shown entries of the folder and shows the error. The result is
-  // false only for a failure.
-  private async readFolder(path: string): Promise<boolean> {
+  // A failure keeps the shown entries of the folder and shows the error.
+  //
+  // A click on a folder shows the result of its own request. A read after a refresh
+  // keeps the first error of that refresh, so that a later reply does not hide it.
+  private async readFolder(path: string, afterRefresh = false): Promise<void> {
     const server = this.server();
-    if (!server || (path && !this.tree.isOpen(path))) return true;
+    if (!server || (path && !this.tree.isOpen(path))) return;
     const token = this.tree.request([path]);
-    let failed = false;
     try {
       const reply = await this.send(server, { operation: 'workspace-folders', session: this.session, diff: { folders: [path] } });
-      if (!this.tree.current(path, token)) return true;
+      if (!this.tree.current(path, token)) return;
       this.tree.apply(reply, token, false);
       this.ignoreError = reply.ignoreError ?? '';
-      this.filesError = '';
+      if (!afterRefresh) this.filesError = '';
     } catch (error) {
-      if (!this.tree.current(path, token)) return true;
+      if (!this.tree.current(path, token)) return;
       this.tree.fail(path);
-      this.filesError = errorMessage(error);
-      failed = true;
+      if (!afterRefresh || !this.filesError) this.filesError = errorMessage(error);
     }
     this.renderList();
     this.renderStatus();
-    return !failed;
   }
 
   // Read each of these folders in its own request, one after the other. Stop when a
-  // newer refresh starts. Stop also at a failure, so that a later reply does not hide
-  // its error.
+  // newer refresh starts. Continue after a failure, because each folder needs its own
+  // result. A folder without a result stays on "Reading…".
   private async readAlone(paths: string[], generation: number): Promise<void> {
     for (const path of paths) {
-      if (!this.listGeneration.current(generation) || !await this.readFolder(path)) return;
+      if (!this.listGeneration.current(generation)) return;
+      await this.readFolder(path, true);
     }
   }
 
