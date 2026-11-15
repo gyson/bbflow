@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { exitReason, hasTerminal, listStatus, live, statusText, terminalsChanged } from './dist/session-status.js';
+import { endReasonText, exitReason, hasTerminal, listStatus, listStatusText, live, statusText, terminalsChanged } from './dist/session-status.js';
 
 test('only running and idle sessions are live', () => {
   for (const status of ['running', 'idle']) assert.equal(live(status), true, status);
@@ -46,4 +46,33 @@ test('an exit shows its code, and other ends show the recorded run status', () =
   assert.equal(exitReason(129, 'stopped'), 'stopped');
   assert.equal(exitReason(1, 'failed'), 'failed');
   assert.equal(exitReason(undefined, undefined), 'exit 0');
+});
+
+test('the status line of a listed session shows its status, archive state, and views', () => {
+  assert.equal(listStatusText('running', {}), 'running');
+  assert.equal(listStatusText('draft', { archived: true }), 'Draft · Archived');
+  assert.equal(listStatusText('idle', { viewers: 1 }), 'idle · 1 view');
+  assert.equal(listStatusText('ended', { archived: true, viewers: 2 }), 'ended · Archived · 2 views');
+});
+
+test('an end reason applies only to the run that it is about', () => {
+  const seen = { run: 'run-1', text: 'exit 3' };
+  assert.equal(endReasonText(seen, { id: 'run-1', status: 'exited' }), 'exit 3');
+  // Another view continued the session and stopped the new terminal.
+  assert.equal(endReasonText(seen, { id: 'run-2', status: 'stopped' }), 'stopped');
+  assert.equal(endReasonText(null, { id: 'run-2', status: 'interrupted' }), 'interrupted');
+  assert.equal(endReasonText(null, undefined), '');
+});
+
+test('a terminal that failed before its run started keeps its reason only without a run', () => {
+  const seen = { run: '', text: 'exit 1' };
+  assert.equal(endReasonText(seen, undefined), 'exit 1');
+  assert.equal(endReasonText(seen, { id: 'run-1', status: 'exited' }), 'exited');
+});
+
+test('an ended session does not show the status of a run that is not ended', () => {
+  for (const status of ['starting', 'running']) {
+    assert.equal(endReasonText(null, { id: 'run-1', status }), '', status);
+    assert.equal(endReasonText({ run: 'run-1', text: 'exit 3' }, { id: 'run-2', status }), '', status);
+  }
 });

@@ -498,7 +498,7 @@ everyone.
 | Server → client | `frame` | Base64 rendered ANSI in `data`, `size`, `revision`, and optional `full` |
 | Server → client | `status` | The session `status` of a live process: `running` or `idle` |
 | Server → client | `input-ack` | Matching `id`. An optional `error` indicates uncertain delivery. |
-| Server → client | `exit` | Exit `code`, the recorded run `status` (`exited`, `stopped`, or `failed`), and optional `error`. Each view gets the same message. Follows the final frame acknowledgment. |
+| Server → client | `exit` | Exit `code`, the recorded run `status` (`exited`, `stopped`, or `failed`), the `run` ID, and optional `error`. `status` and `run` are absent when the terminal failed before its run started. Each view gets the same message. Follows the final frame acknowledgment. |
 | Server → client | `history-end` | End of a read-only ended-session view |
 | Server → client | `error` | Error description in `error` |
 

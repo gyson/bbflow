@@ -210,8 +210,8 @@ records.
 
 Protocol 22 adds the derived [session status](#session-status) to session summaries and
 session details. It also adds the `status` message of a live terminal stream, the
-`status-watch` stream, and the run status in the `exit` message. The SQLite format does
-not change.
+`status-watch` stream, and the run status and run ID in the `exit` message. The SQLite
+format does not change.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
 its static files, and `GET /client-config` for browser connection information. All
@@ -980,12 +980,21 @@ also without a view of that session. The `session-list` refresh every five secon
 supplies all other session data. It also supplies the statuses while the watch
 reconnects. When a terminal starts or ends, the page reads the list at once.
 
+A status change updates the dot and the status text of a session button in place. The
+button stays, so the keyboard focus stays on it. Other list changes replace the buttons
+of the list. The page then moves the keyboard focus to the new button of the same
+session or project control.
+
 The session header shows **Running**, **Idle**, or **Ended**. A live view gets each
 status change on its terminal stream. An ended session adds the reason. The `exit`
 message carries the recorded run status, so each view shows the same reason:
 **Ended · exit 0** for a normal exit with its code, and **Ended · stopped** or
 **Ended · failed** for the other ends. A saved terminal shows the stored run status, for
 example **Ended · interrupted**.
+
+The `exit` message also carries the run ID. A view shows the reason from an `exit`
+message only while that run is the latest run. After another view starts and ends a
+later terminal, each view shows the stored status of the later run.
 
 **Stop session** is available when the session has a live terminal. It is not available
 during worktree creation, which shows as `running` without a terminal. When the server
@@ -1404,9 +1413,11 @@ session after stop. A second PTY fixture sends an unchanged size and then trigge
 output. It checks that the application got no size change and that the session shows
 `running`. A server fixture checks the same rule and a changed size with fixed state.
 A PTY fixture with three shells checks that a view that did not stop a terminal gets
-`stopped` with code 129, and `exited` with code 3. Web fixtures cover the status text,
-the continue rule, the terminal rule for **Stop session**, the priority of a pushed
-status, the end reason, and the reconnection of a watch stream.
+`stopped` with code 129, and `exited` with code 3. It also checks that each `exit`
+message carries the ID of its run. Web fixtures cover the status text, the continue
+rule, the terminal rule for **Stop session**, the priority of a pushed status, the
+status line of a list entry, the end reason and its run, and the reconnection of a
+watch stream.
 
 A live check used a temporary instance and a Shell session in the browser UI. A shell
 loop that wrote a line each half second showed `running` from 0.6 seconds after Send
@@ -1420,6 +1431,15 @@ one line each 7 seconds in a session that no tab showed. Its sidebar dot showed
 `running` for 3.0 seconds after each line, in three cycles. One tab then stopped the
 session, and both tabs showed **Ended · stopped**. Stop session during worktree
 creation has fixture coverage only.
+
+A third live check used a temporary instance and the same shell loop. The keyboard
+focus was on the sidebar button of a session that the tab did not show. In 30 seconds,
+nine pushed status changes updated the dot without new buttons. Six list refreshes
+replaced the buttons, and the focus stayed on the button of that session.
+
+In the same check, one tab showed **Ended · exit 3** for the first terminal. A second
+tab continued the session and stopped the new terminal. Both tabs then showed
+**Ended · stopped**.
 
 ## Limitations
 

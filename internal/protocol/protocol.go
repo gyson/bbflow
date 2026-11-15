@@ -240,7 +240,8 @@ type ServerInfo struct {
 
 // Message carries one request, reply, or terminal event. Set only the fields that its
 // Type needs. Input bytes and rendered frames use base64 in JSON. Statuses holds running
-// or idle for each session that has a live terminal.
+// or idle for each session that has a live terminal. Run identifies the run that an exit
+// message is about.
 type Message struct {
 	Type     string            `json:"type"`
 	Revision int64             `json:"revision,omitempty"`
@@ -256,6 +257,7 @@ type Message struct {
 	Size     Size              `json:"size,omitempty"`
 	Signal   int               `json:"signal,omitempty"`
 	Code     int               `json:"code,omitempty"`
+	Run      string            `json:"run,omitempty"`
 	Error    string            `json:"error,omitempty"`
 	Composer *Composer         `json:"composer,omitempty"`
 	Result   json.RawMessage   `json:"result,omitempty"`

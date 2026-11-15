@@ -4,7 +4,8 @@ import { HandoffPrompt } from './handoff-prompt.js';
 import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
 import { canContinue, continueHint, defaultContinueTool } from './continue.js';
-import { exitReason, hasTerminal, listStatus, live, statusText, terminalsChanged } from './session-status.js';
+import { endReasonText, exitReason, hasTerminal, listStatus, listStatusText, live, statusText, terminalsChanged } from './session-status.js';
+import type { EndReason } from './session-status.js';
 import { Watch } from './watch.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -118,14 +119,17 @@ let projects: Project[] = [];
 let editingProject: Project | null = null;
 const collapsedProjects = new Set<string>();
 let renderedSidebar = '';
+// The status elements of each session button in the list. A status change updates them
+// in place, so the buttons and the keyboard focus stay.
+const statusMarks: { session: SessionInfo; dot: HTMLElement; text: Text }[] = [];
 let selected: SessionView | null = null;
 let continueTools: Tool[] = [];
 // The handoff prompt of the selected session. It stays available after a new terminal
 // starts, so the user can copy or send it later.
 let handoff: { session: string; info: Handoff } | null = null;
-// The reason that this view saw for the end of the selected session: an exit code, or the
-// recorded run status.
-let endReason = '';
+// The reason that this view saw for the end of a run of the selected session: an exit
+// code, or the recorded run status.
+let endReason: EndReason | null = null;
 let terminalsGeneration = 0;
 let busy = false, refreshing = false;
 let archivedList = false, pageOffset = 0, hasNextPage = false, refreshGeneration = 0;
@@ -184,9 +188,9 @@ function withDetail(session: SessionView, detail: PreparedSession): SessionView 
 }
 
 // Show the status of the selected session. An ended session adds the reason that this
-// view saw, or the status of the latest run.
+// view saw for the latest run, or the stored status of that run.
 function showStatus() {
-  if (selected && selected.status !== 'draft') $('status').textContent = statusText(selected.status, endReason || selected.run?.status);
+  if (selected && selected.status !== 'draft') $('status').textContent = statusText(selected.status, endReasonText(endReason, selected.run));
 }
 
 // Show the view name in the page heading and in the browser tab.
@@ -251,11 +255,10 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
   title.textContent = session.title || (session.status === 'draft' ? 'Untitled draft' : 'Untitled session');
   const status = document.createElement('span');
   status.className = 'run-state';
-  const dot = document.createElement('span');
-  // A live view and the status watch get status changes at once. The list is older.
-  const shown = connection?.peer?.active && selected?.id === session.id ? selected.status : listStatus(session, liveStatuses);
-  dot.className = `dot ${shown}`;
-  status.append(dot, document.createTextNode((shown === 'draft' ? 'Draft' : shown) + (session.archived ? ' · Archived' : '') + (session.viewers ? ` · ${session.viewers} view${session.viewers === 1 ? '' : 's'}` : '')));
+  const dot = document.createElement('span'), text = document.createTextNode('');
+  status.append(dot, text);
+  statusMarks.push({ session, dot, text });
+  button.dataset.focus = `session:${session.id}`;
   button.append(title);
   if (showWorkspace) {
     const workspace = document.createElement('small');
@@ -272,11 +275,26 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
   return button;
 }
 
+// Show the current status of each session in the list, without new buttons.
+function showListStatuses() {
+  for (const { session, dot, text } of statusMarks) {
+    // A live view and the status watch get status changes at once. The list is older.
+    const shown = connection?.peer?.active && selected?.id === session.id ? selected.status : listStatus(session, liveStatuses);
+    const className = `dot ${shown}`, line = listStatusText(shown, session);
+    if (dot.className !== className) dot.className = className;
+    if (text.data !== line) text.data = line;
+  }
+}
+
 function renderSessions() {
   const query = $('filter').value.toLowerCase();
-  const fingerprint = JSON.stringify([projects, sessions, liveStatuses, query, archivedList, pageOffset, hasNextPage, selected?.id, selected?.status, !!connection?.peer?.active, showingSettings, [...collapsedProjects]]);
-  if (fingerprint === renderedSidebar) { controls(); return; }
+  // A status is not part of the fingerprint. A status change must not replace the buttons.
+  const fingerprint = JSON.stringify([projects, sessions, query, archivedList, pageOffset, hasNextPage, selected?.id, showingSettings, [...collapsedProjects]]);
+  if (fingerprint === renderedSidebar) { showListStatuses(); controls(); return; }
   renderedSidebar = fingerprint;
+  // New buttons replace the list. Give the keyboard focus to the new button of the same item.
+  const focused = document.activeElement instanceof HTMLElement && $('sessions').contains(document.activeElement) ? document.activeElement.dataset.focus : undefined;
+  statusMarks.length = 0;
   $('sessions').replaceChildren();
   $('sessions-open').setAttribute('aria-pressed', String(!archivedList));
   $('archives-open').setAttribute('aria-pressed', String(archivedList));
@@ -308,6 +326,7 @@ function renderSessions() {
       toggle.setAttribute('aria-label', `${list.hidden ? 'Expand' : 'Collapse'} ${name}`);
       toggle.setAttribute('aria-expanded', String(!list.hidden));
     };
+    toggle.dataset.focus = `toggle:${id}`;
     toggle.setAttribute('aria-controls', list.id);
     toggle.onclick = () => {
       if (collapsedProjects.has(id)) collapsedProjects.delete(id); else collapsedProjects.add(id);
@@ -321,6 +340,7 @@ function renderSessions() {
       add.textContent = '＋';
       add.title = `New draft in ${name}`;
       add.setAttribute('aria-label', add.title);
+      add.dataset.focus = `add:${id}`;
       add.onclick = () => action(() => showLaunch(project.id));
       heading.append(add);
       if (id !== 'general') {
@@ -329,6 +349,7 @@ function renderSessions() {
         edit.textContent = '⋯';
         edit.title = `Edit ${name}`;
         edit.setAttribute('aria-label', edit.title);
+        edit.dataset.focus = `edit:${id}`;
         edit.onclick = () => showProject(project);
         heading.append(edit);
       }
@@ -348,6 +369,12 @@ function renderSessions() {
     empty.className = 'muted';
     empty.textContent = archivedList ? 'No archived sessions found.' : 'No matching projects or sessions.';
     $('sessions').append(empty);
+  }
+  showListStatuses();
+  if (focused) {
+    for (const button of $('sessions').querySelectorAll<HTMLElement>('[data-focus]')) {
+      if (button.dataset.focus === focused) { button.focus({ preventScroll: true }); break; }
+    }
   }
   controls();
 }
@@ -503,7 +530,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
     const detail = await call(server, { operation: 'session-config', session: session.id });
     session = { ...session, ...detail };
   }
-  endReason = '';
+  endReason = null;
   await composer.select('');
   notice();
   if (selected?.id !== session.id) terminalPicker.update([]);
@@ -583,7 +610,10 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           break;
         case 'exit':
           selected.status = 'ended';
-          endReason = exitReason(message.code, message.status);
+          // The exit message names its run. This view can have an earlier run, or no run,
+          // because the run of a new terminal starts after the view reads the session.
+          if (message.run) selected.run = { id: message.run, status: message.status ?? '' };
+          endReason = { run: message.run ?? '', text: exitReason(message.code, message.status) };
           view.options.disableStdin = true;
           showStatus();
           $('terminal-hint').textContent = 'Process ended. Showing saved terminal output.';
@@ -874,15 +904,14 @@ async function initialize() {
     const { stopped } = await call(server, { operation: 'session-stop', session: selected.id });
     if (stopped) {
       selected.status = 'ended';
-      // The exit message of a live view gives the recorded reason. Keep that reason.
-      endReason ||= 'stopped';
-      showStatus();
       notice('Session stopped. Terminal output is saved.');
     } else {
       notice('The session has no live terminal. Nothing was stopped.');
     }
+    // A view of an earlier terminal gets no exit message. The refresh reads the stored
+    // status of the stopped run.
     await refreshSessions();
-    // A view of an earlier terminal gets no exit message.
+    if (stopped) showStatus();
     await loadTerminals(selected.id);
   });
   new ResizeObserver(requestFit).observe($('terminal'));

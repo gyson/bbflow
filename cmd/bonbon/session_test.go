@@ -236,20 +236,19 @@ func waitFor(t *testing.T, check func() bool) {
 	t.Fatal("timed out")
 }
 
-// wait checks the exit code of the terminal. It returns the run status that the exit
-// message carries.
-func (c *sessionView) wait(t *testing.T, expected int) string {
+// wait checks the exit code of the terminal. It returns the exit message.
+func (c *sessionView) wait(t *testing.T, expected int) protocol.Message {
 	t.Helper()
 	select {
 	case m := <-c.done:
 		if m.Error != "" || m.Code != expected {
 			t.Fatalf("session end = %+v, expected %d: %s", m, expected, c.text())
 		}
-		return m.Status
+		return m
 	case <-time.After(8 * time.Second):
 		t.Fatalf("session did not end: %s", c.text())
 	}
-	return ""
+	return protocol.Message{}
 }
 
 func archive(t *testing.T, dataDir string) *history.Store {
@@ -424,22 +423,23 @@ func TestConcurrentShellsShareSameAndOverlappingWorkspaces(t *testing.T) {
 		t.Fatal(sessions, err)
 	}
 	pids := map[int]bool{}
-	ids := map[string]string{}
+	ids, runs := map[string]string{}, map[string]string{}
 	for _, s := range sessions {
 		if s.Run == nil || s.Run.Status != "running" || pids[s.Run.PID] {
 			t.Fatal("sessions did not run independently", s)
 		}
 		pids[s.Run.PID] = true
-		ids[s.Title] = s.ID
+		ids[s.Title], runs[s.Title] = s.ID, s.Run.ID
 	}
-	// A view that did not stop the terminal gets the recorded reason for its end.
+	// A view that did not stop the terminal gets the recorded reason for its end and the
+	// run that the reason is about.
 	stopTestSession(t, ids["shell-1"])
-	if status := clients[1].wait(t, 129); status != "stopped" {
-		t.Fatalf("a stopped terminal ended with status %q", status)
+	if exit := clients[1].wait(t, 129); exit.Status != "stopped" || exit.Run != runs["shell-1"] {
+		t.Fatalf("a stopped terminal ended with %+v", exit)
 	}
 	clients[2].Write([]byte("exit 3\r"))
-	if status := clients[2].wait(t, 3); status != "exited" {
-		t.Fatalf("an exited terminal ended with status %q", status)
+	if exit := clients[2].wait(t, 3); exit.Status != "exited" || exit.Run != runs["shell-2"] {
+		t.Fatalf("an exited terminal ended with %+v", exit)
 	}
 	for _, title := range []string{"shell-0", "shell-3", "shell-4"} {
 		run, err := store.LatestRun(ids[title])

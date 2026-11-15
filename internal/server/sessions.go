@@ -162,14 +162,15 @@ func (r *runningSession) publish(event history.Event) ([]byte, error) {
 	return responses, nil
 }
 
-// finish ends the terminal. Each view gets the exit code and the recorded run status.
+// finish ends the terminal. Each view gets the exit code, the recorded run status, and
+// the run ID.
 func (r *runningSession) finish(code int, status string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ended = true
 	r.sizeOwner = nil
 	r.revision++
-	r.exit = protocol.Message{Type: "exit", Code: code, Status: status}
+	r.exit = protocol.Message{Type: "exit", Code: code, Status: status, Run: r.runID}
 	if err != nil {
 		r.exit.Error = err.Error()
 	}

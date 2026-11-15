@@ -123,8 +123,9 @@ export type ServerMessage =
   | { type: 'frame'; data?: string; size: Size; revision: number; full?: boolean }
   | { type: 'pong' }
   | { type: 'input-ack'; id: string; error?: string }
-  // status is the recorded status of the run: exited, stopped, or failed.
-  | { type: 'exit'; code?: number; status?: string; error?: string }
+  // status is the recorded status of the run: exited, stopped, or failed. run is empty
+  // when the terminal failed before its run started.
+  | { type: 'exit'; code?: number; status?: string; run?: string; error?: string }
   | { type: 'history-end' }
   | { type: 'draft'; session: string; composer: ComposerState }
   // A status watch gets running or idle for each session that has a live terminal.
