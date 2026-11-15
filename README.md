@@ -159,14 +159,15 @@ In **Settings → Appearance**, choose **System**, **Light**, or **Dark**. Click
 **Save settings** to apply the theme. System follows your device appearance.
 Browsers without CSS `light-dark()` support use the Light palette.
 
-Use **Changes** in the session toolbar to see the changed files of the session
-workspace in a read-only pane. Choose **Since worktree base** or **Uncommitted
+Click the pane icon in the session toolbar to see the changed files of the session
+workspace in a read-only pane. Its tooltip is **Show changes**. Choose **Since worktree base** or **Uncommitted
 changes**. Choose **Split** or **Unified** for the diff. **All files** also lists
 unchanged files, and **View file** shows the current file. The pane does not edit files.
 It does not watch files. Click **Refresh** or return to the window to read them again. A
 folder that is not a Git repository has no file list.
 
-Use **Search history** to search recorded output in SQLite. Command+Shift+F on macOS
+Click the search icon in the session toolbar to search recorded output in SQLite. Its
+tooltip is **Search history**. Command+Shift+F on macOS
 or Ctrl+Shift+F opens the same dialog. The default scope includes every terminal of the
 selected session. Choose **This project** or **All sessions** for a broader search.
 Archived sessions are included. Without a selected session, the dialog starts with
@@ -204,9 +205,11 @@ not count as output.
 
 Use **⋯** to rename or remove a custom project. Removing a project moves its sessions
 and unfinished drafts to **Standalone** and keeps their history, files, and processes.
-**Rename** in a session's toolbar changes its title.
+**More actions** (⋯) in the session toolbar has the actions that you need less often.
+**Rename** in this menu changes the session title.
 
-**Archive** hides a draft or finished session and preserves all data and files. Stop a
+**Archive** in the same menu hides a draft or finished session and preserves all data
+and files. Stop a
 running session before archiving it. Open **Archived** to search or browse saved items,
 read recorded output, and edit saved drafts. **Restore** returns the item to its project
 (or Standalone if the project was removed). Restore never launches a process.
@@ -294,7 +297,7 @@ settings passed a live check:
 Codex uses the alternate screen by default. Do not turn on the fullscreen renderer of
 Claude Code.
 
-**Remove worktree** is explicit. It refuses active sessions and modified, untracked, or
+**Remove worktree** in the **More actions** menu is explicit. It refuses active sessions and modified, untracked, or
 ignored files, keeps the branch, and preserves history. Stopping a session or removing a
 project does not remove its worktree. Repositories must remain available for Git
 cleanup.

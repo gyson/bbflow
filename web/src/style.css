@@ -136,18 +136,34 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 #sidebar-divider:hover::after, #sidebar-divider:focus-visible::after, .resizing-sidebar #sidebar-divider::after { background: var(--accent); }
 #sidebar-divider:focus-visible { outline: none; }
 body.resizing-sidebar, body.resizing-sidebar * { cursor: col-resize !important; user-select: none !important; }
-#sidebar-toggle { flex: none; display: flex; padding: 6px; border-color: transparent; background: transparent; color: var(--accent-text); }
-#sidebar-toggle:hover { background: var(--hover); border-color: transparent; }
-#sidebar-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; }
-#sidebar-toggle .sidebar-panel { stroke: none; }
-#sidebar-toggle[aria-expanded="true"] .sidebar-panel { fill: currentColor; opacity: .3; }
+.toolbar-icon { flex: none; display: flex; padding: 6px; border-color: transparent; background: transparent; color: var(--accent-text); }
+.toolbar-icon:hover:not(:disabled) { background: var(--hover); border-color: transparent; }
+.toolbar-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.toolbar-icon .panel { stroke: none; }
+.toolbar-icon .dots { fill: currentColor; stroke: none; }
+#sidebar-toggle[aria-expanded="true"] .panel, #diff-open[aria-pressed="true"] .panel { fill: currentColor; opacity: .3; }
+/* A tooltip shows the data-tip text below its control, on hover and on keyboard focus. */
+[data-tip] { position: relative; }
+[data-tip]::after { content: attr(data-tip) / ""; position: absolute; top: calc(100% + 7px); right: 0; z-index: 20; width: max-content; max-width: min(300px, 70vw); padding: 5px 9px; border-radius: 6px; background: var(--text); color: var(--workspace); font-size: 11px; font-weight: 400; line-height: 1.45; letter-spacing: 0; text-align: left; white-space: normal; opacity: 0; pointer-events: none; transition: opacity .1s; }
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transition-delay: .35s; }
+[data-tip]:disabled::after, #session-menu-open[aria-expanded="true"]::after { display: none; }
+.toolbar-title [data-tip]::after { right: auto; left: 0; }
 main { min-width: 0; flex: 1; display: flex; flex-direction: column; overflow: auto; }
 .toolbar { min-height: 96px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 22px 30px; border-bottom: 1px solid var(--divider); }
-.toolbar-title { display: flex; align-items: center; gap: 12px; min-width: 180px; }
+/* The title takes the space that the actions leave. A long title or path shortens
+   before the actions wrap. */
+.toolbar-title { flex: 1 1 0; display: flex; align-items: center; gap: 12px; min-width: 180px; }
 .session-heading { min-width: 0; }
-h1 { margin: 0 0 7px; font-size: 18px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 7px; }
+#status { flex: none; padding: 3px 8px; }
+h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #workspace { margin: 0; color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; font-size: 12px; }
+/* The margin keeps the actions at the right when they wrap below the title. */
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; margin-left: auto; font-size: 12px; }
+#session-menu-box { position: relative; display: flex; }
+#session-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; display: flex; flex-direction: column; min-width: 180px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px var(--shadow-overlay); }
+#session-menu button { margin: 1px 0; padding: 7px 10px; border-color: transparent; background: transparent; text-align: left; }
+#session-menu button:hover:not(:disabled), #session-menu button:focus-visible { background: var(--selected); border-color: var(--selected-border); }
 .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: var(--accent-text); background: var(--selected); border-radius: 5px; padding: 6px 9px; }
 .welcome { margin: auto; padding: 60px 40px; max-width: 760px; width: 100%; }
 .eyebrow { font-size: 10px; letter-spacing: 1.7px; color: var(--accent-text); font-weight: 600; }

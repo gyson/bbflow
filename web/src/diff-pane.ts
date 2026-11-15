@@ -192,6 +192,9 @@ export class DiffPane {
   private show(): void {
     this.openButton.hidden = !this.visible;
     this.openButton.setAttribute('aria-pressed', String(this.isOpen));
+    const label = this.isOpen ? 'Hide changes' : 'Show changes';
+    this.openButton.setAttribute('aria-label', label);
+    this.openButton.dataset.tip = label;
     this.pane.hidden = this.divider.hidden = !this.isOpen || !this.visible;
     // The pressed button is the shown layout. A narrow pane shows Unified, and Split
     // waits for a wider pane.

@@ -13,6 +13,7 @@ import '@xterm/xterm/css/xterm.css';
 import './style.css';
 import { element } from './dom.js';
 import { Composer } from './composer.js';
+import { SessionMenu } from './session-menu.js';
 import { SessionSplit } from './session-split.js';
 import { Sidebar } from './sidebar.js';
 import { sessionGroups } from './projects.js';
@@ -61,6 +62,7 @@ const elements = {
   'notice': element('notice', HTMLElement),
   'stop': element('stop', HTMLButtonElement),
   'reconnect': element('reconnect', HTMLButtonElement),
+  'reload-output': element('reload-output', HTMLButtonElement),
   'continue-session': element('continue-session', HTMLButtonElement),
   'continue-dialog': element('continue-dialog', HTMLDialogElement),
   'continue-form': element('continue-form', HTMLFormElement),
@@ -142,6 +144,7 @@ const composer = new Composer({
   action,
 });
 const sessionSplit = new SessionSplit();
+const sessionMenu = new SessionMenu();
 const handoffPrompt = new HandoffPrompt({ insert: text => composer.insert(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
 // final screen. The live process continues while a view shows an earlier terminal.
@@ -219,11 +222,14 @@ function controls() {
   $('add-project').disabled = busy || !server;
   // Worktree creation shows as running, but only a terminal can stop or reconnect.
   const terminalLive = !!connection?.peer?.active || hasTerminal(selected);
-  $('stop').disabled = busy || showingSettings || !terminalLive;
-  // A view of an earlier terminal uses Back to live terminal instead.
-  $('reconnect').hidden = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active || !!terminalPicker.shownRun;
-  $('reconnect').textContent = terminalLive ? 'Reconnect' : 'Reload output';
-  $('reconnect').disabled = busy;
+  $('stop').hidden = showingSettings || !terminalLive;
+  $('stop').disabled = busy;
+  // A view of an earlier terminal uses Back to live terminal instead. A live terminal
+  // gets Reconnect in the toolbar. An ended terminal gets Reload output in the More menu.
+  const connected = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active || !!terminalPicker.shownRun;
+  $('reconnect').hidden = connected || !terminalLive;
+  $('reload-output').hidden = connected || terminalLive;
+  $('reconnect').disabled = $('reload-output').disabled = busy;
   $('continue-session').hidden = showingSettings || !canContinue(selected, !!connection?.peer?.active);
   $('continue-session').disabled = $('continue-submit').disabled = busy;
   $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
@@ -231,9 +237,10 @@ function controls() {
   terminalPicker.controls(busy);
   $('project-submit').disabled = $('project-remove').disabled = $('rename-submit').disabled = busy;
   $('rename-session').hidden = showingSettings || !selected?.id || selected.status === 'draft';
-  $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed';
-  $('remove-worktree').disabled = busy || live(selected?.status);
-  $('rename-session').disabled = busy;
+  // The More menu lists only the actions that apply. A live session keeps its worktree.
+  $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed' || live(selected.status);
+  $('remove-worktree').disabled = $('rename-session').disabled = busy;
+  sessionMenu.controls();
   $('project-name').disabled = $('project-workspace').disabled = $('rename-name').disabled = busy;
   for (const button of $('sessions').querySelectorAll('button')) button.disabled = busy;
 }
@@ -869,7 +876,7 @@ async function initialize() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { void refreshSessions(); }, 200);
   };
-  $('reconnect').onclick = () => action(async () => { if (selected) await openSession(selected); });
+  $('reconnect').onclick = $('reload-output').onclick = () => action(async () => { if (selected) await openSession(selected); });
   $('continue-session').onclick = () => action(showContinue);
   $('handoff-open').onclick = () => action(async () => {
     if (!selected?.id) return;
