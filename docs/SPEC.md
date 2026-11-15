@@ -1016,7 +1016,9 @@ buttons after them follow the session status:
 - **Remove worktree** shows for a session that is not live and has a managed worktree.
 
 The menu button does not show when no action applies. A choice, Escape, or a click
-outside the menu closes it. The Up and Down arrow keys move between the items.
+outside the menu closes it. The menu also closes when Tab moves the focus out of it. The
+Up and Down arrow keys move between the items. After a choice, the focus is on the menu
+button. A dialog that the choice opens returns the focus to that button when it closes.
 
 Each toolbar icon and text button shows a tooltip on hover and on keyboard focus. The
 tooltip of an icon gives its name and its keyboard shortcut. Each icon also has an
@@ -1177,8 +1179,11 @@ horizontal scroll, and an empty browser console. Script text in a file showed as
 A browser check of the session toolbar used a temporary instance, a fixture repository,
 and a Shell session. It checked the draft, running, and ended states, the tooltips, the
 pressed pane icon, and the **More actions** menu with its keys. It also checked a long
-workspace path, a 700-pixel window, and an empty browser console. The **Reconnect**
-state was not checked. No real agent CLI was used.
+workspace path, a 700-pixel window, and an empty browser console. A later check
+verified that Tab and Shift+Tab close the menu when the focus leaves it. It also
+verified that the Rename dialog returns the focus to the menu button. A review check
+with a temporary Shell session verified that **Reconnect** restored the live view after
+a connection loss. No real agent CLI was used.
 
 History search fixtures cover scope, archived sessions, older terminals, literal wildcard
 characters, Unicode folding, split output, overlapping matches, bounded context, and fixed

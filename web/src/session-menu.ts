@@ -10,9 +10,16 @@ export class SessionMenu {
 
   constructor() {
     this.button.onclick = () => this.open(!this.expanded);
-    // An item runs its own action first. Then the click reaches the menu and closes it.
-    this.menu.addEventListener('click', event => {
-      if (event.target instanceof Element && event.target.closest('button')) this.open(false);
+    const onItem = (event: Event) => event.target instanceof Element && !!event.target.closest('button');
+    // Move the focus to the menu button before an item runs its action. A dialog that
+    // the action opens then returns the focus to a control that stays visible.
+    this.menu.addEventListener('click', event => { if (onItem(event)) this.button.focus(); }, true);
+    // An item runs its own action next. Then the click reaches the menu and closes it.
+    this.menu.addEventListener('click', event => { if (onItem(event)) this.open(false); });
+    // Tab can move the focus out of the menu. A focus loss without a new target means
+    // that the window lost the focus, and the menu stays open.
+    this.box.addEventListener('focusout', event => {
+      if (this.expanded && event.relatedTarget instanceof Node && !this.box.contains(event.relatedTarget)) this.open(false);
     });
     this.box.addEventListener('keydown', event => {
       if (!this.expanded) return;
