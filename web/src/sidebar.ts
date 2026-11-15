@@ -63,7 +63,7 @@ export class Sidebar {
     const label = visible ? 'Hide sidebar' : 'Show sidebar';
     this.toggle.setAttribute('aria-expanded', String(visible));
     this.toggle.setAttribute('aria-label', label);
-    this.toggle.title = `${label} (⌘B)`;
+    this.toggle.dataset.tip = `${label} (⌘B)`;
     if (visible) this.layout();
   }
 

@@ -712,8 +712,8 @@ reads the list again every five seconds until that terminal has a run.
 
 ### Changes pane
 
-**Changes** in the session toolbar opens a read-only pane to the right of the terminal
-and the message editor. It shows the files of the session workspace. Drafts have no
+The pane icon in the session toolbar has the tooltip **Show changes**. It opens a
+read-only pane to the right of the terminal and the message editor. It shows the files of the session workspace. Drafts have no
 Changes pane. The pane never changes files, the Git index, or SQLite. Ended sessions
 keep the pane while their workspace exists.
 
@@ -996,12 +996,34 @@ The `exit` message also carries the run ID. A view shows the reason from an `exi
 message only while that run is the latest run. After another view starts and ends a
 later terminal, each view shows the stored status of the later run.
 
-**Stop session** is available when the session has a live terminal. It is not available
-during worktree creation, which shows as `running` without a terminal. When the server
-reports that it stopped no terminal, the page says so and does not show an end.
-**Archive** is available for `draft` and `ended` sessions. **Continue in new terminal** is available
-for `ended` sessions. The terminal selector shows the stored status of each run, where
-`running` means a live process.
+The session toolbar shows the status next to the session title. At the right, a search
+icon opens **Search history** and a pane icon shows or hides the Changes pane. The text
+buttons after them follow the session status:
+
+- **Stop session** shows when the session has a live terminal. It does not show during
+  worktree creation, which shows as `running` without a terminal. When the server
+  reports that it stopped no terminal, the page says so and does not show an end.
+- **Continue in new terminal** shows for `ended` sessions.
+- **Reconnect** shows when a view of a live terminal has no connection. **Stop session**
+  stays next to it.
+
+**More actions** (⋯) opens a menu that lists only the actions that apply:
+
+- **Rename** shows for started sessions.
+- **Archive** shows for `draft` and `ended` sessions. It changes to **Restore** for an
+  archived session.
+- **Reload output** shows for an ended session, in a view of its latest terminal.
+- **Remove worktree** shows for a session that is not live and has a managed worktree.
+
+The menu button does not show when no action applies. A choice, Escape, or a click
+outside the menu closes it. The Up and Down arrow keys move between the items.
+
+Each toolbar icon and text button shows a tooltip on hover and on keyboard focus. The
+tooltip of an icon gives its name and its keyboard shortcut. Each icon also has an
+accessible name. A long title or workspace path shortens before the actions wrap.
+
+The terminal selector shows the stored status of each run, where `running` means a live
+process.
 
 ## Concurrency and recovery
 
@@ -1151,6 +1173,12 @@ a managed worktree. It checked Split, Unified, folded regions, View file, delete
 symlinks, binary files, both baselines, a non-Git General session, and an ended
 session. It also checked two tabs with separate selections, a phone width without
 horizontal scroll, and an empty browser console. Script text in a file showed as text.
+
+A browser check of the session toolbar used a temporary instance, a fixture repository,
+and a Shell session. It checked the draft, running, and ended states, the tooltips, the
+pressed pane icon, and the **More actions** menu with its keys. It also checked a long
+workspace path, a 700-pixel window, and an empty browser console. The **Reconnect**
+state was not checked. No real agent CLI was used.
 
 History search fixtures cover scope, archived sessions, older terminals, literal wildcard
 characters, Unicode folding, split output, overlapping matches, bounded context, and fixed
