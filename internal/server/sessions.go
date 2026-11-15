@@ -34,7 +34,8 @@ type runningSession struct {
 	ended     bool
 	exit      protocol.Message
 	activity  activity
-	side      bool // A side terminal has no run, no recording, and no session status.
+	side      bool   // A side terminal has no run, no recording, and no session status.
+	shell     string // Identifies the shell of a side terminal.
 }
 
 type attachment struct {
@@ -334,7 +335,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 	}
 	defer a.close()
 	defer r.leave(a)
-	if err := conn.Send(protocol.Message{Type: "session", Session: r.id, Active: true}); err != nil {
+	if err := conn.Send(protocol.Message{Type: "session", Session: r.id, Active: true, Shell: r.shell}); err != nil {
 		return
 	}
 	// Each live view gets the session status now and after each change.
@@ -489,7 +490,7 @@ func (s *Server) archiveSession(id string, archived bool) error {
 		return err
 	}
 	// An archived session keeps no side terminal.
-	_, err := s.stopSide(id)
+	_, err := s.stopSide(id, "")
 	return err
 }
 

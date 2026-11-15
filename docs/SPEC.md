@@ -867,6 +867,11 @@ workspace exists.
   continues, and the browser tab stays connected. A hidden terminal keeps its PTY size.
   **Stop shell** ends the shell and its foreground job for every view. When the shell
   ends, the view shows its exit code and **Start shell**.
+- Each shell has an ID. A view reconnects and stops only the shell that it showed. When
+  another view started a new shell after that shell ended, the view shows "The shell
+  ended." It does not join or stop the new shell.
+- Only a click moves the keyboard focus to the side terminal. A reconnection keeps the
+  focus where it is.
 - Stop session ends only the session terminal. Archive stops the side terminal. Server
   stop ends it as well. A managed worktree cannot be removed while a side terminal uses
   it.
@@ -1308,10 +1313,11 @@ A side terminal fixture uses a live server and `/bin/sh`. It checks the workspac
 `BONBON_SESSION` of the shell, and that two views share one shell. It checks that the
 shell continues after its views close and after Stop session. It also checks
 `side-terminal-stop`, a shell that exits, archive, and refusal for drafts, archived
-sessions, and unknown sessions. It checks that SQLite has no side terminal events and
-that the session gets no status messages or view count from them. Web fixtures check
-that a lost side terminal rejoins with `side-terminal-resume` and never starts another
-shell.
+sessions, and unknown sessions. It checks that a resume or stop with the ID of an ended
+shell does not join or stop a later shell. It checks that SQLite has no side terminal
+events and that the session gets no status messages or view count from them. Web
+fixtures check that a lost side terminal rejoins with `side-terminal-resume` and the ID
+of its shell, and never starts another shell.
 
 A browser check of the side terminal used a temporary instance and a shell session. It
 checked commands in the session workspace, hide and reopen with the same shell, the fit

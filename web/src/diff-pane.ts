@@ -43,6 +43,7 @@ export class DiffPane {
   private isOpen = false;
   private layout: DiffLayout = 'split';
   private shownLayout: DiffLayout | null = null;
+  private shownMode: 'file' | 'diff' | null = null; // What the editor shows now.
   private scope: FileScope = 'changed';
   private baseline: BaselineKind | undefined;
   // The worktree base commit from the latest reply that had it. The label keeps it when
@@ -467,8 +468,9 @@ export class DiffPane {
       const diff = { ...baseline, path, ...(change?.oldPath ? { oldPath: change.oldPath } : {}) };
       const file = await this.send(server, { operation: 'workspace-file', session: this.session, diff }, abort.signal);
       if (!this.fileGeneration.current(generation)) return;
-      // Keep the scroll position when a refresh finds the same content.
-      if (this.view && JSON.stringify(file) === JSON.stringify(this.file)) return;
+      // Keep the scroll position when a refresh finds the same content in the same mode.
+      // Changes and Files can show the same file as a diff and as plain text.
+      if (this.view && this.shownMode === this.mode(file) && JSON.stringify(file) === JSON.stringify(this.file)) return;
       this.file = file;
       this.renderFile();
     } catch (error) {
@@ -509,7 +511,8 @@ export class DiffPane {
     this.renderHeader();
     const file = this.file;
     if (!file || file.path !== this.selected) return;
-    if (!this.change(file.path) || this.pick.preview) {
+    this.shownMode = this.mode(file);
+    if (this.shownMode === 'file') {
       const side = file.new;
       if (side.state === 'missing') return this.showNote('This file is not in the workspace now.');
       if (side.state !== 'text') return this.showNote(sideNote(side));
@@ -525,6 +528,11 @@ export class DiffPane {
     this.shownLayout = layout;
   }
 
+  // A file without a change, or a file that the view previews, shows as plain text.
+  private mode(file: WorkspaceFile): 'file' | 'diff' {
+    return !this.change(file.path) || this.pick.preview ? 'file' : 'diff';
+  }
+
   private showNote(text: string): void {
     this.note.textContent = text;
     this.note.hidden = !text;
@@ -533,7 +541,7 @@ export class DiffPane {
   private destroyView(): void {
     this.view?.destroy();
     this.view = null;
-    this.shownLayout = null;
+    this.shownLayout = this.shownMode = null;
     this.editorParent.replaceChildren();
   }
 

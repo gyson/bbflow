@@ -110,7 +110,8 @@ type ConfigRequest = { operation: 'session-config'; session: string; preparation
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
 type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
-type StopSideRequest = { operation: 'side-terminal-stop'; session: string };
+// shell stops only that shell. Without shell, the request stops the live shell.
+type StopSideRequest = { operation: 'side-terminal-stop'; session: string; shell?: string };
 type RPCRequest = DiffRPC | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
@@ -120,14 +121,17 @@ export type StreamRequest =
   | { operation: 'session-continue'; session: string; latestRun: string; tool: string; size: Size }
   // A side terminal is an unrecorded shell in the session workspace. Open starts a shell
   // when none runs. Resume only joins a live shell.
-  | { operation: 'side-terminal-open' | 'side-terminal-resume'; session: string; size: Size };
+  | { operation: 'side-terminal-open'; session: string; size: Size }
+  // shell rejoins only that shell. Without shell, the view joins the live shell.
+  | { operation: 'side-terminal-resume'; session: string; size: Size; shell?: string };
 // A watch stream stays open. The server pushes its latest state and each later change.
 export type WatchRequest = { operation: 'composer-watch'; session: string } | { operation: 'status-watch' };
 export type Request = RPCRequest | StreamRequest | WatchRequest;
 
 export type ServerMessage =
   | { type: 'server'; server: ServerInfo }
-  | { type: 'session'; session: string; active?: boolean; status?: string }
+  // shell identifies a side terminal shell.
+  | { type: 'session'; session: string; active?: boolean; status?: string; shell?: string }
   // A live view gets running or idle after it joins and after each change.
   | { type: 'status'; status: string }
   | { type: 'frame'; data?: string; size: Size; revision: number; full?: boolean }

@@ -7,9 +7,12 @@ const rejoins = (request: StreamRequest) => request.operation === 'session-resum
 
 // After the ID is known, retries can only rejoin that session. A view of an earlier
 // terminal keeps showing that terminal. A side terminal retry never starts a new shell.
-function rejoin(request: StreamRequest, session: string, size: Size): StreamRequest {
+// It rejoins only the shell that it showed, not a later shell of the session.
+function rejoin(request: StreamRequest, message: { session: string; shell?: string }, size: Size): StreamRequest {
+  const session = message.session;
   if (request.operation === 'side-terminal-open' || request.operation === 'side-terminal-resume') {
-    return { operation: 'side-terminal-resume', session, size };
+    const shell = message.shell ?? (request.operation === 'side-terminal-resume' ? request.shell : undefined);
+    return { operation: 'side-terminal-resume', session, size, ...(shell ? { shell } : {}) };
   }
   const run = request.operation === 'session-resume' ? request.run : undefined;
   return { operation: 'session-resume', session, size, ...(run ? { run } : {}) };
@@ -61,7 +64,7 @@ export class SessionConnection {
         message: message => {
           if (this.closed || this.peer !== peer) return;
           if (message.type === 'session') {
-            this.request = rejoin(this.request, message.session, this.host.size());
+            this.request = rejoin(this.request, message, this.host.size());
             resolve();
           }
           stream.push(message);

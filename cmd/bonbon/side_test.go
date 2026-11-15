@@ -18,6 +18,12 @@ func sideView(t *testing.T, operation, id string) *sessionView {
 	return openSessionView(t, protocol.Request{Operation: operation, Session: id, Size: protocol.Size{Rows: 24, Cols: 80}})
 }
 
+func (c *sessionView) shellID() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.shell
+}
+
 func sideCall(t *testing.T, request protocol.Request) (map[string]bool, error) {
 	t.Helper()
 	output, err := (client.Target{Dir: os.Getenv("BONBON_DIR")}).Call(request)
@@ -114,9 +120,29 @@ func TestSideTerminalIsSeparateFromTheSession(t *testing.T) {
 		t.Fatalf("second stop = %v, %v", result, err)
 	}
 
-	// A shell that exits ends the side terminal. The next open starts a new shell.
+	// A request for an ended shell does not join or stop the next shell.
+	first := resumed.shellID()
 	exiting := sideView(t, "side-terminal-open", id)
 	waitFor(t, func() bool { return strings.Contains(exiting.text(), "BONBON_SHELL_PROMPT> ") })
+	if first == "" || exiting.shellID() == "" || exiting.shellID() == first {
+		t.Fatalf("shell IDs = %q, then %q", first, exiting.shellID())
+	}
+	stale := openSessionView(t, protocol.Request{Operation: "side-terminal-resume", Session: id, Shell: first, Size: protocol.Size{Rows: 24, Cols: 80}})
+	select {
+	case m := <-stale.done:
+		if m.Type != "history-end" {
+			t.Fatalf("resume of an ended shell = %+v", m)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("resume of an ended shell did not end")
+	}
+	if result, err = sideCall(t, protocol.Request{Operation: "side-terminal-stop", Session: id, Shell: first}); err != nil || result["stopped"] {
+		t.Fatalf("stop of an ended shell = %v, %v", result, err)
+	}
+	current := openSessionView(t, protocol.Request{Operation: "side-terminal-resume", Session: id, Shell: exiting.shellID(), Size: protocol.Size{Rows: 24, Cols: 80}})
+	waitFor(t, func() bool { return strings.Contains(current.text(), "BONBON_SHELL_PROMPT> ") })
+
+	// A shell that exits ends the side terminal.
 	if _, err = exiting.Write([]byte("exit 3\r")); err != nil {
 		t.Fatal(err)
 	}

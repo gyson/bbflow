@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"bonbon/internal/history"
 	"bonbon/internal/protocol"
 	agent "bonbon/internal/runtime"
 	"bonbon/internal/terminal"
@@ -18,8 +19,9 @@ import (
 
 // openSide attaches a view to the side terminal of a session. With start, it starts a
 // shell when the session has no live side terminal. Without start, a session without a
-// live side terminal gets an inactive session message and history-end.
-func (s *Server) openSide(ctx context.Context, conn *protocol.Conn, id string, size protocol.Size, start bool) {
+// live side terminal gets an inactive session message and history-end. A shell ID
+// selects only that shell. A view of an ended shell must not join a later shell.
+func (s *Server) openSide(ctx context.Context, conn *protocol.Conn, id, shell string, size protocol.Size, start bool) {
 	if !terminal.ValidSize(size) {
 		s.reply(conn, nil, errors.New("terminal size must be 2–512 columns and 1–256 rows"))
 		return
@@ -27,6 +29,9 @@ func (s *Server) openSide(ctx context.Context, conn *protocol.Conn, id string, s
 	// Serialize with archive and worktree removal. Two views cannot start two shells.
 	s.launchMu.Lock()
 	r := s.side(id)
+	if r != nil && shell != "" && r.shell != shell {
+		r = nil
+	}
 	var err error
 	if r == nil && start {
 		r, err = s.startSide(ctx, id, size)
@@ -68,7 +73,7 @@ func (s *Server) startSide(ctx context.Context, id string, size protocol.Size) (
 		return nil, err
 	}
 	runContext, cancel := context.WithCancel(ctx)
-	r := &runningSession{id: id, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(size), revision: 1, side: true}
+	r := &runningSession{id: id, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(size), revision: 1, side: true, shell: history.ID()}
 	s.mu.Lock()
 	s.sides[id] = r
 	s.mu.Unlock()
@@ -95,10 +100,10 @@ func (s *Server) side(id string) *runningSession {
 }
 
 // stopSide ends the shell of the side terminal and its foreground job. The session
-// terminal continues.
-func (s *Server) stopSide(id string) (map[string]bool, error) {
+// terminal continues. A shell ID stops only that shell. An empty ID stops the live shell.
+func (s *Server) stopSide(id, shell string) (map[string]bool, error) {
 	r := s.side(id)
-	if r == nil {
+	if r == nil || shell != "" && r.shell != shell {
 		return map[string]bool{"stopped": false}, nil
 	}
 	r.cancel()

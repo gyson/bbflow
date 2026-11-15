@@ -25,6 +25,7 @@ export class SideTerminal {
   private isOpen = false;
   private live = false;
   private pending = false; // A request waits for its session message.
+  private shell = ''; // The ID of the shown shell. Stop and reconnection use only this shell.
   private view: Terminal | null = null;
   private fit: FitAddon | null = null;
   private connection: SessionConnection | null = null;
@@ -80,6 +81,8 @@ export class SideTerminal {
     const view = this.makeTerminal();
     const session = this.session;
     this.pending = true;
+    // Only the click of the user moves the focus, once. A reconnection keeps the focus.
+    let focus = start;
     this.setStatus(start ? 'Starting shell…' : 'Connecting…');
     const connection = this.connection = new SessionConnection(server, view, {
       operation: start ? 'side-terminal-open' : 'side-terminal-resume', session, size: boundedSize(view),
@@ -94,13 +97,17 @@ export class SideTerminal {
       message: message => {
         if (this.connection !== connection) return;
         switch (message.type) {
-          case 'session':
+          case 'session': {
             this.pending = false;
+            // A reconnection that finds no live shell with this ID shows that the shell ended.
+            const ended = !message.active && !!this.shell;
             this.live = !!message.active;
-            this.setStatus(this.live ? 'Not recorded. Runs in the session workspace.' : 'No shell runs in this session.');
-            // Only a click of the user moves the focus here.
-            if (this.live && start) view.focus();
+            if (message.shell) this.shell = message.shell;
+            this.setStatus(this.live ? 'Not recorded. Runs in the session workspace.' : ended ? 'The shell ended.' : 'No shell runs in this session.');
+            if (this.live && focus) view.focus();
+            focus = false;
             break;
+          }
           case 'exit':
             this.live = false;
             view.options.disableStdin = true;
@@ -126,6 +133,7 @@ export class SideTerminal {
     this.connection?.close();
     this.connection = null;
     this.live = this.pending = false;
+    this.shell = '';
     this.view?.dispose();
     this.view = this.fit = null;
     this.screen.replaceChildren();
@@ -134,10 +142,17 @@ export class SideTerminal {
 
   private async stop(): Promise<void> {
     const server = this.server();
-    if (!server || !this.session) return;
+    if (!server || !this.session || !this.shell) return;
     this.stopButton.disabled = true;
     try {
-      await call(server, { operation: 'side-terminal-stop', session: this.session });
+      const connection = this.connection;
+      const { stopped } = await call(server, { operation: 'side-terminal-stop', session: this.session, shell: this.shell });
+      // Another view can replace an ended shell. This view does not stop the new shell.
+      if (!stopped && this.connection === connection) {
+        this.live = false;
+        this.setStatus('The shell ended.');
+        this.show();
+      }
     } catch (error) {
       this.setStatus(`Cannot stop the shell: ${errorMessage(error)}`);
     } finally {

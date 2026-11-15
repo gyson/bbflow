@@ -201,11 +201,11 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "session-continue":
 		s.continueSession(ctx, conn, request)
 	case "side-terminal-open":
-		s.openSide(ctx, conn, request.Session, request.Size, true)
+		s.openSide(ctx, conn, request.Session, "", request.Size, true)
 	case "side-terminal-resume":
-		s.openSide(ctx, conn, request.Session, request.Size, false)
+		s.openSide(ctx, conn, request.Session, request.Shell, request.Size, false)
 	case "side-terminal-stop":
-		result, err := s.stopSide(request.Session)
+		result, err := s.stopSide(request.Session, request.Shell)
 		s.reply(conn, result, err)
 	case "session-list":
 		result, err := s.listSessions(history.SessionFilter{Limit: request.Limit, Offset: request.Offset, Archived: request.Archived, Query: request.Query})

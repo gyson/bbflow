@@ -109,9 +109,9 @@ operations.
 | `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, `status`, `started`, and `ended`. |
 | `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
 | `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
-| `side-terminal-open` | `session` ID, terminal `size` | `session`, then a [side terminal](#side-terminals) stream. Starts a shell when the session has no live side terminal. |
-| `side-terminal-resume` | `session` ID, terminal `size` | `session`, then the side terminal stream. Without a live side terminal, `session` without `active`, then `history-end`. Starts no process. |
-| `side-terminal-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live side terminal. |
+| `side-terminal-open` | `session` ID, terminal `size` | `session` with the `shell` ID, then a [side terminal](#side-terminals) stream. Starts a shell when the session has no live side terminal. |
+| `side-terminal-resume` | `session` ID, terminal `size`, optional `shell` ID | `session` with the `shell` ID, then the side terminal stream. Without a live side terminal, or when the live shell has another ID, `session` without `active`, then `history-end`. Starts no process. |
+| `side-terminal-stop` | `session` ID, optional `shell` ID | `result`, containing `stopped`. `stopped` is false when the session has no live side terminal, or when the live shell has another ID. |
 
 Ordinary operations send one reply, then close the connection. Replies use
 `{"type":"result","result":...}` or `{"type":"error","error":"..."}`. RPC requests have
@@ -494,12 +494,16 @@ at most one live side terminal. It is separate from the terminal of the session.
   `signal`, and `ping` messages as a session terminal. The size owner rules are also
   the same. The PTY size of the side terminal is independent of the session terminal.
 - `exit` has the exit `code` and an optional `error`. It has no `status` or `run`.
+- The `session` message of a live side terminal has a `shell` ID. Each new shell gets a
+  new ID.
 
 `side-terminal-open` needs a session that started a terminal. It rejects drafts,
 archived sessions, and a missing workspace. The server holds the launch lock, so two
 views that open at the same time join one shell. A lost view rejoins with
-`side-terminal-resume`. Do not send `side-terminal-open` again only because a connection
-was lost. It can start a new shell when the earlier shell ended.
+`side-terminal-resume` and the `shell` ID that it showed. Do not send
+`side-terminal-open` again only because a connection was lost. It can start a new shell
+when the earlier shell ended. Send the `shell` ID with `side-terminal-stop` too. Then a
+view of an ended shell cannot join or stop a shell that another view started later.
 
 Closing a view leaves the shell running. Stop session leaves it running too. The shell
 ends when it exits, on `side-terminal-stop`, when the session is archived, and when the
