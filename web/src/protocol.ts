@@ -111,8 +111,9 @@ export type StreamRequest =
   | { operation: 'session-resume'; session: string; size: Size; run?: string }
   // latestRun is the latest run that this view saw. An empty tool selects Shell.
   | { operation: 'session-continue'; session: string; latestRun: string; tool: string; size: Size };
-export type DraftWatchRequest = { operation: 'composer-watch'; session: string };
-export type Request = RPCRequest | StreamRequest | DraftWatchRequest;
+// A watch stream stays open. The server pushes its latest state and each later change.
+export type WatchRequest = { operation: 'composer-watch'; session: string } | { operation: 'status-watch' };
+export type Request = RPCRequest | StreamRequest | WatchRequest;
 
 export type ServerMessage =
   | { type: 'server'; server: ServerInfo }
@@ -122,9 +123,12 @@ export type ServerMessage =
   | { type: 'frame'; data?: string; size: Size; revision: number; full?: boolean }
   | { type: 'pong' }
   | { type: 'input-ack'; id: string; error?: string }
-  | { type: 'exit'; code?: number; error?: string }
+  // status is the recorded status of the run: exited, stopped, or failed.
+  | { type: 'exit'; code?: number; status?: string; error?: string }
   | { type: 'history-end' }
   | { type: 'draft'; session: string; composer: ComposerState }
+  // A status watch gets running or idle for each session that has a live terminal.
+  | { type: 'statuses'; statuses?: Record<string, string> }
   | { type: 'result'; result: unknown }
   | { type: 'error'; error: string };
 
@@ -209,9 +213,9 @@ export class Peer {
           this.fail(message.error || 'Request failed.');
           return;
         }
-        // A live session or a draft watch keeps the connection open with ping.
+        // A live session or a watch keeps the connection open with ping.
         if (message.type === 'session') this.active = !!message.active;
-        if (message.type === 'draft') this.active = true;
+        if (message.type === 'draft' || message.type === 'statuses') this.active = true;
         if (message.type === 'input-ack' && message.id === this.input?.id) this.input.settle(message.error);
         if (['exit', 'history-end', 'result'].includes(message.type)) {
           this.input?.settle('Input delivery was not confirmed. Check the terminal before submitting again.');

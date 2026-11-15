@@ -202,6 +202,8 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "session-list":
 		result, err := s.listSessions(history.SessionFilter{Limit: request.Limit, Offset: request.Offset, Archived: request.Archived, Query: request.Query})
 		s.reply(conn, result, err)
+	case "status-watch":
+		s.watchStatus(ctx, conn)
 	case "session-archive":
 		err := s.archiveSession(request.Session, request.Archived)
 		s.reply(conn, map[string]bool{"archived": request.Archived}, err)

@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"bonbon/internal/history"
+	"bonbon/internal/protocol"
+	agent "bonbon/internal/runtime"
+	"bonbon/internal/terminal"
 )
 
 func TestActivityFollowsApplicationOutput(t *testing.T) {
@@ -93,4 +96,45 @@ func TestSessionStatusHasFourValues(t *testing.T) {
 	}
 	s.sessions[session.ID] = &runningSession{id: session.ID, activity: activity{output: now}}
 	check("a new terminal in an ended session", "running")
+}
+
+// Only a resize that changes the PTY size makes the application redraw.
+func TestOnlyChangedResizeStartsEchoWindow(t *testing.T) {
+	size := protocol.Size{Cols: 80, Rows: 24}
+	for _, test := range []struct {
+		name string
+		size protocol.Size
+		want string
+	}{
+		{"an unchanged size", size, "running"},
+		{"a changed size", protocol.Size{Cols: 40, Rows: 10}, "idle"},
+	} {
+		r := &runningSession{id: "fixture", controls: make(chan agent.Control, 16), done: make(chan struct{}), terminal: terminal.New(size)}
+		view := r.subscribe(nil, size)
+		before := time.Now().Add(-time.Minute)
+		r.activity = activity{output: before, view: before}
+		r.control(view, protocol.Message{Type: "resize", Size: test.size})
+		if control := <-r.controls; control.Type != "resize" || control.Size != test.size {
+			t.Fatalf("%s: the runtime got %+v", test.name, control)
+		}
+		if _, err := r.publish(history.Event{Kind: "output", Data: []byte("line\r\n")}); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.status(time.Now()); got != test.want {
+			t.Fatalf("output after %s has status %s, expected %s", test.name, got, test.want)
+		}
+	}
+}
+
+func TestLiveStatusesOmitEndedTerminals(t *testing.T) {
+	now := time.Now()
+	s := &Server{sessions: map[string]*runningSession{
+		"running": {id: "running", activity: activity{output: now}},
+		"idle":    {id: "idle", activity: activity{output: now.Add(-idleAfter)}},
+		"ended":   {id: "ended", activity: activity{output: now}, ended: true},
+	}}
+	got := s.liveStatuses(now)
+	if len(got) != 2 || got["running"] != "running" || got["idle"] != "idle" {
+		t.Fatalf("live statuses: %v", got)
+	}
 }

@@ -4,9 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"bonbon/internal/client"
 	"bonbon/internal/protocol"
 )
 
@@ -102,6 +104,8 @@ func TestSessionStatusFollowsApplicationOutput(t *testing.T) {
 	listed := func() string { return sessionInfos(t, 10)[0].Status }
 	// The fixture writes no more output. The session becomes idle without a view action.
 	waitFor(t, func() bool { return listed() == "idle" && view.status() == "running,idle" })
+	id := sessionInfos(t, 10)[0].ID
+	watch := watchStatuses(t)
 	// The terminal echoes typed input. This echo is not application activity.
 	if _, err := view.Write([]byte("typed")); err != nil {
 		t.Fatal(err)
@@ -118,10 +122,84 @@ func TestSessionStatusFollowsApplicationOutput(t *testing.T) {
 	waitFor(t, func() bool { return listed() == "running" && view.status() == "running,idle,running" })
 	waitFor(t, func() bool { return listed() == "idle" && view.status() == "running,idle,running,idle" })
 	// A view that joins later gets the current status.
-	second := resumeView(t, sessionInfos(t, 10)[0].ID)
+	second := resumeView(t, id)
 	waitFor(t, func() bool { return second.status() == "idle" })
-	stopTestSession(t, sessionInfos(t, 10)[0].ID)
+	// A status watch gets each change without a view of the session.
+	waitFor(t, func() bool { return watch.of(id) == "idle,running,idle" })
+	stopTestSession(t, id)
 	if got := listed(); got != "ended" {
 		t.Fatalf("a stopped session has status %s", got)
 	}
+	// A session whose terminal ended is absent from the watch.
+	waitFor(t, func() bool { return watch.of(id) == "idle,running,idle,absent" })
+}
+
+// A view that reconnects sends its size again. The runtime ignores an unchanged size, so
+// the application does not redraw. The output that follows is application activity.
+func TestUnchangedResizeDoesNotHideApplicationOutput(t *testing.T) {
+	startTestServer(t, t.TempDir())
+	trigger := filepath.Join(t.TempDir(), "emit")
+	view := launchAgent(t, t.TempDir(), "activity", trigger)
+	waitFor(t, func() bool { return strings.Contains(view.text(), "READY") })
+	listed := func() string { return sessionInfos(t, 10)[0].Status }
+	waitFor(t, func() bool { return listed() == "idle" })
+	if err := view.conn.Send(protocol.Message{Type: "resize", Size: protocol.Size{Rows: 24, Cols: 80}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(trigger, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(view.text(), "BACKGROUND_ACTIVITY") })
+	if strings.Contains(view.text(), "RESIZED") {
+		t.Fatalf("an unchanged size reached the application: %q", view.text())
+	}
+	if got := listed(); got != "running" {
+		t.Fatalf("output after an unchanged resize has status %s", got)
+	}
+}
+
+// statusWatch records the messages of one status watch stream.
+type statusWatch struct {
+	mu   sync.Mutex
+	seen []map[string]string
+}
+
+func watchStatuses(t *testing.T) *statusWatch {
+	t.Helper()
+	conn, err := (client.Target{Dir: os.Getenv("BONBON_DIR")}).Connect(protocol.Request{Operation: "status-watch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	w := &statusWatch{}
+	go func() {
+		for {
+			m, err := conn.Receive()
+			if err != nil || m.Type != "statuses" {
+				return
+			}
+			w.mu.Lock()
+			w.seen = append(w.seen, m.Statuses)
+			w.mu.Unlock()
+		}
+	}()
+	return w
+}
+
+// of returns each status that the watch sent for one session, in order. A session
+// without a live terminal is absent.
+func (w *statusWatch) of(id string) string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var statuses []string
+	for _, message := range w.seen {
+		status := message[id]
+		if status == "" {
+			status = "absent"
+		}
+		if len(statuses) == 0 || statuses[len(statuses)-1] != status {
+			statuses = append(statuses, status)
+		}
+	}
+	return strings.Join(statuses, ",")
 }

@@ -125,7 +125,9 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 		}
 		controls = append(controls, control)
 	}
-	if len(controls) > 0 {
+	// The runtime ignores a resize to the current PTY size, so the application does not
+	// redraw. Such a resize must not hide the application output that follows it.
+	if len(controls) > 0 && (message.Type != "resize" || message.Size != r.terminal.Size()) {
 		r.activity.viewAction(time.Now())
 	}
 	r.mu.Unlock()
@@ -159,13 +161,15 @@ func (r *runningSession) publish(event history.Event) ([]byte, error) {
 	}
 	return responses, nil
 }
-func (r *runningSession) finish(code int, err error) {
+
+// finish ends the terminal. Each view gets the exit code and the recorded run status.
+func (r *runningSession) finish(code int, status string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ended = true
 	r.sizeOwner = nil
 	r.revision++
-	r.exit = protocol.Message{Type: "exit", Code: code}
+	r.exit = protocol.Message{Type: "exit", Code: code, Status: status}
 	if err != nil {
 		r.exit.Error = err.Error()
 	}
@@ -187,7 +191,12 @@ func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, ses
 			defer cancel()
 			code, err := agent.Run(runContext, s.store, session, *run, r.controls, r.publish)
 			err = errors.Join(err, s.saveScreen(r))
-			r.finish(code, err)
+			// A run that failed before its start event has no recorded status.
+			status := ""
+			if run, lookupErr := s.store.SessionRun(session.ID, r.run()); lookupErr == nil {
+				status = run.Status
+			}
+			r.finish(code, status, err)
 			s.mu.Lock()
 			delete(s.sessions, session.ID)
 			s.mu.Unlock()

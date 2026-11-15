@@ -85,6 +85,11 @@ func New(size protocol.Size) *State {
 	return s
 }
 
+// Size returns the current size of the terminal.
+func (s *State) Size() protocol.Size {
+	return protocol.Size{Rows: uint16(s.term.Rows()), Cols: uint16(s.term.Cols())}
+}
+
 func (s *State) trackBuffer() {
 	lines := s.term.NormalBuffer().Lines
 	if lines == s.lines {

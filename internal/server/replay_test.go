@@ -174,7 +174,7 @@ func TestSharedViewsSizeOwnerAndIndependentFlow(t *testing.T) {
 	if control := next(); control.Type != "resize" || control.Size != small {
 		t.Fatalf("remaining view did not take the PTY size: %+v", control)
 	}
-	r.finish(7, nil)
+	r.finish(7, "exited", nil)
 	for {
 		m := second.read("frame")
 		second.ack(m)

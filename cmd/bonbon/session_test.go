@@ -236,16 +236,20 @@ func waitFor(t *testing.T, check func() bool) {
 	t.Fatal("timed out")
 }
 
-func (c *sessionView) wait(t *testing.T, expected int) {
+// wait checks the exit code of the terminal. It returns the run status that the exit
+// message carries.
+func (c *sessionView) wait(t *testing.T, expected int) string {
 	t.Helper()
 	select {
 	case m := <-c.done:
 		if m.Error != "" || m.Code != expected {
 			t.Fatalf("session end = %+v, expected %d: %s", m, expected, c.text())
 		}
+		return m.Status
 	case <-time.After(8 * time.Second):
 		t.Fatalf("session did not end: %s", c.text())
 	}
+	return ""
 }
 
 func archive(t *testing.T, dataDir string) *history.Store {
@@ -428,10 +432,15 @@ func TestConcurrentShellsShareSameAndOverlappingWorkspaces(t *testing.T) {
 		pids[s.Run.PID] = true
 		ids[s.Title] = s.ID
 	}
+	// A view that did not stop the terminal gets the recorded reason for its end.
 	stopTestSession(t, ids["shell-1"])
-	clients[1].wait(t, 129)
+	if status := clients[1].wait(t, 129); status != "stopped" {
+		t.Fatalf("a stopped terminal ended with status %q", status)
+	}
 	clients[2].Write([]byte("exit 3\r"))
-	clients[2].wait(t, 3)
+	if status := clients[2].wait(t, 3); status != "exited" {
+		t.Fatalf("an exited terminal ended with status %q", status)
+	}
 	for _, title := range []string{"shell-0", "shell-3", "shell-4"} {
 		run, err := store.LatestRun(ids[title])
 		if err != nil || run.Status != "running" {

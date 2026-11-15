@@ -239,24 +239,26 @@ type ServerInfo struct {
 }
 
 // Message carries one request, reply, or terminal event. Set only the fields that its
-// Type needs. Input bytes and rendered frames use base64 in JSON.
+// Type needs. Input bytes and rendered frames use base64 in JSON. Statuses holds running
+// or idle for each session that has a live terminal.
 type Message struct {
-	Type     string          `json:"type"`
-	Revision int64           `json:"revision,omitempty"`
-	Full     bool            `json:"full,omitempty"`
-	ID       string          `json:"id,omitempty"`
-	Request  *Request        `json:"request,omitempty"`
-	Server   *ServerInfo     `json:"server,omitempty"`
-	Session  string          `json:"session,omitempty"`
-	Active   bool            `json:"active,omitempty"`
-	Status   string          `json:"status,omitempty"`
-	Data     []byte          `json:"data,omitempty"`
-	Size     Size            `json:"size,omitempty"`
-	Signal   int             `json:"signal,omitempty"`
-	Code     int             `json:"code,omitempty"`
-	Error    string          `json:"error,omitempty"`
-	Composer *Composer       `json:"composer,omitempty"`
-	Result   json.RawMessage `json:"result,omitempty"`
+	Type     string            `json:"type"`
+	Revision int64             `json:"revision,omitempty"`
+	Full     bool              `json:"full,omitempty"`
+	ID       string            `json:"id,omitempty"`
+	Request  *Request          `json:"request,omitempty"`
+	Server   *ServerInfo       `json:"server,omitempty"`
+	Session  string            `json:"session,omitempty"`
+	Active   bool              `json:"active,omitempty"`
+	Status   string            `json:"status,omitempty"`
+	Statuses map[string]string `json:"statuses,omitempty"`
+	Data     []byte            `json:"data,omitempty"`
+	Size     Size              `json:"size,omitempty"`
+	Signal   int               `json:"signal,omitempty"`
+	Code     int               `json:"code,omitempty"`
+	Error    string            `json:"error,omitempty"`
+	Composer *Composer         `json:"composer,omitempty"`
+	Result   json.RawMessage   `json:"result,omitempty"`
 }
 
 type Conn struct {

@@ -90,7 +90,8 @@ operations.
 | `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
 | `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath` and `baseline` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
-| `session-stop` | `session` ID | `result`, containing `stopped` |
+| `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
+| `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal first, then all of them again after each change |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
 | `composer-watch` | `session` ID | A stream of `draft` messages: the latest draft first, then each newer saved draft |
 | `composer-sent` | `session` ID, optional `revision` (list sends older than this revision) | `result`, containing `messages` (at most 20, newest first) and `more` |
@@ -443,16 +444,26 @@ The stored status of a run and the state of a preparation keep their values.
 
 The server derives `running` and `idle` from output times only. It keeps the times in
 memory and tracks them without views. Output in the 300 milliseconds after an `input`,
-a `resize` that reaches the PTY, or a `signal` is not application output. This excludes
-the echo of typed input and the redraw after a size change.
+a `resize` that changes the PTY size, or a `signal` is not application output. This
+excludes the echo of typed input and the redraw after a size change. A `resize` to the
+current PTY size has no such effect, because the application does not redraw.
 
 `idle` means only that there was no recent output. The application can be complete,
 can wait for an answer, or can work without output. `idle` does not show that the
 application is ready for input. Do not send input automatically because of this status.
 
 A live view also gets the status in `status` messages on its
-[terminal stream](#terminal-streams). The `status` of `session-terminals` entries and
-of an ended `session` message is the stored run status, not this session status.
+[terminal stream](#terminal-streams). The `status` of `session-terminals` entries, of
+an ended `session` message, and of an `exit` message is the stored run status, not this
+session status.
+
+`status-watch` keeps one stream open for all sessions. The server first sends a
+`statuses` message. Its `statuses` object maps the ID of each session that has a live
+terminal to `running` or `idle`. The server omits the object when no terminal is live.
+The server reads the statuses from memory five times each second. It sends the complete
+object again after each change. A session is absent before its terminal starts and
+after its terminal ends. Read `session-list` for those sessions. The client sends `ping`
+at least every 30 seconds and gets `pong`. Closing the stream only removes the watch.
 
 ## Terminal streams
 
@@ -487,7 +498,7 @@ everyone.
 | Server → client | `frame` | Base64 rendered ANSI in `data`, `size`, `revision`, and optional `full` |
 | Server → client | `status` | The session `status` of a live process: `running` or `idle` |
 | Server → client | `input-ack` | Matching `id`. An optional `error` indicates uncertain delivery. |
-| Server → client | `exit` | Exit `code` and optional `error`. Follows the final frame acknowledgment. |
+| Server → client | `exit` | Exit `code`, the recorded run `status` (`exited`, `stopped`, or `failed`), and optional `error`. Each view gets the same message. Follows the final frame acknowledgment. |
 | Server → client | `history-end` | End of a read-only ended-session view |
 | Server → client | `error` | Error description in `error` |
 
