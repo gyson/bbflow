@@ -1,7 +1,7 @@
-import type { ChangedFile, FileSide } from './protocol.js';
+import type { ChangedFile, FileSide, FolderEntry, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
 
 export type DiffLayout = 'split' | 'unified';
-export type FileScope = 'changed' | 'all';
+export type FileScope = 'changed' | 'files';
 
 // One row of the file list. An unchanged file has no change.
 export interface FileEntry { path: string; change?: ChangedFile }
@@ -13,8 +13,9 @@ export function effectiveLayout(preferred: DiffLayout, width: number): DiffLayou
   return preferred === 'split' && width < splitMinWidth ? 'unified' : preferred;
 }
 
-// Changed lists only changed files. All lists every workspace path and marks changed
-// files. Deleted files stay in All, because they are changes.
+// Changed lists only changed files. Files lists every workspace path that Git knows and
+// marks changed files. It is the result of the filter in Files. Deleted files stay in
+// it, because they are changes.
 export function fileEntries(changes: ChangedFile[], paths: string[], scope: FileScope, query: string): FileEntry[] {
   const byPath = new Map(changes.map(change => [change.path, change]));
   let entries: FileEntry[];
@@ -30,6 +31,145 @@ export function fileEntries(changes: ChangedFile[], paths: string[], scope: File
   entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const needle = query.trim().toLowerCase();
   return needle ? entries.filter(entry => entry.path.toLowerCase().includes(needle)) : entries;
+}
+
+// One row of the Files tree. A note row has a text about its folder as the name.
+export interface TreeRow {
+  path: string;
+  name: string;
+  depth: number;
+  kind: FolderEntry['kind'] | 'note';
+  ignored: boolean;
+  expanded: boolean;
+  change: ChangedFile | undefined;
+  changed: boolean; // A folder with a changed file below it.
+}
+
+// List the rows of the Files tree in display order. The key of the workspace folder is
+// an empty path. An open folder shows its entries, or a note until its list arrives. A
+// folder in failed has no list and no request in progress.
+export function treeRows(folders: ReadonlyMap<string, WorkspaceFolder>, expanded: ReadonlySet<string>, changes: ChangedFile[], failed: ReadonlySet<string> = new Set()): TreeRow[] {
+  const byPath = new Map(changes.map(change => [change.path, change]));
+  // A deleted file is not in a folder list. The mark on its folder shows the change.
+  const changedFolders = new Set<string>();
+  for (const { path } of changes) {
+    for (let slash = path.indexOf('/'); slash > 0; slash = path.indexOf('/', slash + 1)) changedFolders.add(path.slice(0, slash));
+  }
+  const rows: TreeRow[] = [];
+  const add = (parent: string, depth: number): void => {
+    const note = (name: string): void => {
+      rows.push({ path: parent, name, depth, kind: 'note', ignored: false, expanded: false, change: undefined, changed: false });
+    };
+    const folder = folders.get(parent);
+    if (!folder) return note(failed.has(parent) ? 'Cannot read this folder. Click Refresh to try again.' : 'Reading…');
+    if (folder.missing) return note('This folder is not available now.');
+    for (const entry of folder.entries) {
+      const path = parent ? `${parent}/${entry.name}` : entry.name;
+      const open = entry.kind === 'folder' && expanded.has(path);
+      rows.push({ path, name: entry.name, depth, kind: entry.kind, ignored: !!entry.ignored, expanded: open, change: byPath.get(path), changed: changedFolders.has(path) });
+      if (open) add(path, depth + 1);
+    }
+    if (folder.truncated) note('This folder has more entries. BonBon limits the number of entries that it lists.');
+    else if (folder.entries.length === 0) note('Empty folder');
+  };
+  add('', 0);
+  return rows;
+}
+
+// The folders of one list request: the workspace folder, then the open folders in path
+// order. A parent comes before its folders, so a limit keeps the parents.
+export function openFolders(expanded: ReadonlySet<string>, limit: number): string[] {
+  return ['', ...[...expanded].sort()].slice(0, limit);
+}
+
+// FolderTree holds the open folders of the Files tree and their lists. Each request
+// takes a token for its folders. Only the latest request of an open folder applies its
+// reply. Thus an earlier reply cannot replace newer entries or close a reopened folder.
+export class FolderTree {
+  private readonly folders = new Map<string, WorkspaceFolder>();
+  private readonly expanded = new Set<string>();
+  private readonly reads = new Map<string, object>();
+  // The workspace folder when its latest request failed before it had a list. It cannot
+  // close, so it shows a note in place of "Reading…".
+  private readonly failed = new Set<string>();
+
+  clear(): void {
+    this.folders.clear();
+    this.expanded.clear();
+    this.reads.clear();
+    this.failed.clear();
+  }
+
+  isOpen(path: string): boolean { return this.expanded.has(path); }
+  open(path: string): void { this.expanded.add(path); }
+
+  // Close a folder and the folders below it. Their requests become obsolete, and a
+  // refresh does not list them.
+  close(path: string): void {
+    for (const open of [...this.expanded]) {
+      if (open !== path && !open.startsWith(`${path}/`)) continue;
+      this.expanded.delete(open);
+      this.folders.delete(open);
+      this.reads.delete(open);
+    }
+  }
+
+  // The folders of a refresh request. One request has a folder limit. Close the open
+  // folders above it.
+  refreshPaths(limit: number): string[] {
+    const paths = openFolders(this.expanded, limit);
+    const listed = new Set(paths);
+    for (const path of [...this.expanded]) if (!listed.has(path)) this.close(path);
+    return paths;
+  }
+
+  // Start a request for these folders. Earlier requests for them become obsolete.
+  request(paths: string[]): object {
+    const token = {};
+    for (const path of paths) {
+      this.reads.set(path, token);
+      this.failed.delete(path);
+    }
+    return token;
+  }
+
+  // Report that the request of this token is the latest request for the folder.
+  current(path: string, token: object): boolean { return this.reads.get(path) === token; }
+
+  // Apply the reply of a request. Skip a folder that a later request reads or that the
+  // user closed. Return the folders that need a request of their own.
+  //
+  // The folders of one reply share the entry limit. A truncated folder in a reply for
+  // more than one folder can thus have fewer entries than its own reply has. Keep its
+  // shown entries until its own reply arrives. A refresh closes a folder that is gone.
+  // The reply for one opened folder keeps it, with a note.
+  apply(reply: WorkspaceFolders, token: object, refresh: boolean): string[] {
+    const alone: string[] = [];
+    for (const folder of reply.folders) {
+      if (!this.current(folder.path, token)) continue;
+      if (folder.truncated && reply.folders.length > 1) alone.push(folder.path);
+      else if (folder.missing && folder.path && refresh) this.close(folder.path);
+      else this.folders.set(folder.path, folder);
+    }
+    return alone;
+  }
+
+  // The open folders of this request that have no list. They show "Reading…". After a
+  // failed request, each of them needs a request of its own.
+  unread(token: object): string[] {
+    return [...this.expanded].filter(path => this.current(path, token) && !this.folders.has(path)).sort();
+  }
+
+  // Record the failure of the latest request for one folder. A folder with a list stays
+  // open with its shown entries. A folder without a list has nothing to show, so it
+  // closes. The workspace folder cannot close. It shows that its read failed.
+  fail(path: string): void {
+    if (this.folders.has(path)) return;
+    if (path) this.close(path);
+    else this.failed.add(path);
+  }
+
+  rows(changes: ChangedFile[]): TreeRow[] { return treeRows(this.folders, this.expanded, changes, this.failed); }
 }
 
 export function statusTitle(change: ChangedFile): string {

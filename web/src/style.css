@@ -389,6 +389,11 @@ body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-s
 .diff-status-letter { flex: none; width: 12px; font-family: Menlo, Monaco, monospace; font-size: 11px; font-weight: 600; color: var(--text-muted); }
 .status-A { color: var(--positive); } .status-D { color: var(--danger); } .status-M, .status-T { color: var(--warning); } .status-R { color: var(--info); }
 .segmented button.waiting { border-style: dashed; }
+/* The Files tree. The indent of a row comes from its depth. */
+.tree-row { gap: 4px; }
+.tree-twisty { flex: none; width: 12px; font-size: 10px; color: var(--text-muted); }
+.tree-row.ignored .diff-base { color: var(--text-muted); }
+.tree-note { padding-top: 4px; padding-bottom: 4px; }
 .diff-empty { padding: 12px; font-size: 12px; color: var(--text-muted); }
 .diff-view { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .diff-file-header { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 10px; border-bottom: 1px solid var(--divider); font-size: 12px; }

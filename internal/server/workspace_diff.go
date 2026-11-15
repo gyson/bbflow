@@ -21,11 +21,15 @@ import (
 	agent "bonbon/internal/runtime"
 )
 
-// Limits of the read-only diff and file views.
-var maxDiffFiles = 5000 // Changed files in one list. Tests make it smaller.
+// Limits of the read-only diff and file views. Tests make them smaller.
+var (
+	maxDiffFiles     = 5000  // Changed files in one list.
+	maxFolderEntries = 20000 // Entries in one reply of folder lists.
+)
 
 const (
-	maxWorkspaceFiles = 20000    // Paths in the All files list.
+	maxFolderRequest  = 200      // Folders in one request.
+	maxWorkspaceFiles = 20000    // Paths in the list that the Files filter searches.
 	maxFileSide       = 1 << 20  // Bytes of one side of one file.
 	maxGitList        = 16 << 20 // Bytes of one Git list output.
 	maxCountBudget    = 32 << 20 // Bytes read to count lines of untracked files.
@@ -44,18 +48,26 @@ func gitEnv() []string {
 	return append(env, "GIT_TERMINAL_PROMPT=0")
 }
 
+// gitCommand prepares a read-only Git command in dir. The command does not take
+// optional locks, so it does not block Git commands of a live agent. An fsmonitor hook
+// from the repository configuration does not run. Messages use the C locale, so that
+// callers can identify a missing repository.
+func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	base := []string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "core.quotePath=false"}
+	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
+	cmd.Env = append(gitEnv(), "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
+	return cmd
+}
+
 // gitRead runs a read-only Git command in dir and returns at most limit bytes of
-// stdout. More reports that Git wrote more output. The command does not take optional
-// locks, so it does not block Git commands of a live agent. Paths are literal, and an
-// fsmonitor hook from the repository configuration does not run. Clean filters from the
-// repository configuration, such as Git LFS, still run when Git compares work files.
-// Messages use the C locale, so that callers can identify a missing repository.
+// stdout. More reports that Git wrote more output. Paths are literal. Clean filters
+// from the repository configuration, such as Git LFS, still run when Git compares work
+// files.
 func gitRead(ctx context.Context, dir string, limit int, args ...string) (out []byte, more bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, gitReadTimeout)
 	defer cancel()
-	base := []string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "core.quotePath=false"}
-	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
-	cmd.Env = append(gitEnv(), "GIT_OPTIONAL_LOCKS=0", "GIT_LITERAL_PATHSPECS=1", "LC_ALL=C")
+	cmd := gitCommand(ctx, dir, args...)
+	cmd.Env = append(cmd.Env, "GIT_LITERAL_PATHSPECS=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{buffer: &stderr, limit: 4096}
 	stdout, err := cmd.StdoutPipe()
@@ -98,6 +110,12 @@ func (e *gitError) Unwrap() error { return e.err }
 func isNotRepository(err error) bool {
 	var failure *gitError
 	return errors.As(err, &failure) && strings.Contains(strings.ToLower(failure.stderr), "not a git repository")
+}
+
+// withoutGit reports that the workspace is not in a Git repository, or that the server
+// has no Git executable. The file views then show the current files without Git data.
+func withoutGit(err error) bool {
+	return errors.Is(err, errNotRepository) || isNotRepository(err) || errors.Is(err, exec.ErrNotFound)
 }
 
 // isQuietMiss reports that `git rev-parse --verify --quiet` found no commit. Git then
@@ -391,6 +409,13 @@ func (s *Server) workspaceFiles(ctx context.Context, id string) (protocol.Worksp
 	return result, nil
 }
 
+// workspacePath reports that path is a clean path below the session workspace.
+func workspacePath(path string) bool {
+	return filepath.IsLocal(path) && path == filepath.Clean(path) && path != "." && !strings.ContainsRune(path, 0)
+}
+
+// workspaceFile reads both sides of one file. Without Git, the baseline is empty, the
+// old side is missing, and the new side is the current file.
 func (s *Server) workspaceFile(ctx context.Context, id string, request *protocol.DiffRequest) (protocol.WorkspaceFile, error) {
 	var result protocol.WorkspaceFile
 	if request == nil {
@@ -400,18 +425,19 @@ func (s *Server) workspaceFile(ctx context.Context, id string, request *protocol
 	if oldPath == "" {
 		oldPath = request.Path
 	}
-	for _, path := range []string{request.Path, oldPath} {
-		if !filepath.IsLocal(path) || path != filepath.Clean(path) || path == "." || strings.ContainsRune(path, 0) {
-			return result, errors.New("the file path must name a file in the session workspace")
-		}
+	if !workspacePath(request.Path) || !workspacePath(oldPath) {
+		return result, errors.New("the file path must name a file in the session workspace")
 	}
+	result.Path, result.Old = request.Path, protocol.FileSide{State: "missing"}
 	target, err := s.resolveDiff(ctx, id, request)
-	if err != nil {
-		return result, err
-	}
-	result.Path, result.Baseline = request.Path, target.baseline
-	result.Old, err = baselineSide(ctx, target, oldPath)
-	if err != nil {
+	switch {
+	case err == nil:
+		result.Baseline = target.baseline
+		if result.Old, err = baselineSide(ctx, target, oldPath); err != nil {
+			return result, err
+		}
+	case withoutGit(err) && target.workspace != "":
+	default:
 		return result, err
 	}
 	root, err := os.OpenRoot(target.workspace)
@@ -421,6 +447,156 @@ func (s *Server) workspaceFile(ctx context.Context, id string, request *protocol
 	defer root.Close()
 	result.New = readSide(root, request.Path, maxFileSide)
 	return result, nil
+}
+
+// workspaceFolders lists the entries of folders in the session workspace. An empty
+// path names the workspace folder. The lists work without Git. A path that is not a
+// folder now has Missing, so that one removed folder does not fail a refresh.
+func (s *Server) workspaceFolders(ctx context.Context, id string, request *protocol.DiffRequest) (protocol.WorkspaceFolders, error) {
+	result := protocol.WorkspaceFolders{Folders: []protocol.WorkspaceFolder{}}
+	if request == nil || len(request.Folders) == 0 {
+		return result, errors.New("missing folder paths")
+	}
+	if len(request.Folders) > maxFolderRequest {
+		return result, fmt.Errorf("one request lists at most %d folders", maxFolderRequest)
+	}
+	for _, path := range request.Folders {
+		if path != "" && !workspacePath(path) {
+			return result, errors.New("the folder path must name a folder in the session workspace")
+		}
+	}
+	session, err := s.store.Session(id)
+	if err != nil {
+		return result, err
+	}
+	workspace, err := agent.Canonical(session.Workspace)
+	if err != nil {
+		return result, fmt.Errorf("the session workspace is not available: %w", err)
+	}
+	root, err := os.OpenRoot(workspace)
+	if err != nil {
+		return result, err
+	}
+	defer root.Close()
+	budget := maxFolderEntries
+	for _, path := range request.Folders {
+		if err = ctx.Err(); err != nil {
+			return result, err
+		}
+		folder := readFolder(root, path, budget)
+		budget -= len(folder.Entries)
+		// Git finds the repository from the folder. Thus a submodule and a nested
+		// repository use their own ignore rules.
+		ignored, err := ignoredNames(ctx, filepath.Join(workspace, path), folder.Entries)
+		if err != nil && result.IgnoreError == "" {
+			result.IgnoreError = err.Error()
+		}
+		for i := range folder.Entries {
+			folder.Entries[i].Ignored = ignored[folder.Entries[i].Name]
+		}
+		result.Folders = append(result.Folders, folder)
+	}
+	return result, nil
+}
+
+// readFolder lists one folder through os.Root, which refuses paths that leave the
+// workspace. A symlink in the path is not followed. The list omits `.git`. It puts
+// folders first and sorts names without case. Truncated reports that the folder has
+// more than limit entries. The kept entries are then an arbitrary part of the folder.
+func readFolder(root *os.Root, path string, limit int) protocol.WorkspaceFolder {
+	folder := protocol.WorkspaceFolder{Path: path, Entries: []protocol.FolderEntry{}}
+	name := "."
+	if path != "" {
+		name = path
+		parts := strings.Split(path, string(filepath.Separator))
+		for i := range parts {
+			info, err := root.Lstat(filepath.Join(parts[:i+1]...))
+			if err != nil || !info.IsDir() {
+				folder.Missing = true
+				return folder
+			}
+		}
+	}
+	dir, err := root.Open(name)
+	if err != nil {
+		folder.Missing = true
+		return folder
+	}
+	defer dir.Close()
+	// Read one more entry than the limit to detect a longer folder. `.git` takes one
+	// place in the read.
+	entries, err := dir.ReadDir(limit + 2)
+	if err != nil && !errors.Is(err, io.EOF) {
+		folder.Missing = true
+		return folder
+	}
+	for _, entry := range entries {
+		if entry.Name() == ".git" {
+			continue
+		}
+		if len(folder.Entries) == limit {
+			folder.Truncated = true
+			break
+		}
+		kind := "other"
+		switch mode := entry.Type(); {
+		case mode.IsDir():
+			kind = "folder"
+		case mode.IsRegular():
+			kind = "file"
+		case mode&fs.ModeSymlink != 0:
+			kind = "symlink"
+		}
+		folder.Entries = append(folder.Entries, protocol.FolderEntry{Name: entry.Name(), Kind: kind})
+	}
+	slices.SortFunc(folder.Entries, func(a, b protocol.FolderEntry) int {
+		if a.Kind != b.Kind && (a.Kind == "folder" || b.Kind == "folder") {
+			if a.Kind == "folder" {
+				return -1
+			}
+			return 1
+		}
+		if order := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); order != 0 {
+			return order
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	return folder
+}
+
+// ignoredNames returns the entries of dir that Git ignores. It returns no names without
+// Git. `./` keeps Git from reading a name that starts with a colon as pathspec magic.
+func ignoredNames(ctx context.Context, dir string, entries []protocol.FolderEntry) (map[string]bool, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitReadTimeout)
+	defer cancel()
+	var input strings.Builder
+	for _, entry := range entries {
+		input.WriteString("./" + entry.Name + "\x00")
+	}
+	cmd := gitCommand(ctx, dir, "check-ignore", "-z", "--stdin")
+	cmd.Stdin = strings.NewReader(input.String())
+	var stderr bytes.Buffer
+	cmd.Stderr = &limitedWriter{buffer: &stderr, limit: 4096}
+	out, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("git check-ignore took more than %s", gitReadTimeout)
+		}
+		failure := &gitError{command: "check-ignore", err: err, stderr: strings.TrimSpace(stderr.String())}
+		// Git exits with status 1 when it ignores none of the names.
+		if isQuietMiss(failure) || withoutGit(failure) {
+			return nil, nil
+		}
+		return nil, failure
+	}
+	ignored := map[string]bool{}
+	for _, name := range splitZ(out) {
+		ignored[strings.TrimPrefix(name, "./")] = true
+	}
+	return ignored, nil
 }
 
 // baselineSide reads one path from the baseline commit. The path is relative to the

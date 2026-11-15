@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/22"
+const Version = "bonbon/23"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -67,11 +67,13 @@ type Request struct {
 // DiffRequest selects a baseline and a file in the workspace of the request session.
 // Baseline is "base" for the managed worktree commit or "head" for HEAD. An empty
 // baseline selects "base" when it is available. Path and OldPath are relative to the
-// session workspace. OldPath names the old side of a rename.
+// session workspace. OldPath names the old side of a rename. Folders names the folders
+// of a folder list. An empty folder path names the workspace folder.
 type DiffRequest struct {
-	Baseline string `json:"baseline,omitempty"`
-	Path     string `json:"path,omitempty"`
-	OldPath  string `json:"oldPath,omitempty"`
+	Baseline string   `json:"baseline,omitempty"`
+	Path     string   `json:"path,omitempty"`
+	OldPath  string   `json:"oldPath,omitempty"`
+	Folders  []string `json:"folders,omitempty"`
 }
 
 // Baseline identifies the commit that a diff compares with the current files. Commit
@@ -115,8 +117,34 @@ type WorkspaceFiles struct {
 	Truncated  bool     `json:"truncated"`
 }
 
+// WorkspaceFolders lists the entries of the requested folders, in request order.
+// IgnoreError holds the first Git failure that kept the server from marking ignored
+// entries. The entries are still complete.
+type WorkspaceFolders struct {
+	Folders     []WorkspaceFolder `json:"folders"`
+	IgnoreError string            `json:"ignoreError,omitempty"`
+}
+
+// WorkspaceFolder lists one folder. Missing reports that the path is not a folder now.
+// Truncated reports that the folder has more entries than the reply holds.
+type WorkspaceFolder struct {
+	Path      string        `json:"path"`
+	Missing   bool          `json:"missing,omitempty"`
+	Entries   []FolderEntry `json:"entries"`
+	Truncated bool          `json:"truncated,omitempty"`
+}
+
+// FolderEntry is one name in a folder. Kind is "folder", "file", "symlink", or "other"
+// for a special file. Ignored reports that Git ignores the entry.
+type FolderEntry struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Ignored bool   `json:"ignored,omitempty"`
+}
+
 // WorkspaceFile holds both sides of one file. Old comes from the baseline commit. New
-// comes from the current workspace files.
+// comes from the current workspace files. Without Git, Baseline is empty and Old is
+// missing.
 type WorkspaceFile struct {
 	Path     string   `json:"path"`
 	Baseline Baseline `json:"baseline"`

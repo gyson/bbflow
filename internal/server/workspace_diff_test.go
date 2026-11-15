@@ -260,8 +260,141 @@ func TestWorkspaceViewsOutsideGit(t *testing.T) {
 	if err != nil || list.Repository || list.Reason != notRepository || list.Paths == nil {
 		t.Fatalf("files: %+v, %v", list, err)
 	}
-	if _, err = s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Path: "notes.txt"}); err == nil {
-		t.Fatal("file outside Git was read")
+	// The file view and the folder list need no repository.
+	file, err := s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Path: "notes.txt"})
+	if err != nil || file.Baseline != (protocol.Baseline{}) || file.Old.State != "missing" || file.New.Text != "notes\n" {
+		t.Fatalf("file outside Git: %+v, %v", file, err)
+	}
+	if _, err = s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Path: "../notes.txt"}); err == nil {
+		t.Fatal("a path outside the workspace was accepted")
+	}
+	folders, err := s.workspaceFolders(context.Background(), id, &protocol.DiffRequest{Folders: []string{""}})
+	want := []protocol.FolderEntry{{Name: "notes.txt", Kind: "file"}}
+	if err != nil || folders.IgnoreError != "" || !reflect.DeepEqual(folders.Folders[0].Entries, want) {
+		t.Fatalf("folders outside Git: %+v, %v", folders, err)
+	}
+}
+
+func listFolders(t *testing.T, s *Server, id string, paths ...string) protocol.WorkspaceFolders {
+	t.Helper()
+	folders, err := s.workspaceFolders(context.Background(), id, &protocol.DiffRequest{Folders: paths})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(folders.Folders) != len(paths) {
+		t.Fatalf("folders: %+v", folders)
+	}
+	for i, path := range paths {
+		if folders.Folders[i].Path != path || folders.Folders[i].Entries == nil {
+			t.Fatalf("folder %d: %+v", i, folders.Folders[i])
+		}
+	}
+	return folders
+}
+
+func TestWorkspaceFoldersListEntries(t *testing.T) {
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{
+		".gitignore": "*.log\nbuild/\n", "README.md": "readme\n", "b.txt": "b\n", "Alpha.txt": "a\n",
+		"src/main.go": "package main\n", "src/deep/x.go": "package deep\n", "kept.log": "tracked\n",
+	})
+	fixtureGit(t, repo, "add", "-f", "kept.log")
+	fixtureGit(t, repo, "commit", "-q", "-m", "tracked log")
+	writeFiles(t, repo, map[string]string{"debug.log": "ignored\n", "build/out.bin": "\x00", "src/trace.log": "ignored\n", ":colon.log": "ignored\n", "empty/.keep": ""})
+	os.Remove(filepath.Join(repo, "empty", ".keep"))
+	if err := os.Symlink("README.md", filepath.Join(repo, "link")); err != nil {
+		t.Fatal(err)
+	}
+	// A nested repository uses its own ignore rules.
+	nested := filepath.Join(repo, "nested")
+	writeFiles(t, nested, map[string]string{".gitignore": "*.tmp\n", "work.tmp": "ignored\n", "work.log": "kept\n"})
+	fixtureGit(t, nested, "init", "-q")
+	id := diffSession(t, s, repo)
+	folders := listFolders(t, s, id, "", "src", "empty", "nested", "missing", "README.md")
+	if folders.IgnoreError != "" {
+		t.Fatalf("ignore error: %s", folders.IgnoreError)
+	}
+	want := []protocol.WorkspaceFolder{
+		{Path: "", Entries: []protocol.FolderEntry{
+			{Name: "build", Kind: "folder", Ignored: true}, {Name: "empty", Kind: "folder"}, {Name: "nested", Kind: "folder"}, {Name: "src", Kind: "folder"},
+			{Name: ".gitignore", Kind: "file"}, {Name: ":colon.log", Kind: "file", Ignored: true}, {Name: "Alpha.txt", Kind: "file"}, {Name: "b.txt", Kind: "file"},
+			{Name: "debug.log", Kind: "file", Ignored: true}, {Name: "kept.log", Kind: "file"}, {Name: "link", Kind: "symlink"}, {Name: "README.md", Kind: "file"},
+		}},
+		{Path: "src", Entries: []protocol.FolderEntry{{Name: "deep", Kind: "folder"}, {Name: "main.go", Kind: "file"}, {Name: "trace.log", Kind: "file", Ignored: true}}},
+		{Path: "empty", Entries: []protocol.FolderEntry{}},
+		{Path: "nested", Entries: []protocol.FolderEntry{{Name: ".gitignore", Kind: "file"}, {Name: "work.log", Kind: "file"}, {Name: "work.tmp", Kind: "file", Ignored: true}}},
+		{Path: "missing", Missing: true, Entries: []protocol.FolderEntry{}},
+		{Path: "README.md", Missing: true, Entries: []protocol.FolderEntry{}},
+	}
+	if !reflect.DeepEqual(folders.Folders, want) {
+		t.Fatalf("folders:\n got %+v\nwant %+v", folders.Folders, want)
+	}
+	// A repository subfolder session lists its own folder.
+	sub := listFolders(t, s, diffSession(t, s, filepath.Join(repo, "src")), "")
+	if !reflect.DeepEqual(sub.Folders[0].Entries, want[1].Entries) {
+		t.Fatalf("subfolder session: %+v", sub.Folders[0])
+	}
+}
+
+func TestWorkspaceFoldersStayInsideWorkspace(t *testing.T) {
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"real/inside.txt": "inside\n"})
+	outside := t.TempDir()
+	writeFiles(t, outside, map[string]string{"secret.txt": "secret\n"})
+	for name, target := range map[string]string{"escape": outside, "inner": "real"} {
+		if err := os.Symlink(target, filepath.Join(repo, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	id := diffSession(t, s, repo)
+	for _, path := range []string{"..", "../" + filepath.Base(outside), outside, ".", "real/..", "real/", "a\x00b"} {
+		if _, err := s.workspaceFolders(context.Background(), id, &protocol.DiffRequest{Folders: []string{path}}); err == nil {
+			t.Errorf("folder path %q was accepted", path)
+		}
+	}
+	for _, request := range []*protocol.DiffRequest{nil, {}, {Folders: make([]string, maxFolderRequest+1)}} {
+		if _, err := s.workspaceFolders(context.Background(), id, request); err == nil {
+			t.Errorf("request %+v was accepted", request)
+		}
+	}
+	if _, err := s.workspaceFolders(context.Background(), "missing", &protocol.DiffRequest{Folders: []string{""}}); err == nil {
+		t.Error("unknown session was accepted")
+	}
+	// A symlink is an entry. The server does not follow it, also inside the workspace.
+	folders := listFolders(t, s, id, "", "escape", "inner", "escape/sub", "real")
+	root := []protocol.FolderEntry{{Name: "real", Kind: "folder"}, {Name: "escape", Kind: "symlink"}, {Name: "inner", Kind: "symlink"}}
+	if !reflect.DeepEqual(folders.Folders[0].Entries, root) {
+		t.Fatalf("root: %+v", folders.Folders[0])
+	}
+	for _, folder := range folders.Folders[1:4] {
+		if !folder.Missing || len(folder.Entries) != 0 {
+			t.Errorf("a symlink was followed: %+v", folder)
+		}
+	}
+	if len(folders.Folders[4].Entries) != 1 || folders.Folders[4].Missing {
+		t.Fatalf("real folder: %+v", folders.Folders[4])
+	}
+}
+
+func TestWorkspaceFoldersLimitEntries(t *testing.T) {
+	defer func(limit int) { maxFolderEntries = limit }(maxFolderEntries)
+	maxFolderEntries = 3
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"a/1": "", "a/2": "", "b/1": "", "b/2": "", "b/3": ""})
+	id := diffSession(t, s, repo)
+	// The limit covers all folders of one reply. `.git` does not use it.
+	folders := listFolders(t, s, id, "a", "b", "")
+	a, b, root := folders.Folders[0], folders.Folders[1], folders.Folders[2]
+	if len(a.Entries) != 2 || a.Truncated || len(b.Entries) != 1 || !b.Truncated || len(root.Entries) != 0 || !root.Truncated {
+		t.Fatalf("limited folders: %+v", folders)
+	}
+	if exact := listFolders(t, s, id, "b").Folders[0]; len(exact.Entries) != 3 || exact.Truncated {
+		t.Fatalf("a folder at the limit: %+v", exact)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.workspaceFolders(ctx, id, &protocol.DiffRequest{Folders: []string{""}}); err == nil {
+		t.Fatal("a canceled request listed folders")
 	}
 }
 
@@ -344,11 +477,9 @@ func TestDiffParsersDropPartialRecords(t *testing.T) {
 	}
 }
 
-func TestWorkspaceFileRequestOverWebSocket(t *testing.T) {
-	s := diffServer(t)
-	repo := diffRepository(t, map[string]string{"a b.txt": "old\n"})
-	writeFiles(t, repo, map[string]string{"a b.txt": "new\n"})
-	id := diffSession(t, s, repo)
+// requestResult sends one request through the server and returns its result.
+func requestResult(t *testing.T, s *Server, request protocol.Request, result any) {
+	t.Helper()
 	conn, peer := attachmentPair(t)
 	done := make(chan struct{})
 	go func() { defer close(done); s.handle(context.Background(), conn) }()
@@ -357,20 +488,36 @@ func TestWorkspaceFileRequestOverWebSocket(t *testing.T) {
 	if err := peer.ReadJSON(&greeting); err != nil || greeting.Type != "server" {
 		t.Fatal(greeting, err)
 	}
-	request := protocol.Message{Type: "request", Request: &protocol.Request{Protocol: protocol.Version, Operation: "workspace-file", Session: id, Diff: &protocol.DiffRequest{Baseline: "head", Path: "a b.txt"}}}
-	if err := peer.WriteJSON(request); err != nil {
+	request.Protocol = protocol.Version
+	if err := peer.WriteJSON(protocol.Message{Type: "request", Request: &request}); err != nil {
 		t.Fatal(err)
 	}
 	var reply protocol.Message
 	if err := peer.ReadJSON(&reply); err != nil || reply.Type != "result" {
 		t.Fatal(reply, err)
 	}
-	var file protocol.WorkspaceFile
-	if err := json.Unmarshal(reply.Result, &file); err != nil || file.Old.Text != "old\n" || file.New.Text != "new\n" {
-		t.Fatalf("reply: %+v, %v", file, err)
+	if err := json.Unmarshal(reply.Result, result); err != nil {
+		t.Fatal(err)
 	}
 	peer.Close()
 	<-done
+}
+
+func TestWorkspaceRequestsOverWebSocket(t *testing.T) {
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"a b.txt": "old\n"})
+	writeFiles(t, repo, map[string]string{"a b.txt": "new\n"})
+	id := diffSession(t, s, repo)
+	var file protocol.WorkspaceFile
+	requestResult(t, s, protocol.Request{Operation: "workspace-file", Session: id, Diff: &protocol.DiffRequest{Baseline: "head", Path: "a b.txt"}}, &file)
+	if file.Old.Text != "old\n" || file.New.Text != "new\n" {
+		t.Fatalf("file reply: %+v", file)
+	}
+	var folders protocol.WorkspaceFolders
+	requestResult(t, s, protocol.Request{Operation: "workspace-folders", Session: id, Diff: &protocol.DiffRequest{Folders: []string{""}}}, &folders)
+	if len(folders.Folders) != 1 || !reflect.DeepEqual(folders.Folders[0].Entries, []protocol.FolderEntry{{Name: "a b.txt", Kind: "file"}}) {
+		t.Fatalf("folders reply: %+v", folders)
+	}
 }
 
 func TestWorkspaceChangesLimitUntrackedScan(t *testing.T) {
@@ -438,6 +585,26 @@ func TestWorkspaceViewsReportGitFailures(t *testing.T) {
 	list, err := s.workspaceFiles(context.Background(), id)
 	if err == nil || list.Reason == notRepository {
 		t.Fatalf("missing Git was reported as no repository: %+v, %v", list, err)
+	}
+	// The file view and the folder list show the current files without Git.
+	file, err := s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Path: "a.txt"})
+	if err != nil || file.New.Text != "a\n" || file.Old.State != "missing" || file.Baseline.Commit != "" {
+		t.Fatalf("file without Git: %+v, %v", file, err)
+	}
+	folders := listFolders(t, s, id, "")
+	if folders.IgnoreError != "" || !reflect.DeepEqual(folders.Folders[0].Entries, []protocol.FolderEntry{{Name: "a.txt", Kind: "file"}}) {
+		t.Fatalf("folders without Git: %+v", folders)
+	}
+}
+
+func TestWorkspaceFoldersReportIgnoreFailure(t *testing.T) {
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"a.txt": "a\n"})
+	// Git refuses a repository with a damaged configuration.
+	writeFiles(t, repo, map[string]string{".git/config": "[core\n"})
+	folders := listFolders(t, s, diffSession(t, s, repo), "")
+	if folders.IgnoreError == "" || len(folders.Folders[0].Entries) != 1 {
+		t.Fatalf("a Git failure was hidden or stopped the list: %+v", folders)
 	}
 }
 
