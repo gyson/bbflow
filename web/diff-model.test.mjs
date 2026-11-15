@@ -130,6 +130,31 @@ test('a refresh at the shared entry limit keeps the shown entries of a folder', 
   assert.match(names(tree)[4], /^  note:This folder has more entries/);
 });
 
+test('a failed request keeps the shown entries of a folder and closes a folder without a list', () => {
+  const tree = new FolderTree();
+  tree.apply(reply(folder('', [entry('big', 'folder'), entry('new', 'folder'), entry('src', 'folder')])), tree.request(['']), true);
+  for (const path of ['big', 'src']) {
+    tree.open(path);
+    tree.apply(reply(folder(path, [entry(`${path}.go`)])), tree.request([path]), false);
+  }
+  // A refresh at the shared limit asks for a request for src alone. That request fails.
+  const refresh = tree.request(tree.refreshPaths(200));
+  const alone = tree.apply(reply(folder('', [entry('big', 'folder'), entry('new', 'folder'), entry('src', 'folder')]), folder('big', [entry('big.go')]), folder('src', [], { truncated: true })), refresh, true);
+  assert.deepEqual(alone, ['src']);
+  tree.request(['src']);
+  tree.fail('src');
+  assert.equal(tree.isOpen('src'), true);
+  assert.deepEqual(names(tree), ['folder:big', '  file:big.go', 'folder:new', 'folder:src', '  file:src.go']);
+  // A folder that opens for the first time has no list. Its failed request closes it.
+  tree.open('new');
+  tree.request(['new']);
+  tree.fail('new');
+  assert.equal(tree.isOpen('new'), false);
+  // The workspace folder never closes.
+  tree.fail('');
+  assert.equal(names(tree).length, 5);
+});
+
 test('a refresh closes a folder that is gone and the folders above the request limit', () => {
   const tree = new FolderTree();
   tree.apply(reply(folder('', [entry('a', 'folder'), entry('b', 'folder')])), tree.request(['']), true);

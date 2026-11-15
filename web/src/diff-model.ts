@@ -146,6 +146,13 @@ export class FolderTree {
     return alone;
   }
 
+  // Record the failure of the latest request for one folder. A folder with a list stays
+  // open with its shown entries. A folder without a list has nothing to show, so it
+  // closes.
+  fail(path: string): void {
+    if (path && !this.folders.has(path)) this.close(path);
+  }
+
   rows(changes: ChangedFile[]): TreeRow[] { return treeRows(this.folders, this.expanded, changes); }
 }
 

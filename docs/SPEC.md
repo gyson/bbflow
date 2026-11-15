@@ -810,6 +810,8 @@ Limits:
 - The open folders of a refresh share this entry limit. When the limit cuts the list of
   a folder, the pane keeps the shown entries of that folder. It then reads the folder
   again in a request of its own.
+- A failed request for one folder shows its error. A folder with shown entries stays
+  open and keeps them. A folder that opened without entries closes.
 - Line counts of untracked files use at most 32 MiB of reads for each list. Later
   untracked files show no count.
 - A folder that is not a Git repository has no changes and no filter. The tooltip of
@@ -1215,7 +1217,8 @@ executable, and a failed ignore check. A WebSocket fixture sends `workspace-file
 `workspace-folders` through the server. Web fixtures cover the file list, the filter,
 the tree rows and their notes and marks, the folders of a refresh, the language choice,
 the layout width rule, and late replies. They also cover replies for a folder that
-closed or opened again, a refresh at the shared entry limit, and a folder that is gone.
+closed or opened again, a refresh at the shared entry limit, a folder that is gone, and
+a failed request for one folder.
 
 A browser check used a temporary instance, a fixture repository, and a shell session in
 a managed worktree. It checked Split, Unified, folded regions, View file, deleted files,
@@ -1231,6 +1234,8 @@ after a folder was removed. It also checked the folder outside Git, an ended ses
 phone width without horizontal scroll, and an empty browser console. A later check
 opened a folder with Enter and moved to its first entry with Tab. It also refreshed the
 tree with an open folder of 20,000 files, and each open folder kept its entries.
+A simulated connection failure of the request for one folder kept that folder open
+with its entries and showed the error.
 
 A browser check of the session toolbar used a temporary instance, a fixture repository,
 and a Shell session. It checked the draft, running, and ended states, the tooltips, the
