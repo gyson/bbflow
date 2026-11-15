@@ -189,7 +189,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/22`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/23`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -212,6 +212,10 @@ Protocol 22 adds the derived [session status](#session-status) to session summar
 session details. It also adds the `status` message of a live terminal stream, the
 `status-watch` stream, and the run status and run ID in the `exit` message. The SQLite
 format does not change.
+
+Protocol 23 adds `workspace-folders` for the Files tree of the
+[Changes pane](#changes-pane). `workspace-file` also reads a file in a folder that is
+not a Git repository. The SQLite format does not change.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
 its static files, and `GET /client-config` for browser connection information. All
@@ -712,10 +716,11 @@ reads the list again every five seconds until that terminal has a run.
 
 ### Changes pane
 
-The pane icon in the session toolbar has the tooltip **Show changes**. It opens a
-read-only pane to the right of the terminal and the message editor. It shows the files of the session workspace. Drafts have no
-Changes pane. The pane never changes files, the Git index, or SQLite. Ended sessions
-keep the pane while their workspace exists.
+The pane icon in the session toolbar has the tooltip **Show changes and files**. It
+opens a read-only pane to the right of the terminal and the message editor. It shows
+the changes and the files of the session workspace. Drafts have no Changes pane. The
+pane never changes files, the Git index, or SQLite. Ended sessions keep the pane while
+their workspace exists.
 
 - **Compare with** selects the baseline. **Since worktree base** compares the recorded
   commit of a ready managed worktree with the current files. It includes commits that
@@ -733,17 +738,35 @@ keep the pane while their workspace exists.
   and folded regions follow Appearance. The file view uses the same syntax colors.
 - **Changed** lists the changed files with Git status letters A, M, D, R, and T. An
   untracked file has A. After `git rm --cached`, the path has one row with M. An
-  untracked nested repository shows as one folder row. **All files** adds the paths that
-  Git tracks or does not ignore. The filter box matches any part of a path without case.
-  A long path keeps its file name in view and shortens its folder.
-- The file header shows the path and the line counts. **View file** shows the current
-  file. It changes to **View diff**. An unchanged file opens in the file view. **Copy
-  path** copies the path relative to the workspace.
-- The pane reads the list when it opens, on **Refresh**, and when the window gets focus.
-  It does not watch files. A refresh keeps the shown file when its content is the same.
+  untracked nested repository shows as one folder row. The filter box matches any part
+  of a path without case. A long path keeps its file name in view and shortens its
+  folder.
+- **Files** shows the workspace folder as a tree. Click a folder to open or close it.
+  The pane reads a folder when it opens. The tree puts folders first and sorts names
+  without case. It omits `.git`. It includes the entries that Git ignores, in a muted
+  color. A changed file shows its status letter. A folder with a change below it shows
+  a dot. A deleted file is not in the tree. An open folder without entries shows
+  "Empty folder".
+- With text in the filter box, **Files** shows a list in place of the tree. The list has
+  the paths that match, from the paths that Git tracks or does not ignore, and from the
+  deleted files.
+- A file that you select in **Files** opens in the file view. A file that you select in
+  **Changed** opens as a diff. A symlink opens as a file with its target text.
+- The file header shows the path and the line counts. For a changed file, **View file**
+  and **View diff** change between the file view and the diff. An unchanged file has
+  only the file view. **Copy path** copies the path relative to the workspace.
+- The pane reads its lists when it opens, on **Refresh**, on a click on **Changed** or
+  **Files**, and when the window gets focus. It does not watch files. A refresh reads
+  each open folder again. It closes a folder that is gone. A refresh keeps the shown
+  file when its content is the same.
+- A folder that is not a Git repository shows **Files** only. **Changed**, **Compare
+  with**, and the filter box are off there, and the file view shows the current file.
+  When the server has no Git executable, **Files** and the file view work in the same
+  way, and **Changed** shows the error.
 
 A drag on the divider or the Left and Right arrow keys change the pane width. The pane
-width, the layout, the scope, the baseline, and the selected file belong to the view.
+width, the layout, the scope, the baseline, the open folders, and the selected file
+belong to the view.
 Other browser tabs keep their own state. A visit to Settings or the home page keeps the
 state. A different session or a reload resets it.
 
@@ -752,7 +775,8 @@ accepts a workspace path from the client. A repository subfolder session sees on
 own folder, with paths relative to it. The server reads current files through `os.Root`.
 `..`, absolute paths, and symlinks that leave the workspace are refused. A symlink shows
 its target text on both sides, as in Git, and is not followed. Special files are not
-opened.
+opened. A folder list has a symlink as one entry. The server does not list a path that
+is a symlink or that goes through a symlink.
 
 Git runs with `GIT_OPTIONAL_LOCKS=0`. Thus it does not take `index.lock` from a live
 agent. It also runs with literal pathspecs, `core.fsmonitor=false`, `--no-ext-diff`,
@@ -763,16 +787,26 @@ the C locale. Only a "not a git repository" message from Git shows "Not a Git
 repository." Other failures, such as a missing Git executable or a `safe.directory`
 refusal, show their error.
 
+For the ignore marks of the tree, the server runs `git check-ignore` in each listed
+folder. Thus a submodule and a nested repository use their own ignore rules. This
+command does not support literal pathspecs. The server sends each name with a `./`
+prefix through standard input, so that Git reads it as a path. When this command fails,
+the tree shows the entries without ignore marks, and the pane shows the error.
+
 Limits:
 
 - Each side of a file holds at most 1 MiB. A larger side shows a note instead of text.
 - A side with a NUL byte in its first 8000 bytes, or with invalid UTF-8, is binary. The
   pane shows a note instead of its content.
-- The changed list holds at most 5,000 files, and All files at most 20,000 paths. A
-  longer list shows a note.
+- The changed list holds at most 5,000 files, and the filter list of **Files** at most
+  20,000 paths. A longer list shows a note.
+- One reply of folder lists holds at most 20,000 entries. A folder with more entries
+  shows a note and an arbitrary part of its entries. One request names at most 200
+  folders. A refresh closes the open folders above this number.
 - Line counts of untracked files use at most 32 MiB of reads for each list. Later
   untracked files show no count.
-- A folder that is not a Git repository shows "Not a Git repository." and no file list.
+- A folder that is not a Git repository has no changes and no filter. The tooltip of
+  **Changed** is "Not a Git repository."
 
 ### Message editor
 
@@ -1167,15 +1201,26 @@ deleted, renamed, binary, and untracked files, and names with spaces, Unicode, a
 newlines. They also cover files above 1 MiB, invalid UTF-8, symlinks inside and outside
 the workspace, `..` and absolute paths, and folders. Other fixtures cover subfolder
 sessions, repositories without commits, folders outside Git, missing workspaces, and
-both baselines of a managed worktree after an agent commit. A WebSocket fixture sends
-`workspace-file` through the server. Web fixtures cover the file list, the filter, the
-language choice, the layout width rule, and late replies.
+both baselines of a managed worktree after an agent commit. Folder list fixtures cover
+the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
+the workspace, missing folders, the entry limit, a folder outside Git, a missing Git
+executable, and a failed ignore check. A WebSocket fixture sends `workspace-file` and
+`workspace-folders` through the server. Web fixtures cover the file list, the filter,
+the tree rows and their notes and marks, the folders of a refresh, the language choice,
+the layout width rule, and late replies.
 
 A browser check used a temporary instance, a fixture repository, and a shell session in
 a managed worktree. It checked Split, Unified, folded regions, View file, deleted files,
 symlinks, binary files, both baselines, a non-Git General session, and an ended
 session. It also checked two tabs with separate selections, a phone width without
 horizontal scroll, and an empty browser console. Script text in a file showed as text.
+
+A browser check of the Files tree used a temporary instance, a fixture repository, and
+a folder outside Git, each with a shell session. It checked open and closed folders,
+ignored entries, status letters, folder dots, a symlink, a binary file, the file view
+and the diff of a changed file, the filter list with a deleted file, and a refresh
+after a folder was removed. It also checked the folder outside Git, an ended session, a
+phone width without horizontal scroll, and an empty browser console.
 
 A browser check of the session toolbar used a temporary instance, a fixture repository,
 and a Shell session. It checked the draft, running, and ended states, the tooltips, the
@@ -1516,7 +1561,9 @@ restore the internal state of the earlier agent.
 
 The Changes pane reads files only when it opens, on Refresh, and on window focus. It
 shows one file at a time and has no commit list. It shows images as binary files. It
-cannot show changes in a folder that is not a Git repository. Git detects a rename only
+cannot show changes in a folder that is not a Git repository. The filter of **Files**
+needs a Git repository, and it does not find ignored files. The tree has no arrow key
+navigation. Use Tab and Enter. Git detects a rename only
 between tracked files with similar content. An untracked new file and its deleted
 original show as two changes.
 

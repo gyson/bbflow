@@ -55,7 +55,8 @@ following work remains.
 - Record `HEAD` at the start of each run, to add a "Since this terminal started"
   baseline. This needs a migration.
 - Show all changed files on one page, like a pull request, with lazy editors.
-- Preview files in a folder that is not a Git repository.
+- Find files by name in a folder that is not a Git repository.
+- Add arrow key navigation to the Files tree.
 - Evaluate a smaller set of language modes if the bundle size becomes a problem.
 
 ## Continuation follow-ups

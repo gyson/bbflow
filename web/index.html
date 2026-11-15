@@ -27,7 +27,7 @@
         <div class="session-heading"><div class="session-title-row"><h1 id="session-title">Your workspace</h1><span id="status" class="badge" hidden></span></div><p id="workspace">A home for your terminal sessions.</p><p id="launch-summary" hidden></p></div></div>
       <div class="actions">
         <button id="history-open" class="toolbar-icon" disabled aria-label="Search history" data-tip="Search history (⌘⇧F or Ctrl+Shift+F)"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.75" cy="8.75" r="5.25"/><path d="M12.75 12.75l4 4"/></svg></button>
-        <button id="diff-open" class="toolbar-icon" aria-controls="diff-pane" aria-pressed="false" aria-label="Show changes" data-tip="Show changes" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path class="panel" d="M12.25 3.75h2.5a2.5 2.5 0 0 1 2.5 2.5v7.5a2.5 2.5 0 0 1-2.5 2.5h-2.5z"/><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M12.25 3.75v12.5"/></svg></button>
+        <button id="diff-open" class="toolbar-icon" aria-controls="diff-pane" aria-pressed="false" aria-label="Show changes and files" data-tip="Show changes and files" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path class="panel" d="M12.25 3.75h2.5a2.5 2.5 0 0 1 2.5 2.5v7.5a2.5 2.5 0 0 1-2.5 2.5h-2.5z"/><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M12.25 3.75v12.5"/></svg></button>
         <button id="reconnect" hidden data-tip="Connect this view to the live terminal again.">Reconnect</button>
         <button id="continue-session" hidden data-tip="Start a new terminal in this session. The new agent can read the earlier terminals.">Continue in new terminal</button>
         <button id="stop" class="danger" hidden data-tip="Stop the terminal of this session for every view.">Stop session</button>
@@ -82,18 +82,18 @@
       </section>
     </section>
     <div id="diff-divider" role="separator" tabindex="0" aria-label="Changes pane width" aria-orientation="vertical" aria-controls="diff-pane" title="Drag to resize. Use Left and Right arrow keys when focused." hidden></div>
-    <aside id="diff-pane" aria-label="Changes" hidden>
+    <aside id="diff-pane" aria-label="Changes and files" hidden>
       <div class="diff-toolbar">
         <select id="diff-baseline" aria-label="Compare with"></select>
         <span class="segmented" role="group" aria-label="Diff layout"><button id="diff-split" type="button" aria-pressed="true">Split</button><button id="diff-unified" type="button" aria-pressed="false">Unified</button></span>
         <span id="diff-summary"></span>
-        <button id="diff-refresh" type="button" class="icon-button" title="Read the changes again" aria-label="Refresh changes">↻</button>
-        <button id="diff-close" type="button" class="icon-button" title="Close changes" aria-label="Close changes">×</button>
+        <button id="diff-refresh" type="button" class="icon-button" title="Read the changes and the files again" aria-label="Refresh">↻</button>
+        <button id="diff-close" type="button" class="icon-button" title="Close the pane" aria-label="Close changes and files">×</button>
       </div>
       <p id="diff-status" role="status" hidden></p>
       <div class="diff-body">
         <nav class="diff-files" aria-label="Files">
-          <span class="segmented" role="group" aria-label="File list"><button id="diff-changed" type="button" aria-pressed="true">Changed</button><button id="diff-all" type="button" aria-pressed="false">All files</button></span>
+          <span class="segmented" role="group" aria-label="File list"><button id="diff-changed" type="button" aria-pressed="true">Changed</button><button id="diff-files-tab" type="button" aria-pressed="false">Files</button></span>
           <input id="diff-filter" type="search" maxlength="200" placeholder="Filter files" aria-label="Filter files">
           <ul id="diff-list"></ul>
         </nav>

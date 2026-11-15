@@ -229,6 +229,8 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.workspaceChanges(ctx, request.Session, request.Diff) })
 	case "workspace-files":
 		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.workspaceFiles(ctx, request.Session) })
+	case "workspace-folders":
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.workspaceFolders(ctx, request.Session, request.Diff) })
 	case "workspace-file":
 		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.workspaceFile(ctx, request.Session, request.Diff) })
 	case "composer-draft":

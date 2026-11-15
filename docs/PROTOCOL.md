@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/22`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/23`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/22",
+    "protocol": "bonbon/23",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/22",
+    "protocol": "bonbon/23",
     "operation": "session-list",
     "limit": 10
   }
@@ -88,6 +88,7 @@ operations.
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
 | `workspace-changes` | `session` ID, `diff` object with optional `baseline` | `result`, containing `repository`, `base`, `baseline`, `files`, and `truncated` |
 | `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
+| `workspace-folders` | `session` ID, `diff` object with `folders` | `result`, containing `folders` and an optional `ignoreError` |
 | `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath` and `baseline` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
@@ -320,6 +321,9 @@ The `diff` object has these fields:
 - `path`: a clean path relative to the session workspace. `.`, `..`, absolute paths,
   and empty paths fail.
 - `oldPath`: the old path of a rename. The old side uses it instead of `path`.
+- `folders`: the folder paths of a `workspace-folders` request, at most 200. Each path
+  is relative to the session workspace, with the same rules as `path`. An empty path
+  names the workspace folder.
 
 `workspace-changes` returns:
 
@@ -359,6 +363,42 @@ path without a final slash. `added` and
 `state` is `text`, `missing`, `binary`, `tooLarge`, or `other` for a folder, a
 submodule, or a special file. Only `text` has `text`. A symlink has `symlink` and its
 target as text. Each side holds at most 1 MiB.
+
+Since protocol 23, `workspace-file` also works without Git. For a folder that Git does
+not manage, or a server without a Git executable, the fields of `baseline` are empty,
+`old` is `missing`, and `new` is the current file.
+
+Protocol 23 adds `workspace-folders` for the Files tree. It needs no Git repository. It
+returns one list for each requested folder, in request order:
+
+```json
+{
+  "folders": [
+    {
+      "path": "",
+      "entries": [
+        { "name": "build", "kind": "folder", "ignored": true },
+        { "name": "src", "kind": "folder" },
+        { "name": "link", "kind": "symlink" },
+        { "name": "README.md", "kind": "file" }
+      ]
+    },
+    { "path": "src/removed", "missing": true, "entries": [] }
+  ]
+}
+```
+
+`kind` is `folder`, `file`, `symlink`, or `other` for a special file. The entries have
+folders first, then names in order without case. The list omits `.git`. `ignored` marks
+an entry that Git ignores. Git finds the repository from each listed folder. When Git
+cannot check a folder, `ignoreError` has the first error, and the entries have no
+`ignored` marks. Without a repository or a Git executable, there are no marks and no
+error.
+
+`missing` marks a path that the server cannot list as a folder now. This includes a
+file, a symlink, and a path that goes through a symlink. One reply holds at most 20,000
+entries in all folders. `truncated` marks a folder with more entries. Its entries are
+then an arbitrary part of the folder.
 
 ## Settings and prepared launches
 
@@ -633,13 +673,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/22") {
+    if (message.server.protocol !== "bonbon/23") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/22", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/23", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

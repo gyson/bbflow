@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/22';
+export const VERSION = 'bonbon/23';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -72,18 +72,24 @@ export interface HistoryPage { matches: HistoryHit[]; more: boolean; incomplete:
 // Read-only diff and file views. The server resolves the workspace from the session.
 // baseline "base" uses the managed worktree commit. "head" uses HEAD.
 export type BaselineKind = 'base' | 'head';
-export interface DiffRequest { baseline?: BaselineKind; path?: string; oldPath?: string }
+export interface DiffRequest { baseline?: BaselineKind; path?: string; oldPath?: string; folders?: string[] }
 export interface Baseline { kind: BaselineKind; label: string; commit: string }
 // added and removed are -1 when they are unknown. An untracked file has status A.
 export interface ChangedFile { path: string; oldPath?: string; status: string; added: number; removed: number; binary?: boolean; untracked?: boolean }
 export interface WorkspaceChanges { repository: boolean; reason?: string; base: boolean; baseline: Baseline; files: ChangedFile[]; truncated: boolean }
 export interface WorkspaceFiles { repository: boolean; reason?: string; paths: string[]; truncated: boolean }
+// A folder list. An empty path names the workspace folder. `missing` reports that the
+// path is not a folder now.
+export interface FolderEntry { name: string; kind: 'folder' | 'file' | 'symlink' | 'other'; ignored?: boolean }
+export interface WorkspaceFolder { path: string; missing?: boolean; entries: FolderEntry[]; truncated?: boolean }
+export interface WorkspaceFolders { folders: WorkspaceFolder[]; ignoreError?: string }
 export interface FileSide { state: 'text' | 'missing' | 'binary' | 'tooLarge' | 'other'; text?: string; size: number; symlink?: boolean }
 export interface WorkspaceFile { path: string; baseline: Baseline; old: FileSide; new: FileSide }
 type ChangesRequest = { operation: 'workspace-changes'; session: string; diff: DiffRequest };
 type FilesRequest = { operation: 'workspace-files'; session: string };
+type FoldersRequest = { operation: 'workspace-folders'; session: string; diff: DiffRequest };
 type FileRequest = { operation: 'workspace-file'; session: string; diff: DiffRequest };
-export type DiffRPC = ChangesRequest | FilesRequest | FileRequest;
+export type DiffRPC = ChangesRequest | FilesRequest | FoldersRequest | FileRequest;
 type HistorySearchRequest = { operation: 'history-search'; search: HistoryFilter };
 type HistoryContextRequest = { operation: 'history-context'; context: { anchor: HistoryAnchor; before: number; after: number } };
 type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draft };
@@ -316,6 +322,7 @@ export function call(server: ServerInfo, request: HistoryContextRequest, signal?
 export function call(server: ServerInfo, request: UploadRequest): Promise<Attachment>;
 export function call(server: ServerInfo, request: ChangesRequest, signal?: AbortSignal): Promise<WorkspaceChanges>;
 export function call(server: ServerInfo, request: FilesRequest, signal?: AbortSignal): Promise<WorkspaceFiles>;
+export function call(server: ServerInfo, request: FoldersRequest, signal?: AbortSignal): Promise<WorkspaceFolders>;
 export function call(server: ServerInfo, request: FileRequest, signal?: AbortSignal): Promise<WorkspaceFile>;
 export function call(server: ServerInfo, request: RPCRequest, signal?: AbortSignal): Promise<unknown> {
   if (signal?.aborted) return Promise.reject(new DOMException('Request canceled.', 'AbortError'));

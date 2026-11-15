@@ -1,7 +1,7 @@
-import type { ChangedFile, FileSide } from './protocol.js';
+import type { ChangedFile, FileSide, FolderEntry, WorkspaceFolder } from './protocol.js';
 
 export type DiffLayout = 'split' | 'unified';
-export type FileScope = 'changed' | 'all';
+export type FileScope = 'changed' | 'files';
 
 // One row of the file list. An unchanged file has no change.
 export interface FileEntry { path: string; change?: ChangedFile }
@@ -13,8 +13,9 @@ export function effectiveLayout(preferred: DiffLayout, width: number): DiffLayou
   return preferred === 'split' && width < splitMinWidth ? 'unified' : preferred;
 }
 
-// Changed lists only changed files. All lists every workspace path and marks changed
-// files. Deleted files stay in All, because they are changes.
+// Changed lists only changed files. Files lists every workspace path that Git knows and
+// marks changed files. It is the result of the filter in Files. Deleted files stay in
+// it, because they are changes.
 export function fileEntries(changes: ChangedFile[], paths: string[], scope: FileScope, query: string): FileEntry[] {
   const byPath = new Map(changes.map(change => [change.path, change]));
   let entries: FileEntry[];
@@ -30,6 +31,54 @@ export function fileEntries(changes: ChangedFile[], paths: string[], scope: File
   entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const needle = query.trim().toLowerCase();
   return needle ? entries.filter(entry => entry.path.toLowerCase().includes(needle)) : entries;
+}
+
+// One row of the Files tree. A note row has a text about its folder as the name.
+export interface TreeRow {
+  path: string;
+  name: string;
+  depth: number;
+  kind: FolderEntry['kind'] | 'note';
+  ignored: boolean;
+  expanded: boolean;
+  change: ChangedFile | undefined;
+  changed: boolean; // A folder with a changed file below it.
+}
+
+// List the rows of the Files tree in display order. The key of the workspace folder is
+// an empty path. An open folder shows its entries, or a note until its list arrives.
+export function treeRows(folders: ReadonlyMap<string, WorkspaceFolder>, expanded: ReadonlySet<string>, changes: ChangedFile[]): TreeRow[] {
+  const byPath = new Map(changes.map(change => [change.path, change]));
+  // A deleted file is not in a folder list. The mark on its folder shows the change.
+  const changedFolders = new Set<string>();
+  for (const { path } of changes) {
+    for (let slash = path.indexOf('/'); slash > 0; slash = path.indexOf('/', slash + 1)) changedFolders.add(path.slice(0, slash));
+  }
+  const rows: TreeRow[] = [];
+  const add = (parent: string, depth: number): void => {
+    const note = (name: string): void => {
+      rows.push({ path: parent, name, depth, kind: 'note', ignored: false, expanded: false, change: undefined, changed: false });
+    };
+    const folder = folders.get(parent);
+    if (!folder) return note('Reading…');
+    if (folder.missing) return note('This folder is not available now.');
+    for (const entry of folder.entries) {
+      const path = parent ? `${parent}/${entry.name}` : entry.name;
+      const open = entry.kind === 'folder' && expanded.has(path);
+      rows.push({ path, name: entry.name, depth, kind: entry.kind, ignored: !!entry.ignored, expanded: open, change: byPath.get(path), changed: changedFolders.has(path) });
+      if (open) add(path, depth + 1);
+    }
+    if (folder.truncated) note('This folder has more entries. BonBon limits the number of entries that it lists.');
+    else if (folder.entries.length === 0) note('Empty folder');
+  };
+  add('', 0);
+  return rows;
+}
+
+// The folders of one list request: the workspace folder, then the open folders in path
+// order. A parent comes before its folders, so a limit keeps the parents.
+export function openFolders(expanded: ReadonlySet<string>, limit: number): string[] {
+  return ['', ...[...expanded].sort()].slice(0, limit);
 }
 
 export function statusTitle(change: ChangedFile): string {

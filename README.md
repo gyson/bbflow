@@ -137,7 +137,7 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the
 server. After a build, use `server restart` to serve the new embedded assets. Restart
 stops active sessions. Ports can change after restart, so use the newly printed URL.
-This version uses protocol `bonbon/22`.
+This version uses protocol `bonbon/23`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the
@@ -159,12 +159,13 @@ In **Settings → Appearance**, choose **System**, **Light**, or **Dark**. Click
 **Save settings** to apply the theme. System follows your device appearance.
 Browsers without CSS `light-dark()` support use the Light palette.
 
-Click the pane icon in the session toolbar to see the changed files of the session
-workspace in a read-only pane. Its tooltip is **Show changes**. Choose **Since worktree base** or **Uncommitted
-changes**. Choose **Split** or **Unified** for the diff. **All files** also lists
-unchanged files, and **View file** shows the current file. The pane does not edit files.
-It does not watch files. Click **Refresh** or return to the window to read them again. A
-folder that is not a Git repository has no file list.
+Click the pane icon in the session toolbar to see the changes and the files of the
+session workspace in a read-only pane. Its tooltip is **Show changes and files**. Choose
+**Since worktree base** or **Uncommitted changes**. Choose **Split** or **Unified** for
+the diff. **Files** shows the workspace as a folder tree, and **View file** shows the
+current file. Type in the filter box to find a file by its path. The pane does not edit
+files. It does not watch files. Click **Refresh** or return to the window to read them
+again. A folder that is not a Git repository shows **Files** only, without the filter.
 
 Click the search icon in the session toolbar to search recorded output in SQLite. Its
 tooltip is **Search history**. Command+Shift+F on macOS
@@ -533,6 +534,8 @@ upgrade.
 Changes pane fixtures use temporary Git repositories. They cover each Git status,
 untracked and unusual file names, binary and large files, symlinks, paths outside the
 workspace, subfolder sessions, repositories without commits, and worktree baselines.
+Folder list fixtures cover ignore marks, symlinks, entry limits, and folders outside
+Git.
 
 Native agent resume and fresh continuation with history retrieval are not implemented. A
 recording preserves evidence. It does not restore internal model state. Browser views
