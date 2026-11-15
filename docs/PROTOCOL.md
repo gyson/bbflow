@@ -400,6 +400,10 @@ file, a symlink, and a path that goes through a symlink. One reply holds at most
 entries in all folders. `truncated` marks a folder with more entries. Its entries are
 then an arbitrary part of the folder.
 
+The folders of one reply share this limit, in request order. Thus a folder can be
+`truncated` in a reply for more than one folder and complete in a reply of its own.
+Request such a folder alone before you replace its shown entries.
+
 ## Settings and prepared launches
 
 Settings contain revision, defaultTool (empty means Shell), worktree, base (default

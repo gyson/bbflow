@@ -1,8 +1,8 @@
 import { call, errorMessage } from './protocol.js';
-import type { BaselineKind, ChangedFile, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles, WorkspaceFolders, WorkspaceFolder } from './protocol.js';
+import type { BaselineKind, ChangedFile, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles } from './protocol.js';
 import { dragDivider } from './divider-drag.js';
 import { element } from './dom.js';
-import { countText, effectiveLayout, fileEntries, Generation, openFolders, sideNote, statusTitle, treeRows } from './diff-model.js';
+import { countText, effectiveLayout, fileEntries, FolderTree, Generation, sideNote, statusTitle } from './diff-model.js';
 import type { DiffLayout, FileEntry, FileScope, TreeRow } from './diff-model.js';
 import { showDiff, showFile } from './diff-editor.js';
 import type { CodeView } from './diff-editor.js';
@@ -53,9 +53,7 @@ export class DiffPane {
   private changesError = '';
   // The paths that the filter searches in Files. They are present only during a search.
   private paths: WorkspaceFiles | null = null;
-  // The folder lists of the Files tree by path. The workspace folder has an empty path.
-  private readonly folders = new Map<string, WorkspaceFolder>();
-  private readonly expanded = new Set<string>();
+  private readonly tree = new FolderTree();
   private filesError = '';
   private ignoreError = '';
   private selected = '';
@@ -145,8 +143,7 @@ export class DiffPane {
     this.baseCommit = '';
     this.changes = this.paths = this.file = null;
     this.changesError = this.filesError = this.ignoreError = '';
-    this.folders.clear();
-    this.expanded.clear();
+    this.tree.clear();
     this.selected = '';
     this.preview = false;
     this.filter.value = '';
@@ -174,13 +171,9 @@ export class DiffPane {
     const session = this.session;
     if (!this.changes && !this.changesError) this.setStatus('Reading changes…');
     const files = this.shownScope() === 'files';
-    const folderPaths = openFolders(this.expanded, maxFolderRequest);
-    if (files) {
-      // One request has a folder limit. Close the open folders above it now, before a
-      // click opens another folder during the request.
-      const listed = new Set(folderPaths);
-      for (const path of [...this.expanded]) if (!listed.has(path)) this.closeFolder(path);
-    }
+    // Take the folders now. A click can open or close a folder during the request.
+    const folderPaths = files ? this.tree.refreshPaths(maxFolderRequest) : [];
+    const token = this.tree.request(folderPaths);
     const results = await Promise.allSettled([
       this.send(server, { operation: 'workspace-changes', session, diff: this.baseline ? { baseline: this.baseline } : {} }, abort.signal),
       files ? this.send(server, { operation: 'workspace-folders', session, diff: { folders: folderPaths } }, abort.signal) : null,
@@ -197,9 +190,8 @@ export class DiffPane {
       this.filesError = failure(folders) || failure(paths);
       this.paths = paths.status === 'fulfilled' ? paths.value : null;
       if (folders.status === 'fulfilled' && folders.value) {
-        this.applyFolders(folders.value);
-        // Close the folders that are gone.
-        for (const folder of folders.value.folders) if (folder.missing && folder.path) this.closeFolder(folder.path);
+        this.ignoreError = folders.value.ignoreError ?? '';
+        void this.readAlone(this.tree.apply(folders.value, token, true), generation);
       }
     }
     this.renderBaseline();
@@ -237,48 +229,45 @@ export class DiffPane {
     this.preview = false;
   }
 
-  private applyFolders(reply: WorkspaceFolders): void {
-    // Skip a folder that the user closed during the request.
-    for (const folder of reply.folders) if (!folder.path || this.expanded.has(folder.path)) this.folders.set(folder.path, folder);
-    this.ignoreError = reply.ignoreError ?? '';
-  }
-
-  // Close a folder and the folders below it. A refresh then does not list them.
-  private closeFolder(path: string): void {
-    for (const open of [...this.expanded]) {
-      if (open !== path && !open.startsWith(`${path}/`)) continue;
-      this.expanded.delete(open);
-      this.folders.delete(open);
-    }
-  }
-
   private toggleFolder(path: string): void {
-    if (this.expanded.has(path)) {
-      this.closeFolder(path);
+    if (this.tree.isOpen(path)) {
+      this.tree.close(path);
       this.renderList();
       return;
     }
-    this.expanded.add(path);
+    this.tree.open(path);
     this.renderList();
     void this.readFolder(path);
   }
 
+  // Read one folder in its own request. A later request for the folder, or a close of
+  // the folder, makes this request obsolete. Then its reply and its failure do nothing.
   private async readFolder(path: string): Promise<void> {
     const server = this.server();
-    const session = this.session;
-    if (!server) return;
+    if (!server || (path && !this.tree.isOpen(path))) return;
+    const token = this.tree.request([path]);
     try {
-      const reply = await this.send(server, { operation: 'workspace-folders', session, diff: { folders: [path] } });
-      if (session !== this.session || !this.expanded.has(path)) return;
-      this.applyFolders(reply);
+      const reply = await this.send(server, { operation: 'workspace-folders', session: this.session, diff: { folders: [path] } });
+      if (!this.tree.current(path, token)) return;
+      this.tree.apply(reply, token, false);
+      this.ignoreError = reply.ignoreError ?? '';
       this.filesError = '';
     } catch (error) {
-      if (session !== this.session) return;
-      this.closeFolder(path);
+      if (!this.tree.current(path, token)) return;
+      if (path) this.tree.close(path);
       this.filesError = errorMessage(error);
     }
     this.renderList();
     this.renderStatus();
+  }
+
+  // Read each of these folders in its own request, one after the other. Stop when a
+  // newer refresh starts.
+  private async readAlone(paths: string[], generation: number): Promise<void> {
+    for (const path of paths) {
+      if (!this.listGeneration.current(generation)) return;
+      await this.readFolder(path);
+    }
   }
 
   private show(): void {
@@ -364,8 +353,7 @@ export class DiffPane {
 
   private renderList(): void {
     if (this.shownScope() === 'files' && !this.searching()) {
-      const rows = treeRows(this.folders, this.expanded, this.changes?.files ?? []);
-      this.list.replaceChildren(...rows.map(row => this.treeItem(row)));
+      this.setRows(this.tree.rows(this.changes?.files ?? []).map(row => this.treeItem(row)));
       return;
     }
     const entries = this.entries();
@@ -373,10 +361,24 @@ export class DiffPane {
       const empty = document.createElement('li');
       empty.className = 'diff-empty';
       empty.textContent = this.filter.value.trim() ? 'No files match the filter.' : 'No changes.';
-      this.list.replaceChildren(empty);
+      this.setRows([empty]);
       return;
     }
-    this.list.replaceChildren(...entries.map(entry => this.listItem(entry)));
+    this.setRows(entries.map(entry => this.listItem(entry)));
+  }
+
+  // Replace the rows of the list. Keep the keyboard focus on the row of the same path,
+  // so that Tab continues from an opened folder to its entries.
+  private setRows(rows: HTMLLIElement[]): void {
+    const active = document.activeElement;
+    const focused = active instanceof HTMLButtonElement && this.list.contains(active) ? { ...active.dataset } : null;
+    this.list.replaceChildren(...rows);
+    if (!focused) return;
+    for (const button of this.list.querySelectorAll('button')) {
+      if (button.dataset.folder !== focused.folder || button.dataset.file !== focused.file) continue;
+      button.focus({ preventScroll: true });
+      return;
+    }
   }
 
   // One row of the Files tree. A folder opens and closes. Other entries open in the
@@ -404,6 +406,7 @@ export class DiffPane {
     button.title = row.change ? `${statusTitle(row.change)}: ${row.path}` : row.changed ? `Has changes: ${row.path}` : row.ignored ? `Ignored by Git: ${row.path}` : row.path;
     button.append(twisty, pathLabel(row.name), status);
     if (folder) {
+      button.dataset.folder = row.path;
       button.setAttribute('aria-expanded', String(row.expanded));
       button.onclick = () => this.toggleFolder(row.path);
     } else {

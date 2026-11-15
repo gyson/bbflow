@@ -1,4 +1,4 @@
-import type { ChangedFile, FileSide, FolderEntry, WorkspaceFolder } from './protocol.js';
+import type { ChangedFile, FileSide, FolderEntry, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
 
 export type DiffLayout = 'split' | 'unified';
 export type FileScope = 'changed' | 'files';
@@ -79,6 +79,74 @@ export function treeRows(folders: ReadonlyMap<string, WorkspaceFolder>, expanded
 // order. A parent comes before its folders, so a limit keeps the parents.
 export function openFolders(expanded: ReadonlySet<string>, limit: number): string[] {
   return ['', ...[...expanded].sort()].slice(0, limit);
+}
+
+// FolderTree holds the open folders of the Files tree and their lists. Each request
+// takes a token for its folders. Only the latest request of an open folder applies its
+// reply. Thus an earlier reply cannot replace newer entries or close a reopened folder.
+export class FolderTree {
+  private readonly folders = new Map<string, WorkspaceFolder>();
+  private readonly expanded = new Set<string>();
+  private readonly reads = new Map<string, object>();
+
+  clear(): void {
+    this.folders.clear();
+    this.expanded.clear();
+    this.reads.clear();
+  }
+
+  isOpen(path: string): boolean { return this.expanded.has(path); }
+  open(path: string): void { this.expanded.add(path); }
+
+  // Close a folder and the folders below it. Their requests become obsolete, and a
+  // refresh does not list them.
+  close(path: string): void {
+    for (const open of [...this.expanded]) {
+      if (open !== path && !open.startsWith(`${path}/`)) continue;
+      this.expanded.delete(open);
+      this.folders.delete(open);
+      this.reads.delete(open);
+    }
+  }
+
+  // The folders of a refresh request. One request has a folder limit. Close the open
+  // folders above it.
+  refreshPaths(limit: number): string[] {
+    const paths = openFolders(this.expanded, limit);
+    const listed = new Set(paths);
+    for (const path of [...this.expanded]) if (!listed.has(path)) this.close(path);
+    return paths;
+  }
+
+  // Start a request for these folders. Earlier requests for them become obsolete.
+  request(paths: string[]): object {
+    const token = {};
+    for (const path of paths) this.reads.set(path, token);
+    return token;
+  }
+
+  // Report that the request of this token is the latest request for the folder.
+  current(path: string, token: object): boolean { return this.reads.get(path) === token; }
+
+  // Apply the reply of a request. Skip a folder that a later request reads or that the
+  // user closed. Return the folders that need a request of their own.
+  //
+  // The folders of one reply share the entry limit. A truncated folder in a reply for
+  // more than one folder can thus have fewer entries than its own reply has. Keep its
+  // shown entries until its own reply arrives. A refresh closes a folder that is gone.
+  // The reply for one opened folder keeps it, with a note.
+  apply(reply: WorkspaceFolders, token: object, refresh: boolean): string[] {
+    const alone: string[] = [];
+    for (const folder of reply.folders) {
+      if (!this.current(folder.path, token)) continue;
+      if (folder.truncated && reply.folders.length > 1) alone.push(folder.path);
+      else if (folder.missing && folder.path && refresh) this.close(folder.path);
+      else this.folders.set(folder.path, folder);
+    }
+    return alone;
+  }
+
+  rows(changes: ChangedFile[]): TreeRow[] { return treeRows(this.folders, this.expanded, changes); }
 }
 
 export function statusTitle(change: ChangedFile): string {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countText, effectiveLayout, fileEntries, Generation, languageName, openFolders, sideNote, statusTitle, treeRows } from './dist/diff-model.js';
+import { countText, effectiveLayout, fileEntries, FolderTree, Generation, languageName, openFolders, sideNote, statusTitle, treeRows } from './dist/diff-model.js';
 
 const change = (path, status = 'M', extra = {}) => ({ path, status, added: 1, removed: 2, ...extra });
 
@@ -75,6 +75,74 @@ test('a folder request lists the workspace folder first and keeps parents within
   assert.deepEqual(openFolders(expanded, 200), ['', 'docs', 'src', 'src/deep']);
   assert.deepEqual(openFolders(expanded, 3), ['', 'docs', 'src']);
   assert.deepEqual(openFolders(new Set(), 200), ['']);
+});
+
+const reply = (...folders) => ({ folders: folders.map(([, value]) => value) });
+const names = tree => shape(tree.rows([]));
+
+test('only the latest request of a reopened folder applies its reply', () => {
+  const tree = new FolderTree();
+  tree.apply(reply(folder('', [entry('src', 'folder')])), tree.request(['']), true);
+  tree.open('src');
+  const first = tree.request(['src']);
+  tree.close('src');
+  tree.open('src');
+  const second = tree.request(['src']);
+  assert.deepEqual(tree.apply(reply(folder('src', [entry('new.go')])), second, false), []);
+  // The earlier request ends last. Its reply and its failure are obsolete.
+  assert.equal(tree.current('src', first), false);
+  tree.apply(reply(folder('src', [entry('old.go')])), first, false);
+  assert.deepEqual(names(tree), ['folder:src', '  file:new.go']);
+  assert.equal(tree.isOpen('src'), true);
+});
+
+test('a reply for a closed folder, or for a folder below it, does nothing', () => {
+  const tree = new FolderTree();
+  tree.apply(reply(folder('', [entry('src', 'folder')])), tree.request(['']), true);
+  tree.open('src');
+  tree.open('src/deep');
+  const token = tree.request(['src', 'src/deep']);
+  tree.close('src');
+  tree.apply(reply(folder('src', [entry('deep', 'folder')]), folder('src/deep', [entry('x.go')])), token, false);
+  assert.equal(tree.current('src/deep', token), false);
+  tree.open('src');
+  assert.deepEqual(names(tree), ['folder:src', '  note:Reading…']);
+});
+
+test('a refresh at the shared entry limit keeps the shown entries of a folder', () => {
+  const tree = new FolderTree();
+  tree.apply(reply(folder('', [entry('big', 'folder'), entry('src', 'folder')])), tree.request(['']), true);
+  for (const path of ['big', 'src']) {
+    tree.open(path);
+    tree.apply(reply(folder(path, [entry(`${path}.go`)])), tree.request([path]), false);
+  }
+  const shown = ['folder:big', '  file:big.go', 'folder:src', '  file:src.go'];
+  assert.deepEqual(names(tree), shown);
+  // The folders before src used the limit. The reply has no entries for src.
+  const paths = tree.refreshPaths(200);
+  const alone = tree.apply(reply(folder('', [entry('big', 'folder'), entry('src', 'folder')]), folder('big', [entry('big.go')]), folder('src', [], { truncated: true })), tree.request(paths), true);
+  assert.deepEqual(alone, ['src']);
+  assert.deepEqual(names(tree), shown);
+  // The reply for src alone is complete. A folder that is too long alone shows its note.
+  tree.apply(reply(folder('src', [entry('later.go')])), tree.request(['src']), false);
+  assert.deepEqual(names(tree).slice(2), ['folder:src', '  file:later.go']);
+  assert.deepEqual(tree.apply(reply(folder('src', [entry('one.go')], { truncated: true })), tree.request(['src']), false), []);
+  assert.match(names(tree)[4], /^  note:This folder has more entries/);
+});
+
+test('a refresh closes a folder that is gone and the folders above the request limit', () => {
+  const tree = new FolderTree();
+  tree.apply(reply(folder('', [entry('a', 'folder'), entry('b', 'folder')])), tree.request(['']), true);
+  for (const path of ['a', 'a/deep', 'b']) tree.open(path);
+  // The reply for one opened folder keeps a folder that is gone, with a note.
+  tree.apply(reply(folder('b', [], { missing: true })), tree.request(['b']), false);
+  assert.equal(tree.isOpen('b'), true);
+  assert.deepEqual(tree.refreshPaths(3), ['', 'a', 'a/deep']);
+  assert.equal(tree.isOpen('b'), false);
+  const token = tree.request(['', 'a', 'a/deep']);
+  tree.apply(reply(folder('', [entry('b', 'folder')]), folder('a', [], { missing: true }), folder('a/deep', [], { missing: true })), token, true);
+  assert.equal(tree.isOpen('a') || tree.isOpen('a/deep'), false);
+  assert.deepEqual(names(tree), ['folder:b']);
 });
 
 test('split changes to unified only in a narrow pane', () => {

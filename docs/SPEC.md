@@ -759,6 +759,10 @@ their workspace exists.
   **Files**, and when the window gets focus. It does not watch files. A refresh reads
   each open folder again. It closes a folder that is gone. A refresh keeps the shown
   file when its content is the same.
+- Only the latest request for a folder changes its entries. A reply or a failure of an
+  earlier request does nothing, also after the folder closes and opens again.
+- The keyboard focus stays on its row when the list changes. Thus Tab moves from an
+  opened folder to its entries.
 - A folder that is not a Git repository shows **Files** only. **Changed**, **Compare
   with**, and the filter box are off there, and the file view shows the current file.
   When the server has no Git executable, **Files** and the file view work in the same
@@ -803,6 +807,9 @@ Limits:
 - One reply of folder lists holds at most 20,000 entries. A folder with more entries
   shows a note and an arbitrary part of its entries. One request names at most 200
   folders. A refresh closes the open folders above this number.
+- The open folders of a refresh share this entry limit. When the limit cuts the list of
+  a folder, the pane keeps the shown entries of that folder. It then reads the folder
+  again in a request of its own.
 - Line counts of untracked files use at most 32 MiB of reads for each list. Later
   untracked files show no count.
 - A folder that is not a Git repository has no changes and no filter. The tooltip of
@@ -1207,7 +1214,8 @@ the workspace, missing folders, the entry limit, a folder outside Git, a missing
 executable, and a failed ignore check. A WebSocket fixture sends `workspace-file` and
 `workspace-folders` through the server. Web fixtures cover the file list, the filter,
 the tree rows and their notes and marks, the folders of a refresh, the language choice,
-the layout width rule, and late replies.
+the layout width rule, and late replies. They also cover replies for a folder that
+closed or opened again, a refresh at the shared entry limit, and a folder that is gone.
 
 A browser check used a temporary instance, a fixture repository, and a shell session in
 a managed worktree. It checked Split, Unified, folded regions, View file, deleted files,
@@ -1220,7 +1228,9 @@ a folder outside Git, each with a shell session. It checked open and closed fold
 ignored entries, status letters, folder dots, a symlink, a binary file, the file view
 and the diff of a changed file, the filter list with a deleted file, and a refresh
 after a folder was removed. It also checked the folder outside Git, an ended session, a
-phone width without horizontal scroll, and an empty browser console.
+phone width without horizontal scroll, and an empty browser console. A later check
+opened a folder with Enter and moved to its first entry with Tab. It also refreshed the
+tree with an open folder of 20,000 files, and each open folder kept its entries.
 
 A browser check of the session toolbar used a temporary instance, a fixture repository,
 and a Shell session. It checked the draft, running, and ended states, the tooltips, the
