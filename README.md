@@ -1,6 +1,6 @@
 # bbflow
 
-<img src="web/src/bbflow.svg" width="104" alt="bbflow wrapped terminal logo">
+<img src="web/src/bbflow.svg" width="64" alt="bbflow pixel logo: the letters bb on a 16-pixel grid">
 
 bbflow is a local web workspace for agent command-line interface (CLI) tools. The server
 owns interactive shells, terminal screens, and history. The browser handles sessions and
@@ -97,7 +97,7 @@ There is no `bbflow session` command or terminal attachment through the CLI.
 
 ## macOS menu bar
 
-On macOS, `bbflow server start` also launches a candy icon in the menu bar. **Open UI**
+On macOS, `bbflow server start` also launches the bbflow icon in the menu bar. **Open UI**
 opens the home page in the default browser. A separator divides it from **Quit bbflow**,
 which shows the running version. Quit bbflow stops the server and all active sessions,
 saves their final history, and closes the menu. Closing a browser tab leaves work running.
@@ -389,8 +389,9 @@ compile Go. The frontend produces one `app.js` and one `app.css`, plus HTML, log
 assets, and dependency license notices, under `internal/webui/dist/`. The build reads
 the esbuild metafile and adds the license notices of every bundled npm package. Go
 embeds that
-directory. The shared logo source is `web/src/bbflow.svg`. The npm build uses
-`@resvg/resvg-js` to render its transparent menu bar PNG.
+directory. The shared logo source is `web/src/bbflow.svg`. It draws the letters "bb" on a 16-unit
+pixel grid. The npm build uses `@resvg/resvg-js` to render its transparent menu bar PNG
+at 2 pixels per grid unit.
 
 The final executable needs no separate renderer or image files. The build also downloads
 the pinned Go modules and collects bbflow, Go, and dependency license notices into the
