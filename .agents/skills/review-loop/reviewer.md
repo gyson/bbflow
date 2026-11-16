@@ -14,7 +14,8 @@ for context. If the PR does not explain a decision, that is a finding.
 
 ## Loop
 
-1. Run the wait script with `review`. See [SKILL.md](SKILL.md#wait-for-the-other-role).
+1. Run the copy of the wait script with `review`. See
+   [SKILL.md](SKILL.md#wait-for-the-other-role).
 2. On `event=review`, do a review round. Use `round` and `head` from the output.
 3. After you post the round comment, go to step 1.
 4. Stop on the other events. See the [stop rules](SKILL.md#stop-rules). Tell the user
@@ -53,13 +54,15 @@ for context. If the PR does not explain a decision, that is a finding.
    - **Blocking:** incorrect behavior, a risk of data loss, a broken `AGENTS.md` rule or
      invariant, a missing necessary test or document update, or a security problem.
    - **Non-blocking:** an improvement that the PR can merge without.
-7. Read the head commit and the comments again. If the head commit changed, go to
-   step 2. If the implementer posted a new round comment, include its replies in your
-   review.
+7. Read the head commit again. If it is not equal to `head`, do not post. Go to loop
+   step 1. The wait script then gives a new event with the new head.
 
    ```sh
    gh pr view PR --json headRefOid --jq .headRefOid
    ```
+
+   Then read the comments again with the command of step 3. If the implementer posted
+   a new round comment, include its replies in your review.
 
 8. Post the round comment. Use LGTM when no blocking finding is open. If not, use
    CHANGES REQUESTED.
@@ -83,6 +86,7 @@ rounds. Omit a section that has no items.
 
 ```markdown
 **[review-loop reviewer] round 2, commit 0123456789abcdef0123456789abcdef01234567: CHANGES REQUESTED**
+Tool: Codex. Model: <the model name>.
 
 ## Blocking
 

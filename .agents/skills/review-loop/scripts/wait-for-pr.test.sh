@@ -73,6 +73,7 @@ soon() {
 
 review1="tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: CHANGES REQUESTED**\n\n## Blocking\n- R1-1"
 reply1="tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 1, commit $B: READY**\n\n- R1-1 fixed"
+reply1_old="tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 1, commit $A: READY**"
 lgtm2="tester|2026-01-01T00:00:03Z|**[review-loop reviewer] round 2, commit $B: LGTM**\n\nLGTM."
 review2="tester|2026-01-01T00:00:03Z|**[review-loop reviewer] round 2, commit $A: CHANGES REQUESTED**"
 review5="tester|2026-01-01T00:00:09Z|**[review-loop reviewer] round 5, commit $A: CHANGES REQUESTED**"
@@ -93,12 +94,19 @@ fixture OPEN $B "$review1" "$reply1"
 check 'review after READY' 0 "event=review reason=ready round=2 head=$B previous=$A" review --until "$(soon)"
 check 'fix waits for the review' 13 'event=waiting' fix --until "$(soon)" --slice 1
 
-fixture OPEN $A "$review1" "tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 1, commit $A: READY**"
+fixture OPEN $A "$review1" "$reply1_old"
 check 'review after a reply without a commit' 0 "event=review reason=ready round=2 head=$A" review --until "$(soon)"
+
+# A READY comment for an earlier commit does not start a review immediately.
+fixture OPEN $B "$review1" "$reply1_old"
+check 'READY for an earlier commit waits' 12 'event=timeout' review --until "$(soon 2)" --settle 30
+check 'READY for an earlier commit, settled' 0 "event=review reason=ready round=2 head=$B" review --until "$(soon)" --settle 2
 
 fixture OPEN $B "$review1"
 check 'review after settled commits' 0 "event=review reason=commits round=2 head=$B previous=$A" review --until "$(soon)" --settle 2
-check 'commits not settled in the slice' 13 'event=waiting' review --until "$(soon)" --settle 30 --slice 1
+check 'commits not settled before the deadline' 12 'event=timeout' review --until "$(soon 2)" --settle 30
+# The call continues after the slice until the observation of the head commit ends.
+check 'slice end keeps the observation' 0 'event=review reason=commits round=2' review --until "$(soon)" --settle 3 --slice 1
 
 fixture OPEN $B "$review1" "$reply1" "$lgtm2"
 check 'review done' 10 'event=done round=2' review --until "$(soon)"
@@ -118,16 +126,23 @@ fixture OPEN $A "$review1" "$review2" "tester|2026-01-01T00:00:04Z|**[review-loo
 check 'late READY does not start a review' 13 'event=waiting' review --until "$(soon)" --slice 1
 check 'late READY does not answer the new round' 0 'event=fix round=2' fix --until "$(soon)"
 
+# A READY comment answers only a review that comes before it.
+fixture OPEN $A "$review1" "tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 2, commit $A: READY**" "$review2"
+check 'early READY does not start a review' 13 'event=waiting' review --until "$(soon)" --slice 1
+check 'early READY does not answer the review' 0 'event=fix round=2' fix --until "$(soon)"
+
 fixture MERGED $B "$review1"
 check 'merged' 11 'event=closed state=MERGED' fix --until "$(soon)"
 
+# The two roles stop together at the round limit.
 fixture OPEN $A "$review5"
 check 'review limit' 14 'event=limit round=5' review --until "$(soon)"
-check 'fix in the last round' 0 'event=fix round=5' fix --until "$(soon)"
-check 'larger limit' 13 'event=waiting' review --until "$(soon)" --max-rounds 6 --slice 1
+check 'fix limit' 14 'event=limit round=5' fix --until "$(soon)"
+check 'larger limit, review' 13 'event=waiting' review --until "$(soon)" --max-rounds 6 --slice 1
+check 'larger limit, fix' 0 'event=fix round=5' fix --until "$(soon)" --max-rounds 6
 
 fixture OPEN $B "$review5" "$reply5"
-check 'fix limit' 14 'event=limit round=5' fix --until "$(soon)"
+check 'fix limit after READY' 14 'event=limit round=5' fix --until "$(soon)"
 
 fixture OPEN $B "$lgtm5"
 check 'review limit after LGTM for an earlier commit' 14 'event=limit round=5' review --until "$(soon)" --settle 1
@@ -140,18 +155,29 @@ check 'selected account' 10 'event=done' review --until "$(soon)" --author other
 fixture OPEN $A "tester|2026-01-01T00:00:01Z|A quotation:\n**[review-loop reviewer] round 1, commit $A: LGTM**"
 check 'first line only' 0 'event=review reason=first' review --until "$(soon)"
 
+fixture OPEN $A "tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: CHANGES REQUESTED**\r\nBody"
+check 'CRLF line end' 0 'event=fix round=1' fix --until "$(soon)"
+
+# The first line must have the complete format.
+bad='reviewer role has an incorrect first line'
 fixture OPEN $A 'tester|2026-01-01T00:00:01Z|**[review-loop reviewer] LGTM**'
-check 'incorrect reviewer first line' 2 'reviewer round comment has an incorrect first line' review --until "$(soon)"
-
-fixture OPEN $A "$review1" 'tester|2026-01-01T00:00:02Z|**[review-loop implementer] READY**'
-check 'incorrect implementer first line' 2 'implementer round comment has an incorrect first line' fix --until "$(soon)"
-
-fixture OPEN $A 'tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit aaaaaaa1: CHANGES REQUESTED**\r\nBody'
-check 'short commit ID and CRLF' 13 'event=waiting' review --until "$(soon)" --slice 1
+check 'reviewer line without round and commit' 2 "$bad" review --until "$(soon)"
+fixture OPEN $A "tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: NOT LGTM**"
+check 'reviewer line with an unknown result' 2 "$bad" fix --until "$(soon)"
+fixture OPEN $A 'tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit aaaaaaa1: LGTM**'
+check 'reviewer line with a short commit ID' 2 "$bad" review --until "$(soon)"
+fixture OPEN $A "tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: LGTM** and more"
+check 'reviewer line with more text' 2 "$bad" review --until "$(soon)"
+fixture OPEN $A "$review1" 'tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 1**'
+check 'implementer line without commit and result' 2 'implementer role has an incorrect first line' review --until "$(soon)"
+fixture OPEN $A "$review1" 'tester|2026-01-01T00:00:02Z|**[review-loop helper] round 1**'
+check 'unknown role' 2 'unknown role has an incorrect first line' fix --until "$(soon)"
+fixture OPEN $A 'tester|2026-01-01T00:00:00Z|**[review-loop reviewer] LGTM**' "$review1"
+check 'corrected reviewer line' 0 'event=fix round=1' fix --until "$(soon)"
 
 fixture OPEN $A
 check 'no deadline' 2 'Usage' review
-check 'unknown role' 2 'Usage' watch --until 5
+check 'incorrect role argument' 2 'Usage' watch --until 5
 GH_FAIL=1
 export GH_FAIL
 check 'gh failure, then deadline' 12 'event=timeout' review --until "$(soon 2)"

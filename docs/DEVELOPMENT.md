@@ -102,6 +102,7 @@ npm --prefix web ci --ignore-scripts
 make test
 make check
 make web-check
+make skill-check
 make release VERSION=X.Y.Z
 sh scripts/smoke-release.sh "$PWD/bin/release/bbflow" X.Y.Z
 make release-assets VERSION=X.Y.Z

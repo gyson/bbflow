@@ -16,7 +16,7 @@ test: web-build
 
 check: web-build
 	go vet ./...
-	sh -n internal/install/install.sh scripts/package-release.sh scripts/smoke-release.sh .agents/skills/review-loop/scripts/wait-for-pr.sh .agents/skills/review-loop/scripts/wait-for-pr.test.sh
+	for script in internal/install/install.sh scripts/package-release.sh scripts/smoke-release.sh .agents/skills/review-loop/scripts/wait-for-pr.sh .agents/skills/review-loop/scripts/wait-for-pr.test.sh; do sh -n "$$script" || exit 1; done
 
 skill-check:
 	sh .agents/skills/review-loop/scripts/wait-for-pr.test.sh

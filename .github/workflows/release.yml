@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm --prefix web ci --ignore-scripts
-      - run: make test && make check && make web-check
+      - run: make test && make check && make web-check && make skill-check
       - name: Build and smoke-test the native release
         env:
           RELEASE_TAG: ${{ github.ref_name }}

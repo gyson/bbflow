@@ -24,7 +24,8 @@ findings that are correct. Decline the others with a reason.
    git branch --show-current
    ```
 
-2. Run the wait script with `fix`. See [SKILL.md](SKILL.md#wait-for-the-other-role).
+2. Run the copy of the wait script with `fix`. See
+   [SKILL.md](SKILL.md#wait-for-the-other-role).
 3. On `event=fix`, do a fix round. Use `round` and `author` from the output.
 4. After you post the round comment, go to step 2.
 5. Stop on the other events. See the [stop rules](SKILL.md#stop-rules).
@@ -36,6 +37,10 @@ findings that are correct. Decline the others with a reason.
    ```sh
    gh pr view PR --json comments --jq '[.comments[] | select(.author.login == "AUTHOR") | select(.body | startswith("**[review-loop reviewer]"))] | last | .body'
    ```
+
+   Also read the PR comments without a round marker that came after your last round
+   comment. The user or another reviewer can post findings there. Answer them in your
+   next round comment.
 
 2. If a finding has the mark **Decision needed**, stop and ask the user.
 3. Make a decision for each blocking, non-blocking, and open finding.
@@ -49,7 +54,9 @@ findings that are correct. Decline the others with a reason.
    validation changed, update the PR title and body. Follow the rules for reviewable
    pull requests in `AGENTS.md`.
 8. Write the round comment in a file. Use the ID of the local head commit.
-9. Push. Confirm that the remote head is equal to `git rev-parse HEAD`.
+9. Push. Confirm that the remote head is equal to `git rev-parse HEAD`. GitHub can
+   show the earlier head for some seconds. If the heads differ, wait 10 seconds and read
+   again, a maximum of 5 times.
 
    ```sh
    gh pr view PR --json headRefOid --jq .headRefOid
@@ -63,11 +70,13 @@ reviewer waits for it.
 
 ## Round comment
 
-Answer each finding by its ID. Use the round number of the review that you answer.
-The wait script accepts the comment as the answer only to the review with this number.
+Answer each finding by its ID. Use the round number of the latest review, also when it
+is LGTM and you answer other comments. The wait script accepts the comment only as the
+answer to the review with this number.
 
 ```markdown
 **[review-loop implementer] round 2, commit 89abcdef0123456789abcdef0123456789abcdef: READY**
+Tool: Claude Code. Model: <the model name>.
 
 - **R2-1** fixed in 89abcde: <what changed>.
 - **R2-2** declined: <the technical reason>.

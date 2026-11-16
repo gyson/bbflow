@@ -26,7 +26,14 @@ through PR comments.
    echo $(( $(date +%s) + 60 * 60 ))
    ```
 
-4. Read the file for your role. Do not read the other file.
+4. Copy the wait script to a temporary folder one time. Keep the printed path. Use
+   this copy for each wait. A checkout of a different commit can remove the script.
+
+   ```sh
+   copy=$(mktemp -d)/wait-for-pr.sh && cp .agents/skills/review-loop/scripts/wait-for-pr.sh "$copy" && echo "$copy"
+   ```
+
+5. Read the file for your role before the first checkout. Do not read the other file.
    - Reviewer: [reviewer.md](reviewer.md)
    - Implementer: [implementer.md](implementer.md)
 
@@ -59,12 +66,21 @@ round, the commit, and the result.
 | Reviewer | `**[review-loop reviewer] round N, commit SHA: LGTM**` |
 | Implementer | `**[review-loop implementer] round N, commit SHA: READY**` |
 
-- Write the first line exactly. The wait script reads it.
+- Write the first line exactly, with no other text. The wait script reads it.
 - `N` is the round number. The reviewer starts at 1 and adds 1 for each review. The
-  implementer uses the round number of the review that it answers. A READY comment
-  answers only the review that has the same round number.
-- `SHA` is the full commit ID. For the reviewer, it is the commit that the review
-  examined. For the implementer, it is the head commit after the push.
+  implementer uses the round number of the latest review. A READY comment answers a
+  review only when it has the same round number and comes after that review.
+- `SHA` is the full 40-character commit ID. For the reviewer, it is the commit that the
+  review examined. For the implementer, it is the head commit after the push.
+- Write the agent tool and the model of the session in the second line. Use the names
+  that your system context or session settings give. If you do not know a name, write
+  `unknown`. Do not guess. If the model changes during the loop, write the current
+  model.
+
+  ```markdown
+  Tool: Claude Code. Model: Claude Opus 5.5.
+  ```
+
 - Post a round comment as a PR comment:
 
   ```sh
@@ -78,10 +94,11 @@ LGTM is a comment. It is not a GitHub approval and it does not merge the PR.
 
 ## Wait for the other role
 
-Use the wait script for each wait. Do not write a different polling loop.
+Use the wait script for each wait. Do not write a different polling loop. `COPY` is the
+path from [Start](#start) step 4.
 
 ```sh
-sh .agents/skills/review-loop/scripts/wait-for-pr.sh ROLE PR --until DEADLINE
+sh COPY ROLE PR --until DEADLINE
 ```
 
 `ROLE` is `review` or `fix`. The script examines the PR each minute. It stops when you
@@ -95,17 +112,20 @@ must do something. It prints one line and sets its exit status.
 | `event=done` | 10 | The reviewer posted LGTM for the head commit. | Stop. Report to the user. |
 | `event=closed` | 11 | The PR is merged or closed. | Stop. Report to the user. |
 | `event=timeout` | 12 | The deadline passed. | Stop. Report to the user. |
-| `event=limit` | 14 | All 5 review rounds ended without LGTM for the head commit. | Stop. Report to the user. |
-| An error message | 2 | The arguments, `gh`, or a round comment is incorrect. | Correct the cause. If you cannot, tell the user. |
+| `event=limit` | 14 | Review round 5 ended without LGTM for the head commit. | Stop. Report to the user. |
+| An error message | 2 | The arguments or `gh` failed, or the first line of the latest round comment is incorrect. | Correct the cause. For a first line, post a new round comment. If you cannot, tell the user. |
 
-One call waits for a maximum of 9 minutes, then prints `event=waiting`. Set the command
-time limit to 10 minutes. If your tool can run a command in the background and tell you
-when it ends, add `--slice 0`. The script then waits until the deadline in one call.
+One call usually waits for a maximum of 6 minutes. When it sees a new head commit, it
+can wait 3 more minutes. Then it prints `event=waiting`. Set the command time limit to
+10 minutes. If your tool can run a command in the background and tell you when it ends,
+add `--slice 0`. The script then waits until the deadline in one call.
 
 `event=review` has a `reason`:
 
 - `first`: the PR has no review.
-- `ready`: the implementer posted a READY comment for the latest review.
+- `ready`: the implementer answered the latest review. If the READY comment names an
+  earlier commit, the review starts only after the head commit stays the same for 3
+  minutes.
 - `commits`: the head commit changed and no READY comment came for 3 minutes.
 
 The script counts only round comments from the account of the `gh` command. If the
@@ -119,6 +139,9 @@ decision needs the user. When you stop, tell the user:
 - The last round number and its result.
 - The findings that are open, declined, or not reviewed.
 - The checks that you ran and their results.
+
+At `limit`, the two roles stop together. The findings of the last review stay open. A
+fix for them needs a new loop.
 
 ## Safety rules
 
