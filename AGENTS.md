@@ -95,7 +95,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   `internal/webui/dist`. Go embeds this directory.
 - Never commit generated files or copied vendor assets. Commit the npm lockfile. See the
   README for direct Go commands.
-- Keep the main logo and menu bar icon in sync through `web/src/bbflow.svg`. The
+- Keep the main logo and menu bar icon in sync through `web/src/bbflow.svg`. Keep its
+  16-unit pixel grid, so that the 16 px favicon and the 2x menu bar icon stay sharp. When
+  you change its shape or colors, update the README copies in `docs/images/` too. The
   frontend build uses `@resvg/resvg-js` to render the embedded template PNG. Commit the
   SVG source, not the generated image.
 - New sessions always use the server environment. Launch an interactive shell with

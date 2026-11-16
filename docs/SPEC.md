@@ -248,8 +248,9 @@ Preview builds can set a version label at build time, such as **Quit bbflow (0.0
 dev-1af9)**. Open UI calls the same verified home-page opener as the CLI.
 
 The build renders the menu icon from `web/src/bbflow.svg` and embeds it in the
-executable. The icon shows a candy wrapper with a terminal prompt and uses macOS
-template coloring.
+executable. The icon shows the letters "bb" on a 16-unit pixel grid and uses macOS
+template coloring, so it ignores the logo colors. The 44-pixel PNG has a 3-unit margin around the grid, so macOS
+shows a 16-point mark with sharp edges in the 22-point status item.
 
 Quit retains the connection information verified when the companion starts. It
 reconnects to that endpoint and verifies the original server identity on the shutdown
@@ -278,9 +279,9 @@ storage format change was needed.
 
 ## Web client
 
-The sidebar and browser favicon use the same wrapped-terminal logo as the macOS menu
-bar. The visible product name is bbflow. The favicon adapts to light and dark browser
-appearances. The sidebar mark uses its text color.
+The sidebar and browser favicon use the same pixel logo as the macOS menu bar, in six
+rainbow bands from violet to red. The visible product name is bbflow. The logo selects
+brighter band colors when the browser uses dark appearance.
 
 Server start and repeated start print a clickable HTTP URL without opening a browser.
 `bbflow ui` verifies the selected instance through the same WebSocket health check as
@@ -1455,8 +1456,9 @@ arguments, removed session commands, and opener failures.
 Menu fixtures cover repeated start, restart, headless mode, server crashes, shutdown
 with an active session, and protection against stopping a replacement instance. A manual
 macOS check confirmed Open UI and Quit bbflow from the standalone executable. The shared
-logo was checked in wide and narrow browser layouts and in 22-point light and dark
-previews. The updated native companion also launched and exited with its server.
+logo was checked in light and dark browser themes. The generated menu bar PNG was
+checked to contain only fully transparent or fully opaque pixels. A manual check
+confirmed the icon in the dark macOS menu bar. The updated native companion also launched and exited with its server.
 
 Project fixtures cover General and custom launches, canonical folder uniqueness,
 protected General identity, renaming, removal while a session runs, and restart

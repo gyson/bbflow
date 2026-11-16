@@ -1,6 +1,9 @@
 # bbflow
 
-<img src="web/src/bbflow.svg" width="104" alt="bbflow wrapped terminal logo">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/bbflow-dark.svg">
+  <img src="docs/images/bbflow-light.svg" width="64" alt="bbflow logo: the letters bb on a 16-pixel grid in rainbow bands">
+</picture>
 
 bbflow is a local web workspace for agent command-line interface (CLI) tools. The server
 owns interactive shells, terminal screens, and history. The browser handles sessions and
@@ -97,7 +100,7 @@ There is no `bbflow session` command or terminal attachment through the CLI.
 
 ## macOS menu bar
 
-On macOS, `bbflow server start` also launches a candy icon in the menu bar. **Open UI**
+On macOS, `bbflow server start` also launches the bbflow icon in the menu bar. **Open UI**
 opens the home page in the default browser. A separator divides it from **Quit bbflow**,
 which shows the running version. Quit bbflow stops the server and all active sessions,
 saves their final history, and closes the menu. Closing a browser tab leaves work running.
@@ -389,8 +392,13 @@ compile Go. The frontend produces one `app.js` and one `app.css`, plus HTML, log
 assets, and dependency license notices, under `internal/webui/dist/`. The build reads
 the esbuild metafile and adds the license notices of every bundled npm package. Go
 embeds that
-directory. The shared logo source is `web/src/bbflow.svg`. The npm build uses
-`@resvg/resvg-js` to render its transparent menu bar PNG.
+directory. The shared logo source is `web/src/bbflow.svg`. It draws the letters "bb" on
+a 16-unit pixel grid, with six rainbow bands from violet at the top to red at the bottom.
+Each band is two grid rows. The logo uses brighter band colors in dark appearance. The
+npm build uses `@resvg/resvg-js` to render its transparent menu bar PNG at 2 pixels per
+grid unit. GitHub selects README images from its own theme, so the README uses
+fixed-color light and dark copies in `docs/images/`. `web/logo.test.mjs` checks that the
+copies keep the shape and colors of the source.
 
 The final executable needs no separate renderer or image files. The build also downloads
 the pinned Go modules and collects bbflow, Go, and dependency license notices into the
