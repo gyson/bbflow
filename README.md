@@ -62,10 +62,21 @@ BonBon release.
 Sessions, terminals, recordings, drafts, attachments, projects, and settings come with
 the copy.
 
-Copied sessions keep their recorded workspace paths. A session that used a folder inside
-`~/.bonbon`, such as a managed worktree, still uses that folder. The command lists these
-folders. Keep them until you finish with those sessions. When you no longer need
-BonBon, remove the `bonbon` executable and `~/.bonbon` yourself.
+Then the command moves the managed worktrees of the copied sessions from
+`~/.bonbon/worktrees` to `~/.bbflow/worktrees` with `git worktree move`. Git updates its
+worktree records, and uncommitted files move with the worktree. The copied sessions use
+the new paths. After the move, BonBon cannot open those worktree sessions. If Git does
+not move a worktree, for example a locked worktree, the command reports it and the
+session keeps the old path.
+
+If you ran `bbflow migrate` with bbflow 0.0.8, stop the bbflow server and run
+`bbflow migrate` again. It does not copy the history again. It only moves the BonBon
+worktrees that bbflow sessions still use.
+
+Other copied sessions keep their recorded workspace paths. A session that used another
+folder inside `~/.bonbon`, such as `workspaces/general`, still uses that folder. The
+command lists these folders. Keep them until you finish with those sessions. When you no
+longer need BonBon, remove the `bonbon` executable and `~/.bonbon` yourself.
 
 While `~/.bbflow` has no history and `~/.bonbon` has history, `bbflow server start`
 stops and tells you to run `bbflow migrate`. To start without the BonBon history, use

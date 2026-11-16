@@ -58,8 +58,9 @@ and APIs may still change, but durable data needs a supported migration path.
 
 - Use bbflow for the product name and `bbflow` for the CLI command and executable.
 - bbflow was named BonBon. BonBon 0.0.7 is the last BonBon release. Keep `bbflow migrate`
-  able to copy every BonBon history format. Use the BonBon name only for that migration,
-  released migrations, frozen fixtures, and earlier release notes.
+  able to copy every BonBon history format and move BonBon managed worktrees. A second
+  run must move worktrees that an earlier copy left behind. Use the BonBon name only for
+  that migration, released migrations, frozen fixtures, and earlier release notes.
 - Read [docs/GOAL.md](docs/GOAL.md) for what the project is intended to become.
 - Read [docs/SPEC.md](docs/SPEC.md) for what is currently implemented.
 - Update [docs/COMMANDS.md](docs/COMMANDS.md) when bbflow commands, options, defaults,

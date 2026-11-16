@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"bbflow/internal/client"
 	"bbflow/internal/history"
@@ -24,9 +27,11 @@ func migrateCommand(target client.Target, args []string) error {
 	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	from := flags.String("from", defaultBonBonDir(), "BonBon instance directory to copy")
 	flags.Usage = func() {
-		fmt.Printf("Usage: bbflow [--dir DIR] migrate [--from DIR]\n\n" +
-			"Copy the history of a stopped BonBon instance into a new bbflow instance.\n" +
-			"The BonBon data is not changed. Default --from: %s\n", defaultBonBonDir())
+		fmt.Printf("Usage: bbflow [--dir DIR] migrate [--from DIR]\n\n"+
+			"Copy the history of a stopped BonBon instance into a new bbflow instance. Then move\n"+
+			"the BonBon worktrees of the copied sessions into bbflow. The BonBon database is not\n"+
+			"changed. If bbflow history exists, only move the worktrees. Default --from: %s\n",
+			defaultBonBonDir())
 	}
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -41,22 +46,25 @@ func migrateCommand(target client.Target, args []string) error {
 	if source, err = filepath.EvalSymlinks(source); err != nil {
 		return fmt.Errorf("no BonBon instance at %s: %w", *from, err)
 	}
-	database := filepath.Join(source, "history.sqlite")
-	if _, err = os.Stat(database); err != nil {
-		return fmt.Errorf("no BonBon history in %s: %w", source, err)
-	}
 	if path, err := filepath.EvalSymlinks(target.Dir); err == nil && path == source {
 		return errors.New("the BonBon and bbflow directories are the same; use another --dir")
 	}
+	// A first migrate needs BonBon history. Check it before the bbflow directory changes.
+	if _, err = os.Lstat(filepath.Join(target.Dir, "history.sqlite")); errors.Is(err, os.ErrNotExist) {
+		if _, err = os.Stat(filepath.Join(source, "history.sqlite")); err != nil {
+			return fmt.Errorf("no BonBon history in %s: %w", source, err)
+		}
+	}
 
-	// Hold the BonBon archive lock, so that no BonBon server writes during the copy.
-	// Do not create a lock file in the BonBon directory.
+	// Hold the BonBon archive lock, so that no BonBon server writes during the copy or
+	// uses a worktree during a move. Do not create a lock file in the BonBon directory.
 	unlockSource, err := lockExistingFile(filepath.Join(source, "server.lock"))
 	if err != nil {
 		return err
 	}
 	defer unlockSource()
-	// Hold the bbflow locks, so that no bbflow server starts on a partial copy.
+	// Hold the bbflow locks, so that no bbflow server starts on a partial copy or uses a
+	// worktree during a move.
 	if err = os.MkdirAll(target.Dir, 0700); err != nil {
 		return err
 	}
@@ -74,21 +82,114 @@ func migrateCommand(target client.Target, args []string) error {
 	}
 	defer unlockTarget()
 
-	report, err := history.CopyFrom(database, filepath.Join(target.Dir, "history.sqlite"))
+	// After an earlier migrate, only move the worktrees. Earlier releases copied the
+	// history but left the worktrees in the BonBon directory.
+	database := filepath.Join(target.Dir, "history.sqlite")
+	if _, err = os.Lstat(database); err == nil {
+		fmt.Printf("bbflow history already exists in %s. The BonBon history was not copied again.\n", target.Dir)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	} else if err = copyBonBonHistory(source, database); err != nil {
+		return err
+	}
+
+	store, err := history.Open(database)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Copied BonBon history from %s to %s.\n", source, target.Dir)
-	fmt.Printf("Source format %d: %d sessions, %d terminals, %d events.\n",
-		report.Format, report.Rows["sessions"], report.Rows["runs"], report.Rows["events"])
-	fmt.Println("The BonBon data was not changed.")
-	if len(report.Folders) != 0 {
-		fmt.Println("\nCopied sessions use these folders in the BonBon directory. Keep them until you finish with those sessions:")
-		for _, folder := range report.Folders {
+	defer store.Close()
+	if err = moveWorktrees(store, source, target.Dir); err != nil {
+		return err
+	}
+	folders, err := store.FoldersInside(source)
+	if err != nil {
+		return err
+	}
+	if len(folders) != 0 {
+		fmt.Println("\nCopied sessions still use these folders in the BonBon directory. Keep them until you finish with those sessions:")
+		for _, folder := range folders {
 			fmt.Println("  " + folder)
 		}
 	}
 	fmt.Println("\nStart bbflow with: bbflow server start")
+	return nil
+}
+
+func copyBonBonHistory(source, database string) error {
+	path := filepath.Join(source, "history.sqlite")
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("no BonBon history in %s: %w", source, err)
+	}
+	report, err := history.CopyFrom(path, database)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Copied BonBon history from %s to %s.\n", source, filepath.Dir(database))
+	fmt.Printf("Source format %d: %d sessions, %d terminals, %d events.\n",
+		report.Format, report.Rows["sessions"], report.Rows["runs"], report.Rows["events"])
+	fmt.Println("The BonBon database was not changed.")
+	return nil
+}
+
+// moveWorktrees moves the ready managed worktrees of the BonBon instance into the bbflow
+// worktree directory with git worktree move, and records the new paths in the copy. Git
+// updates its own worktree records. A worktree that Git does not move stays in place.
+func moveWorktrees(store *history.Store, source, target string) error {
+	worktrees, err := store.ReadyWorktreesIn(filepath.Join(source, "worktrees"))
+	if err != nil {
+		return err
+	}
+	if len(worktrees) == 0 {
+		fmt.Println("\nNo BonBon worktrees to move.")
+		return nil
+	}
+	directory := filepath.Join(target, "worktrees")
+	if err = os.MkdirAll(directory, 0700); err != nil {
+		return err
+	}
+	var moved, kept []string
+	for _, w := range worktrees {
+		to := filepath.Join(directory, filepath.Base(w.Path))
+		if err := gitWorktreeMove(w.Repository, w.Path, to); err != nil {
+			kept = append(kept, fmt.Sprintf("  %s: %v", w.Path, err))
+			continue
+		}
+		if err := store.MoveWorktree(w.Path, to); err != nil {
+			if undo := gitWorktreeMove(w.Repository, to, w.Path); undo != nil {
+				return fmt.Errorf("moved %s to %s, but could not record it (%v) or move it back (%v)", w.Path, to, err, undo)
+			}
+			kept = append(kept, fmt.Sprintf("  %s: %v", w.Path, err))
+			continue
+		}
+		moved = append(moved, fmt.Sprintf("  %s -> %s", w.Path, to))
+	}
+	if len(moved) != 0 {
+		fmt.Println("\nMoved these worktrees into bbflow:")
+		fmt.Println(strings.Join(moved, "\n"))
+	}
+	if len(kept) != 0 {
+		fmt.Println("\nDid not move these worktrees:")
+		fmt.Println(strings.Join(kept, "\n"))
+	}
+	return nil
+}
+
+func gitWorktreeMove(repository, from, to string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", repository, "worktree", "move", from, to)
+	for _, item := range os.Environ() {
+		if !strings.HasPrefix(item, "GIT_") {
+			cmd.Env = append(cmd.Env, item)
+		}
+	}
+	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		if message := strings.TrimSpace(string(output)); message != "" {
+			return errors.New(message)
+		}
+		return err
+	}
 	return nil
 }
 

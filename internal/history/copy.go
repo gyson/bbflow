@@ -15,9 +15,6 @@ import (
 type CopyReport struct {
 	Format int              // The format of the source database.
 	Rows   map[string]int64 // The number of rows in each source table.
-	// Folders lists session workspace and worktree paths inside the source directory.
-	// Copied sessions still use these folders.
-	Folders []string
 }
 
 // CopyFrom writes a verified copy of the history database at source to target, then
@@ -91,11 +88,7 @@ func CopyFrom(source, target string) (CopyReport, error) {
 		removeDatabase(target)
 		return report, fmt.Errorf("upgrade the copy (the copy was removed): %w", err)
 	}
-	defer store.Close()
-	if report.Folders, err = store.foldersInside(filepath.Dir(source)); err != nil {
-		return report, err
-	}
-	return report, nil
+	return report, store.Close()
 }
 
 func openReadOnly(path string, immutable bool) (*sql.DB, error) {
@@ -183,13 +176,12 @@ func verifyCopy(path string, source CopyReport) error {
 	return nil
 }
 
-// foldersInside lists session workspace and worktree paths inside directory. The server
+// FoldersInside lists session workspace and worktree paths inside directory. The server
 // moves the General project to its own directory, so project paths are not listed.
-func (s *Store) foldersInside(directory string) ([]string, error) {
-	directory = filepath.Clean(directory)
-	prefix := strings.TrimSuffix(directory, string(filepath.Separator)) + string(filepath.Separator)
+func (s *Store) FoldersInside(directory string) ([]string, error) {
+	prefix := folderPrefix(directory)
 	rows, err := s.db.QueryContext(context.Background(), `SELECT workspace FROM sessions
- UNION SELECT path FROM worktrees ORDER BY 1`)
+ UNION SELECT path FROM worktrees WHERE state<>'removed' ORDER BY 1`)
 	if err != nil {
 		return nil, err
 	}
@@ -205,6 +197,60 @@ func (s *Store) foldersInside(directory string) ([]string, error) {
 		}
 	}
 	return folders, rows.Err()
+}
+
+// ReadyWorktreesIn lists the ready managed worktrees whose folder is directly inside
+// directory.
+func (s *Store) ReadyWorktreesIn(directory string) ([]Worktree, error) {
+	rows, err := s.db.QueryContext(context.Background(), `SELECT path,repository,base,commit_id,branch,state
+ FROM worktrees WHERE state='ready' ORDER BY path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	worktrees := []Worktree{}
+	for rows.Next() {
+		var w Worktree
+		if err = rows.Scan(&w.Path, &w.Repository, &w.Base, &w.Commit, &w.Branch, &w.State); err != nil {
+			return nil, err
+		}
+		if filepath.Dir(w.Path) == filepath.Clean(directory) {
+			worktrees = append(worktrees, w)
+		}
+	}
+	return worktrees, rows.Err()
+}
+
+// MoveWorktree records that the worktree at from is now at to. It changes the worktree
+// path and each session or project workspace at from or inside it. Event data keeps the
+// original paths.
+func (s *Store) MoveWorktree(from, to string) error {
+	from, to = filepath.Clean(from), filepath.Clean(to)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec("UPDATE worktrees SET path=? WHERE path=? AND state='ready'", to, from)
+	if err != nil {
+		return err
+	}
+	if count, err := result.RowsAffected(); err != nil {
+		return err
+	} else if count != 1 {
+		return fmt.Errorf("no ready worktree at %s", from)
+	}
+	for _, table := range []string{"sessions", "projects"} {
+		if _, err = tx.Exec(`UPDATE `+table+` SET workspace=?2 || substr(workspace, length(?1)+1)
+ WHERE workspace=?1 OR substr(workspace, 1, length(?3))=?3`, from, to, folderPrefix(from)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func folderPrefix(directory string) string {
+	return strings.TrimSuffix(filepath.Clean(directory), string(filepath.Separator)) + string(filepath.Separator)
 }
 
 func removeDatabase(path string) {
