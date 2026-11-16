@@ -1,6 +1,9 @@
 # bbflow
 
-<img src="web/src/bbflow.svg" width="64" alt="bbflow pixel logo: the letters bb on a 16-pixel grid">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/bbflow-dark.svg">
+  <img src="docs/images/bbflow-light.svg" width="64" alt="bbflow pixel logo: the letters bb on a 16-pixel grid">
+</picture>
 
 bbflow is a local web workspace for agent command-line interface (CLI) tools. The server
 owns interactive shells, terminal screens, and history. The browser handles sessions and
@@ -391,7 +394,9 @@ the esbuild metafile and adds the license notices of every bundled npm package. 
 embeds that
 directory. The shared logo source is `web/src/bbflow.svg`. It draws the letters "bb" on a 16-unit
 pixel grid. The npm build uses `@resvg/resvg-js` to render its transparent menu bar PNG
-at 2 pixels per grid unit.
+at 2 pixels per grid unit. GitHub shows README images without the page text color, so
+the README uses fixed-color copies in `docs/images/` for its light and dark themes.
+`web/logo.test.mjs` checks that the copies keep the shape of the source.
 
 The final executable needs no separate renderer or image files. The build also downloads
 the pinned Go modules and collects bbflow, Go, and dependency license notices into the
