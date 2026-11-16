@@ -279,11 +279,18 @@ Settings has no save button. Each change saves automatically to SQLite:
 - One save runs at a time. A change during a save starts one more save after it.
 
 The heading shows **Saving…**, **All settings saved**, or why a change is not saved yet.
-A server validation error appears above the cards, and the page keeps the change. If
-another view or a `bbflow tool` or `bbflow settings` command saved first, the page shows
-the latest settings and asks the user to make the last change again. It does not merge
-the two changes. The browser asks before it leaves the page with a change that is not
-saved. Remove has no undo. Drafts and sessions keep their own copy of a command.
+If the server rejects a save, the page saves each changed tool alone. A rejected tool
+keeps its edit and shows the error below its row. The page does not send that edit again
+until the user changes the tool. The other changes save without it. An error that no
+tool causes appears above the cards.
+
+If another view or a `bbflow tool` or `bbflow settings` command saved first, the page
+applies its own changes to the latest settings and saves again. A value or tool that the
+page did not change takes the latest saved value. The page keeps its added, edited,
+removed, and moved tools, including incomplete tools. The heading then shows **All
+settings saved, with changes from another view**. The browser asks before it leaves the
+page with a change that is not saved. Remove has no undo. Drafts and sessions keep their
+own copy of a command.
 
 The theme covers the workspace, dialogs, terminal, and Changes pane. Dark uses charcoal
 surfaces, a near-black terminal, and blue for primary actions and focus. The terminal
@@ -1322,11 +1329,16 @@ shell availability afterward, reconnect without replay, and an untouched compose
 These shell fixtures do not establish model availability or agent CLI compatibility.
 
 Web fixtures verify the automatic save payload: an unchanged page does not save, an
-incomplete new tool is not saved, and a cleared field keeps the saved tool.
+incomplete new tool is not saved, a cleared field keeps the saved tool, and a rejected
+tool does not stop other changes. They verify that a rebase after a revision conflict
+keeps page edits, removals, order, and added tools, and takes other values from the
+latest settings.
 
 CLI fixtures run `bbflow tool` and `bbflow settings` against a temporary server. They
 verify that a repeated `tool add` updates the same tool, that removal of the default tool
-selects Shell, and that duplicate names stop `add` and `remove`. They verify that
+selects Shell, and that duplicate names stop `add` and `remove`. They verify that a tool
+named `shell` can be the default tool, and that only an empty value selects the
+built-in Shell. They verify that
 server validation errors change nothing, and that a change applies again after a
 revision conflict.
 

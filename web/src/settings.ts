@@ -1,7 +1,7 @@
 import { element } from './dom.js';
 import { call, errorMessage } from './protocol.js';
-import type { ServerInfo, Settings } from './protocol.js';
-import { sameSettings, savePayload, toolComplete } from './settings-model.js';
+import type { ServerInfo, Settings, Tool } from './protocol.js';
+import { rebaseDraft, sameSettings, savePayload, toolComplete, toolKey } from './settings-model.js';
 
 // SettingsView saves each change automatically. A text field saves when it loses focus.
 // Only one save runs at a time. A change during a save starts one more save after it.
@@ -18,11 +18,15 @@ export class SettingsView {
   // saved is the latest server copy. draft is the page state, with incomplete tools.
   private saved: Settings | null = null;
   private draft: Settings | null = null;
+  // rejected holds tool edits that the server rejected. The page keeps such an edit and
+  // does not send it again until the user changes the tool.
+  private readonly rejected = new Map<string, { key: string; error: string }>();
+  private merged = false;
   private saving = false;
   private queued = false;
 
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void) {
-    this.form.oninput = () => { this.capture(); this.showStatus(); };
+    this.form.oninput = () => { this.capture(); this.merged = false; this.showStatus(); };
     this.form.onchange = event => {
       this.capture();
       if (event.target === this.appearance) this.applyAppearance(this.appearance.value);
@@ -44,7 +48,9 @@ export class SettingsView {
     const server = this.server();
     if (!server) return;
     if (!this.pending()) {
-      this.load(await call(server, { operation: 'settings-get' }));
+      const settings = await call(server, { operation: 'settings-get' });
+      this.saved = settings;
+      this.show(structuredClone(settings));
       this.error.hidden = true;
     }
     this.panel.hidden = false;
@@ -52,18 +58,33 @@ export class SettingsView {
 
   close(): void { this.panel.hidden = true; }
 
-  // pending is true while the page has a change that the server does not have.
-  private pending(): boolean {
-    if (!this.draft || !this.saved) return false;
-    return this.saving || this.queued || this.draft.tools.some(tool => !toolComplete(tool)) || !sameSettings(savePayload(this.draft, this.saved), this.saved);
+  // held returns the tools whose current edit the server rejected.
+  private held(): Set<string> {
+    const held = new Set<string>();
+    for (const [id, entry] of this.rejected) {
+      const tool = this.draft?.tools.find(tool => tool.id === id);
+      if (tool && toolKey(tool) === entry.key) held.add(id); else this.rejected.delete(id);
+    }
+    return held;
   }
 
-  private load(settings: Settings): void {
-    this.saved = settings;
-    this.draft = structuredClone(settings);
-    this.applyAppearance(settings.appearance);
-    this.worktree.checked = settings.worktree;
-    this.base.value = settings.base;
+  private payload(): Settings | null {
+    return this.draft && this.saved ? savePayload(this.draft, this.saved, this.held()) : null;
+  }
+
+  // pending is true while the page has a change that the server does not have.
+  private pending(): boolean {
+    const payload = this.payload();
+    if (!payload || !this.draft || !this.saved) return false;
+    return this.saving || this.queued || this.held().size > 0 || this.draft.tools.some(tool => !toolComplete(tool)) || !sameSettings(payload, this.saved);
+  }
+
+  // show puts a draft in the form. It keeps the focus and the cursor of a tool field.
+  private show(draft: Settings): void {
+    this.draft = draft;
+    this.applyAppearance(draft.appearance);
+    this.worktree.checked = draft.worktree;
+    this.base.value = draft.base;
     this.renderTools();
     this.showStatus();
   }
@@ -75,11 +96,19 @@ export class SettingsView {
   }
 
   private showStatus(): void {
-    if (!this.draft || !this.saved) { this.status.textContent = ''; return; }
-    if (this.saving) this.status.textContent = 'Saving…';
+    const payload = this.payload();
+    const held = this.held();
+    for (const row of this.tools.querySelectorAll<HTMLElement>('.tool-row')) {
+      const message = row.querySelector<HTMLElement>('.tool-error');
+      const entry = held.has(row.dataset.id ?? '') ? this.rejected.get(row.dataset.id ?? '') : undefined;
+      if (message) { message.textContent = entry?.error ?? ''; message.hidden = !entry; }
+    }
+    if (!payload || !this.draft || !this.saved) this.status.textContent = '';
+    else if (this.saving) this.status.textContent = 'Saving…';
+    else if (held.size) this.status.textContent = 'A tool has an error. Other changes are saved.';
     else if (this.draft.tools.some(tool => !toolComplete(tool))) this.status.textContent = 'A tool needs a name and a command before it is saved';
-    else if (!sameSettings(savePayload(this.draft, this.saved), this.saved)) this.status.textContent = this.error.hidden ? 'Not saved yet' : 'Not saved';
-    else this.status.textContent = 'All settings saved';
+    else if (!sameSettings(payload, this.saved)) this.status.textContent = this.error.hidden ? 'Not saved yet' : 'Not saved';
+    else this.status.textContent = this.merged ? 'All settings saved, with changes from another view' : 'All settings saved';
   }
 
   private capture(): void {
@@ -101,10 +130,16 @@ export class SettingsView {
   private renderTools(): void {
     const settings = this.draft;
     if (!settings) return;
+    const active = document.activeElement;
+    const focusRow = active instanceof HTMLInputElement ? active.closest<HTMLElement>('.tool-row') : null;
+    const focus = focusRow && active instanceof HTMLInputElement
+      ? { id: focusRow.dataset.id, field: Array.from(focusRow.querySelectorAll('input')).indexOf(active), start: active.selectionStart, end: active.selectionEnd }
+      : null;
     this.tools.replaceChildren();
     this.tool.replaceChildren(new Option('Shell', ''));
     for (const [index, preset] of settings.tools.entries()) {
-      this.tool.add(new Option(preset.name || 'Unnamed tool', preset.id));
+      const option = new Option(preset.name || 'Unnamed tool', preset.id);
+      this.tool.add(option);
       const row = document.createElement('div');
       row.className = 'tool-row'; row.dataset.id = preset.id;
       for (const [label, value, placeholder, max, required] of [
@@ -115,8 +150,8 @@ export class SettingsView {
         const field = document.createElement('label'); field.textContent = label;
         if (!required) { const optional = document.createElement('span'); optional.className = 'optional'; optional.textContent = 'optional'; field.append(optional); }
         const input = document.createElement('input'); input.value = value; input.placeholder = placeholder; input.maxLength = max; input.required = required;
-        if (label !== 'Name') input.spellcheck = false;
-        input.oninput = () => { const option = Array.from(this.tool.options).find(option => option.value === preset.id); if (option) option.textContent = input.value || 'Unnamed tool'; };
+        if (label === 'Name') input.oninput = () => { option.textContent = input.value || 'Unnamed tool'; };
+        else input.spellcheck = false;
         field.append(input); row.append(field);
       }
       const actions = document.createElement('div'); actions.className = 'tool-actions';
@@ -133,33 +168,76 @@ export class SettingsView {
         };
         actions.append(button);
       }
-      row.append(actions); this.tools.append(row);
+      const error = document.createElement('p'); error.className = 'form-error tool-error'; error.setAttribute('role', 'alert'); error.hidden = true;
+      row.append(actions, error); this.tools.append(row);
     }
     this.tool.value = settings.defaultTool;
+    if (focus) {
+      const input = Array.from(this.tools.querySelectorAll<HTMLElement>('.tool-row')).find(row => row.dataset.id === focus.id)?.querySelectorAll('input')[focus.field];
+      if (input) { input.focus(); input.setSelectionRange(focus.start, focus.end); }
+    }
   }
 
   private async save(): Promise<void> {
     if (!this.draft || !this.saved) return;
     if (this.saving) { this.queued = true; return; }
     const server = this.server(); if (!server) return;
-    const payload = savePayload(this.draft, this.saved);
-    // The page again matches the server, for example after the user fixes a rejected value.
-    if (sameSettings(payload, this.saved)) { this.error.hidden = true; this.showStatus(); return; }
-    this.saving = true; this.error.hidden = true; this.showStatus();
-    try {
-      this.saved = await call(server, { operation: 'settings-save', settings: payload });
-    } catch (error) {
-      const latest = await call(server, { operation: 'settings-get' }).catch(() => null);
-      if (latest && latest.revision !== this.saved.revision) {
-        // Another view or the CLI saved first. Show its settings. Do not merge.
-        this.queued = false;
-        this.load(latest);
-        this.error.textContent = 'Another view or a bbflow command changed the settings first. The page shows the latest settings. Make your last change again.';
-      } else this.error.textContent = errorMessage(error);
-      this.error.hidden = false;
-    } finally {
+    this.saving = true; this.showStatus();
+    try { await this.push(server); }
+    finally {
       this.saving = false;
       if (this.queued) { this.queued = false; void this.save(); } else this.showStatus();
     }
+  }
+
+  // push saves the page. If the server rejects the save, push saves each changed tool
+  // alone. It holds each rejected tool, then saves the other changes without them.
+  private async push(server: ServerInfo): Promise<void> {
+    let payload = this.payload();
+    if (!payload || !this.saved) return;
+    // The page again matches the server, for example after the user fixes a rejected value.
+    if (sameSettings(payload, this.saved)) { this.error.hidden = true; return; }
+    const error = await this.send(server, payload);
+    if (error === null || error === 'conflict') return;
+    const before = new Map(this.saved.tools.map(tool => [tool.id, tool]));
+    const changed = payload.tools.filter(tool => { const old = before.get(tool.id); return !old || toolKey(old) !== toolKey(tool); });
+    if (!changed.length) { this.showError(error); return; }
+    for (const tool of changed) {
+      const saved: Settings = this.saved;
+      const tools: Tool[] = before.has(tool.id) ? saved.tools.map(old => old.id === tool.id ? tool : old) : [...saved.tools, tool];
+      const result = await this.send(server, { ...saved, tools });
+      if (result === 'conflict') return;
+      if (result !== null) this.rejected.set(tool.id, { key: toolKey(tool), error: result });
+    }
+    payload = this.payload();
+    if (!payload || sameSettings(payload, this.saved)) return;
+    const result = await this.send(server, payload);
+    if (result !== null && result !== 'conflict') this.showError(result);
+  }
+
+  // send returns null after a save, 'conflict' after it rebased the page on newer
+  // settings from another client, or the error message.
+  private async send(server: ServerInfo, payload: Settings): Promise<string | null> {
+    try {
+      this.saved = await call(server, { operation: 'settings-save', settings: payload });
+      this.error.hidden = true;
+      return null;
+    } catch (error) {
+      const latest = await call(server, { operation: 'settings-get' }).catch(() => null);
+      if (!latest || latest.revision === payload.revision || !this.draft || !this.saved) return errorMessage(error);
+      // Another view or the CLI saved first. Apply the page changes to its settings.
+      this.capture();
+      const draft = rebaseDraft(this.draft, this.saved, latest);
+      this.saved = latest;
+      this.merged = true;
+      this.show(draft);
+      this.queued = true;
+      return 'conflict';
+    }
+  }
+
+  private showError(message: string): void {
+    this.error.textContent = message;
+    this.error.hidden = false;
   }
 }

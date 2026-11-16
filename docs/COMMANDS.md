@@ -428,7 +428,7 @@ bbflow settings set base main
 | Key | Value |
 | --- | --- |
 | `appearance` | `system`, `light`, or `dark` |
-| `default-tool` | The name of a tool, or `Shell` |
+| `default-tool` | The name of a tool. An empty value, `""`, selects the built-in Shell. |
 | `worktree` | `true` or `false`. `true` selects **Use worktree** for new drafts in Git folders. |
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
 

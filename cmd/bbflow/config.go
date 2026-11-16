@@ -28,7 +28,7 @@ const settingsUsage = `Usage:
 
 Keys:
   appearance    system, light, or dark
-  default-tool  a tool name, or Shell
+  default-tool  a tool name, or "" for the built-in Shell
   worktree      true or false
   base          the default Git branch or commit, such as HEAD`
 
@@ -138,7 +138,9 @@ func settingsCommand(target client.Target, args []string) error {
 			case "appearance":
 				settings.Appearance = value
 			case "default-tool":
-				if strings.EqualFold(strings.TrimSpace(value), "Shell") {
+				// A tool can have the name Shell, so only an empty value selects the
+				// built-in Shell.
+				if strings.TrimSpace(value) == "" {
 					settings.DefaultTool = ""
 					return nil
 				}
@@ -147,7 +149,7 @@ func settingsCommand(target client.Target, args []string) error {
 					return err
 				}
 				if index < 0 {
-					return fmt.Errorf("tool %q does not exist", strings.TrimSpace(value))
+					return fmt.Errorf(`tool %q does not exist; use "" for the built-in Shell`, strings.TrimSpace(value))
 				}
 				settings.DefaultTool = settings.Tools[index].ID
 			case "worktree":

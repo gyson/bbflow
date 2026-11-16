@@ -292,6 +292,7 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
 .tool-row { border-top: 1px solid var(--divider); display: grid; grid-template-columns: 1fr 2fr 2fr auto; gap: 14px; padding: 18px 0; align-items: end; }
 .tool-actions { display: flex; gap: 5px; }
 .tool-actions button { padding: 9px; font-size: 12px; }
+.tool-error { grid-column: 1 / -1; margin: 0; }
 .settings-actions { display: flex; align-items: center; gap: 14px; }
 #settings-form { padding-bottom: 30px; }
 #settings-error { margin: 16px 0 0; }

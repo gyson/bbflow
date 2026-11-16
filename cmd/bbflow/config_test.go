@@ -82,6 +82,20 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 		t.Fatalf("settings after remove: %+v", settings)
 	}
 
+	// A tool can have the name Shell. Only an empty value selects the built-in Shell.
+	cli("tool", "add", "shell", "bash -l")
+	cli("settings", "set", "default-tool", "shell")
+	if settings = saved(); settings.DefaultTool != settings.Tools[1].ID {
+		t.Fatalf("named shell tool is not the default: %+v", settings)
+	}
+	cli("settings", "set", "default-tool", "")
+	if settings = saved(); settings.DefaultTool != "" {
+		t.Fatalf("empty value did not select Shell: %+v", settings)
+	}
+	fails(`use "" for the built-in Shell`, "settings", "set", "default-tool", "Shell")
+	cli("tool", "remove", "shell")
+	settings = saved()
+
 	// The CLI cannot choose between tools with the same name.
 	settings.Tools = append(settings.Tools, history.Tool{ID: "copy", Name: "Agent", Command: "agent"})
 	if _, err := (client.Target{Dir: directory}).Call(protocol.Request{Operation: "settings-save", Settings: &settings}); err != nil {

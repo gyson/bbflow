@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sameSettings, savePayload } from './dist/settings-model.js';
+import { rebaseDraft, sameSettings, savePayload } from './dist/settings-model.js';
 
 const saved = {
   revision: 4, appearance: 'system', defaultTool: 'a', worktree: false, base: 'HEAD',
@@ -43,4 +43,37 @@ test('removal and other changes save', () => {
   assert.deepEqual(payload.tools.map(tool => tool.id), ['b']);
   assert.equal(payload.defaultTool, '');
   assert.ok(!sameSettings(payload, saved));
+});
+
+test('a held tool keeps its saved version and other changes save', () => {
+  const tools = structuredClone(saved.tools);
+  tools[1].continueCommand = 'other';
+  const payload = savePayload(draft({ appearance: 'dark', tools }), saved, new Set(['b']));
+  assert.equal(payload.tools[1].continueCommand, 'other {prompt}');
+  assert.equal(payload.appearance, 'dark');
+});
+
+test('a rebase keeps page changes and takes other values from the latest settings', () => {
+  const tools = [...structuredClone(saved.tools), { id: 'c', name: 'New', command: '' }];
+  tools[0].command = 'agent --edited';
+  const page = draft({ appearance: 'dark', tools });
+  const latest = { ...structuredClone(saved), revision: 5, base: 'main', tools: [...structuredClone(saved.tools), { id: 'd', name: 'Theirs', command: 'theirs' }] };
+  latest.tools[1].command = 'other --theirs';
+  const result = rebaseDraft(page, saved, latest);
+  assert.equal(result.revision, 5);
+  assert.equal(result.appearance, 'dark');
+  assert.equal(result.base, 'main');
+  assert.deepEqual(result.tools.map(tool => [tool.id, tool.command]), [['a', 'agent --edited'], ['b', 'other --theirs'], ['d', 'theirs'], ['c', '']]);
+});
+
+test('a rebase keeps page removals, page order, and edits to tools that latest removed', () => {
+  const page = draft({ tools: [structuredClone(saved.tools[1]), structuredClone(saved.tools[0])] });
+  page.tools[1].command = 'agent --edited';
+  const latest = { ...structuredClone(saved), revision: 5, tools: [{ id: 'd', name: 'Theirs', command: 'theirs' }, structuredClone(saved.tools[1])] };
+  assert.deepEqual(rebaseDraft(page, saved, latest).tools.map(tool => tool.id), ['d', 'b', 'a']);
+  const removed = draft({ tools: [structuredClone(saved.tools[1])], defaultTool: '' });
+  const result = rebaseDraft(removed, saved, { ...structuredClone(saved), revision: 5, appearance: 'light' });
+  assert.deepEqual(result.tools.map(tool => tool.id), ['b']);
+  assert.equal(result.defaultTool, '');
+  assert.equal(result.appearance, 'light');
 });
