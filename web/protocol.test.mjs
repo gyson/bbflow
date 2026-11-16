@@ -58,6 +58,17 @@ test('lost connection reports uncertain delivery without sending again', () => {
   assert.match(errors[0].message, /Input was not resent/);
   assert.equal(peer.socket.sent.length, 2);
   assert.equal(peer.active, false);
+  assert.equal(errors[0].fromServer, false);
+});
+
+test('an error reply from the server is marked apart from a transport failure', () => {
+  const errors = [];
+  const peer = new Peer(server, request, { error: e => errors.push(e) }, Socket, 'localhost:1234');
+  peer.socket.receive({ type: 'server', server });
+  peer.socket.receive({ type: 'error', error: 'invalid value' });
+  assert.equal(errors[0].message, 'invalid value');
+  assert.equal(errors[0].fromServer, true);
+  assert.equal(errors[0].retryable, false);
 });
 
 test('ended-session replay remains read-only and closes without a loss warning', () => {

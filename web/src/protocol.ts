@@ -179,8 +179,10 @@ export function encodeBytes(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+// fromServer is true when the server replied with an error, for example a rejected value.
+// It is false for a transport failure.
 export class ConnectionError extends Error {
-  constructor(message: string, readonly retryable = false) { super(message); }
+  constructor(message: string, readonly retryable = false, readonly fromServer = false) { super(message); }
 }
 
 export class Peer {
@@ -225,7 +227,7 @@ export class Peer {
         }
         clearTimeout(this.timer);
         if (message.type === 'error') {
-          this.fail(message.error || 'Request failed.');
+          this.fail(message.error || 'Request failed.', false, true);
           return;
         }
         // A live session or a watch keeps the connection open with ping.
@@ -254,14 +256,14 @@ export class Peer {
     };
   }
 
-  fail(message: string, retryable = false): void {
+  fail(message: string, retryable = false, fromServer = false): void {
     if (this.finished) return;
     this.finished = true;
     clearInterval(this.heartbeat);
     this.active = false;
     clearTimeout(this.timer);
     this.input?.settle('Input delivery was not confirmed. Check the terminal before submitting again.');
-    this.handlers.error?.(new ConnectionError(message, retryable));
+    this.handlers.error?.(new ConnectionError(message, retryable, fromServer));
     this.socket.close();
   }
 

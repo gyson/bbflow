@@ -79,6 +79,9 @@ passed a live check:
 
 Do not turn on the fullscreen renderer of Claude Code.
 
+To share a tool set with a team, write a setup script with `bbflow tool add` and
+`bbflow settings set`. See [Manage tools](docs/COMMANDS.md#manage-tools).
+
 ## Your data
 
 - The installed release keeps all durable bbflow data in `~/.bbflow/history.sqlite`.

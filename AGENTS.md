@@ -87,7 +87,8 @@ The core requires Go 1.27.3+ and the pure Go SQLite driver
 `github.com/ncruces/go-sqlite3`. The product has a separate background server and
 embedded web UI. The server owns agent pseudo-terminals (PTYs), headless terminal state,
 and history. The UI uses JSON over WebSocket. HTTP also serves the UI and its connection
-information. The CLI only opens the UI, manages the server, and queries history.
+information. The CLI only opens the UI, manages the server, edits settings, and queries
+history.
 
 Keep deployment builds compatible with `CGO_ENABLED=0`.
 
