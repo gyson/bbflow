@@ -17,17 +17,17 @@ Usage: wait-for-pr.sh review|fix PR --until EPOCH [options]
   --settle SECONDS    review only. Without a READY comment, new commits start
                       a review after the head commit stays the same for this
                       time. Default: 180.
-  --max-rounds N      The number of review rounds. Default: 5.
+  --max-rounds N      The largest number of review rounds. Default: 5.
   --author LOGIN      The account that posts the round comments. Default: the
                       account of the gh command.
 
 Exit status:
    0  event=review or event=fix. Do the next round.
-  10  event=done. The reviewer posted LGTM.
+  10  event=done. The reviewer posted LGTM for the head commit.
   11  event=closed. The PR is merged or closed.
   12  event=timeout. The deadline passed.
   13  event=waiting. The slice ended. Run the same command again.
-  14  event=limit. The last permitted review round did not end with LGTM.
+  14  event=limit. All review rounds ended without LGTM for the head commit.
    2  Incorrect arguments, a gh failure, or an incorrect round comment.
 EOF
 	exit 2
@@ -82,9 +82,9 @@ case $author in '' | *[!A-Za-z0-9_-]*) fail "unsupported account name: $author" 
 # account count, so other accounts cannot start a round.
 filter='"state\t\(.state)", "head\t\(.headRefOid)", (.comments | sort_by(.createdAt)[] | select(.author.login == "'$author'") | (.body | split("\n")[0] | rtrimstr("\r")) | select(startswith("**[review-loop ")) | "mark\t\(.)")'
 
-# Print: state, head commit, position and round and commit and verdict of the latest
-# reviewer comment, position of the latest implementer comment. A position of 0 means
-# that the role posted no round comment.
+# Print: state, head commit, round and commit and verdict of the latest reviewer
+# comment, "yes" if an implementer comment answers that round, and the role of a round
+# comment with an incorrect first line. A round of 0 means that no review exists.
 snapshot() {
 	raw=$(gh pr view "$pr" --json state,headRefOid,comments --jq "$filter") || return 1
 	printf '%s\n' "$raw" | awk -F '\t' '
@@ -93,21 +93,24 @@ snapshot() {
 		}
 		$1 == "state" { state = $2 }
 		$1 == "head" { head = $2 }
-		$1 == "mark" {
-			count++
-			if (index($2, "[review-loop reviewer]") == 3) {
-				reviewAt = count
-				round = part($2, "round [0-9]+", 6)
-				commit = part($2, "commit [0-9a-f]+", 7)
-				verdict = index($2, "LGTM") ? "lgtm" : "changes"
-			} else if (index($2, "[review-loop implementer]") == 3) {
-				fixAt = count
-			}
+		$1 == "mark" && index($2, "[review-loop reviewer]") == 3 {
+			reviews++
+			round = part($2, "round [0-9]+", 6)
+			commit = part($2, "commit [0-9a-f]+", 7)
+			verdict = index($2, "LGTM") ? "lgtm" : "changes"
+		}
+		$1 == "mark" && index($2, "[review-loop implementer]") == 3 {
+			replies++
+			reply = part($2, "round [0-9]+", 6)
+			if (reply != "") answered[reply + 0] = 1
 		}
 		END {
 			if (state == "" || head == "") exit 1
-			if (reviewAt && (round == "" || length(commit) < 7)) { round = "bad"; commit = "bad" }
-			print state, head, reviewAt + 0, (round == "" ? 0 : round), (commit == "" ? "-" : commit), (verdict == "" ? "-" : verdict), fixAt + 0
+			bad = "-"
+			if (reviews && (round == "" || length(commit) < 7)) bad = "reviewer"
+			else if (replies && reply == "") bad = "implementer"
+			if (!reviews || bad != "-") { round = 0; commit = "-"; verdict = "-" }
+			print state, head, round + 0, commit, verdict, ((round + 0) in answered ? "yes" : "no"), bad
 		}'
 }
 
@@ -129,42 +132,33 @@ while :; do
 		failures=0
 		# shellcheck disable=SC2086
 		set -- $line
-		state=$1 head=$2 review_at=$3 round=$4 commit=$5 verdict=$6 fix_at=$7
-		[ "$round" != bad ] || fail 'the latest reviewer round comment has an incorrect first line'
+		state=$1 head=$2 round=$3 commit=$4 verdict=$5 answered=$6 bad=$7
+		[ "$bad" = - ] || fail "the latest $bad round comment has an incorrect first line"
 		same=no
 		case $head in "$commit"*) same=yes ;; esac
 		last=no
-		if [ "$review_at" -gt 0 ] && [ "$verdict" != lgtm ] && [ "$round" -ge "$max_rounds" ]; then
-			last=yes
-		fi
+		[ "$round" -lt "$max_rounds" ] || last=yes
 		if [ "$state" != OPEN ]; then
 			code=11 text="event=closed state=$state"
-		elif [ "$role" = review ]; then
-			if [ "$review_at" -eq 0 ]; then
-				code=0 text="event=review reason=first round=1 head=$head"
-			elif [ "$verdict" = lgtm ] && [ "$same" = yes ]; then
-				code=10 text="event=done round=$round head=$head"
-			elif [ "$last" = yes ]; then
-				code=14 text="event=limit round=$round head=$head"
-			elif [ "$fix_at" -gt "$review_at" ]; then
-				code=0 text="event=review reason=ready round=$((round + 1)) head=$head previous=$commit"
-			elif [ "$same" = no ]; then
-				if [ "$head" != "$seen_head" ]; then
-					seen_head=$head
-					seen_at=$now
-				fi
-				if [ $((now - seen_at)) -ge "$settle" ]; then
-					code=0 text="event=review reason=commits round=$((round + 1)) head=$head previous=$commit"
-				fi
-			fi
-		elif [ "$review_at" -gt "$fix_at" ]; then
-			if [ "$verdict" = lgtm ]; then
-				code=10 text="event=done round=$round head=$head"
-			else
-				code=0 text="event=fix round=$round head=$head author=$author"
-			fi
+		elif [ "$round" -eq 0 ]; then
+			[ "$role" != review ] || code=0 text="event=review reason=first round=1 head=$head"
+		elif [ "$verdict" = lgtm ] && [ "$same" = yes ]; then
+			code=10 text="event=done round=$round head=$head"
+		elif [ "$role" = fix ] && [ "$verdict" = changes ] && [ "$answered" = no ]; then
+			code=0 text="event=fix round=$round head=$head author=$author"
 		elif [ "$last" = yes ]; then
 			code=14 text="event=limit round=$round head=$head"
+		elif [ "$role" = review ] && [ "$answered" = yes ]; then
+			code=0 text="event=review reason=ready round=$((round + 1)) head=$head previous=$commit"
+		elif [ "$role" = review ] && [ "$same" = no ]; then
+			# Without a READY comment, start only after the head commit stops changing.
+			if [ "$head" != "$seen_head" ]; then
+				seen_head=$head
+				seen_at=$now
+			fi
+			if [ $((now - seen_at)) -ge "$settle" ]; then
+				code=0 text="event=review reason=commits round=$((round + 1)) head=$head previous=$commit"
+			fi
 		fi
 	else
 		failures=$((failures + 1))

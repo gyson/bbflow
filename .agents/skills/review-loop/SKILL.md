@@ -12,7 +12,8 @@ Two sessions work on one pull request (PR):
 - The **implementer** is the session that wrote the change. It has the full context.
 
 The reviewer posts findings. The implementer fixes them and replies. The loop continues
-until the reviewer posts LGTM. The two sessions communicate only through PR comments.
+until the reviewer posts LGTM ("looks good to me"). The two sessions communicate only
+through PR comments.
 
 ## Start
 
@@ -60,7 +61,8 @@ round, the commit, and the result.
 
 - Write the first line exactly. The wait script reads it.
 - `N` is the round number. The reviewer starts at 1 and adds 1 for each review. The
-  implementer uses the round number of the review that it answers.
+  implementer uses the round number of the review that it answers. A READY comment
+  answers only the review that has the same round number.
 - `SHA` is the full commit ID. For the reviewer, it is the commit that the review
   examined. For the implementer, it is the head commit after the push.
 - Post a round comment as a PR comment:
@@ -90,10 +92,10 @@ must do something. It prints one line and sets its exit status.
 | `event=review` | 0 | The reviewer must review `head`. | Do a review round. |
 | `event=fix` | 0 | The reviewer requested changes. | Do a fix round. |
 | `event=waiting` | 13 | One call ended. Nothing changed. | Run the same command again. |
-| `event=done` | 10 | The reviewer posted LGTM. | Stop. Report to the user. |
+| `event=done` | 10 | The reviewer posted LGTM for the head commit. | Stop. Report to the user. |
 | `event=closed` | 11 | The PR is merged or closed. | Stop. Report to the user. |
 | `event=timeout` | 12 | The deadline passed. | Stop. Report to the user. |
-| `event=limit` | 14 | Round 5 did not end with LGTM. | Stop. Report to the user. |
+| `event=limit` | 14 | All 5 review rounds ended without LGTM for the head commit. | Stop. Report to the user. |
 | An error message | 2 | The arguments, `gh`, or a round comment is incorrect. | Correct the cause. If you cannot, tell the user. |
 
 One call waits for a maximum of 9 minutes, then prints `event=waiting`. Set the command
@@ -103,7 +105,7 @@ when it ends, add `--slice 0`. The script then waits until the deadline in one c
 `event=review` has a `reason`:
 
 - `first`: the PR has no review.
-- `ready`: the implementer posted a READY comment.
+- `ready`: the implementer posted a READY comment for the latest review.
 - `commits`: the head commit changed and no READY comment came for 3 minutes.
 
 The script counts only round comments from the account of the `gh` command. If the

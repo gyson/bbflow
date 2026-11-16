@@ -45,6 +45,7 @@ See [instance directory](COMMANDS.md#instance-directory).
 make test
 make check
 make web-check
+make skill-check
 go test -race ./...
 ```
 
@@ -53,6 +54,7 @@ go test -race ./...
 | `make test` | Go tests with `CGO_ENABLED=0`. |
 | `make check` | `go vet` and a syntax check of the shell scripts. |
 | `make web-check` | Frontend fixtures. It compiles modules into the ignored `web/dist/`. |
+| `make skill-check` | Fixture checks of the project skill scripts. It needs `jq` and no network access. |
 | `go test -race ./...` | Go tests with the race detector, for concurrent runtime changes. |
 
 `make test` and `make check` build the frontend first. The race detector needs CGO for

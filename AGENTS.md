@@ -175,11 +175,13 @@ folder with a `SKILL.md` file.
 
 - Keep each skill in `.agents/skills/<name>/`, where Codex reads it. Add a symbolic link
   to it at `.claude/skills/<name>`, so that Claude Code reads the same files.
-- Use `review-loop` for a PR review that continues until LGTM. One session runs the
-  reviewer role and a second session runs the implementer role.
-- When you change the round comment format, update `SKILL.md`, the two role files, and
-  `scripts/wait-for-pr.sh` of `review-loop` together.
-- Add each skill script to the syntax check in `make check`.
+- Use `review-loop` for a pull request (PR) review that continues until the reviewer
+  accepts the change. One session runs the reviewer role and a second session runs the
+  implementer role.
+- When you change the round comment format, update `SKILL.md`, the two role files,
+  `scripts/wait-for-pr.sh`, and its fixture checks in `review-loop` together.
+- Add each skill script to the syntax check in `make check`. Run `make skill-check`
+  after you change a skill script.
 
 ## Product priorities
 

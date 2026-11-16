@@ -1,4 +1,4 @@
-.PHONY: build release release-assets test check web-build web-check
+.PHONY: build release release-assets test check skill-check web-build web-check
 
 VERSION ?= dev
 
@@ -16,7 +16,10 @@ test: web-build
 
 check: web-build
 	go vet ./...
-	sh -n internal/install/install.sh scripts/package-release.sh scripts/smoke-release.sh .agents/skills/review-loop/scripts/wait-for-pr.sh
+	sh -n internal/install/install.sh scripts/package-release.sh scripts/smoke-release.sh .agents/skills/review-loop/scripts/wait-for-pr.sh .agents/skills/review-loop/scripts/wait-for-pr.test.sh
+
+skill-check:
+	sh .agents/skills/review-loop/scripts/wait-for-pr.test.sh
 
 web-build:
 	npm --prefix web run build

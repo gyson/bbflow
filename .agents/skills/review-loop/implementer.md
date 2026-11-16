@@ -44,21 +44,27 @@ findings that are correct. Decline the others with a reason.
      user or a rule in `AGENTS.md`. Give the technical reason.
 4. Make the changes. Add or update tests and owner documents as `AGENTS.md` requires.
 5. Run the checks that apply to the change. Correct each failure before you continue.
-6. Commit and push. Confirm that the remote head is equal to `git rev-parse HEAD`.
+6. Commit the changes. Do not push at this time.
+7. Review the full diff against the target branch. If the behavior, scope, design, or
+   validation changed, update the PR title and body. Follow the rules for reviewable
+   pull requests in `AGENTS.md`.
+8. Write the round comment in a file. Use the ID of the local head commit.
+9. Push. Confirm that the remote head is equal to `git rev-parse HEAD`.
 
    ```sh
    gh pr view PR --json headRefOid --jq .headRefOid
    ```
 
-7. Review the full diff against the target branch. If the behavior, scope, design, or
-   validation changed, update the PR title and body. Follow the rules for reviewable
-   pull requests in `AGENTS.md`.
-8. Post the round comment. Post it also when you declined all findings and pushed
-   nothing. The reviewer waits for it.
+10. Post the round comment immediately after the push. If the comment comes more than
+    3 minutes after the push, the reviewer can start without your replies.
+
+Post the round comment also when you declined all findings and pushed nothing. The
+reviewer waits for it.
 
 ## Round comment
 
 Answer each finding by its ID. Use the round number of the review that you answer.
+The wait script accepts the comment as the answer only to the review with this number.
 
 ```markdown
 **[review-loop implementer] round 2, commit 89abcdef0123456789abcdef0123456789abcdef: READY**

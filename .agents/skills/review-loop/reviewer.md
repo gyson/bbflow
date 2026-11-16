@@ -30,10 +30,11 @@ for context. If the PR does not explain a decision, that is a finding.
    gh pr checkout PR --detach
    ```
 
-3. Read the PR title, body, and comments. Read the diff.
+3. Read the PR title, body, and comments. Read the diff. Do not use
+   `gh pr view PR --comments` for this. Without a terminal, it prints only the comments.
 
    ```sh
-   gh pr view PR --comments
+   gh pr view PR --json title,body,comments --jq '"# \(.title)\n\n\(.body)", (.comments[] | "\n--- \(.author.login), \(.createdAt)\n\(.body)")'
    gh pr diff PR
    ```
 
@@ -52,7 +53,9 @@ for context. If the PR does not explain a decision, that is a finding.
    - **Blocking:** incorrect behavior, a risk of data loss, a broken `AGENTS.md` rule or
      invariant, a missing necessary test or document update, or a security problem.
    - **Non-blocking:** an improvement that the PR can merge without.
-7. Read the head commit again. If it changed, go to step 2.
+7. Read the head commit and the comments again. If the head commit changed, go to
+   step 2. If the implementer posted a new round comment, include its replies in your
+   review.
 
    ```sh
    gh pr view PR --json headRefOid --jq .headRefOid
