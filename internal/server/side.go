@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
-	agent "bonbon/internal/runtime"
-	"bonbon/internal/terminal"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
+	agent "bbflow/internal/runtime"
+	"bbflow/internal/terminal"
 )
 
 // A side terminal is an interactive shell for ad hoc work in the session workspace. It

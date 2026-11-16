@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/history"
+	"bbflow/internal/history"
 )
 
 func TestQueryCLISelectsExplicitScopeAndRejectsWrites(t *testing.T) {
@@ -14,7 +14,7 @@ func TestQueryCLISelectsExplicitScopeAndRejectsWrites(t *testing.T) {
 	store := archive(t, directory)
 	first, _ := store.CreateSession("first", t.TempDir(), "")
 	store.CreateSession("second", t.TempDir(), "")
-	t.Setenv("BONBON_SESSION", first.ID)
+	t.Setenv("BBFLOW_SESSION", first.ID)
 	output, err := testCommand("query", "SELECT title FROM sessions ORDER BY title").CombinedOutput()
 	var result history.QueryResult
 	if err != nil || json.Unmarshal(output, &result) != nil || len(result.Rows) != 2 {

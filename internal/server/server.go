@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"bonbon/internal/history"
-	"bonbon/internal/instance"
-	"bonbon/internal/protocol"
-	"bonbon/internal/webui"
+	"bbflow/internal/history"
+	"bbflow/internal/instance"
+	"bbflow/internal/protocol"
+	"bbflow/internal/webui"
 	"github.com/gorilla/websocket"
 )
 

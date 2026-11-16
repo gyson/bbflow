@@ -1,4 +1,4 @@
-module bonbon
+module bbflow
 
 go 1.27.3
 

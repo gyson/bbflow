@@ -1,10 +1,10 @@
-# BonBon plans
+# bbflow plans
 
 This file lists planned work. In each implementation commit, remove completed items. For
 partially completed items, describe only the remaining work. Document implemented
 behavior in [SPEC.md](SPEC.md).
 
-BonBon is in daily use. Future storage changes must include embedded migrations and
+bbflow is in daily use. Future storage changes must include embedded migrations and
 tests that preserve existing databases. Keep the full supported upgrade chain so users
 can skip releases. See [SPEC.md](SPEC.md#database-upgrades) for current support.
 
@@ -78,9 +78,9 @@ Continue in new terminal is implemented. See
 
 Status: deferred. Design a complete feature to add, edit, and apply custom context to
 projects and sessions, including General. The scope and interface remain undecided.
-BonBon does not insert context or deliver it automatically.
+bbflow does not insert context or deliver it automatically.
 
-- Include guidance for searches across sessions with `bonbon query` in this feature.
+- Include guidance for searches across sessions with `bbflow query` in this feature.
 - Keep saved context in SQLite. Make the selected context and its scope visible to the
   user before applying it.
 - Verify delivery through each agent's supported interfaces. Do not type instructions
@@ -114,12 +114,12 @@ and can continue independently.
 
 ### Expected behavior
 
-- Give the fork its own BonBon session ID. Store its parent and fixed history cutoff in
+- Give the fork its own bbflow session ID. Store its parent and fixed history cutoff in
   SQLite, with stable references to the original evidence.
 - Inherit history through the selected point. Later parent messages and sibling branches
   must not enter the fork's inherited view, even if the parent continues.
 - Apply the cutoff consistently to future session-aware reads, search, attachments, and
-  context preparation. General-purpose `bonbon query` still uses explicit SQL scope.
+  context preparation. General-purpose `bbflow query` still uses explicit SQL scope.
 - Keep conversation branching separate from file state. Forking history does not restore
   old workspace files or create a worktree automatically.
 - Continue through a verified native agent capability or a fresh agent with access to
@@ -137,20 +137,20 @@ files. Verify that it starts no agent without an explicit launch request.
 ## Cloud backup for SQLite
 
 Status: planned. Local backup and restore commands have been removed. The next backup
-feature should replicate BonBon's SQLite database to cloud storage. It should also
+feature should replicate bbflow's SQLite database to cloud storage. It should also
 provide a way to recover that database from the cloud. A local export or backup-file
 workflow is outside this plan.
 
 ### Storage boundary
 
-All durable BonBon data belongs in SQLite. This includes sessions, runs, original
+All durable bbflow data belongs in SQLite. This includes sessions, runs, original
 terminal input and output, and command and workspace metadata. It also includes resize
 events, interruption notices, draft revisions, attachment bytes and metadata, and
 derived searchable text. Keep future imports, fork boundaries, memory, and settings in
 the database too.
 
-Production defaults to `~/.bonbon/history.sqlite`. Development defaults to
-`~/.bonbon-dev/history.sqlite`. SQLite's WAL can contain committed data that is not yet
+Production defaults to `~/.bbflow/history.sqlite`. Development defaults to
+`~/.bbflow-dev/history.sqlite`. SQLite's WAL can contain committed data that is not yet
 in the main file. Replication must include this data.
 
 Periodic copies of only the main file are insufficient. Server logs, `server.json`,
@@ -162,30 +162,30 @@ running processes are outside the backup scope.
 
 Evaluate [Litestream](https://github.com/benbjohnson/litestream), or a similar tool.
 Litestream documents a separate background process that continuously replicates SQLite
-changes to cloud storage. This suggests an optional companion process while BonBon keeps
+changes to cloud storage. This suggests an optional companion process while bbflow keeps
 a non-CGO SQLite driver and builds with `CGO_ENABLED=0`. See the
 [official overview](https://litestream.io/) and
 [cloud storage guides](https://litestream.io/guides/).
 
 This is a proposed integration, not a dependency decision. Pin and verify a version
 before implementation. Check macOS distribution, licensing, resource use, SQLite/WAL
-behavior, and compatibility with our driver. Decide whether BonBon or an external
+behavior, and compatibility with our driver. Decide whether bbflow or an external
 service manager owns the replication process. Do not add a second database writer for
-BonBon sessions or turn disaster recovery into multi-machine database synchronization.
+bbflow sessions or turn disaster recovery into multi-machine database synchronization.
 
 ### Implementation steps
 
-1. **Verify replication with synthetic data.** Run a candidate beside BonBon while PTYs
+1. **Verify replication with synthetic data.** Run a candidate beside bbflow while PTYs
    record output. Exercise checkpoints, database reopen, server restart, and replication
    restart. Verify any source schema changes made by the tool are compatible with
-   BonBon's schema checks. Litestream currently documents an internal
+   bbflow's schema checks. Litestream currently documents an internal
    [`_litestream_lock` table](https://github.com/benbjohnson/litestream#source-database-changes).
 2. **Choose one cloud destination.** Start with one supported object storage backend,
    such as S3 or an S3-compatible service. Use separate replica locations for each
    installation, database, and development/production environment. Local file replicas
    are not the product backup feature.
 3. **Add explicit configuration and lifecycle.** Keep cloud replication disabled by
-   default. Store durable BonBon settings in SQLite. Use environment variables or an OS
+   default. Store durable bbflow settings in SQLite. Use environment variables or an OS
    credential store for cloud secrets. Define retention and encryption requirements.
 
 Recording must continue when cloud access fails. Report replication errors, lag, and the
@@ -199,7 +199,7 @@ exists.
 Do not overwrite active data, launch agents, or replay recorded input. Apply supported
 embedded migrations to the recovered database. Reject unknown or newer formats without
 changing their contents.
-5. **Document and expose the verified workflow.** Choose BonBon commands only after the
+5. **Document and expose the verified workflow.** Choose bbflow commands only after the
    lifecycle and recovery checks work. Update the command reference and SPEC.md with
    actual behavior, recovery limits, and operational requirements.
 
@@ -213,7 +213,7 @@ changing their contents.
 - Confirm development and production replicas cannot overwrite each other, and a
   recovered database cannot share a writable replica location with another active copy.
 - Verify any implemented attachments, imports, and fork cutoffs survive recovery.
-- Confirm recovery starts no agents and that the BonBon core still builds without CGO.
+- Confirm recovery starts no agents and that the bbflow core still builds without CGO.
 
 No Litestream installation, cloud account setup, uploads, or cloud recovery have been
 performed yet. Backend selection, credentials, retention, and process supervision remain

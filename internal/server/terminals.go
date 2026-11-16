@@ -1,8 +1,8 @@
 package server
 
 import (
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 // terminals lists the terminals of a session in start order. A view uses it to show an

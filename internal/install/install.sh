@@ -2,24 +2,24 @@
 # Run with sh. Keep execution in main to prevent installation from an incomplete download.
 set -eu
 
-fail() { printf 'bonbon installer: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'bbflow installer: %s\n' "$*" >&2; exit 1; }
 
 usage() {
     cat <<'HELP'
 Usage: sh install.sh [--version VERSION] [--dir DIRECTORY] [--check]
 
-Install BonBon for macOS using curl and the tools included with macOS.
+Install bbflow for macOS using curl and the tools included with macOS.
 Optional: GITHUB_TOKEN authenticates GitHub API requests.
 
   --version VERSION  Install a specific release, such as 0.0.1 or v0.0.1.
                      Default: the latest published full release.
   --dir DIRECTORY    Installation directory. Default: ~/.local/bin, or
-                     BONBON_INSTALL_DIR when set. Must be an absolute path.
+                     BBFLOW_INSTALL_DIR when set. Must be an absolute path.
   --check            Compare the executable in that directory with the selected
                      release without installing or changing files.
   --help             Show this help.
 
-Run bonbon update to upgrade. The installer never starts or stops a server, changes shell
+Run bbflow update to upgrade. The installer never starts or stops a server, changes shell
 profiles, or deletes history. Restart the server yourself when ready.
 HELP
 }
@@ -55,7 +55,7 @@ download_asset() {
 
 main() {
     requested=latest
-    install_dir=${BONBON_INSTALL_DIR:-"${HOME:?HOME must be set}/.local/bin"}
+    install_dir=${BBFLOW_INSTALL_DIR:-"${HOME:?HOME must be set}/.local/bin"}
     check=false
     while [ "$#" -gt 0 ]; do
         case "$1" in
@@ -87,8 +87,8 @@ main() {
     github_token=${GITHUB_TOKEN:-}
     unset GITHUB_TOKEN
     case "$github_token" in *[!A-Za-z0-9_.-]*) fail "invalid characters in GITHUB_TOKEN" ;; esac
-    api=https://api.github.com/repos/gyson/bonbon
-    temporary=$(mktemp -d "${TMPDIR:-/tmp}/bonbon-download.XXXXXX")
+    api=https://api.github.com/repos/gyson/bbflow
+    temporary=$(mktemp -d "${TMPDIR:-/tmp}/bbflow-download.XXXXXX")
     staging=
     trap 'rm -rf "$temporary"; if [ -n "$staging" ]; then rm -rf "$staging"; fi' EXIT
     trap 'exit 1' HUP INT TERM
@@ -106,14 +106,14 @@ main() {
     fi
     selected=${tag#v}
     valid_version "$selected" && [ "$tag" = "v$selected" ] || fail "unsupported release tag: $tag"
-    destination=$install_dir/bonbon
+    destination=$install_dir/bbflow
     [ ! -L "$destination" ] || fail "refusing to replace a symlink: $destination"
     [ ! -d "$destination" ] || fail "destination is a directory: $destination"
     comparison=
     if [ -e "$destination" ] && { "$check" || [ "$requested" = latest ]; }; then
         installed_output=$("$destination" --version) || fail "cannot read installed version"
-        installed=${installed_output#bonbon }
-        if valid_version "$installed" && [ "$installed_output" = "bonbon $installed" ]; then
+        installed=${installed_output#bbflow }
+        if valid_version "$installed" && [ "$installed_output" = "bbflow $installed" ]; then
             comparison=$(awk -v current="$installed" -v available="$selected" 'BEGIN {
                 split(current, c, "."); split(available, a, ".")
                 for (i = 1; i <= 3; i++) {
@@ -129,22 +129,22 @@ main() {
     if "$check"; then
         printf 'Available release: %s\n' "$selected"
         if [ ! -e "$destination" ]; then
-            printf 'BonBon is not installed at %s\n' "$destination"
+            printf 'bbflow is not installed at %s\n' "$destination"
             return
         fi
         printf 'Installed version: %s\n' "$installed"
         case "$comparison" in
-            newer) printf 'Update available. Run bonbon update to install it.\n' ;;
+            newer) printf 'Update available. Run bbflow update to install it.\n' ;;
             equal) printf 'Already up to date.\n' ;;
             older) printf 'The installed version is newer than the selected release.\n' ;;
         esac
         return
     fi
     case "$comparison" in
-        equal) printf 'BonBon %s is already up to date.\n' "$installed"; return ;;
-        older) printf 'BonBon %s is newer than the latest release (%s); leaving it installed.\n' "$installed" "$selected"; return ;;
+        equal) printf 'bbflow %s is already up to date.\n' "$installed"; return ;;
+        older) printf 'bbflow %s is newer than the latest release (%s); leaving it installed.\n' "$installed" "$selected"; return ;;
     esac
-    asset=bonbon_${selected}_darwin_${arch}.tar.gz
+    asset=bbflow_${selected}_darwin_${arch}.tar.gz
     download_asset "$asset"
     download_asset checksums.txt
     expected=$(awk -v name="$asset" '$2 == name { print $1 }' "$temporary/checksums.txt")
@@ -154,21 +154,21 @@ main() {
     actual=${actual%% *}
     [ "$actual" = "$expected" ] || fail "checksum mismatch for $asset; existing installation was not changed"
     mkdir -p "$install_dir"
-    staging=$(mktemp -d "$install_dir/.bonbon-install.XXXXXX")
+    staging=$(mktemp -d "$install_dir/.bbflow-install.XXXXXX")
     # Extract only the executable. Do not extract arbitrary archive paths.
-    tar -xzOf "$temporary/$asset" bonbon > "$staging/bonbon" || fail "invalid release archive"
-    chmod 755 "$staging/bonbon"
-    actual_version=$("$staging/bonbon" --version) || fail "downloaded executable cannot run on this Mac"
-    [ "$actual_version" = "bonbon $selected" ] || fail "downloaded executable reports the wrong version"
+    tar -xzOf "$temporary/$asset" bbflow > "$staging/bbflow" || fail "invalid release archive"
+    chmod 755 "$staging/bbflow"
+    actual_version=$("$staging/bbflow" --version) || fail "downloaded executable cannot run on this Mac"
+    [ "$actual_version" = "bbflow $selected" ] || fail "downloaded executable reports the wrong version"
     # Rename on the same filesystem. Do not truncate an executable used by a server.
-    mv -f "$staging/bonbon" "$destination"
-    printf 'Installed BonBon %s at %s\n' "$selected" "$destination"
+    mv -f "$staging/bbflow" "$destination"
+    printf 'Installed bbflow %s at %s\n' "$selected" "$destination"
     case ":$PATH:" in
         *":$install_dir:"*) ;;
         *) printf 'Add this directory to PATH in your shell configuration: %s\n' "$install_dir" ;;
     esac
-    printf '\nStart with: bonbon server start\nThen open:  bonbon ui\n'
-    printf 'For an existing server, run bonbon server restart when ready. Restart ends active sessions.\n'
+    printf '\nStart with: bbflow server start\nThen open:  bbflow ui\n'
+    printf 'For an existing server, run bbflow server restart when ready. Restart ends active sessions.\n'
 }
 
 main "$@"

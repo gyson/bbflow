@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 func TestProjectsLaunchAndRemovalThroughServer(t *testing.T) {
@@ -44,7 +44,7 @@ func TestProjectsLaunchAndRemovalThroughServer(t *testing.T) {
 	for _, project := range []history.Project{general, custom} {
 		view := openSessionView(t, projectStartRequest(t, project.ID, project.Name, protocol.Size{Rows: 24, Cols: 80}))
 		views = append(views, view)
-		waitFor(t, func() bool { return strings.Contains(view.text(), "BONBON_SHELL_PROMPT> ") })
+		waitFor(t, func() bool { return strings.Contains(view.text(), "BBFLOW_SHELL_PROMPT> ") })
 		var info protocol.SessionInfo
 		for _, session := range sessionInfos(t, 100) {
 			if session.ProjectID == project.ID {

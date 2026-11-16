@@ -77,8 +77,8 @@ export class SentHistory {
     state.className = message.confirmed ? 'badge' : 'badge unconfirmed';
     state.textContent = message.confirmed ? 'Sent' : 'Not confirmed';
     state.title = message.confirmed
-      ? 'The terminal received this message. BonBon cannot confirm that the application accepted it.'
-      : 'BonBon did not get a receipt for this message. Check the terminal output.';
+      ? 'The terminal received this message. bbflow cannot confirm that the application accepted it.'
+      : 'bbflow did not get a receipt for this message. Check the terminal output.';
     const time = document.createElement('time');
     time.dateTime = message.created;
     time.textContent = new Date(message.created).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });

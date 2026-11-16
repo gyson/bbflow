@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/protocol"
+	"bbflow/internal/protocol"
 	"github.com/gorilla/websocket"
 )
 
@@ -20,14 +20,14 @@ func TestPrepareRunEnvironment(t *testing.T) {
 	}
 	t.Setenv("PATH", directory)
 	t.Setenv("SHELL", "test-agent")
-	t.Setenv("BONBON_TEST_LAUNCH", "from-server")
+	t.Setenv("BBFLOW_TEST_LAUNCH", "from-server")
 	size := protocol.Size{Rows: 24, Cols: 80}
 	request := &protocol.Run{Workspace: directory, Size: size}
 	run, err := prepareRun(request)
 	if err != nil || run.Shell != executable {
 		t.Fatalf("server launch: %+v %v", run, err)
 	}
-	if !strings.Contains(strings.Join(run.Env, "\n"), "BONBON_TEST_LAUNCH=from-server") || run.Env[len(run.Env)-1] != "TERM=xterm-256color" {
+	if !strings.Contains(strings.Join(run.Env, "\n"), "BBFLOW_TEST_LAUNCH=from-server") || run.Env[len(run.Env)-1] != "TERM=xterm-256color" {
 		t.Fatal("server environment not inherited")
 	}
 	t.Setenv("SHELL", "")

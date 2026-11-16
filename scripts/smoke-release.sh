@@ -3,8 +3,8 @@
 set -eu
 binary=${1:?Usage: sh scripts/smoke-release.sh BINARY VERSION}
 version=${2:?Expected release version is required}
-[ "$("$binary" --version)" = "bonbon $version" ]
-instance=$(mktemp -d "${TMPDIR:-/tmp}/bonbon-smoke.XXXXXX")
+[ "$("$binary" --version)" = "bbflow $version" ]
+instance=$(mktemp -d "${TMPDIR:-/tmp}/bbflow-smoke.XXXXXX")
 cleanup() {
     "$binary" --dir "$instance" server stop || return 1
     rm -rf "$instance"
@@ -16,7 +16,7 @@ printf '%s\n' "$output"
 url=$(printf '%s\n' "$output" | grep -Eo 'http://127\.0\.0\.1:[0-9]+' | head -1)
 [ -n "$url" ]
 curl -fsS "$url/" > "$instance/index.html"
-grep -q '<title>BonBon</title>' "$instance/index.html"
+grep -q '<title>bbflow</title>' "$instance/index.html"
 curl -fsS "$url/assets/licenses.txt" > "$instance/licenses.txt"
 grep -q 'Copyright (c) 2026 yunsong' "$instance/licenses.txt"
 grep -q 'The Gorilla WebSocket Authors' "$instance/licenses.txt"

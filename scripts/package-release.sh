@@ -15,11 +15,11 @@ for arch in arm64 amd64; do
     stage=$(mktemp -d "$output/.stage.XXXXXX")
     trap 'rm -rf "$stage"' EXIT
     CGO_ENABLED=0 GOOS=darwin GOARCH=$arch go build -trimpath \
-        -ldflags "-X main.instanceDirName=.bonbon -X main.version=$version" \
-        -o "$stage/bonbon" ./cmd/bonbon
+        -ldflags "-X main.instanceDirName=.bbflow -X main.version=$version" \
+        -o "$stage/bbflow" ./cmd/bbflow
     cp LICENSE "$stage/LICENSE"
     cp internal/webui/dist/assets/licenses.txt "$stage/THIRD_PARTY_NOTICES.txt"
-    COPYFILE_DISABLE=1 tar -czf "$output/bonbon_${version}_darwin_${arch}.tar.gz" -C "$stage" bonbon LICENSE THIRD_PARTY_NOTICES.txt
+    COPYFILE_DISABLE=1 tar -czf "$output/bbflow_${version}_darwin_${arch}.tar.gz" -C "$stage" bbflow LICENSE THIRD_PARTY_NOTICES.txt
     rm -rf "$stage"
 done
 cp internal/install/install.sh "$output/install.sh"

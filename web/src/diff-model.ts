@@ -69,7 +69,7 @@ export function treeRows(folders: ReadonlyMap<string, WorkspaceFolder>, expanded
       rows.push({ path, name: entry.name, depth, kind: entry.kind, ignored: !!entry.ignored, expanded: open, change: byPath.get(path), changed: changedFolders.has(path) });
       if (open) add(path, depth + 1);
     }
-    if (folder.truncated) note('This folder has more entries. BonBon limits the number of entries that it lists.');
+    if (folder.truncated) note('This folder has more entries. bbflow limits the number of entries that it lists.');
     else if (folder.entries.length === 0) note('Empty folder');
   };
   add('', 0);
@@ -195,8 +195,8 @@ export function countText(change: ChangedFile): { added: string; removed: string
 // Explain a side that has no text to show. Return an empty string for text.
 export function sideNote(side: FileSide): string {
   switch (side.state) {
-    case 'binary': return 'Binary file. BonBon does not show its content.';
-    case 'tooLarge': return 'This file is larger than 1 MiB. BonBon does not show its content.';
+    case 'binary': return 'Binary file. bbflow does not show its content.';
+    case 'tooLarge': return 'This file is larger than 1 MiB. bbflow does not show its content.';
     case 'other': return 'This path is a folder, a submodule, or a special file.';
     default: return '';
   }

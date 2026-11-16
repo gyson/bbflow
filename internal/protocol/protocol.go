@@ -1,8 +1,8 @@
-// Package protocol defines messages between BonBon's local clients and server.
+// Package protocol defines messages between bbflow's local clients and server.
 package protocol
 
 import (
-	"bonbon/internal/history"
+	"bbflow/internal/history"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/24"
+const Version = "bbflow/24"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -214,7 +214,7 @@ type SentPage struct {
 	More     bool          `json:"more"`
 }
 
-// Handoff identifies the folder that BonBon writes before it starts a new terminal in
+// Handoff identifies the folder that bbflow writes before it starts a new terminal in
 // an ended session, and the prompt that points a new agent to it. Available reports
 // that the folder has a README, so the prompt can be used now.
 type Handoff struct {

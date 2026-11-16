@@ -11,15 +11,15 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/instance"
-	"bonbon/internal/protocol"
+	"bbflow/internal/instance"
+	"bbflow/internal/protocol"
 	"github.com/gorilla/websocket"
 )
 
 func TestMenuQuitIsBoundToItsServerInstance(t *testing.T) {
 	for _, expectedID := range []string{"current", "previous"} {
 		t.Run(expectedID, func(t *testing.T) {
-			target, received := fixtureServer(t, "bonbon/other", nil, protocol.Message{Type: "result", Result: json.RawMessage(`{"stopping":true}`)})
+			target, received := fixtureServer(t, "bbflow/other", nil, protocol.Message{Type: "result", Result: json.RawMessage(`{"stopping":true}`)})
 			expected, err := instance.Read(target.Dir)
 			if err != nil {
 				t.Fatal(err)
@@ -44,7 +44,7 @@ func TestMenuQuitIsBoundToItsServerInstance(t *testing.T) {
 func TestMenuQuitDoesNotRereadConnectionFile(t *testing.T) {
 	for _, change := range []string{"missing", "malformed", "replacement", "removed-directory"} {
 		t.Run(change, func(t *testing.T) {
-			target, received := fixtureServer(t, "bonbon/other", nil, protocol.Message{Type: "result", Result: json.RawMessage(`{"stopping":true}`)})
+			target, received := fixtureServer(t, "bbflow/other", nil, protocol.Message{Type: "result", Result: json.RawMessage(`{"stopping":true}`)})
 			expected, err := instance.Read(target.Dir)
 			if err != nil {
 				t.Fatal(err)
@@ -55,7 +55,7 @@ func TestMenuQuitDoesNotRereadConnectionFile(t *testing.T) {
 			case "malformed":
 				err = os.WriteFile(filepath.Join(target.Dir, "server.json"), []byte("{"), 0600)
 			case "replacement":
-				other, _ := fixtureServer(t, "bonbon/other", nil, protocol.Message{})
+				other, _ := fixtureServer(t, "bbflow/other", nil, protocol.Message{})
 				var replacement protocol.ServerInfo
 				replacement, err = instance.Read(other.Dir)
 				if err == nil {
@@ -181,7 +181,7 @@ func TestClientsVerifyGreetingBeforeSendingOperation(t *testing.T) {
 
 func TestQueryAndHealthRequireCurrentProtocol(t *testing.T) {
 	for _, health := range []bool{false, true} {
-		target, received := fixtureServer(t, "bonbon/other", nil, protocol.Message{})
+		target, received := fixtureServer(t, "bbflow/other", nil, protocol.Message{})
 		var err error
 		if health {
 			_, err = target.Health()
@@ -202,7 +202,7 @@ func TestQueryAndHealthRequireCurrentProtocol(t *testing.T) {
 }
 
 func TestStopUsesVerifiedServerProtocol(t *testing.T) {
-	for _, version := range []string{protocol.Version, "bonbon/other"} {
+	for _, version := range []string{protocol.Version, "bbflow/other"} {
 		t.Run(version, func(t *testing.T) {
 			target, received := fixtureServer(t, version, nil, protocol.Message{Type: "result", Result: json.RawMessage(`{"stopping":true}`)})
 			if err := target.Stop(); err != nil {
@@ -223,7 +223,7 @@ func TestStopRequiresAcknowledgement(t *testing.T) {
 		{Type: "result"},
 		{Type: "result", Result: json.RawMessage(`{"stopping":false}`)},
 	} {
-		target, _ := fixtureServer(t, "bonbon/other", nil, reply)
+		target, _ := fixtureServer(t, "bbflow/other", nil, reply)
 		if err := target.Stop(); err == nil {
 			t.Fatalf("accepted shutdown reply: %+v", reply)
 		}

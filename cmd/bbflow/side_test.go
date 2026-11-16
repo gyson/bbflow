@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/client"
-	"bonbon/internal/protocol"
+	"bbflow/internal/client"
+	"bbflow/internal/protocol"
 )
 
 func sideView(t *testing.T, operation, id string) *sessionView {
@@ -26,7 +26,7 @@ func (c *sessionView) shellID() string {
 
 func sideCall(t *testing.T, request protocol.Request) (map[string]bool, error) {
 	t.Helper()
-	output, err := (client.Target{Dir: os.Getenv("BONBON_DIR")}).Call(request)
+	output, err := (client.Target{Dir: os.Getenv("BBFLOW_DIR")}).Call(request)
 	if err != nil {
 		return nil, err
 	}
@@ -66,9 +66,9 @@ func TestSideTerminalIsSeparateFromTheSession(t *testing.T) {
 
 	// Open starts a shell in the session workspace. The session terminal is not changed.
 	side := sideView(t, "side-terminal-open", id)
-	waitFor(t, func() bool { return strings.Contains(side.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(side.text(), "BBFLOW_SHELL_PROMPT> ") })
 	// A long path wraps on the screen. Compare it in the shell.
-	if _, err = side.Write([]byte("[ \"$(pwd -P)\" = '" + canonical + "' ] && echo IN-\"WORKSPACE\"; echo \"SIDE-$BONBON_SESSION\"\r")); err != nil {
+	if _, err = side.Write([]byte("[ \"$(pwd -P)\" = '" + canonical + "' ] && echo IN-\"WORKSPACE\"; echo \"SIDE-$BBFLOW_SESSION\"\r")); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
@@ -123,7 +123,7 @@ func TestSideTerminalIsSeparateFromTheSession(t *testing.T) {
 	// A request for an ended shell does not join or stop the next shell.
 	first := resumed.shellID()
 	exiting := sideView(t, "side-terminal-open", id)
-	waitFor(t, func() bool { return strings.Contains(exiting.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(exiting.text(), "BBFLOW_SHELL_PROMPT> ") })
 	if first == "" || exiting.shellID() == "" || exiting.shellID() == first {
 		t.Fatalf("shell IDs = %q, then %q", first, exiting.shellID())
 	}
@@ -140,7 +140,7 @@ func TestSideTerminalIsSeparateFromTheSession(t *testing.T) {
 		t.Fatalf("stop of an ended shell = %v, %v", result, err)
 	}
 	current := openSessionView(t, protocol.Request{Operation: "side-terminal-resume", Session: id, Shell: exiting.shellID(), Size: protocol.Size{Rows: 24, Cols: 80}})
-	waitFor(t, func() bool { return strings.Contains(current.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(current.text(), "BBFLOW_SHELL_PROMPT> ") })
 
 	// A shell that exits ends the side terminal.
 	if _, err = exiting.Write([]byte("exit 3\r")); err != nil {
@@ -151,7 +151,7 @@ func TestSideTerminalIsSeparateFromTheSession(t *testing.T) {
 
 	// Archive stops the side terminal. An archived session cannot open one.
 	archived := sideView(t, "side-terminal-open", id)
-	waitFor(t, func() bool { return strings.Contains(archived.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(archived.text(), "BBFLOW_SHELL_PROMPT> ") })
 	if _, err = sideCall(t, protocol.Request{Operation: "session-archive", Session: id, Archived: true}); err != nil {
 		t.Fatal(err)
 	}

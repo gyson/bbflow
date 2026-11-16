@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 // diffServer makes a server with an empty archive.
@@ -403,13 +403,13 @@ func TestWorkspaceChangesUseManagedWorktreeBase(t *testing.T) {
 	repo := diffRepository(t, map[string]string{"a.txt": "a\n", "b.txt": "b\n"})
 	base := fixtureGit(t, repo, "rev-parse", "HEAD")
 	checkout := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-worktree")
-	fixtureGit(t, repo, "worktree", "add", "-q", "-b", "bonbon/fixture", checkout, base)
+	fixtureGit(t, repo, "worktree", "add", "-q", "-b", "bbflow/fixture", checkout, base)
 	t.Cleanup(func() { os.RemoveAll(checkout) })
 	writeFiles(t, checkout, map[string]string{"a.txt": "agent commit\n"})
 	fixtureGit(t, checkout, "commit", "-q", "-am", "agent")
 	writeFiles(t, checkout, map[string]string{"b.txt": "uncommitted\n"})
 	id := diffSession(t, s, checkout)
-	if err := s.store.SaveWorktree(id, history.Worktree{Path: checkout, Repository: repo, Base: "HEAD", Commit: base, Branch: "bonbon/fixture", State: "ready"}); err != nil {
+	if err := s.store.SaveWorktree(id, history.Worktree{Path: checkout, Repository: repo, Base: "HEAD", Commit: base, Branch: "bbflow/fixture", State: "ready"}); err != nil {
 		t.Fatal(err)
 	}
 	changes, err := s.workspaceChanges(context.Background(), id, nil)

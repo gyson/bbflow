@@ -13,20 +13,20 @@ import (
 	"syscall"
 	"time"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/instance"
-	"bonbon/internal/server"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/instance"
+	"bbflow/internal/server"
 )
 
 func serverCommand(target client.Target, args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		fmt.Println("Usage: bonbon [--dir DIR] server start|stop|restart")
+		fmt.Println("Usage: bbflow [--dir DIR] server start|stop|restart")
 		return nil
 	}
 	action := args[0]
 	if action != "start" && action != "stop" && action != "restart" {
-		return errors.New("use bonbon server start|stop|restart")
+		return errors.New("use bbflow server start|stop|restart")
 	}
 	flags := flag.NewFlagSet("server "+action, flag.ContinueOnError)
 	var noMenu bool
@@ -39,12 +39,12 @@ func serverCommand(target client.Target, args []string) error {
 	if flags.NArg() != 0 {
 		return errors.New("server command takes no positional arguments")
 	}
-	if os.Getenv("BONBON_MENUBAR_CHILD") == "1" {
-		os.Unsetenv("BONBON_MENUBAR_CHILD")
+	if os.Getenv("BBFLOW_MENUBAR_CHILD") == "1" {
+		os.Unsetenv("BBFLOW_MENUBAR_CHILD")
 		return runMenuBarChild(target)
 	}
-	if os.Getenv("BONBON_SERVER_CHILD") == "1" {
-		os.Unsetenv("BONBON_SERVER_CHILD")
+	if os.Getenv("BBFLOW_SERVER_CHILD") == "1" {
+		os.Unsetenv("BBFLOW_SERVER_CHILD")
 		return serve(target, noMenu)
 	}
 	if err := os.MkdirAll(target.Dir, 0700); err != nil {
@@ -63,6 +63,11 @@ func serverCommand(target client.Target, args []string) error {
 		return fmt.Errorf("another server lifecycle command is in progress: %w", err)
 	}
 	defer unlock()
+	if action != "stop" {
+		if err = checkBonBonHistory(target); err != nil {
+			return err
+		}
+	}
 	if action == "stop" || action == "restart" {
 		if err = stopServer(target); err != nil {
 			return err
@@ -114,7 +119,7 @@ func serve(target client.Target, noMenu bool) error {
 	if !noMenu {
 		menu, err = launchMenuBar(target)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "BonBon menu bar unavailable:", err)
+			fmt.Fprintln(os.Stderr, "bbflow menu bar unavailable:", err)
 		}
 	}
 	return server.Serve(ctx, listener, store)
@@ -127,7 +132,7 @@ func startServer(target client.Target, noMenu bool) error {
 		if err != nil {
 			return fmt.Errorf("a server owns %s but cannot be verified: %w", target.Dir, err)
 		}
-		fmt.Printf("BonBon is already running at http://127.0.0.1:%d/ (PID %d).\n", info.Port, info.PID)
+		fmt.Printf("bbflow is already running at http://127.0.0.1:%d/ (PID %d).\n", info.Port, info.PID)
 		return nil
 	}
 	if err != nil {
@@ -152,7 +157,7 @@ func startServer(target client.Target, noMenu bool) error {
 	if noMenu {
 		cmd.Args = append(cmd.Args, "--no-menubar")
 	}
-	cmd.Env = append(os.Environ(), "BONBON_SERVER_CHILD=1")
+	cmd.Env = append(os.Environ(), "BBFLOW_SERVER_CHILD=1")
 	cmd.Dir = target.Dir
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -168,7 +173,7 @@ func startServer(target client.Target, noMenu bool) error {
 		default:
 		}
 		if info, err := target.Health(); err == nil && info.PID == cmd.Process.Pid && info.DataDir == target.Dir {
-			fmt.Printf("BonBon is running at http://127.0.0.1:%d/ (PID %d).\nHistory: %s\nLogs: %s\n", info.Port, info.PID, target.Dir, logPath)
+			fmt.Printf("bbflow is running at http://127.0.0.1:%d/ (PID %d).\nHistory: %s\nLogs: %s\n", info.Port, info.PID, target.Dir, logPath)
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -192,7 +197,7 @@ func stopServer(target client.Target) error {
 		if err = instance.Remove(target.Dir); err != nil {
 			return err
 		}
-		fmt.Printf("No BonBon server is running in %s.\n", target.Dir)
+		fmt.Printf("No bbflow server is running in %s.\n", target.Dir)
 		return nil
 	}
 	if !errors.Is(err, syscall.EWOULDBLOCK) {
@@ -204,7 +209,7 @@ func stopServer(target client.Target) error {
 	if err = waitServerRelease(target); err != nil {
 		return err
 	}
-	fmt.Printf("Stopped BonBon in %s.\n", target.Dir)
+	fmt.Printf("Stopped bbflow in %s.\n", target.Dir)
 	return nil
 }
 

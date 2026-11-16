@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/24';
+export const VERSION = 'bbflow/24';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -15,7 +15,7 @@ export interface ServerInfo {
 
 export interface Project { id: string; name: string; workspace: string; created: string }
 
-// A continue command contains {prompt} once. BonBon puts the quoted handoff prompt there.
+// A continue command contains {prompt} once. bbflow puts the quoted handoff prompt there.
 export interface Tool { id: string; name: string; command: string; continueCommand?: string }
 export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[] }
 export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }
@@ -27,7 +27,7 @@ export interface TerminalInfo { number: number; run: string; tool: string; statu
 // status is the session status that the server derives. run.status is the stored status
 // of the latest run.
 export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; status: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
-// BonBon writes the handoff folder before it starts a new terminal in an ended session.
+// bbflow writes the handoff folder before it starts a new terminal in an ended session.
 // available means that the folder has a README, so the prompt can be used now.
 export interface Handoff { folder: string; prompt: string; available: boolean }
 export interface RepositoryInfo { available: boolean; root: string; head: string; branch: string; reason: string }

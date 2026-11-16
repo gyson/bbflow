@@ -10,8 +10,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 	xterm "github.com/gitpod-io/xterm-go"
 )
 
@@ -139,7 +139,7 @@ func TestBrowserFrames(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "../../web/testdata/server-frames.json"
-	if os.Getenv("BONBON_UPDATE_FIXTURES") == "1" {
+	if os.Getenv("BBFLOW_UPDATE_FIXTURES") == "1" {
 		if err := os.WriteFile(path, data, 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -149,7 +149,7 @@ func TestBrowserFrames(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(data, saved) {
-		t.Fatal("browser frame fixture is stale; run BONBON_UPDATE_FIXTURES=1 go test ./internal/terminal -run TestBrowserFrames")
+		t.Fatal("browser frame fixture is stale; run BBFLOW_UPDATE_FIXTURES=1 go test ./internal/terminal -run TestBrowserFrames")
 	}
 }
 

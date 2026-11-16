@@ -1,4 +1,4 @@
-// Package client connects the CLI to the local BonBon server.
+// Package client connects the CLI to the local bbflow server.
 package client
 
 import (
@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"bonbon/internal/instance"
-	"bonbon/internal/protocol"
+	"bbflow/internal/instance"
+	"bbflow/internal/protocol"
 	"github.com/gorilla/websocket"
 )
 
@@ -33,7 +33,7 @@ func (t Target) open() (*protocol.Conn, protocol.ServerInfo, error) {
 	}
 	saved, err := instance.Read(directory)
 	if err != nil {
-		return nil, info, fmt.Errorf("read BonBon instance %s (run bonbon --dir %q server start first): %w", directory, directory, err)
+		return nil, info, fmt.Errorf("read bbflow instance %s (run bbflow --dir %q server start first): %w", directory, directory, err)
 	}
 	saved.DataDir = directory
 	return openServer(saved)
@@ -50,14 +50,14 @@ func openServer(saved protocol.ServerInfo) (*protocol.Conn, protocol.ServerInfo,
 	dialer := websocket.Dialer{HandshakeTimeout: time.Second}
 	conn, _, err := dialer.Dial("ws://"+address+protocol.Path, nil)
 	if err != nil {
-		return nil, info, fmt.Errorf("connect to BonBon in %s: %w", saved.DataDir, err)
+		return nil, info, fmt.Errorf("connect to bbflow in %s: %w", saved.DataDir, err)
 	}
 	wire := protocol.Wrap(conn)
 	wire.SetReadDeadline(time.Now().Add(time.Second))
 	reply, err := wire.Receive()
 	if err == nil {
 		if reply.Type != "server" || reply.Server == nil || reply.Server.Protocol == "" {
-			err = fmt.Errorf("%w: invalid BonBon server greeting", ErrServerVerification)
+			err = fmt.Errorf("%w: invalid bbflow server greeting", ErrServerVerification)
 		} else if reply.Server.DataDir != saved.DataDir || reply.Server.Instance != saved.Instance || reply.Server.Port != saved.Port || reply.Server.Protocol != saved.Protocol || reply.Server.PID != saved.PID {
 			err = fmt.Errorf("%w: server identity does not match the expected instance", ErrServerVerification)
 		} else {
@@ -98,7 +98,7 @@ func (t Target) openCurrent() (*protocol.Conn, protocol.ServerInfo, error) {
 	conn, info, err := t.open()
 	if err == nil && info.Protocol != protocol.Version {
 		conn.Close()
-		return nil, info, fmt.Errorf("%w: server uses %s, client uses %s; run bonbon --dir %q server restart", ErrServerVerification, info.Protocol, protocol.Version, t.Dir)
+		return nil, info, fmt.Errorf("%w: server uses %s, client uses %s; run bbflow --dir %q server restart", ErrServerVerification, info.Protocol, protocol.Version, t.Dir)
 	}
 	return conn, info, err
 }

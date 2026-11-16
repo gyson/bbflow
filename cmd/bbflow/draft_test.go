@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 func TestDraftWatchSyncsEveryView(t *testing.T) {

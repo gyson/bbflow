@@ -729,7 +729,7 @@ async function showWelcome(): Promise<void> {
   sessionSplit.setEnabled(false);
   $('session-view').hidden = true;
   $('welcome').hidden = false;
-  heading('Your workspace', 'BonBon');
+  heading('Your workspace', 'bbflow');
   $('workspace').textContent = 'A home for your terminal sessions.';
   $('status').hidden = true;
   history.replaceState(null, '', homePath);
@@ -932,7 +932,7 @@ async function initialize() {
     const response = await fetch('/client-config', { cache: 'no-store' });
     if (!response.ok) throw new Error('Cannot read the local server configuration.');
     const info = await response.json() as ServerInfo;
-    if (info.protocol !== VERSION) throw new Error('Unsupported server protocol. Rebuild and restart BonBon.');
+    if (info.protocol !== VERSION) throw new Error('Unsupported server protocol. Rebuild and restart bbflow.');
     server = info;
     $('instance-dir').textContent = server.dataDir;
     $('instance-dir').title = server.dataDir;

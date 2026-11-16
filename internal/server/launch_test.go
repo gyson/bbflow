@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 func TestProjectDraftsAreIndependentAndCommandsComeFromSettings(t *testing.T) {
@@ -328,7 +328,7 @@ func TestGitCapabilityLinkedCheckoutAndInvalidBase(t *testing.T) {
 	if err = s.removeWorktree(ctx, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(launched.Worktree.Branch, "bonbon/") {
+	if !strings.HasPrefix(launched.Worktree.Branch, "bbflow/") {
 		t.Fatal(launched.Worktree)
 	}
 }

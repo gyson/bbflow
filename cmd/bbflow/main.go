@@ -7,40 +7,42 @@ import (
 	"os"
 	"path/filepath"
 
-	"bonbon/internal/client"
+	"bbflow/internal/client"
 )
 
 const usage = `Usage:
-  bonbon --version
-  bonbon update
-  bonbon [--dir DIR] server start|stop|restart
-  bonbon [--dir DIR] ui
-  bonbon [--dir DIR] query SQL
-  bonbon skill
+  bbflow --version
+  bbflow update
+  bbflow [--dir DIR] server start|stop|restart
+  bbflow [--dir DIR] ui
+  bbflow [--dir DIR] query SQL
+  bbflow [--dir DIR] migrate [--from DIR]
+  bbflow skill
 
---dir selects a BonBon instance, not the agent's working directory.
-Start the server with bonbon server start, then open bonbon ui.
+--dir selects a bbflow instance, not the agent's working directory.
+Start the server with bbflow server start, then open bbflow ui.
 Create and manage interactive shell sessions in the web UI.
 Closing a browser view leaves its session running.
-Agents: run bonbon skill to learn how to read sessions and recorded history.`
+Agents: run bbflow skill to learn how to read sessions and recorded history.
+bbflow was named BonBon. Run bbflow migrate once to copy BonBon history.`
 
 // Local builds use development storage. The release target sets this at link time.
-var instanceDirName = ".bonbon-dev"
+var instanceDirName = ".bbflow-dev"
 
 // Release builds set the version from their tag.
 var version = "dev"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil && !errors.Is(err, flag.ErrHelp) {
-		fmt.Fprintln(os.Stderr, "bonbon:", err)
+		fmt.Fprintln(os.Stderr, "bbflow:", err)
 		os.Exit(1)
 	}
 }
 
 func run(args []string) error {
-	flags := flag.NewFlagSet("bonbon", flag.ContinueOnError)
+	flags := flag.NewFlagSet("bbflow", flag.ContinueOnError)
 	flags.Usage = func() { fmt.Println(usage) }
-	directory := flags.String("dir", defaultInstanceDir(), "BonBon instance directory")
+	directory := flags.String("dir", defaultInstanceDir(), "bbflow instance directory")
 	showVersion := flags.Bool("version", false, "Print the executable version")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -50,7 +52,7 @@ func run(args []string) error {
 		if len(args) != 0 {
 			return errors.New("--version takes no command or arguments")
 		}
-		fmt.Println("bonbon", version)
+		fmt.Println("bbflow", version)
 		return nil
 	}
 	if len(args) == 0 || args[0] == "help" {
@@ -75,13 +77,15 @@ func run(args []string) error {
 		return ui(target, args[1:])
 	case "query":
 		return query(target, args[1:])
+	case "migrate":
+		return migrateCommand(target, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}
 }
 
 func defaultInstanceDir() string {
-	if directory := os.Getenv("BONBON_DIR"); directory != "" {
+	if directory := os.Getenv("BBFLOW_DIR"); directory != "" {
 		return directory
 	}
 	home, _ := os.UserHomeDir()

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 func preparationConfig(p history.Preparation) protocol.PreparationConfig {
@@ -19,7 +19,7 @@ func preparationConfig(p history.Preparation) protocol.PreparationConfig {
 
 func projectStartRequest(t *testing.T, project, title string, size protocol.Size) protocol.Request {
 	t.Helper()
-	target := client.Target{Dir: os.Getenv("BONBON_DIR")}
+	target := client.Target{Dir: os.Getenv("BBFLOW_DIR")}
 	data, err := target.Call(protocol.Request{Operation: "project-draft", Project: project})
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func shellStartRequest(t *testing.T, workspace, title string, size protocol.Size
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := client.Target{Dir: os.Getenv("BONBON_DIR")}
+	target := client.Target{Dir: os.Getenv("BBFLOW_DIR")}
 	data, err := target.Call(protocol.Request{Operation: "project-list"})
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func TestProjectDraftSurvivesRestartAndBecomesSession(t *testing.T) {
 		t.Fatal("lost project composition", composer)
 	}
 	view := openSessionView(t, protocol.Request{Operation: "session-start", Session: restored.ID, Revision: restored.Preparation.Revision, Size: protocol.Size{Rows: 24, Cols: 80}})
-	waitFor(t, func() bool { return strings.Contains(view.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(view.text(), "BBFLOW_SHELL_PROMPT> ") })
 	var next history.Session
 	rpc(protocol.Request{Operation: "project-draft", Project: first.ID}, &next)
 	if next.ID == original.ID || next.Title != "" || next.Run != nil {

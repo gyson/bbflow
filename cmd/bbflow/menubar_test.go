@@ -9,15 +9,15 @@ import (
 	"syscall"
 	"testing"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/instance"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/instance"
 )
 
 // Replace AppKit for lifecycle tests that run without a graphical login. Use the real
 // inherited pipe, child process, server, and archive shutdown.
 func menuBarFixture() {
-	log, err := os.OpenFile(os.Getenv("BONBON_TEST_MENU_HELPER"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	log, err := os.OpenFile(os.Getenv("BBFLOW_TEST_MENU_HELPER"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -43,7 +43,7 @@ func TestMenuFollowsServerLifecycle(t *testing.T) {
 		t.Skip("automatic menu is macOS only")
 	}
 	path := filepath.Join(t.TempDir(), "menu-events")
-	t.Setenv("BONBON_TEST_MENU_HELPER", path)
+	t.Setenv("BBFLOW_TEST_MENU_HELPER", path)
 	directory := t.TempDir()
 	startTestServer(t, directory)
 	waitFor(t, func() bool { return strings.HasPrefix(menuEvents(t, path), "start ") })
@@ -72,7 +72,7 @@ func TestMenuQuitFinalizesActiveSession(t *testing.T) {
 		t.Skip("automatic menu is macOS only")
 	}
 	path := filepath.Join(t.TempDir(), "menu-events")
-	t.Setenv("BONBON_TEST_MENU_HELPER", path)
+	t.Setenv("BBFLOW_TEST_MENU_HELPER", path)
 	directory := t.TempDir()
 	startTestServer(t, directory)
 	c := launchAgent(t, t.TempDir(), "wait")
@@ -111,7 +111,7 @@ func TestMenuPipeClosesAfterServerCrash(t *testing.T) {
 		t.Skip("automatic menu is macOS only")
 	}
 	path := filepath.Join(t.TempDir(), "menu-events")
-	t.Setenv("BONBON_TEST_MENU_HELPER", path)
+	t.Setenv("BBFLOW_TEST_MENU_HELPER", path)
 	directory := t.TempDir()
 	startTestServer(t, directory)
 	waitFor(t, func() bool { return strings.HasPrefix(menuEvents(t, path), "start ") })
@@ -158,7 +158,7 @@ func TestMenuQuitLeavesReplacementConnectionFile(t *testing.T) {
 
 func TestServerCanStartWithoutMenu(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "menu-events")
-	t.Setenv("BONBON_TEST_MENU_HELPER", path)
+	t.Setenv("BBFLOW_TEST_MENU_HELPER", path)
 	directory := t.TempDir()
 	t.Cleanup(func() { testCommand("--dir", directory, "server", "stop").Run() })
 	if output, err := testCommand("--dir", directory, "server", "start", "--no-menubar").CombinedOutput(); err != nil {

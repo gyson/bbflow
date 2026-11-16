@@ -3,10 +3,10 @@
 VERSION ?= dev
 
 build: web-build
-	CGO_ENABLED=0 go build -trimpath -o bin/bonbon ./cmd/bonbon
+	CGO_ENABLED=0 go build -trimpath -o bin/bbflow ./cmd/bbflow
 
 release: web-build
-	CGO_ENABLED=0 go build -trimpath -ldflags '-X main.instanceDirName=.bonbon -X main.version=$(VERSION)' -o bin/release/bonbon ./cmd/bonbon
+	CGO_ENABLED=0 go build -trimpath -ldflags '-X main.instanceDirName=.bbflow -X main.version=$(VERSION)' -o bin/release/bbflow ./cmd/bbflow
 
 release-assets: web-build
 	sh scripts/package-release.sh '$(VERSION)'

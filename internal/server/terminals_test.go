@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
-	agent "bonbon/internal/runtime"
-	"bonbon/internal/terminal"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
+	agent "bbflow/internal/runtime"
+	"bbflow/internal/terminal"
 )
 
 func TestTerminalsListEachTerminalWithItsTool(t *testing.T) {
@@ -16,7 +16,7 @@ func TestTerminalsListEachTerminalWithItsTool(t *testing.T) {
 	if terminals, err := s.terminals(session.ID); err != nil || len(terminals) != 0 {
 		t.Fatal(terminals, err)
 	}
-	// BonBon 0.0.4 and earlier wrote no tool. The first run then uses the preparation.
+	// bbflow 0.0.4 and earlier wrote no tool. The first run then uses the preparation.
 	first := recordRun(t, s, session.ID, map[string]any{}, "first\r\n", "exited", true)
 	second := recordRun(t, s, session.ID, map[string]any{"tool": "Agent", "continues": first.ID}, "second\r\n", "stopped", true)
 	want := []protocol.Terminal{

@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
-	agent "bonbon/internal/runtime"
-	"bonbon/internal/terminal"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
+	agent "bbflow/internal/runtime"
+	"bbflow/internal/terminal"
 )
 
 // The server owns the active session. Attachments are replaceable views. Their

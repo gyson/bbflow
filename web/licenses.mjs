@@ -37,7 +37,7 @@ export async function licenseNotices(packages) {
   async function add(label, path) {
     notices.push(`${label}\n\n${await readFile(path, 'utf8')}`);
   }
-  await add('BonBon — MIT License', join(root, 'LICENSE'));
+  await add('bbflow — MIT License', join(root, 'LICENSE'));
   for (const { name, directory } of packages) {
     const paths = (await readdir(directory, { withFileTypes: true }))
       .filter(entry => entry.isFile() && /^(licen[cs]e|notice|copying)([.-].*)?$/i.test(entry.name))

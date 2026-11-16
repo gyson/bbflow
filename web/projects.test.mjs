@@ -4,10 +4,10 @@ import { sessionGroups } from './dist/projects.js';
 
 const projects = [
   { id: 'general', name: 'General', workspace: '/instance/workspaces/general' },
-  { id: 'repo', name: 'BonBon', workspace: '/work/bonbon' },
+  { id: 'repo', name: 'bbflow', workspace: '/work/bbflow' },
 ];
 const sessions = [
-  { id: 'a', projectId: 'repo', title: 'Authentication', workspace: '/work/bonbon' },
+  { id: 'a', projectId: 'repo', title: 'Authentication', workspace: '/work/bbflow' },
   { id: 'b', projectId: 'general', title: 'Research', workspace: '/instance/workspaces/general' },
   { id: 'c', projectId: '', title: 'Scratch', workspace: '/work/scratch' },
 ];

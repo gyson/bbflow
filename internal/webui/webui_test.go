@@ -28,7 +28,7 @@ func TestPagePaths(t *testing.T) {
 			t.Errorf("GET %s: status %d, want %d", path, recorder.Code, want)
 			continue
 		}
-		if want == http.StatusOK && (!strings.Contains(recorder.Body.String(), "<title>BonBon</title>") ||
+		if want == http.StatusOK && (!strings.Contains(recorder.Body.String(), "<title>bbflow</title>") ||
 			!strings.Contains(recorder.Body.String(), `data-appearance="dark"`)) {
 			t.Errorf("GET %s did not serve the dark UI page", path)
 		}

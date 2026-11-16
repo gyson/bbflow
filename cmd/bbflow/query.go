@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"bonbon/internal/client"
-	"bonbon/internal/protocol"
+	"bbflow/internal/client"
+	"bbflow/internal/protocol"
 )
 
 func query(target client.Target, args []string) error {
@@ -16,7 +16,7 @@ func query(target client.Target, args []string) error {
 		return err
 	}
 	if flags.NArg() != 1 {
-		return errors.New("provide one quoted SQL query, for example: bonbon query \"SELECT * FROM sessions\"")
+		return errors.New("provide one quoted SQL query, for example: bbflow query \"SELECT * FROM sessions\"")
 	}
 	result, err := target.Call(protocol.Request{Operation: "query", SQL: flags.Arg(0)})
 	if err != nil {

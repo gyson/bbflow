@@ -240,7 +240,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 		name, schema, message string
 	}{
 		{"prototype", "CREATE TABLE evidence (data BLOB); INSERT INTO evidence VALUES(X'0001FF'); PRAGMA user_version=2", "unsupported history format 2"},
-		{"future", fmt.Sprintf("CREATE TABLE evidence (data BLOB); INSERT INTO evidence VALUES(X'0001FF'); PRAGMA user_version=%d", schemaVersion+1), "use a newer BonBon executable"},
+		{"future", fmt.Sprintf("CREATE TABLE evidence (data BLOB); INSERT INTO evidence VALUES(X'0001FF'); PRAGMA user_version=%d", schemaVersion+1), "use a newer bbflow executable"},
 		{"unversioned", "CREATE TABLE evidence (data BLOB); INSERT INTO evidence VALUES(X'0001FF')", "unrecognized unversioned"},
 		{"view-only", "CREATE VIEW evidence AS SELECT 1", "unrecognized unversioned"},
 	} {

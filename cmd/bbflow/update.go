@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"runtime"
 
-	"bonbon/internal/install"
+	"bbflow/internal/install"
 )
 
 func update(args []string) error {
 	flags := flag.NewFlagSet("update", flag.ContinueOnError)
 	flags.Usage = func() {
-		fmt.Println("Usage: bonbon update\n\nInstall the latest BonBon release. Running sessions continue.\nRestart the server when ready to use the new version; restarting ends active sessions.")
+		fmt.Println("Usage: bbflow update\n\nInstall the latest bbflow release. Running sessions continue.\nRestart the server when ready to use the new version; restarting ends active sessions.")
 	}
 	if err := flags.Parse(args); err != nil {
 		return err

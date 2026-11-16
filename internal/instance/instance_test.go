@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"bonbon/internal/protocol"
+	"bbflow/internal/protocol"
 )
 
 func TestShutdownPreservesReplacementDescriptor(t *testing.T) {

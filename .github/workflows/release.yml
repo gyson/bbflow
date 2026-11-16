@@ -31,7 +31,7 @@ jobs:
           version=${RELEASE_TAG#v}
           printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           make release VERSION="$version"
-          sh scripts/smoke-release.sh "$PWD/bin/release/bonbon" "$version"
+          sh scripts/smoke-release.sh "$PWD/bin/release/bbflow" "$version"
 
   publish:
     needs: validate
@@ -57,5 +57,5 @@ jobs:
           test -f "docs/releases/$version.md"
           make release-assets VERSION="$version"
           gh release create "$RELEASE_TAG" "bin/releases/$RELEASE_TAG/"* \
-            --verify-tag --title "BonBon $version" --latest \
+            --verify-tag --title "bbflow $version" --latest \
             --notes-file "docs/releases/$version.md"

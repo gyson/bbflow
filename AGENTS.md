@@ -1,6 +1,6 @@
-# Working on BonBon
+# Working on bbflow
 
-BonBon aims to provide a desktop workspace for multiple agent CLI tools. Conversations
+bbflow aims to provide a desktop workspace for multiple agent CLI tools. Conversations
 and history must remain available across agent switches, forks, worktrees, and imports
 from other applications.
 
@@ -33,7 +33,7 @@ ASD-STE100 conformance without a review against the complete standard and dictio
 
 ## Development stage
 
-BonBon is in daily use. Existing databases must remain usable after upgrades. Commands
+bbflow is in daily use. Existing databases must remain usable after upgrades. Commands
 and APIs may still change, but durable data needs a supported migration path.
 
 - Prefer clean, readable code for the current web workflow.
@@ -52,18 +52,21 @@ and APIs may still change, but durable data needs a supported migration path.
   schemas. Test upgrades, reopen, rollback, and concurrent opens.
 - Reject unknown and newer database formats without changes to their contents. Document
   the supported range and upgrade behavior. Never require a fresh database for a
-  supported upgrade. BonBon does not support database downgrades.
+  supported upgrade. bbflow does not support database downgrades.
 
 ## Start here
 
-- Use BonBon for the product name and `bonbon` for the CLI command and executable.
+- Use bbflow for the product name and `bbflow` for the CLI command and executable.
+- bbflow was named BonBon. BonBon 0.0.7 is the last BonBon release. Keep `bbflow migrate`
+  able to copy every BonBon history format. Use the BonBon name only for that migration,
+  released migrations, frozen fixtures, and earlier release notes.
 - Read [docs/GOAL.md](docs/GOAL.md) for what the project is intended to become.
 - Read [docs/SPEC.md](docs/SPEC.md) for what is currently implemented.
-- Update [docs/COMMANDS.md](docs/COMMANDS.md) when BonBon commands, options, defaults,
-  or their effects change. This reference covers `bonbon` commands only. Keep developer
+- Update [docs/COMMANDS.md](docs/COMMANDS.md) when bbflow commands, options, defaults,
+  or their effects change. This reference covers `bbflow` commands only. Keep developer
   build and test commands in the README. Clearly identify unavailable commands.
-- Update `cmd/bonbon/skill.md` when the archive tables, event kinds, or `bonbon query`
-  behavior change. `bonbon skill` prints this guide for agents.
+- Update `cmd/bbflow/skill.md` when the archive tables, event kinds, or `bbflow query`
+  behavior change. `bbflow skill` prints this guide for agents.
 - Keep product intent in `GOAL.md` and planned implementation work in
   [docs/PLAN.md](docs/PLAN.md). Keep `SPEC.md` limited to implemented behavior,
   architecture, interfaces, and verified limitations. Do not put proposals or plans
@@ -93,7 +96,7 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   `internal/webui/dist`. Go embeds this directory.
 - Never commit generated files or copied vendor assets. Commit the npm lockfile. See the
   README for direct Go commands.
-- Keep the main logo and menu bar icon in sync through `web/src/bonbon.svg`. The
+- Keep the main logo and menu bar icon in sync through `web/src/bbflow.svg`. The
   frontend build uses `@resvg/resvg-js` to render the embedded template PNG. Commit the
   SVG source, not the generated image.
 - New sessions always use the server environment. Launch an interactive shell with
@@ -108,8 +111,8 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 - Keep General and custom project metadata in SQLite. Projects supply launch defaults.
   Sessions retain their actual workspace path. Project removal must preserve session
   history, files, and processes.
-- Build with `make build`. Start the server with `./bin/bonbon server start`. Open
-  `./bin/bonbon ui`.
+- Build with `make build`. Start the server with `./bin/bbflow server start`. Open
+  `./bin/bbflow ui`.
 - Click ＋ beside a project to create a new draft entry. Choose a tool or Shell. Select
   an optional worktree. Click Start session. Edit startup commands only in Settings.
 - After the latest terminal of a session ends, use Continue in new terminal. It starts a
@@ -121,16 +124,16 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   Stop session action to stop work. Archive hides drafts or finished sessions. Archived
   lets users find and restore them. Each session has one saved message editor. All views
   of a session show its latest saved draft.
-- Use `./bin/bonbon ui` to open the running instance's home page in the default browser.
+- Use `./bin/bbflow ui` to open the running instance's home page in the default browser.
   It uses the same instance selection and server verification as other clients.
 - On macOS, server start also launches a menu companion from the same executable. The
-  menu shows Open UI and Quit BonBon with a separator between them. The Quit BonBon
-  label includes the running version. Quit BonBon stops the server and its sessions.
+  menu shows Open UI and Quit bbflow with a separator between them. The Quit bbflow
+  label includes the running version. Quit bbflow stops the server and its sessions.
 - Use `server start --no-menubar` for headless checks. Automated runtime tests disable
   native menus. A separate helper uses a pipe to test the companion lifecycle. Keep menu
   code in macOS-specific Go files and retain `CGO_ENABLED=0` builds.
-- Local builds use `~/.bonbon-dev`. `make release` produces `bin/release/bonbon`, which
-  uses `~/.bonbon`. Each instance gets an automatically allocated loopback port. Keep
+- Local builds use `~/.bbflow-dev`. `make release` produces `bin/release/bbflow`, which
+  uses `~/.bbflow`. Each instance gets an automatically allocated loopback port. Keep
   development and production data separate by default. Tests must use temporary data
   directories.
 - Package tagged macOS releases with `make release-assets VERSION=X.Y.Z`. Keep the
@@ -139,12 +142,12 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   required by `go.mod`.
 - The installer uses curl and built-in macOS tools, with optional GitHub API
   authentication. Never require GitHub CLI. Keep initial installation and
-  `bonbon update` on the same embedded installer under `internal/install`. Updates
+  `bbflow update` on the same embedded installer under `internal/install`. Updates
   replace the invoked executable and never restart sessions.
 - Use synthetic releases for installer tests. Use temporary installation and instance
   directories for live install checks. See the README for release publishing and
   validation commands.
-- Use global `--dir` or `BONBON_DIR` to select the instance for every command. Clients
+- Use global `--dir` or `BBFLOW_DIR` to select the instance for every command. Clients
   read `server.json` and verify the connected server before sending operations. They do
   not open SQLite directly. The instance directory is separate from the agent workspace.
 - Stop all temporary development servers and agent processes created for validation
@@ -166,7 +169,7 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 - Keep source terminal parsing and query replies in the server. Clients receive rendered
   frames and acknowledge them. Keep the lossless recording separate from display
   updates.
-- Keep the web client thin and session operations in the server. Do not add a BonBon CLI
+- Keep the web client thin and session operations in the server. Do not add a bbflow CLI
   terminal client or session commands. Keep process ownership and durable history in the
   server. Keep a future desktop shell separate.
 - Make daily work with existing CLI agents comfortable. Support conversation changes,
@@ -187,10 +190,10 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 
 Use this guidance when you implement these features. It does not describe existing code.
 
-- Keep BonBon conversation IDs independent of native CLI session and turn IDs.
+- Keep bbflow conversation IDs independent of native CLI session and turn IDs.
 - Separate runtime adapters, history importers, workspace management, and context
   preparation.
-- Use one history service for desktop search, MCP tools, and the BonBon CLI. Keep those
+- Use one history service for desktop search, MCP tools, and the bbflow CLI. Keep those
   interfaces thin.
 - Model capture and retrieval capabilities independently. Plain terminal output does not
   imply that an agent lacks shell or MCP access.
@@ -214,7 +217,7 @@ added. Preserve them across database upgrades too.
   inferred structure as derived content.
 - A fork inherits a fixed history prefix. Apply its cutoff to search, direct reads,
   surrounding context, attachments, summaries, and inherited memory.
-- `bonbon query` is a general-purpose read-only SQL interface. SQL chooses the scope,
+- `bbflow query` is a general-purpose read-only SQL interface. SQL chooses the scope,
   even inside an agent. Do not add implicit session filters. Future session-aware
   retrieval tools must default to the current session and inherited prefix. Require
   explicit broader scope for additional sessions.
@@ -264,8 +267,8 @@ added. Preserve them across database upgrades too.
 
 ### Data handling
 
-- Keep all durable BonBon data in SQLite, including original records and future
-  BonBon-owned attachments and settings. Logs, locks, and caches must not hold the only
+- Keep all durable bbflow data in SQLite, including original records and future
+  bbflow-owned attachments and settings. Logs, locks, and caches must not hold the only
   copy of product data. Keep data local by default. Future cloud replication requires
   user selection. Enforce explicit scope for agent retrieval.
 - Design durable storage for consistent backup and portable restoration. Include
@@ -291,7 +294,7 @@ added. Preserve them across database upgrades too.
   state preservation.
 - When cloud backup is implemented, verify recovery from the cloud replica with
   synthetic data. Include original bytes, stable references, and any implemented
-  attachments and fork cutoffs. Keep the BonBon core compatible with `CGO_ENABLED=0`.
+  attachments and fork cutoffs. Keep the bbflow core compatible with `CGO_ENABLED=0`.
 - Run checks appropriate to the changed behavior. For documentation-only changes, check
   formatting, links, and consistency. Do not invent application tests.
 - When you add a toolchain, document its setup, development, and validation commands in

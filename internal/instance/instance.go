@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"bonbon/internal/protocol"
+	"bbflow/internal/protocol"
 )
 
 func Read(directory string) (protocol.ServerInfo, error) {

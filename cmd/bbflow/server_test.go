@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"testing"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/instance"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/instance"
 )
 
 func TestServerMigratesArchiveBeforeServingAndRecovery(t *testing.T) {
@@ -70,7 +70,7 @@ func TestServerMigratesArchiveBeforeServingAndRecovery(t *testing.T) {
 
 func testCommand(args ...string) *exec.Cmd {
 	// Runtime fixtures do not need a desktop or a native menu for each instance.
-	if os.Getenv("BONBON_TEST_MENU_HELPER") == "" {
+	if os.Getenv("BBFLOW_TEST_MENU_HELPER") == "" {
 		for i, arg := range args {
 			if arg == "server" && i+1 < len(args) && (args[i+1] == "start" || args[i+1] == "restart") {
 				args = append(append([]string(nil), args...), "--no-menubar")
@@ -80,13 +80,13 @@ func testCommand(args ...string) *exec.Cmd {
 	}
 	executable, _ := os.Executable()
 	cmd := exec.Command(executable, args...)
-	cmd.Env = append(os.Environ(), "BONBON_TEST_CLI=1")
+	cmd.Env = append(os.Environ(), "BBFLOW_TEST_CLI=1")
 	return cmd
 }
 
 func startTestServer(t *testing.T, directory string) string {
 	t.Helper()
-	t.Setenv("BONBON_DIR", directory)
+	t.Setenv("BBFLOW_DIR", directory)
 	t.Cleanup(func() {
 		output, err := testCommand("--dir", directory, "server", "stop").CombinedOutput()
 		if err != nil {

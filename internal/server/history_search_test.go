@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/protocol"
+	"bbflow/internal/protocol"
 )
 
 func TestCancelableReadCancelsWhenClientDisconnects(t *testing.T) {

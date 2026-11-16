@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/instance"
+	"bbflow/internal/instance"
 )
 
 func browserFixture(t *testing.T) string {
@@ -23,13 +23,13 @@ func browserFixture(t *testing.T) string {
 	}
 	directory := t.TempDir()
 	args := filepath.Join(directory, "browser-args")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$BONBON_TEST_BROWSER_ARGS\"\nexit \"${BONBON_TEST_BROWSER_EXIT:-0}\"\n"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$BBFLOW_TEST_BROWSER_ARGS\"\nexit \"${BBFLOW_TEST_BROWSER_EXIT:-0}\"\n"
 	if err := os.WriteFile(filepath.Join(directory, name), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("BONBON_TEST_BROWSER_ARGS", args)
-	t.Setenv("BONBON_TEST_BROWSER_EXIT", "0")
+	t.Setenv("BBFLOW_TEST_BROWSER_ARGS", args)
+	t.Setenv("BBFLOW_TEST_BROWSER_EXIT", "0")
 	return args
 }
 
@@ -39,7 +39,7 @@ func TestUIOpensSelectedInstanceHome(t *testing.T) {
 	port := startTestServer(t, directory)
 	url := "http://127.0.0.1:" + port + "/"
 	// The explicit instance takes priority over an unrelated environment selection.
-	t.Setenv("BONBON_DIR", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("BBFLOW_DIR", filepath.Join(t.TempDir(), "missing"))
 	if output, err := testCommand("--dir", directory, "ui").CombinedOutput(); err != nil || !strings.Contains(string(output), url) {
 		t.Fatalf("ui: %s %v", output, err)
 	}
@@ -48,8 +48,8 @@ func TestUIOpensSelectedInstanceHome(t *testing.T) {
 		t.Fatalf("browser must receive only the home URL: %q %v", args, err)
 	}
 	// Environment selection works too, and launcher failures include the URL.
-	t.Setenv("BONBON_DIR", directory)
-	t.Setenv("BONBON_TEST_BROWSER_EXIT", "1")
+	t.Setenv("BBFLOW_DIR", directory)
+	t.Setenv("BBFLOW_TEST_BROWSER_EXIT", "1")
 	if output, err := testCommand("ui").CombinedOutput(); err == nil || !strings.Contains(string(output), "open "+url+" manually") {
 		t.Fatalf("launcher failure: %s %v", output, err)
 	}
@@ -85,8 +85,8 @@ func TestUIDoesNotOpenUnverifiedServer(t *testing.T) {
 
 func TestUIHelpAndArguments(t *testing.T) {
 	argsPath := browserFixture(t)
-	t.Setenv("BONBON_DIR", t.TempDir())
-	if output, err := testCommand("ui", "--help").CombinedOutput(); err != nil || !strings.Contains(string(output), "Usage: bonbon [--dir DIR] ui") {
+	t.Setenv("BBFLOW_DIR", t.TempDir())
+	if output, err := testCommand("ui", "--help").CombinedOutput(); err != nil || !strings.Contains(string(output), "Usage: bbflow [--dir DIR] ui") {
 		t.Fatalf("help: %s %v", output, err)
 	}
 	for _, args := range [][]string{{"ui", "~/project"}, {"ui", "session-id"}, {"ui", "--unknown"}} {
