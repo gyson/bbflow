@@ -18,7 +18,7 @@ Usage: wait-for-pr.sh review|fix PR --until EPOCH [options]
                       a review starts after the head commit stays the same for
                       this time. Default: 180. Calls with the same PR, role,
                       account, and deadline share this observation through a
-                      file in TMPDIR.
+                      private folder in TMPDIR.
   --max-rounds N      The largest number of review rounds. Default: 5.
   --author LOGIN      The account that posts the round comments. Default: the
                       account of the gh command.
@@ -137,14 +137,48 @@ else
 fi
 failures=0
 # The reviewer waits until a new head commit stays the same for the settle time. Save
-# the observation, so that the next call with the same deadline continues it.
+# the observation in a private folder, so that the next call with the same deadline
+# continues it. Without a usable folder, each call starts a new observation.
 key=$(printf '%s-%s-%s-%s' "$pr" "$role" "$author" "$deadline" | tr -c 'A-Za-z0-9-' '_')
-observation=${TMPDIR:-/tmp}/review-loop-$key
+folder=${TMPDIR:-/tmp}/review-loop-$key
+mkdir -m 700 "$folder" 2>/dev/null || :
+if [ -d "$folder" ] && [ ! -L "$folder" ] && [ -O "$folder" ]; then
+	chmod 700 "$folder" 2>/dev/null || folder=''
+else
+	folder=''
+fi
 seen_head=''
 seen_at=0
-if [ -r "$observation" ]; then
-	read -r seen_head seen_at <"$observation" || :
-	case $seen_head$seen_at in *[!0-9a-f]*) seen_head='' seen_at=0 ;; esac
+
+# Replace the record in one rename, so that a reader never sees part of it.
+save() {
+	[ -n "$folder" ] || return 0
+	record=$(mktemp "$folder/record.XXXXXX" 2>/dev/null) || return 0
+	if printf '%s %s\n' "$seen_head" "$seen_at" >"$record" 2>/dev/null; then
+		mv -f "$record" "$folder/observation" 2>/dev/null || rm -f "$record"
+	else
+		rm -f "$record"
+	fi
+}
+
+forget() {
+	seen_head=''
+	seen_at=0
+	[ -z "$folder" ] || rm -f "$folder/observation"
+}
+
+# Accept only a complete record: a 40-character commit ID and a decimal time.
+if [ -n "$folder" ] && [ -f "$folder/observation" ] && [ ! -L "$folder/observation" ]; then
+	saved_head='' saved_at='' rest=''
+	read -r saved_head saved_at rest <"$folder/observation" 2>/dev/null || :
+	complete=yes
+	case $saved_head in '' | *[!0-9a-f]*) complete=no ;; esac
+	case $saved_at in '' | *[!0-9]*) complete=no ;; esac
+	[ ${#saved_head} -eq 40 ] && [ -z "$rest" ] || complete=no
+	if [ "$complete" = yes ]; then
+		seen_head=$saved_head
+		seen_at=$saved_at
+	fi
 fi
 
 while :; do
@@ -178,13 +212,17 @@ while :; do
 			if [ "$head" != "$seen_head" ]; then
 				seen_head=$head
 				seen_at=$now
-				printf '%s %s\n' "$seen_head" "$seen_at" 2>/dev/null >"$observation" || :
+				save
 			fi
 			if [ $((now - seen_at)) -ge "$settle" ]; then
 				reason=commits
 				[ "$answer" = - ] || reason=ready
 				code=0 text="event=review reason=$reason round=$((round + 1)) head=$head previous=$commit"
 			fi
+		else
+			# The head is the reviewed commit again. A later change needs a new
+			# observation.
+			[ -z "$seen_head" ] || forget
 		fi
 	else
 		failures=$((failures + 1))

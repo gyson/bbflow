@@ -120,8 +120,9 @@ time limit to 10 minutes. If your tool can run a command in the background and t
 when it ends, add `--slice 0`. The script then waits until the deadline in one call.
 
 Use the same deadline for each call of one loop. The reviewer script saves its
-observation of a new head commit in a file in `TMPDIR`. The next call with the same PR,
-role, account, and deadline continues that observation.
+observation of a new head commit in a private folder in `TMPDIR`. The next call with the
+same PR, role, account, and deadline continues that observation. The observation ends
+when the head returns to the reviewed commit.
 
 `event=review` has a `reason`:
 

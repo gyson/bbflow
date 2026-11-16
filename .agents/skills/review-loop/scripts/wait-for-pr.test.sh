@@ -121,6 +121,55 @@ fixture OPEN $C "$review1"
 check 'observation of a new head' 13 'event=waiting' review --until "$deadline" --settle 4 --slice 2
 unset SHARED
 
+# The observation is private to the user. Find its folder from the key of the script.
+folder_of() {
+	printf '%s/review-loop-%s' "$1" "$(printf '%s-%s-%s-%s' 32 review tester "$2" | tr -c 'A-Za-z0-9-' '_')"
+}
+expect() {
+	if eval "$2"; then
+		passed=$((passed + 1))
+	else
+		failed=$((failed + 1))
+		printf 'FAIL %s\n' "$1"
+	fi
+}
+fixture OPEN $B "$review1"
+SHARED=$(mktemp -d "$work/shared.XXXXXX")
+deadline=$(soon)
+folder=$(folder_of "$SHARED" "$deadline")
+check 'observation, private folder' 13 'event=waiting' review --until "$deadline" --settle 30 --slice 1
+expect 'the folder has mode 700' '[ "$(ls -ld "$folder" | cut -c1-10)" = drwx------ ]'
+expect 'the record is complete' 'read -r h t <"$folder/observation" && [ "$h" = $B ] && [ -n "$t" ]'
+# An incomplete record does not start a review immediately.
+printf '%s\n' $B >"$folder/observation"
+check 'observation, record without a time' 13 'event=waiting' review --until "$deadline" --settle 30 --slice 1
+printf '%s 12a\n' $B >"$folder/observation"
+check 'observation, time that is not decimal' 13 'event=waiting' review --until "$deadline" --settle 30 --slice 1
+printf 'bbbbbbb %s\n' 1 >"$folder/observation"
+check 'observation, short commit ID' 13 'event=waiting' review --until "$deadline" --settle 30 --slice 1
+unset SHARED
+
+# A symbolic link at the folder path does not get the record.
+SHARED=$(mktemp -d "$work/shared.XXXXXX")
+deadline=$(soon)
+printf 'keep\n' >"$work/target"
+ln -s "$work/target" "$(folder_of "$SHARED" "$deadline")"
+check 'observation, symbolic link' 13 'event=waiting' review --until "$deadline" --settle 30 --slice 1
+expect 'nothing written through the link' '[ "$(cat "$work/target")" = keep ]'
+unset SHARED
+
+# The observation ends when the head returns to the reviewed commit. Without this, the
+# third call starts a review with the first observation of B.
+SHARED=$(mktemp -d "$work/shared.XXXXXX")
+deadline=$(soon)
+fixture OPEN $B "$review1"
+check 'return to the reviewed commit, first call' 13 'event=waiting' review --until "$deadline" --settle 4 --slice 2
+fixture OPEN $A "$review1"
+check 'return to the reviewed commit, second call' 13 'event=waiting' review --until "$deadline" --settle 4 --slice 1
+fixture OPEN $B "$review1"
+check 'return to the reviewed commit, third call' 13 'event=waiting' review --until "$deadline" --settle 4 --slice 2
+unset SHARED
+
 fixture OPEN $B "$review1" "$reply1" "$lgtm2"
 check 'review done' 10 'event=done round=2' review --until "$(soon)"
 check 'fix done' 10 'event=done round=2' fix --until "$(soon)"
