@@ -43,10 +43,16 @@ export function rebaseDraft(draft: Settings, base: Settings, latest: Settings): 
   const draftTools = new Map(draft.tools.map(tool => [tool.id, tool]));
   const edited = (tool: Tool) => { const old = baseTools.get(tool.id); return !old || toolKey(old) !== toolKey(tool); };
   const tools: Tool[] = [];
+  const pick = <T>(mine: T, old: T, theirs: T): T => mine === old ? theirs : mine;
   for (const tool of latest.tools) {
-    const mine = draftTools.get(tool.id);
-    if (!mine && baseTools.has(tool.id)) continue; // The page removed this tool.
-    tools.push(structuredClone(mine && edited(mine) ? mine : tool));
+    const mine = draftTools.get(tool.id), old = baseTools.get(tool.id);
+    if (!mine && old) continue; // The page removed this tool.
+    if (!mine || !old) { tools.push(structuredClone(mine ?? tool)); continue; }
+    // Apply each field that the page changed. Keep the other fields from latest.
+    const merged: Tool = { id: tool.id, name: pick(mine.name, old.name, tool.name), command: pick(mine.command, old.command, tool.command) };
+    const continueCommand = pick(mine.continueCommand ?? '', old.continueCommand ?? '', tool.continueCommand ?? '');
+    if (continueCommand) merged.continueCommand = continueCommand;
+    tools.push(merged);
   }
   // Keep tools added in the page, and tools edited in the page that latest removed.
   const ids = new Set(tools.map(tool => tool.id));
@@ -60,7 +66,6 @@ export function rebaseDraft(draft: Settings, base: Settings, latest: Settings): 
     const moved = slots.map(index => tools[index]!).sort((a, b) => order.get(a.id)! - order.get(b.id)!);
     slots.forEach((slot, index) => { tools[slot] = moved[index]!; });
   }
-  const pick = <T>(mine: T, old: T, theirs: T): T => mine === old ? theirs : mine;
   let defaultTool = pick(draft.defaultTool, base.defaultTool, latest.defaultTool);
   if (defaultTool && !tools.some(tool => tool.id === defaultTool)) defaultTool = tools.some(tool => tool.id === latest.defaultTool) ? latest.defaultTool : '';
   return {

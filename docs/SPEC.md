@@ -272,7 +272,8 @@ If the server cannot read the settings, the page uses System.
 Settings has no save button. Each change saves automatically to SQLite:
 
 - A select or a checkbox saves when its value changes.
-- A text field saves when it loses focus.
+- A text field saves when it loses focus. A save sends only such committed values. Text
+  that is still in edit stays in the form, also during a retry after a conflict.
 - Add tool changes only the page. Move and Remove save at once.
 - A tool without a name or a command stays only in the page. If it is a saved tool, the
   server keeps its saved version until the row is complete again.
@@ -282,11 +283,13 @@ The heading shows **Saving…**, **All settings saved**, or why a change is not 
 If the server rejects a save, the page saves each changed tool alone. A rejected tool
 keeps its edit and shows the error below its row. The page does not send that edit again
 until the user changes the tool. The other changes save without it. An error that no
-tool causes appears above the cards.
+tool causes appears above the cards. A transport failure holds no tool. Its error
+appears above the cards, and the next change sends all unsaved changes again.
 
 If another view or a `bbflow tool` or `bbflow settings` command saved first, the page
-applies its own changes to the latest settings and saves again. A value or tool that the
-page did not change takes the latest saved value. The page keeps its added, edited,
+applies its own changes to the latest settings and saves again. A value or tool field
+that the page did not change takes the latest saved value. Thus a rename in the page
+keeps a command that another client saved. The page keeps its added, edited,
 removed, and moved tools, including incomplete tools. The heading then shows **All
 settings saved, with changes from another view**. The browser asks before it leaves the
 page with a change that is not saved. Remove has no undo. Drafts and sessions keep their
@@ -1331,8 +1334,9 @@ These shell fixtures do not establish model availability or agent CLI compatibil
 Web fixtures verify the automatic save payload: an unchanged page does not save, an
 incomplete new tool is not saved, a cleared field keeps the saved tool, and a rejected
 tool does not stop other changes. They verify that a rebase after a revision conflict
-keeps page edits, removals, order, and added tools, and takes other values from the
-latest settings.
+keeps page edits field by field, removals, order, and added tools, and takes other
+values from the latest settings. Protocol fixtures verify that a server error reply is
+marked apart from a transport failure.
 
 CLI fixtures run `bbflow tool` and `bbflow settings` against a temporary server. They
 verify that a repeated `tool add` updates the same tool, that removal of the default tool

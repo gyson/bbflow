@@ -77,3 +77,15 @@ test('a rebase keeps page removals, page order, and edits to tools that latest r
   assert.equal(result.defaultTool, '');
   assert.equal(result.appearance, 'light');
 });
+
+test('a rebase applies tool edits field by field', () => {
+  const page = draft({});
+  page.tools[0].name = 'Renamed';
+  const latest = { ...structuredClone(saved), revision: 5 };
+  latest.tools[0].command = 'agent --new';
+  latest.tools[1].continueCommand = 'other --theirs {prompt}';
+  page.tools[1].command = 'other --mine';
+  const result = rebaseDraft(page, saved, latest);
+  assert.deepEqual(result.tools[0], { id: 'a', name: 'Renamed', command: 'agent --new' });
+  assert.deepEqual(result.tools[1], { id: 'b', name: 'Other', command: 'other --mine', continueCommand: 'other --theirs {prompt}' });
+});

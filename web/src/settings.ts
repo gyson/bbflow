@@ -1,10 +1,15 @@
 import { element } from './dom.js';
-import { call, errorMessage } from './protocol.js';
+import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, Tool } from './protocol.js';
 import { rebaseDraft, sameSettings, savePayload, toolComplete, toolKey } from './settings-model.js';
 
 // SettingsView saves each change automatically. A text field saves when it loses focus.
 // Only one save runs at a time. A change during a save starts one more save after it.
+// Saves send only committed values, so a retry never sends text that is still in edit.
+
+// A send result: saved, a rebase after a conflict, a server rejection, or a transport
+// failure. Only a server rejection can hold a tool.
+type SendResult = 'saved' | 'conflict' | { rejected: string } | { failed: string };
 export class SettingsView {
   private readonly panel = element('settings-view', HTMLElement);
   private readonly form = element('settings-form', HTMLFormElement);
@@ -15,9 +20,11 @@ export class SettingsView {
   private readonly base = element('settings-base', HTMLInputElement);
   private readonly error = element('settings-error', HTMLElement);
   private readonly status = element('settings-status', HTMLElement);
-  // saved is the latest server copy. draft is the page state, with incomplete tools.
+  // saved is the latest server copy. draft is the form state, with incomplete tools and
+  // text still in edit. committed is the draft at the last change event or button.
   private saved: Settings | null = null;
   private draft: Settings | null = null;
+  private committed: Settings | null = null;
   // rejected holds tool edits that the server rejected. The page keeps such an edit and
   // does not send it again until the user changes the tool.
   private readonly rejected = new Map<string, { key: string; error: string }>();
@@ -28,15 +35,16 @@ export class SettingsView {
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void) {
     this.form.oninput = () => { this.capture(); this.merged = false; this.showStatus(); };
     this.form.onchange = event => {
-      this.capture();
+      this.commit();
       if (event.target === this.appearance) this.applyAppearance(this.appearance.value);
       void this.save();
     };
-    this.form.onsubmit = event => { event.preventDefault(); this.capture(); void this.save(); };
+    this.form.onsubmit = event => { event.preventDefault(); this.commit(); void this.save(); };
     element('tool-add', HTMLButtonElement).onclick = () => {
       if (!this.draft) return;
       this.capture();
       this.draft.tools.push({ id: crypto.randomUUID(), name: '', command: '' });
+      this.committed = structuredClone(this.draft);
       this.renderTools();
       this.showStatus();
       this.tools.lastElementChild?.querySelector('input')?.focus();
@@ -50,6 +58,7 @@ export class SettingsView {
     if (!this.pending()) {
       const settings = await call(server, { operation: 'settings-get' });
       this.saved = settings;
+      this.committed = structuredClone(settings);
       this.show(structuredClone(settings));
       this.error.hidden = true;
     }
@@ -58,25 +67,24 @@ export class SettingsView {
 
   close(): void { this.panel.hidden = true; }
 
-  // held returns the tools whose current edit the server rejected.
+  // held returns the tools whose committed edit the server rejected.
   private held(): Set<string> {
     const held = new Set<string>();
     for (const [id, entry] of this.rejected) {
-      const tool = this.draft?.tools.find(tool => tool.id === id);
+      const tool = this.committed?.tools.find(tool => tool.id === id);
       if (tool && toolKey(tool) === entry.key) held.add(id); else this.rejected.delete(id);
     }
     return held;
   }
 
   private payload(): Settings | null {
-    return this.draft && this.saved ? savePayload(this.draft, this.saved, this.held()) : null;
+    return this.committed && this.saved ? savePayload(this.committed, this.saved, this.held()) : null;
   }
 
-  // pending is true while the page has a change that the server does not have.
+  // pending is true while the form has a change that the server does not have.
   private pending(): boolean {
-    const payload = this.payload();
-    if (!payload || !this.draft || !this.saved) return false;
-    return this.saving || this.queued || this.held().size > 0 || this.draft.tools.some(tool => !toolComplete(tool)) || !sameSettings(payload, this.saved);
+    if (!this.draft || !this.saved) return false;
+    return this.saving || this.queued || this.held().size > 0 || this.draft.tools.some(tool => !toolComplete(tool)) || !sameSettings(savePayload(this.draft, this.saved), this.saved);
   }
 
   // show puts a draft in the form. It keeps the focus and the cursor of a tool field.
@@ -107,8 +115,13 @@ export class SettingsView {
     else if (this.saving) this.status.textContent = 'Saving…';
     else if (held.size) this.status.textContent = 'A tool has an error. Other changes are saved.';
     else if (this.draft.tools.some(tool => !toolComplete(tool))) this.status.textContent = 'A tool needs a name and a command before it is saved';
-    else if (!sameSettings(payload, this.saved)) this.status.textContent = this.error.hidden ? 'Not saved yet' : 'Not saved';
+    else if (!sameSettings(savePayload(this.draft, this.saved), this.saved)) this.status.textContent = this.error.hidden ? 'Not saved yet' : 'Not saved';
     else this.status.textContent = this.merged ? 'All settings saved, with changes from another view' : 'All settings saved';
+  }
+
+  private commit(): void {
+    this.capture();
+    if (this.draft) this.committed = structuredClone(this.draft);
   }
 
   private capture(): void {
@@ -163,6 +176,7 @@ export class SettingsView {
           this.capture();
           if (!offset) { settings.tools.splice(index, 1); if (settings.defaultTool === preset.id) settings.defaultTool = ''; }
           else { settings.tools.splice(index, 1); settings.tools.splice(index + offset, 0, preset); }
+          this.committed = structuredClone(settings);
           this.renderTools();
           void this.save();
         };
@@ -190,44 +204,48 @@ export class SettingsView {
     }
   }
 
-  // push saves the page. If the server rejects the save, push saves each changed tool
-  // alone. It holds each rejected tool, then saves the other changes without them.
+  // push saves the committed changes. If the server rejects the save, push saves each
+  // changed tool alone. It holds each rejected tool, then saves the other changes
+  // without them. A transport failure holds nothing, so the next change retries all.
   private async push(server: ServerInfo): Promise<void> {
     let payload = this.payload();
     if (!payload || !this.saved) return;
     // The page again matches the server, for example after the user fixes a rejected value.
     if (sameSettings(payload, this.saved)) { this.error.hidden = true; return; }
-    const error = await this.send(server, payload);
-    if (error === null || error === 'conflict') return;
+    const result = await this.send(server, payload);
+    if (typeof result !== 'object') return;
     const before = new Map(this.saved.tools.map(tool => [tool.id, tool]));
     const changed = payload.tools.filter(tool => { const old = before.get(tool.id); return !old || toolKey(old) !== toolKey(tool); });
-    if (!changed.length) { this.showError(error); return; }
+    if ('failed' in result || !changed.length) { this.showError('failed' in result ? result.failed : result.rejected); return; }
     for (const tool of changed) {
       const saved: Settings = this.saved;
       const tools: Tool[] = before.has(tool.id) ? saved.tools.map(old => old.id === tool.id ? tool : old) : [...saved.tools, tool];
-      const result = await this.send(server, { ...saved, tools });
-      if (result === 'conflict') return;
-      if (result !== null) this.rejected.set(tool.id, { key: toolKey(tool), error: result });
+      const probe = await this.send(server, { ...saved, tools });
+      if (probe === 'conflict') return;
+      if (typeof probe === 'object' && 'failed' in probe) { this.showError(probe.failed); return; }
+      if (typeof probe === 'object') this.rejected.set(tool.id, { key: toolKey(tool), error: probe.rejected });
     }
     payload = this.payload();
     if (!payload || sameSettings(payload, this.saved)) return;
-    const result = await this.send(server, payload);
-    if (result !== null && result !== 'conflict') this.showError(result);
+    const rest = await this.send(server, payload);
+    if (typeof rest === 'object') this.showError('failed' in rest ? rest.failed : rest.rejected);
   }
 
-  // send returns null after a save, 'conflict' after it rebased the page on newer
-  // settings from another client, or the error message.
-  private async send(server: ServerInfo, payload: Settings): Promise<string | null> {
+  private async send(server: ServerInfo, payload: Settings): Promise<SendResult> {
     try {
       this.saved = await call(server, { operation: 'settings-save', settings: payload });
       this.error.hidden = true;
-      return null;
+      return 'saved';
     } catch (error) {
+      if (!(error instanceof ConnectionError && error.fromServer)) return { failed: errorMessage(error) };
       const latest = await call(server, { operation: 'settings-get' }).catch(() => null);
-      if (!latest || latest.revision === payload.revision || !this.draft || !this.saved) return errorMessage(error);
+      if (!latest) return { failed: errorMessage(error) };
+      if (latest.revision === payload.revision || !this.draft || !this.committed || !this.saved) return { rejected: errorMessage(error) };
       // Another view or the CLI saved first. Apply the page changes to its settings.
+      // Rebase the form and the committed copy. The retry sends only committed values.
       this.capture();
       const draft = rebaseDraft(this.draft, this.saved, latest);
+      this.committed = rebaseDraft(this.committed, this.saved, latest);
       this.saved = latest;
       this.merged = true;
       this.show(draft);
