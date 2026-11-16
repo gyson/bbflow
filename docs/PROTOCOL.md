@@ -19,9 +19,9 @@ operations and health checks reject unsupported versions. Shutdown uses the veri
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
 
-There is no fallback for previous transports. SQLite format 8 is current. The server
-upgrades formats 3–7 before it accepts requests. Older supported database formats do not
-imply support for their previous WebSocket protocols.
+There is no fallback for previous transports. The server upgrades supported older
+database formats before it accepts requests. These formats do not imply support for
+their previous WebSocket protocols. See [database upgrades](SPEC.md#database-upgrades).
 
 ## Connections and requests
 
@@ -58,7 +58,9 @@ For shutdown, send `stop` with the protocol and instance ID from that verified g
 Require a `result` with `{"stopping":true}`. Wait for release of the archive lock before
 you start a replacement. Do not retry with another protocol or kill a stored PID.
 
-After the greeting, send a `request` message within five seconds:
+HTTP headers and the WebSocket upgrade have five-second timeouts. Server writes time
+out after five seconds. After the greeting, send a `request` message within five
+seconds:
 
 ```json
 {

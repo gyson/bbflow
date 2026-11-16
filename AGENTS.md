@@ -63,7 +63,12 @@ and APIs may still change, but durable data needs a supported migration path.
 - Read [docs/SPEC.md](docs/SPEC.md) for what is currently implemented.
 - Update [docs/COMMANDS.md](docs/COMMANDS.md) when bbflow commands, options, defaults,
   or their effects change. This reference covers `bbflow` commands only. Keep developer
-  build and test commands in the README. Clearly identify unavailable commands.
+  build, test, and release commands in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+  Clearly identify unavailable commands.
+- Keep the README short and for users. It covers the purpose, installation, first use,
+  data handling, and links to the other documents.
+- Give each fact one owner document. Link to that document from the others. Do not copy
+  reference details, such as limits, format numbers, or UI behavior, into the README.
 - Update `cmd/bbflow/skill.md` when the archive tables, event kinds, or `bbflow query`
   behavior change. `bbflow skill` prints this guide for agents.
 - Keep product intent in `GOAL.md` and planned implementation work in
@@ -93,8 +98,8 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   build the frontend before Go. `make web-check` runs frontend fixtures. esbuild bundles
   npm dependencies into one JavaScript file and one CSS file under
   `internal/webui/dist`. Go embeds this directory.
-- Never commit generated files or copied vendor assets. Commit the npm lockfile. See the
-  README for direct Go commands.
+- Never commit generated files or copied vendor assets. Commit the npm lockfile. See
+  `docs/DEVELOPMENT.md` for direct Go commands.
 - Keep the main logo and menu bar icon in sync through `web/src/bbflow.svg`. Keep its
   16-unit pixel grid, so that the 16 px favicon and the 2x menu bar icon stay sharp. When
   you change its shape or colors, update the README copies in `docs/images/` too. The
@@ -146,8 +151,8 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   `bbflow update` on the same embedded installer under `internal/install`. Updates
   replace the invoked executable and never restart sessions.
 - Use synthetic releases for installer tests. Use temporary installation and instance
-  directories for live install checks. See the README for release publishing and
-  validation commands.
+  directories for live install checks. See `docs/DEVELOPMENT.md` for release publishing
+  and validation commands.
 - Use global `--dir` or `BBFLOW_DIR` to select the instance for every command. Clients
   read `server.json` and verify the connected server before sending operations. They do
   not open SQLite directly. The instance directory is separate from the agent workspace.
@@ -159,8 +164,8 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 - Use `go test -race ./...` for concurrent runtime changes. The race detector needs CGO
   for tests. The deployed core does not.
 - PTY tests need permission to create local processes and terminal devices.
-- Read the README for CLI usage and storage details. Backup and restore are deferred to
-  the cloud backup plan.
+- Read `docs/COMMANDS.md` for CLI usage and `docs/SPEC.md` for storage details. Backup
+  and restore are deferred to the cloud backup plan.
 
 ## Product priorities
 
@@ -299,9 +304,10 @@ added. Preserve them across database upgrades too.
 - Run checks appropriate to the changed behavior. For documentation-only changes, check
   formatting, links, and consistency. Do not invent application tests.
 - When you add a toolchain, document its setup, development, and validation commands in
-  the README. Update this file too.
+  `docs/DEVELOPMENT.md`. Update this file too.
 - Keep `GOAL.md` focused on intent, `PLAN.md` on future implementation, `SPEC.md` on
-  current behavior, and this file on contributor guidance.
+  current behavior, `DEVELOPMENT.md` on build, check, and release procedures, and this
+  file on contributor guidance.
 - In the completion report, state what changed, what was verified, and any remaining
   limitations. Distinguish interface inspection, fixture tests, and actual end-to-end
   runs.
