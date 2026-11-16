@@ -7,7 +7,7 @@ import (
 	"os"
 	"sync/atomic"
 
-	"bonbon/internal/webui"
+	"bbflow/internal/webui"
 
 	"github.com/gogpu/systray"
 )
@@ -31,7 +31,7 @@ func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
 	if menuVersion != "" {
 		displayVersion = menuVersion
 	}
-	quitLabel := "Quit BonBon (" + displayVersion + ")"
+	quitLabel := "Quit bbflow (" + displayVersion + ")"
 	var busy atomic.Bool
 	var openItem, quitItem *systray.MenuItem
 	action := func(item *systray.MenuItem, label string, fn func() error, quitting bool) {
@@ -43,7 +43,7 @@ func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
 			openItem.SetDisabled(true)
 			quitItem.SetDisabled(true)
 			if quitting {
-				item.SetLabel("Quitting BonBon…")
+				item.SetLabel("Quitting bbflow…")
 			}
 			err := fn()
 			select {
@@ -52,7 +52,7 @@ func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
 			default:
 			}
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "BonBon menu bar:", err)
+				fmt.Fprintln(os.Stderr, "bbflow menu bar:", err)
 				item.SetLabel(label + " — failed; retry")
 			} else if quitting {
 				return // Keep disabled until the server closes its lifetime pipe.
@@ -67,7 +67,7 @@ func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
 	openItem = menu.Add("Open UI", func() { action(openItem, "Open UI", openUI, false) })
 	menu.AddSeparator()
 	quitItem = menu.Add(quitLabel, func() { action(quitItem, quitLabel, quit, true) })
-	tray.SetTemplateIcon(webui.MenuBarIcon).SetTooltip("BonBon").SetMenu(menu).Show()
+	tray.SetTemplateIcon(webui.MenuBarIcon).SetTooltip("bbflow").SetMenu(menu).Show()
 	finished := make(chan struct{})
 	defer close(finished)
 	go func() {

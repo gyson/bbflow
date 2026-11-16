@@ -46,7 +46,7 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	if version > schemaVersion {
-		return fmt.Errorf("history format %d is newer than this build supports (%d); use a newer BonBon executable; database was not changed", version, schemaVersion)
+		return fmt.Errorf("history format %d is newer than this build supports (%d); use a newer bbflow executable; database was not changed", version, schemaVersion)
 	}
 	if version != 0 && version < oldestSchemaVersion {
 		return fmt.Errorf("unsupported history format %d; supported formats are %d through %d; database was not changed", version, oldestSchemaVersion, schemaVersion)

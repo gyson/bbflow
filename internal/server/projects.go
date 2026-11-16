@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"bonbon/internal/history"
-	agent "bonbon/internal/runtime"
+	"bbflow/internal/history"
+	agent "bbflow/internal/runtime"
 )
 
 func expandWorkspace(workspace string) (string, error) {

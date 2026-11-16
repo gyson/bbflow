@@ -121,7 +121,7 @@ func authorizeQuery(action sqlite3.AuthorizerActionCode, _, function, _, _ strin
 	case sqlite3.AUTH_SELECT, sqlite3.AUTH_READ, sqlite3.AUTH_RECURSIVE:
 		return sqlite3.AUTH_OK
 	case sqlite3.AUTH_FUNCTION:
-		// BonBon installs no file or extension functions. Never allow them here.
+		// bbflow installs no file or extension functions. Never allow them here.
 		switch strings.ToLower(function) {
 		case "load_extension", "readfile", "writefile":
 			return sqlite3.AUTH_DENY

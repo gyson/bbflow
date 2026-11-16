@@ -25,7 +25,7 @@ test('the form prefers the original tool, then the default tool, then Shell', ()
   assert.equal(defaultContinueTool(tools, undefined, 'removed'), '');
 });
 
-test('the hint says when BonBon sends the prompt', () => {
+test('the hint says when bbflow sends the prompt', () => {
   assert.match(continueHint(tools[0]), /submits “codex \{prompt\}” once/);
   assert.match(continueHint(tools[1]), /submits “plain --interactive” and does not send the prompt/);
   assert.match(continueHint(undefined), /submits no command/);

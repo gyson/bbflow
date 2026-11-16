@@ -5,9 +5,9 @@ import (
 	"errors"
 	"path/filepath"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
-	agent "bonbon/internal/runtime"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
+	agent "bbflow/internal/runtime"
 )
 
 func (s *Server) prepareProject(ctx context.Context, projectID string) (history.Session, error) {

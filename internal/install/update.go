@@ -34,8 +34,8 @@ func updateCommand(executable string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
-	if filepath.Base(executable) != "bonbon" {
-		return nil, fmt.Errorf("cannot update a renamed executable: %s; reinstall BonBon instead", executable)
+	if filepath.Base(executable) != "bbflow" {
+		return nil, fmt.Errorf("cannot update a renamed executable: %s; reinstall bbflow instead", executable)
 	}
 	command := exec.Command("/bin/sh", "-s", "--", "--dir", filepath.Dir(executable))
 	command.Stdin = strings.NewReader(script)

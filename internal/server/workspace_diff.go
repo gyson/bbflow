@@ -17,8 +17,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"bonbon/internal/protocol"
-	agent "bonbon/internal/runtime"
+	"bbflow/internal/protocol"
+	agent "bbflow/internal/runtime"
 )
 
 // Limits of the read-only diff and file views. Tests make them smaller.

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 func TestIndependentDraftsArchiveAndRestoreAcrossRestart(t *testing.T) {
@@ -76,7 +76,7 @@ func TestIndependentDraftsArchiveAndRestoreAcrossRestart(t *testing.T) {
 		t.Fatal("restore launched a process", restored)
 	}
 	view := openSessionView(t, protocol.Request{Operation: "session-start", Session: first.ID, Revision: first.Preparation.Revision, Size: protocol.Size{Rows: 24, Cols: 80}})
-	waitFor(t, func() bool { return strings.Contains(view.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(view.text(), "BBFLOW_SHELL_PROMPT> ") })
 	if _, err := target.Call(protocol.Request{Operation: "session-archive", Session: first.ID, Archived: true}); err == nil {
 		t.Fatal("archived active session")
 	}

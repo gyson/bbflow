@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"bonbon/internal/history"
-	agent "bonbon/internal/runtime"
+	"bbflow/internal/history"
+	agent "bbflow/internal/runtime"
 )
 
 type RepositoryInfo struct {
@@ -107,7 +107,7 @@ func (s *Server) createWorktree(ctx context.Context, id, source, base, branch st
 	}
 	name := time.Now().UTC().Format("20060102-150405") + "-" + history.ID()[:8]
 	if branch == "" {
-		branch = "bonbon/" + name
+		branch = "bbflow/" + name
 	}
 	if _, err = git(ctx, repo.Root, "check-ref-format", "--branch", branch); err != nil {
 		return "", w, err

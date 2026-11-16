@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 	xterm "github.com/gitpod-io/xterm-go"
 )
 

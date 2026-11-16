@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/history"
+	"bbflow/internal/history"
 )
 
 func TestProjectWorkspaceResolution(t *testing.T) {

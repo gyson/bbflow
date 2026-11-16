@@ -19,7 +19,7 @@ func TestUpdateCommand(t *testing.T) {
 		want string
 		ok   bool
 	}{
-		{[]string{"--help"}, "Usage: bonbon update", true},
+		{[]string{"--help"}, "Usage: bbflow update", true},
 		{nil, unsupported, false},
 		{[]string{"extra"}, "takes no arguments", false},
 		{[]string{"--version", "0.0.1"}, "flag provided but not defined", false},

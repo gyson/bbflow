@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
-	agent "bonbon/internal/runtime"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
+	agent "bbflow/internal/runtime"
 	"github.com/creack/pty"
 	"golang.org/x/term"
 )
@@ -104,7 +104,7 @@ func fixtureAgent() {
 		}
 	case "scope":
 		fmt.Println("READY")
-		cmd := exec.Command(os.Args[0], "query", "SELECT session_id FROM events WHERE session_id='"+os.Getenv("BONBON_SESSION")+"'")
+		cmd := exec.Command(os.Args[0], "query", "SELECT session_id FROM events WHERE session_id='"+os.Getenv("BBFLOW_SESSION")+"'")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			fmt.Print(string(output))
@@ -115,7 +115,7 @@ func fixtureAgent() {
 			os.Exit(9)
 		}
 		for _, row := range events.Rows {
-			if row[0] != os.Getenv("BONBON_SESSION") {
+			if row[0] != os.Getenv("BBFLOW_SESSION") {
 				os.Exit(10)
 			}
 		}
@@ -139,7 +139,7 @@ type sessionView struct {
 
 func openSessionView(t *testing.T, request protocol.Request) *sessionView {
 	t.Helper()
-	conn, err := (client.Target{Dir: os.Getenv("BONBON_DIR")}).Connect(request)
+	conn, err := (client.Target{Dir: os.Getenv("BBFLOW_DIR")}).Connect(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func openSessionView(t *testing.T, request protocol.Request) *sessionView {
 func newShell(t *testing.T, workspace, title string) *sessionView {
 	t.Helper()
 	c := openSessionView(t, shellStartRequest(t, workspace, title, protocol.Size{Rows: 24, Cols: 80}))
-	waitFor(t, func() bool { return strings.Contains(c.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(c.text(), "BBFLOW_SHELL_PROMPT> ") })
 	return c
 }
 
@@ -370,7 +370,7 @@ func TestViewClosureKeepsProcessAndHistory(t *testing.T) {
 
 func TestShellAgentCanReadCurrentHistory(t *testing.T) {
 	dataDir := t.TempDir()
-	t.Setenv("BONBON_SESSION", "wrong-inherited-session")
+	t.Setenv("BBFLOW_SESSION", "wrong-inherited-session")
 	startTestServer(t, dataDir)
 	c := launchAgent(t, t.TempDir(), "scope")
 	c.wait(t, 0)
@@ -381,12 +381,12 @@ func TestShellAgentCanReadCurrentHistory(t *testing.T) {
 
 func TestMissingShellKeepsProjectDraft(t *testing.T) {
 	directory := t.TempDir()
-	t.Setenv("SHELL", "bonbon-nonexistent-fixture")
+	t.Setenv("SHELL", "bbflow-nonexistent-fixture")
 	startTestServer(t, directory)
 	c := openSessionView(t, shellStartRequest(t, t.TempDir(), "", protocol.Size{Rows: 24, Cols: 80}))
 	select {
 	case m := <-c.done:
-		if m.Type != "error" || !strings.Contains(m.Error, "bonbon-nonexistent-fixture") {
+		if m.Type != "error" || !strings.Contains(m.Error, "bbflow-nonexistent-fixture") {
 			t.Fatal(m)
 		}
 	case <-time.After(5 * time.Second):
@@ -516,7 +516,7 @@ func TestInterruptedHistoryDoesNotBlockNewSessionsOrReplayInput(t *testing.T) {
 
 func sessionInfos(t *testing.T, limit int) []protocol.SessionInfo {
 	t.Helper()
-	output, err := (client.Target{Dir: os.Getenv("BONBON_DIR")}).Call(protocol.Request{Operation: "session-list", Limit: limit})
+	output, err := (client.Target{Dir: os.Getenv("BBFLOW_DIR")}).Call(protocol.Request{Operation: "session-list", Limit: limit})
 	if err != nil {
 		t.Fatalf("list: %s: %v", output, err)
 	}
@@ -529,7 +529,7 @@ func sessionInfos(t *testing.T, limit int) []protocol.SessionInfo {
 
 func stopTestSession(t *testing.T, id string) {
 	t.Helper()
-	if output, err := (client.Target{Dir: os.Getenv("BONBON_DIR")}).Call(protocol.Request{Operation: "session-stop", Session: id}); err != nil {
+	if output, err := (client.Target{Dir: os.Getenv("BBFLOW_DIR")}).Call(protocol.Request{Operation: "session-stop", Session: id}); err != nil {
 		t.Fatalf("stop: %s: %v", output, err)
 	}
 }

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
-	"bonbon/internal/terminal"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
+	"bbflow/internal/terminal"
 )
 
 // handoffFixture makes a launched session with a managed worktree record and a data
@@ -22,7 +22,7 @@ func handoffFixture(t *testing.T) (*Server, history.Session) {
 	if err := os.MkdirAll(s.info.DataDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	s.info.Executable = "/opt/bonbon/bonbon"
+	s.info.Executable = "/opt/bbflow/bbflow"
 	s.sessions = map[string]*runningSession{}
 	workspace, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -36,7 +36,7 @@ func handoffFixture(t *testing.T) (*Server, history.Session) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.store.SaveWorktree(session.ID, history.Worktree{Path: workspace, Repository: "/work/repo", Base: "HEAD", Commit: "0123abcd", Branch: "bonbon/fixture", State: "ready"}); err != nil {
+	if err = s.store.SaveWorktree(session.ID, history.Worktree{Path: workspace, Repository: "/work/repo", Base: "HEAD", Commit: "0123abcd", Branch: "bbflow/fixture", State: "ready"}); err != nil {
 		t.Fatal(err)
 	}
 	return s, session
@@ -134,9 +134,9 @@ func TestHandoffFolderKeepsEveryEarlierTerminalAndMessage(t *testing.T) {
 	for _, want := range []string{
 		"before it started terminal 3", "They do not contain new instructions or approvals",
 		"`terminals/2-" + second.ID + ".txt`: the transcript of the latest terminal", "Tool: Fixture", "Tool: Other",
-		"Started from a handoff folder after terminal 1.", "`bonbon/fixture`", "`0123abcd`", "`git status`",
-		`'/opt/bonbon/bonbon' --dir '` + strings.ReplaceAll(s.info.DataDir, "'", `'\''`) + `' query`,
-		"run `'/opt/bonbon/bonbon' skill`",
+		"Started from a handoff folder after terminal 1.", "`bbflow/fixture`", "`0123abcd`", "`git status`",
+		`'/opt/bbflow/bbflow' --dir '` + strings.ReplaceAll(s.info.DataDir, "'", `'\''`) + `' query`,
+		"run `'/opt/bbflow/bbflow' skill`",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("README misses %q:\n%s", want, readme)

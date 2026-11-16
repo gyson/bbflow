@@ -16,7 +16,7 @@ func TestProjectsPersistAndRemovalPreservesSessionHistory(t *testing.T) {
 	if err = s.EnsureGeneral("/instance/workspaces/general"); err != nil {
 		t.Fatal(err)
 	}
-	project, err := s.CreateProject(" BonBon ", "/work/bonbon")
+	project, err := s.CreateProject(" bbflow ", "/work/bbflow")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestProjectsPersistAndRemovalPreservesSessionHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	projects, err := s.Projects()
-	if err != nil || len(projects) != 2 || projects[0].ID != GeneralProjectID || projects[1].Name != "BonBon" {
+	if err != nil || len(projects) != 2 || projects[0].ID != GeneralProjectID || projects[1].Name != "bbflow" {
 		t.Fatalf("projects after reopen: %+v %v", projects, err)
 	}
 	if err = s.RenameProject(project.ID, "Renamed"); err != nil {

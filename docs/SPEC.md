@@ -1,6 +1,6 @@
-# BonBon — Current Specification
+# bbflow — Current Specification
 
-BonBon has a separate background server and a browser workspace. The CLI opens the UI,
+bbflow has a separate background server and a browser workspace. The CLI opens the UI,
 manages the server, runs read-only SQL queries, and updates the installed executable.
 See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 
@@ -21,7 +21,7 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 - Generated assets are in `internal/webui/dist`, which Go embeds. Git ignores this
   directory, test compiler output in `web/dist`, and npm dependencies. The deployed
   binary needs neither Node.js nor external frontend files.
-- The build collects BonBon's license, the Go license, npm runtime licenses, and
+- The build collects bbflow's license, the Go license, npm runtime licenses, and
   license/notice files from the Go modules required by `go.mod`. It includes the
   Apache-2.0 text referenced by goffi's attribution notice. These are embedded at
   `/assets/licenses.txt`, so the installed standalone executable retains them.
@@ -41,8 +41,8 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 - Every new session starts an interactive shell with `-i`, using the server environment.
   The server resolves `$SHELL` from PATH or an absolute path, falling back to `/bin/sh`
   when unset. Workspaces accept absolute paths, `~`, and `~/path`.
-- `make build` creates the development binary at `bin/bonbon`.
-- `make release` creates the production binary at `bin/release/bonbon`.
+- `make build` creates the development binary at `bin/bbflow`.
+- `make release` creates the production binary at `bin/release/bbflow`.
 - `make release VERSION=X.Y.Z` embeds that version. Unversioned builds report `dev`.
 - `make release-assets VERSION=X.Y.Z` builds macOS Apple Silicon and Intel archives, the
   shell installer, and SHA-256 checksums under the ignored `bin/releases/vX.Y.Z/`.
@@ -68,23 +68,24 @@ See [COMMANDS.md](COMMANDS.md) for human-readable usage, examples, and effects.
 
 | Command | Implemented behavior |
 | --- | --- |
-| `bonbon --version` | Print the invoked executable's version without contacting a server or opening an instance. |
-| `bonbon update` | Install the latest macOS release at the invoked executable's path without restarting a server. |
-| `bonbon server start/stop/restart` | Manage the detached server. Stop/restart finalizes active runs. |
-| `bonbon ui` | Verify the selected server and open its home page in the default browser. Requires a running server. |
-| `bonbon query SQL` | Run one read-only SQL query and return JSON. SQL chooses the scope. |
-| `bonbon skill` | Print the embedded Markdown guide for agents without contacting a server or opening an instance. |
+| `bbflow --version` | Print the invoked executable's version without contacting a server or opening an instance. |
+| `bbflow update` | Install the latest macOS release at the invoked executable's path without restarting a server. |
+| `bbflow server start/stop/restart` | Manage the detached server. Stop/restart finalizes active runs. |
+| `bbflow ui` | Verify the selected server and open its home page in the default browser. Requires a running server. |
+| `bbflow query SQL` | Run one read-only SQL query and return JSON. SQL chooses the scope. |
+| `bbflow skill` | Print the embedded Markdown guide for agents without contacting a server or opening an instance. |
+| `bbflow migrate [--from DIR]` | Copy a stopped BonBon instance's history into a bbflow instance without history. |
 
-Every command accepts global `--dir DIR` before the command name. It selects the BonBon
+Every command accepts global `--dir DIR` before the command name. It selects the bbflow
 instance. The UI selects session workspaces. There are no CLI session operations or
-terminal attachments. `bonbon ui` takes no workspace or session arguments.
+terminal attachments. `bbflow ui` takes no workspace or session arguments.
 
 There is no implicit session filter or `history` command group. Queries return JSON with
 `columns`, `rows`, and `truncated`. Raw BLOBs use base64. Requests go through the
 server. There is no bearer token or credential exchange.
 
-`bonbon skill` prints `cmd/bonbon/skill.md`, which the executable embeds. The guide
-covers the environment variables, `bonbon query`, the archive tables and event kinds,
+`bbflow skill` prints `cmd/bbflow/skill.md`, which the executable embeds. The guide
+covers the environment variables, `bbflow query`, the archive tables and event kinds,
 example queries, and limits. It describes only the newest supported database format.
 Fixtures compare its tables and columns with the migrated schema. They also run each
 example through a shell against a test server.
@@ -95,7 +96,7 @@ require an explicitly started server.
 ## Release installation
 
 GitHub Releases provide versioned macOS archives, checksums, and `install.sh` for the
-installer and `bonbon update`. Each archive contains `bonbon`, `LICENSE`, and
+installer and `bbflow update`. Each archive contains `bbflow`, `LICENSE`, and
 `THIRD_PARTY_NOTICES.txt`. The installer extracts only the executable. That binary also
 embeds all notices. The installer uses curl and macOS plutil, with no GitHub CLI
 dependency. Downloads need no credentials.
@@ -109,7 +110,7 @@ published full release once, then downloads the architecture archive and checksu
 from that fixed tag. `--version X.Y.Z` selects a specific release. Other version formats
 are rejected. It installs into `~/.local/bin` by default.
 
-`BONBON_INSTALL_DIR` overrides this default. Installer `--dir` overrides both. Each
+`BBFLOW_INSTALL_DIR` overrides this default. Installer `--dir` overrides both. Each
 override must be an absolute path.
 
 For latest-release installs, an existing equal or newer release is left in place,
@@ -126,9 +127,9 @@ Installer `--check` compares the installed executable at the selected installati
 with the requested or latest version, including numeric version ordering. It changes no
 installed files and downloads no binaries. Development versions cannot be compared.
 
-`bonbon update` runs the embedded copy of `internal/install/install.sh` with the invoked
+`bbflow update` runs the embedded copy of `internal/install/install.sh` with the invoked
 executable's directory. It resolves invocation symlinks and requires the target filename
-`bonbon`. Development builds and unsupported platforms are rejected. The command has no
+`bbflow`. Development builds and unsupported platforms are rejected. The command has no
 options and ignores instance and installer directory settings. It uses the same curl
 download, verification, and atomic replacement as initial installation. It never
 downloads or executes a remote installer script.
@@ -136,7 +137,7 @@ downloads or executes a remote installer script.
 The installation directory must be writable. Existing servers and sessions continue.
 Users restart them explicitly when ready. Failed downloads or verification preserve the
 installed executable. Database migrations run only when the new server starts, not
-during `bonbon update`.
+during `bbflow update`.
 
 There is no UI update action, background check, or automatic update. The executable
 version does not identify an already running server's build.
@@ -170,8 +171,8 @@ If the lock is held, lifecycle commands require a verified server connection. Mi
 malformed, or mismatched connection information causes an error instead of starting a
 duplicate or stopping an unrelated server. A failed stop does not start a replacement.
 
-Production defaults to `~/.bonbon`. Development defaults to `~/.bonbon-dev`. All
-commands select the instance with global `--dir`, then `BONBON_DIR`, then the build's
+Production defaults to `~/.bbflow`. Development defaults to `~/.bbflow-dev`. All
+commands select the instance with global `--dir`, then `BBFLOW_DIR`, then the build's
 default. The server binds `127.0.0.1:0` and atomically publishes its assigned port and
 random instance ID in `server.json`, with private permissions.
 
@@ -189,7 +190,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/24`.
+fallback. Shutdown uses the version verified above. The current version is `bbflow/24`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -242,12 +243,12 @@ New servers launch a menu companion by default on macOS. `server start --no-menu
 `server restart --no-menubar` disable it for that server process. A repeated start keeps
 the existing server and its menu choice. Restart replaces both processes.
 
-The menu contains **Open UI**, a separator, and **Quit BonBon**. The Quit BonBon label
-shows the running version, such as **Quit BonBon (0.0.5)** or **Quit BonBon (dev)**.
-Preview builds can set a version label at build time, such as **Quit BonBon (0.0.5
+The menu contains **Open UI**, a separator, and **Quit bbflow**. The Quit bbflow label
+shows the running version, such as **Quit bbflow (0.0.5)** or **Quit bbflow (dev)**.
+Preview builds can set a version label at build time, such as **Quit bbflow (0.0.5
 dev-1af9)**. Open UI calls the same verified home-page opener as the CLI.
 
-The build renders the menu icon from `web/src/bonbon.svg` and embeds it in the
+The build renders the menu icon from `web/src/bbflow.svg` and embeds it in the
 executable. The icon shows a candy wrapper with a terminal prompt and uses macOS
 template coloring.
 
@@ -258,8 +259,8 @@ the server's lifetime pipe to close. Missing or replaced connection files do not
 Quit. A replacement instance, including one reusing the original port, cannot be stopped
 by an old menu.
 
-BonBon accepts one menu action at a time. During shutdown, the menu shows
-**Quitting BonBon…**. If an action fails, the menu shows a retry label and writes
+bbflow accepts one menu action at a time. During shutdown, the menu shows
+**Quitting bbflow…**. If an action fails, the menu shows a retry label and writes
 diagnostics to the server log. Actions run outside the native UI thread.
 
 The server owns an inherited pipe to its menu. On normal shutdown it finishes session
@@ -279,11 +280,11 @@ storage format change was needed.
 ## Web client
 
 The sidebar and browser favicon use the same wrapped-terminal logo as the macOS menu
-bar. The visible product name is BonBon. The favicon adapts to light and dark browser
+bar. The visible product name is bbflow. The favicon adapts to light and dark browser
 appearances. The sidebar mark uses its text color.
 
 Server start and repeated start print a clickable HTTP URL without opening a browser.
-`bonbon ui` verifies the selected instance through the same WebSocket health check as
+`bbflow ui` verifies the selected instance through the same WebSocket health check as
 the other CLI commands, then opens the home page at `http://127.0.0.1:PORT/`. It uses
 `open` on macOS and `xdg-open` on Linux. It starts no server or agent. Missing or
 mismatched server information prevents browser launch.
@@ -322,10 +323,10 @@ The list refreshes every five seconds while visible. Project names are plain tex
 small arrow expands or collapses a group. Each project's **＋** creates and selects a new
 draft entry. A click on an existing entry reopens it by session ID. The URL keeps that
 ID as `/sessions/<id>` through reload and launch. The welcome view is the home page at
-`/`. The BonBon logo in the sidebar returns to it.
+`/`. The bbflow logo in the sidebar returns to it.
 
 The browser tab title shows the session or draft name. Settings shows `Settings`, and
-the home page shows `BonBon`.
+the home page shows `bbflow`.
 
 **Archive** saves the current launch choices and message editor. It hides a draft or
 finished session from the normal list and returns to the welcome view. **Archived**
@@ -334,7 +335,7 @@ returns an item to its project, or Standalone if that project was removed, witho
 launching it.
 
 The archive flag is separate from draft/run status. Archiving preserves all SQLite
-records, draft revisions, attachments, workspace files, and worktree metadata. BonBon
+records, draft revisions, attachments, workspace files, and worktree metadata. bbflow
 rejects archive requests for active sessions and unfinished launch claims. Stop the
 session first. Archive changes and launches share the server launch lock.
 
@@ -366,7 +367,7 @@ ordered list of named commands. Shell is built in and sends no startup command.
 Users can add, edit, reorder, and remove other presets. A command is one line of shell
 syntax, at most 1,000 UTF-8 bytes, without control characters. Each preset can have a continue
 command for [Continue in a new terminal](#continue-in-a-new-terminal). It has the same
-limits and contains `{prompt}` once, without quotes around it. BonBon does not install
+limits and contains `{prompt}` once, without quotes around it. bbflow does not install
 tools, choose models, or check provider-specific arguments. Commands may contain secrets
 and are stored locally in the same unencrypted archive as terminal input.
 
@@ -394,15 +395,15 @@ The server preserves an uncertain checkout or launch and marks it interrupted. I
 not retry automatically, including after server restart. Start creates an interactive
 shell and records the configured command as input before writing it once to the PTY. The
 shell remains after an ordinary command exits. Shell startup files that read or discard
-stdin can affect queued input. BonBon does not detect prompt readiness or retry this
+stdin can affect queued input. bbflow does not detect prompt readiness or retry this
 input.
 
 The server uses the installed Git executable to detect repositories, including linked
 worktrees and repository subfolders. Creating a worktree requires an existing commit.
 Repositories and bases containing submodules are rejected.
 
-The chosen base (default HEAD) resolves to a commit at Start, without fetching. BonBon
-creates a fresh branch (user-named or generated as bonbon/TIMESTAMP-SUFFIX) and checkout
+The chosen base (default HEAD) resolves to a commit at Start, without fetching. bbflow
+creates a fresh branch (user-named or generated as bbflow/TIMESTAMP-SUFFIX) and checkout
 under `<instance>/worktrees/YYYYMMDD-HHMMSS-XXXXXXXX`, using UTC and a random suffix.
 Repository subfolder projects launch in the corresponding subfolder. Missing or escaping
 subfolders fail the launch and preserve the checkout for inspection and explicit
@@ -418,12 +419,12 @@ SQLite and outside the planned database backup. Git worktrees share repository m
 They provide independent working files. They are not a security sandbox.
 
 Closing views, stopping sessions, and removing projects preserve worktrees. **Remove
-worktree** checks all live BonBon session paths and refuses active or overlapping
+worktree** checks all live bbflow session paths and refuses active or overlapping
 workspaces. It also refuses detached HEADs, replaced repositories, and modified,
 untracked, or ignored files, and uses Git removal without force. It preserves the branch
 and all session history.
 
-External processes and concurrent edits outside BonBon are not coordinated. Git manages
+External processes and concurrent edits outside bbflow are not coordinated. Git manages
 its locks and linked-worktree metadata. Missing or moved repositories cause explicit
 errors.
 
@@ -472,7 +473,7 @@ environment-variable expansion are unsupported. The directory must exist. Histor
 its canonical absolute path. Multiple sessions may share it.
 
 The shell reads its normal startup files. Agents retain their arguments, authentication,
-and permissions. BonBon submits only the configured startup command. It does not submit
+and permissions. bbflow submits only the configured startup command. It does not submit
 the message draft automatically. After an agent exits, the shell remains available.
 After the shell exits, the session ends.
 
@@ -525,7 +526,7 @@ and 1–256 rows to bound emulator memory.
 Session views show the server-rendered terminal and message editor. The UI also provides
 sent messages, recorded-output search, a read-only Changes pane, and a side terminal.
 There is no browser
-SQL client. The `bonbon query` command reads archived events. There is no semantic chat
+SQL client. The `bbflow query` command reads archived events. There is no semantic chat
 transcript.
 
 ### History search
@@ -645,18 +646,18 @@ launch lock and rejects the request in these conditions:
 - The latest run ID is different, for example because another view continued first.
 - The latest run has not ended, the session is archived, or it has no run.
 - The managed worktree is not `ready`, or the session workspace no longer exists.
-  BonBon does not create a replacement worktree.
+  bbflow does not create a replacement worktree.
 - The selected tool no longer exists, or the command with the prompt exceeds 1,000
   bytes.
 
 A rejected request writes no files and starts no process. Otherwise the server writes
 the handoff folder, then starts `$SHELL -i` in the session's recorded workspace. The
 session keeps its ID, title, project, worktree, message draft, and history. The new run
-gets the same `BONBON_SESSION`. Its start event records the tool name, the previous run
+gets the same `BBFLOW_SESSION`. Its start event records the tool name, the previous run
 ID (`continues`), and the handoff folder.
 
 The handoff folder is `<instance>/handoff/<session-id>/`. It is a derived cache with
-private permissions and read-only files. BonBon rebuilds the whole folder from SQLite
+private permissions and read-only files. bbflow rebuilds the whole folder from SQLite
 for each new terminal. It writes a staging folder, then renames it. No terminal is live
 during this change. The folder contains these files:
 
@@ -665,8 +666,8 @@ during this change. The folder contains these files:
   status, detail, and whether it started from a handoff. The rules say that the files
   are a record of earlier work, not instructions or approvals. They tell the agent to
   check the current files, for example with `git status`. The README also has a
-  `bonbon query` command for the original recording of a terminal, and a pointer to
-  `bonbon skill`.
+  `bbflow query` command for the original recording of a terminal, and a pointer to
+  `bbflow skill`.
 - `messages.md`: every message from the message editor, oldest first, with its exact
   text, time, Sent or Not confirmed status, and attachment cache paths. Messages are
   grouped by terminal through event sequence ranges.
@@ -679,11 +680,11 @@ agent state is lost and that the files are a record, not instructions. It asks t
 agent to check the current files, summarize where the work stopped, and wait for the
 next message.
 
-If the selected tool has a continue command, BonBon puts the shell-quoted prompt in
+If the selected tool has a continue command, bbflow puts the shell-quoted prompt in
 place of `{prompt}`. It records and submits that line once, as it does for a startup
-command. A tool without a continue command starts with its normal command, and BonBon
+command. A tool without a continue command starts with its normal command, and bbflow
 sends no prompt. Shell submits no command. The user can copy the prompt from the dialog.
-BonBon never sends the prompt through the message editor and never detects agent
+bbflow never sends the prompt through the message editor and never detects agent
 readiness.
 
 The prompt stays available after the new terminal starts. When the handoff folder of
@@ -713,7 +714,7 @@ size owner. The process, its capture, and the other views continue. The status b
 
 The UI reads the list with `session-terminals` when it opens a session, when a terminal
 starts or exits, and when the selector opens. The tool name comes from the start event
-of each run. Start events from BonBon 0.0.4 and earlier have no tool, so the first run
+of each run. Start events from bbflow 0.0.4 and earlier have no tool, so the first run
 uses the tool of the preparation. A new terminal has no run record until its process
 starts. Until then, the list ends with a `starting` terminal without a run ID. The UI
 reads the list again every five seconds until that terminal has a run.
@@ -858,7 +859,7 @@ workspace exists.
   workspace. When the session already has a live side terminal, the view joins it. Each session has at most one live side terminal. All views of a session
   share it.
 - The server does not record the side terminal. SQLite has no events, run, or screen of
-  it. Search history, the handoff folder, and `bonbon query` cannot read it. The view
+  it. Search history, the handoff folder, and `bbflow query` cannot read it. The view
   shows "Not recorded. Runs in the session workspace."
 - The side terminal does not change the session status, the view count, or the session
   order.
@@ -904,7 +905,7 @@ terminal paste.
 
 The editor rejects multiline text and tabs without bracketed paste. It rejects other
 terminal control characters. Existing input at the terminal prompt is not cleared.
-BonBon does not infer readiness or completion, and a shell still treats submitted text
+bbflow does not infer readiness or completion, and a shell still treats submitted text
 as shell input.
 
 Drafts save 400 ms after an editing pause and before session switches. The shared
@@ -969,12 +970,12 @@ SQLite.
 
 The cache is not authoritative. HTTP does not serve it. Send appends quoted local paths
 to the user's text. This is not a native provider or multimodal upload. File access
-depends on the agent's capabilities and workspace permissions. BonBon does not change
+depends on the agent's capabilities and workspace permissions. bbflow does not change
 permissions for the agent.
 
 ## Terminal runtime
 
-Before launching a shell, BonBon records its resolved command, arguments, workspace, and
+Before launching a shell, bbflow records its resolved command, arguments, workspace, and
 terminal size. The server launches it in a new PTY and process group. Commands retain
 their normal authentication, terminal interface, and permissions.
 
@@ -1061,7 +1062,7 @@ while detached or after a real size change. Summaries contain ID, title, project
 ### Session status
 
 Each session shows one status. The server derives it. SQLite keeps the run status and
-the preparation state without change, so `bonbon query` results do not change.
+the preparation state without change, so `bbflow query` results do not change.
 
 | Status | Meaning |
 | --- | --- |
@@ -1080,7 +1081,7 @@ that follows. The detection does not depend on the tool.
 `idle` means only that there was no recent output. The application can be complete, can
 wait for an answer or a permission, or can work without output. A spinner or other
 repeated output shows as `running`, also without progress. No completion, readiness, or
-message boundaries are inferred from silence. BonBon never sends input because of a
+message boundaries are inferred from silence. bbflow never sends input because of a
 status.
 
 The sidebar shows the status of each session with a dot: filled for `running`, a ring
@@ -1145,7 +1146,7 @@ process.
 Workspace paths are canonicalized without locking. Multiple live or detached sessions
 can use the same workspace, symlink aliases, or parent and child directories. Each
 session has its own PTY, run state, history, and stop operation. Sessions share file
-changes. BonBon does not serialize writers or isolate filesystem changes.
+changes. bbflow does not serialize writers or isolate filesystem changes.
 
 SQLite uses WAL, full synchronization, and a busy timeout. Concurrent opens serialize
 schema creation and upgrades. Switching journal mode retries lock contention for up to
@@ -1161,29 +1162,29 @@ record means there was no recorded exit. It does not prove that its processes st
 
 Interrupted history does not block new sessions. There is no manual recovery step or
 persistent workspace block. Processes left behind by a crashed server are not tracked or
-controlled. BonBon never treats a stored PID as authority to kill or revive a process
+controlled. bbflow never treats a stored PID as authority to kill or revive a process
 and never replays terminal input. Stopping a session with no process owned by this
 server is a no-op.
 
 ## History and storage
 
-Local builds default to `~/.bonbon-dev`. Production builds default to `~/.bonbon`. Plain
+Local builds default to `~/.bbflow-dev`. Production builds default to `~/.bbflow`. Plain
 `go build` and `go run` use the development default. `make release` sets
-`main.instanceDirName=.bonbon` through Go's linker. The binary's location and working
+`main.instanceDirName=.bbflow` through Go's linker. The binary's location and working
 directory do not affect this choice.
 
-For all commands, directory selection is `--dir` first, then `BONBON_DIR`, then the
+For all commands, directory selection is `--dir` first, then `BBFLOW_DIR`, then the
 build's default. Explicit overrides can share a directory across builds. Relative paths
 resolve from the caller's current directory. Symlinks resolve to the same canonical
-instance. No data is moved from previous locations. BonBon creates SQLite
-(`history.sqlite`) under the selected directory with private permissions.
+instance. bbflow creates SQLite (`history.sqlite`) under the selected directory with
+private permissions.
 
 The archive stores projects, sessions, runs, settings, preparation choices, worktree
 metadata, and append-only events with stable global sequence numbers. New runs set
-`BONBON_SESSION` and canonical `BONBON_DIR` for CLI retrieval, overriding inherited
-values. `BONBON_SESSION` is a value the caller can use in SQL, not an automatic filter.
+`BBFLOW_SESSION` and canonical `BBFLOW_DIR` for CLI retrieval, overriding inherited
+values. `BBFLOW_SESSION` is a value the caller can use in SQL, not an automatic filter.
 No retrieval prompt is automatically added to the agent's conversation. An agent can
-run `bonbon skill` to get the retrieval guide.
+run `bbflow skill` to get the retrieval guide.
 
 Original terminal bytes are authoritative. Derived text strips terminal escapes and
 handles split UTF-8 sequences. This text conversion is not a screen emulator or message
@@ -1192,6 +1193,37 @@ parser. Redraws can duplicate text.
 Cursor movement can omit spaces. SQL predicates such as `LIKE` match individual event
 chunks, so phrases spanning chunks may be missed. There is no semantic message search,
 fork ancestry, or inherited history yet.
+
+### Copy from BonBon
+
+bbflow was named BonBon. BonBon 0.0.7 is the last BonBon release. BonBon used
+`~/.bonbon` and `~/.bonbon-dev`. bbflow does not read these directories automatically.
+`bbflow migrate` copies a BonBon history database into a bbflow instance:
+
+- The BonBon `server.lock` must be free. The command holds it during the copy and does
+  not create it when it is absent. The bbflow `server-control.lock` and `server.lock`
+  must also be free.
+- The bbflow `history.sqlite`, `-wal`, and `-shm` files must not exist.
+- The source must have format 3 through 8. The command opens it read-only. Without a
+  WAL file, it opens the source as immutable, so SQLite adds no `-wal` or `-shm` files
+  beside it. With a WAL file, the copy includes its committed content, and SQLite can
+  update the existing `-shm` index file. The database and WAL bytes do not change.
+- `VACUUM INTO` writes a private temporary file in the bbflow directory. The command
+  verifies `PRAGMA integrity_check`, the format, and the row count of each table. A
+  hard link puts the file in place without replacing an existing file. Then the normal
+  migrations upgrade the copy. Any failure removes the temporary file or the copy.
+- The report lists session workspace and worktree paths inside the BonBon directory.
+  The copy keeps all recorded paths. The server moves the General project to its own
+  directory at startup. bbflow removes only worktrees inside its own `worktrees`
+  directory.
+
+The copy contains every table, including sessions, runs, events, settings, projects,
+preparations, and worktree records. It does not record the source path in the database.
+Logs, handoff folders, attachment caches, and workspace files are not copied.
+
+`server start` and `server restart` refuse to create history in the build's default
+directory while the default BonBon directory has `history.sqlite`. Explicit `--dir` and
+`BBFLOW_DIR` values that select another directory skip this check.
 
 ### Database upgrades
 
@@ -1234,12 +1266,12 @@ downgrade path, external migration command, or automatic backup.
 
 Each query opens a separate `mode=ro` connection with `query_only` enabled and
 `trusted_schema` disabled. The SQLite authorizer permits only reads, selects, recursion,
-and functions. It rejects file and extension functions, which BonBon does not install.
+and functions. It rejects file and extension functions, which bbflow does not install.
 All other operations, including PRAGMAs, transactions, schema changes, and ATTACH, are
 denied. SQLite prepares the SQL and its remaining text before execution.
 
 The server rejects a second statement. The result must be read-only and have columns. No
-SQL parser or prefix-only write check is maintained in BonBon.
+SQL parser or prefix-only write check is maintained in bbflow.
 
 The connection uses a five-second cancellation context that applies during preparation
 and row stepping. It does not share the terminal capture connection. SQL is limited to
@@ -1253,9 +1285,9 @@ exposes table definitions.
 
 Input/output and launch arguments can include secrets. No redaction or encryption is
 implemented. The local archive is not isolated from other processes running as the same
-OS user. BonBon implements no telemetry or cloud storage.
+OS user. bbflow implements no telemetry or cloud storage.
 
-All durable BonBon data is in `history.sqlite`:
+All durable bbflow data is in `history.sqlite`:
 
 - Session and run metadata.
 - Original terminal input and output blobs.
@@ -1312,7 +1344,7 @@ A simulated failure of the first read of the workspace folder showed the failed 
 and the error. A slow refresh then showed "Reading…", and the tree came back.
 
 A side terminal fixture uses a live server and `/bin/sh`. It checks the workspace and
-`BONBON_SESSION` of the shell, and that two views share one shell. It checks that the
+`BBFLOW_SESSION` of the shell, and that two views share one shell. It checks that the
 shell continues after its views close and after Stop session. It also checks
 `side-terminal-stop`, a shell that exits, archive, and refusal for drafts, archived
 sessions, and unknown sessions. It checks that a resume or stop with the ID of an ended
@@ -1454,7 +1486,7 @@ arguments, removed session commands, and opener failures.
 
 Menu fixtures cover repeated start, restart, headless mode, server crashes, shutdown
 with an active session, and protection against stopping a replacement instance. A manual
-macOS check confirmed Open UI and Quit BonBon from the standalone executable. The shared
+macOS check confirmed Open UI and Quit bbflow from the standalone executable. The shared
 logo was checked in wide and narrow browser layouts and in 22-point light and dark
 previews. The updated native companion also launched and exited with its server.
 
@@ -1559,7 +1591,7 @@ earlier terminal stopped it and changed the button to **Back to latest terminal*
 browser errors were reported. No real agent CLI was used.
 
 `codex sandbox` from Codex CLI 0.160.0, with default settings, read the handoff
-`README.md` from outside its working directory. In the same sandbox, `bonbon query`
+`README.md` from outside its working directory. In the same sandbox, `bbflow query`
 failed with "connect: operation not permitted". These checks ran no model.
 
 A live check used a temporary instance, a Git worktree session, and the real agent
@@ -1586,7 +1618,7 @@ last 12 lines. With `--no-alt-screen`, the transcript of terminal 4 kept the ful
 output, including each command. Claude Code ran in the normal screen, and its transcript
 kept the full reply, with some repeated rows from dialog redraws. The agents also showed
 their own folder trust questions and, for Codex, a shared background server question.
-These are agent behavior, not BonBon behavior.
+These are agent behavior, not bbflow behavior.
 
 Session status fixtures use fixed times and a real PTY. Time fixtures cover the start of
 a terminal, background output, the idle delay, typed input at short intervals, and
@@ -1645,7 +1677,7 @@ support are absent. Recording bytes does not preserve hidden agent state or guar
 complete semantic messages. Host crashes and server SIGKILL can lose uncommitted bytes
 and prevent cleanup. Provider-owned daemons retain their lifecycle.
 
-BonBon stops the launched group and a shell's foreground job. It does not track other
+bbflow stops the launched group and a shell's foreground job. It does not track other
 background groups. Linux runtime behavior and large archives are unverified.
 
 A session has at most one live session terminal, and at most one live side terminal.
@@ -1656,7 +1688,7 @@ The terminal list reads every start event of the session, so a long session make
 list slower to load.
 
 Search history can read matching output and bounded context from earlier terminals.
-Their saved transcripts remain available in the handoff folder, and `bonbon query` reads
+Their saved transcripts remain available in the handoff folder, and `bbflow query` reads
 their original events.
 
 A handoff transcript has at most the newest 10,000 scrollback rows of a terminal.

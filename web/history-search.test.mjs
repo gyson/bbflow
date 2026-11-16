@@ -47,7 +47,7 @@ function setup() {
   const pending = [];
   const send = (server, request, signal) => new Promise((resolve, reject) => pending.push({ request, signal, resolve, reject }));
   const search = new HistorySearch(() => server, send);
-  search.open({ session: 'own', project: 'project', title: 'Example', projectName: 'BonBon' });
+  search.open({ session: 'own', project: 'project', title: 'Example', projectName: 'bbflow' });
   const submit = query => { nodes['history-query'].value = query; nodes['history-form'].onsubmit({ preventDefault() {} }); };
   return { nodes, pending, search, submit };
 }

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/history"
+	"bbflow/internal/history"
 )
 
 func TestInstanceDirectorySelection(t *testing.T) {
@@ -17,7 +17,7 @@ func TestInstanceDirectorySelection(t *testing.T) {
 	t.Cleanup(func() { instanceDirName = original })
 	sessions := make(map[string]string)
 	ports := make(map[string]string)
-	for _, name := range []string{".bonbon-dev", ".bonbon"} {
+	for _, name := range []string{".bbflow-dev", ".bbflow"} {
 		directory := filepath.Join(home, name)
 		store, err := history.Open(filepath.Join(directory, "history.sqlite"))
 		if err != nil {
@@ -31,29 +31,29 @@ func TestInstanceDirectorySelection(t *testing.T) {
 		sessions[name] = session.ID
 		ports[name] = startTestServer(t, directory)
 	}
-	if ports[".bonbon-dev"] == ports[".bonbon"] {
+	if ports[".bbflow-dev"] == ports[".bbflow"] {
 		t.Fatal("instances share a port")
 	}
-	for _, name := range []string{".bonbon-dev", ".bonbon"} {
+	for _, name := range []string{".bbflow-dev", ".bbflow"} {
 		t.Run(name, func(t *testing.T) {
 			instanceDirName = name
-			t.Setenv("BONBON_DIR", "")
+			t.Setenv("BBFLOW_DIR", "")
 			directory := filepath.Join(home, name)
 			if defaultInstanceDir() != directory {
 				t.Fatal("wrong build default")
 			}
 			// The subprocess is a development binary. Select the release directory explicitly
 			// for checks of both live archives.
-			t.Setenv("BONBON_DIR", directory)
+			t.Setenv("BBFLOW_DIR", directory)
 			result := queryCLI(t)
 			if len(result.Rows) != 1 || result.Rows[0][0] != sessions[name] {
 				t.Fatalf("wrong history: %+v", result)
 			}
-			other := ".bonbon"
+			other := ".bbflow"
 			if name == other {
-				other = ".bonbon-dev"
+				other = ".bbflow-dev"
 			}
-			t.Setenv("BONBON_DIR", filepath.Join(home, other))
+			t.Setenv("BBFLOW_DIR", filepath.Join(home, other))
 			result = queryCLI(t)
 			if len(result.Rows) != 1 || result.Rows[0][0] != sessions[other] {
 				t.Fatalf("environment override: %+v", result)
@@ -84,7 +84,7 @@ func TestVersion(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "absent")
 	cmd := testCommand("--dir", directory, "--version")
 	output, err := cmd.CombinedOutput()
-	if err != nil || string(output) != "bonbon dev\n" {
+	if err != nil || string(output) != "bbflow dev\n" {
 		t.Fatalf("version: %q %v", output, err)
 	}
 	if _, err := os.Stat(directory); !os.IsNotExist(err) {
@@ -96,7 +96,7 @@ func TestVersion(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	if os.Getenv("BONBON_MENUBAR_CHILD") == "1" && os.Getenv("BONBON_TEST_MENU_HELPER") != "" {
+	if os.Getenv("BBFLOW_MENUBAR_CHILD") == "1" && os.Getenv("BBFLOW_TEST_MENU_HELPER") != "" {
 		menuBarFixture()
 		return
 	}
@@ -105,13 +105,13 @@ func TestMain(m *testing.M) {
 		return
 	}
 	// Test the management CLI in a subprocess.
-	if os.Getenv("BONBON_TEST_CLI") == "1" {
+	if os.Getenv("BBFLOW_TEST_CLI") == "1" {
 		main()
 		return
 	}
 	os.Setenv("SHELL", "/bin/sh")
 	os.Setenv("ENV", "")
-	os.Setenv("PS1", "BONBON_SHELL_PROMPT> ")
+	os.Setenv("PS1", "BBFLOW_SHELL_PROMPT> ")
 	os.Exit(m.Run())
 }
 

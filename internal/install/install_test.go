@@ -25,7 +25,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Skip("installer uses macOS plutil")
 	}
 	root := filepath.Join(t.TempDir(), "paths with spaces")
-	f := &fixture{t: t, root: root, bin: filepath.Join(root, "tools"), assets: filepath.Join(root, "assets"), destination: filepath.Join(root, "install", "bonbon")}
+	f := &fixture{t: t, root: root, bin: filepath.Join(root, "tools"), assets: filepath.Join(root, "assets"), destination: filepath.Join(root, "install", "bbflow")}
 	for _, dir := range []string{f.bin, f.assets} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			t.Fatal(err)
@@ -58,16 +58,16 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 case "$url" in
-    https://api.github.com/repos/gyson/bonbon/releases/latest)
+    https://api.github.com/repos/gyson/bbflow/releases/latest)
         tag=${TEST_TAG:-v0.0.1} ;;
-    https://api.github.com/repos/gyson/bonbon/releases/tags/v*)
+    https://api.github.com/repos/gyson/bbflow/releases/tags/v*)
         tag=${url##*/} ;;
-    https://api.github.com/repos/gyson/bonbon/releases/assets/1)
+    https://api.github.com/repos/gyson/bbflow/releases/assets/1)
         [ "$accept" = 'Accept: application/octet-stream' ] || exit 5
         name=$(plutil -extract assets.0.name raw -o - "$TEST_ASSETS/release.json")
         cp "$TEST_ASSETS/$name" "$output"
         exit ;;
-    https://api.github.com/repos/gyson/bonbon/releases/assets/2)
+    https://api.github.com/repos/gyson/bbflow/releases/assets/2)
         cp "$TEST_ASSETS/checksums.txt" "$output"
         exit ;;
     *) exit 6 ;;
@@ -93,7 +93,7 @@ func (f *fixture) write(path, data string) {
 
 func (f *fixture) release(version, arch, binaryVersion string) {
 	f.t.Helper()
-	asset := "bonbon_" + version + "_darwin_" + arch + ".tar.gz"
+	asset := "bbflow_" + version + "_darwin_" + arch + ".tar.gz"
 	path := filepath.Join(f.assets, asset)
 	file, err := os.Create(path)
 	if err != nil {
@@ -101,8 +101,8 @@ func (f *fixture) release(version, arch, binaryVersion string) {
 	}
 	gz := gzip.NewWriter(file)
 	tw := tar.NewWriter(gz)
-	binary := "#!/bin/sh\n[ \"$1\" = --version ] || exit 1\nprintf 'bonbon " + binaryVersion + "\\n'\n"
-	if err := tw.WriteHeader(&tar.Header{Name: "bonbon", Mode: 0755, Size: int64(len(binary))}); err != nil {
+	binary := "#!/bin/sh\n[ \"$1\" = --version ] || exit 1\nprintf 'bbflow " + binaryVersion + "\\n'\n"
+	if err := tw.WriteHeader(&tar.Header{Name: "bbflow", Mode: 0755, Size: int64(len(binary))}); err != nil {
 		f.t.Fatal(err)
 	}
 	if _, err := tw.Write([]byte(binary)); err != nil {
@@ -145,7 +145,7 @@ func (f *fixture) environment(extra ...string) []string {
 	// directory.
 	return append([]string{
 		"PATH=" + f.bin + ":/usr/bin:/bin", "HOME=" + f.root, "TMPDIR=" + f.root,
-		"BONBON_INSTALL_DIR=" + filepath.Dir(f.destination), "TEST_ROOT=" + f.root,
+		"BBFLOW_INSTALL_DIR=" + filepath.Dir(f.destination), "TEST_ROOT=" + f.root,
 		"TEST_ASSETS=" + f.assets,
 	}, extra...)
 }
@@ -155,7 +155,7 @@ func (f *fixture) existing(version string) {
 	if err := os.MkdirAll(filepath.Dir(f.destination), 0755); err != nil {
 		f.t.Fatal(err)
 	}
-	f.write(f.destination, "#!/bin/sh\nprintf 'bonbon "+version+"\\n'\n")
+	f.write(f.destination, "#!/bin/sh\nprintf 'bbflow "+version+"\\n'\n")
 }
 
 func TestInstallAndReplace(t *testing.T) {
@@ -176,7 +176,7 @@ func TestInstallAndReplace(t *testing.T) {
 			}
 			defer previous.Close()
 			output, err := f.run([]string{"TEST_ARCH=" + machine})
-			if err != nil || !strings.Contains(output, "Installed BonBon 0.0.1") {
+			if err != nil || !strings.Contains(output, "Installed bbflow 0.0.1") {
 				t.Fatalf("%s: %v", output, err)
 			}
 			oldData := make([]byte, 200)
@@ -185,7 +185,7 @@ func TestInstallAndReplace(t *testing.T) {
 				t.Fatal("overwrote old inode", err)
 			}
 			data, err := exec.Command(f.destination, "--version").Output()
-			if err != nil || string(data) != "bonbon 0.0.1\n" {
+			if err != nil || string(data) != "bbflow 0.0.1\n" {
 				t.Fatalf("installed: %q %v", data, err)
 			}
 			entries, err := os.ReadDir(filepath.Dir(f.destination))
@@ -200,7 +200,7 @@ func TestPinnedVersion(t *testing.T) {
 	f := newFixture(t)
 	f.release("0.0.2", "arm64", "0.0.2")
 	output, err := f.run([]string{"TEST_TAG=v9.0.0"}, "--version", "v0.0.2")
-	if err != nil || !strings.Contains(output, "Installed BonBon 0.0.2") {
+	if err != nil || !strings.Contains(output, "Installed bbflow 0.0.2") {
 		t.Fatalf("%s: %v", output, err)
 	}
 	requests, err := os.ReadFile(filepath.Join(f.root, "requests"))
@@ -218,7 +218,7 @@ func TestFailedInstallPreservesExisting(t *testing.T) {
 		message string
 	}{
 		{name: "checksum", setup: func(f *fixture) {
-			f.write(filepath.Join(f.assets, "checksums.txt"), strings.Repeat("0", 64)+"  bonbon_0.0.1_darwin_arm64.tar.gz\n")
+			f.write(filepath.Join(f.assets, "checksums.txt"), strings.Repeat("0", 64)+"  bbflow_0.0.1_darwin_arm64.tar.gz\n")
 		}, message: "checksum mismatch"},
 		{name: "missing checksum", setup: func(f *fixture) { f.write(filepath.Join(f.assets, "checksums.txt"), "") }, message: "missing or invalid checksum"},
 		{name: "duplicate checksum", setup: func(f *fixture) {

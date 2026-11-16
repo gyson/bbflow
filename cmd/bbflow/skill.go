@@ -18,7 +18,7 @@ var skillText string
 func skill(args []string) error {
 	flags := flag.NewFlagSet("skill", flag.ContinueOnError)
 	flags.Usage = func() {
-		fmt.Println("Usage: bonbon skill\n\nPrint a Markdown guide for agents. It explains how to read BonBon sessions and\nrecorded history with bonbon query. The command does not contact a server.")
+		fmt.Println("Usage: bbflow skill\n\nPrint a Markdown guide for agents. It explains how to read bbflow sessions and\nrecorded history with bbflow query. The command does not contact a server.")
 	}
 	if err := flags.Parse(args); err != nil {
 		return err

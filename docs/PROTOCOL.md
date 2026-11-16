@@ -1,12 +1,12 @@
 # Client/server protocol
 
-The CLI selects an instance directory with global `--dir`, `BONBON_DIR`, or its build
+The CLI selects an instance directory with global `--dir`, `BBFLOW_DIR`, or its build
 default. It reads the assigned port from `<instance>/server.json` and connects to
 `ws://127.0.0.1:PORT/ws`. The operating system assigns an IPv4 loopback port to the
 server. HTTP also serves the embedded web UI and its connection information.
 
 The transport uses [Gorilla WebSocket](https://github.com/gorilla/websocket). Each
-WebSocket text message contains one JSON object. There is no BonBon length prefix or
+WebSocket text message contains one JSON object. There is no bbflow length prefix or
 binary envelope. The limit is 16 MiB per message, including all fragments.
 
 The server rejects binary messages, malformed JSON, and multiple JSON values in one
@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/24`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/24`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,12 +31,12 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/24",
+    "protocol": "bbflow/24",
     "instance": "random-instance-id",
     "pid": 12345,
-    "dataDir": "/Users/example/.bonbon",
+    "dataDir": "/Users/example/.bbflow",
     "port": 49152,
-    "executable": "/usr/local/bin/bonbon"
+    "executable": "/usr/local/bin/bbflow"
   }
 }
 ```
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/24",
+    "protocol": "bbflow/24",
     "operation": "session-list",
     "limit": 10
   }
@@ -461,7 +461,7 @@ folder has its `README.md`. Clients use it to show the prompt again after the ne
 terminal started.
 
 `session-terminals` lists every run of a session as one terminal. `number` counts from 1
-in start order. `tool` comes from the start event of the run. Start events from BonBon
+in start order. `tool` comes from the start event of the run. Start events from bbflow
 0.0.4 and earlier have no tool, so the first run uses the tool of the preparation. A new
 terminal has no run record until its process starts. Until then, the list ends with a
 `starting` terminal that has an empty `run`. The operation starts no process and writes
@@ -475,15 +475,15 @@ server records and submits that line once. A tool without one submits its normal
 Managed worktree metadata includes path, repository, requested base, resolved commit,
 creation branch, and state (creating, ready, failed, or removed). Creation uses the
 server's Git and never fetches or copies uncommitted files. Removal rejects active
-BonBon workspaces and modified, untracked, or ignored files. It keeps the branch. See
+bbflow workspaces and modified, untracked, or ignored files. It keeps the branch. See
 [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees) for supported
 repositories.
 
 ## Side terminals
 
 A side terminal is an interactive shell for ad hoc commands in the workspace of a
-session. The server starts it with the same `$SHELL -i`, environment, `BONBON_SESSION`,
-and `BONBON_DIR` as a session terminal. It submits no startup command. Each session has
+session. The server starts it with the same `$SHELL -i`, environment, `BBFLOW_SESSION`,
+and `BBFLOW_DIR` as a session terminal. It submits no startup command. Each session has
 at most one live side terminal. It is separate from the terminal of the session.
 
 - The server writes no SQLite events, run, or saved screen for a side terminal. It keeps
@@ -715,13 +715,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/24") {
+    if (message.server.protocol !== "bbflow/24") {
       socket.close();
-      throw new Error("Unsupported BonBon protocol");
+      throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/24", operation: "session-list", limit: 10 }
+      request: { protocol: "bbflow/24", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

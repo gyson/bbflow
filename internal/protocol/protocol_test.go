@@ -40,7 +40,7 @@ func socketPair(t *testing.T) (*Conn, *websocket.Conn) {
 func TestWebSocketJSONPreservesBytes(t *testing.T) {
 	conn, peer := socketPair(t)
 	want := []byte{0, 3, 27, 255, '\n', '\r'}
-	// This is ordinary JSON a browser can send, with no BonBon framing header.
+	// This is ordinary JSON a browser can send, with no bbflow framing header.
 	if err := peer.WriteMessage(websocket.TextMessage, []byte(`{"type":"input","data":"AAMb/woN"}`)); err != nil {
 		t.Fatal(err)
 	}

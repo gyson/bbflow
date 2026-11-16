@@ -5,8 +5,8 @@ import (
 	"errors"
 	"math"
 
-	"bonbon/internal/protocol"
-	"bonbon/internal/terminal"
+	"bbflow/internal/protocol"
+	"bbflow/internal/terminal"
 )
 
 // The final view is a derived cache in SQLite. It cannot resume an emulator or process.

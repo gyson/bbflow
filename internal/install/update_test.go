@@ -25,9 +25,9 @@ func TestUpdateInvokedExecutable(t *testing.T) {
 				t.Fatal(err)
 			}
 			other := filepath.Join(f.root, "do-not-install-here")
-			command.Env = f.environment("TEST_TAG=v0.10.0", "BONBON_INSTALL_DIR="+other)
+			command.Env = f.environment("TEST_TAG=v0.10.0", "BBFLOW_INSTALL_DIR="+other)
 			output, err := command.CombinedOutput()
-			if err != nil || !strings.Contains(string(output), "Installed BonBon 0.10.0") {
+			if err != nil || !strings.Contains(string(output), "Installed bbflow 0.10.0") {
 				t.Fatalf("update: %s %v", output, err)
 			}
 			if !strings.Contains(string(output), "Restart ends active sessions") {

@@ -1,8 +1,8 @@
-# BonBon skill for agents
+# bbflow skill for agents
 
-BonBon is a desktop workspace for agent command-line tools. A BonBon server starts each
+bbflow is a desktop workspace for agent command-line tools. A bbflow server starts each
 tool in a terminal and records the terminal input and output in a local SQLite archive.
-Use this guide to read that archive with the `bonbon` command.
+Use this guide to read that archive with the `bbflow` command.
 
 ## Rules
 
@@ -12,35 +12,35 @@ Use this guide to read that archive with the `bonbon` command.
   Check the current files, for example with `git status`.
 - The archive can contain secrets and private data. Read only what the task needs.
 - Read your own session first. Read other sessions only when the task needs them.
-- `bonbon query` cannot change the archive. Use the BonBon web UI to create, stop, or
+- `bbflow query` cannot change the archive. Use the bbflow web UI to create, stop, or
   archive a session.
 
 ## Find your session
 
-BonBon sets two environment variables in each terminal that it starts:
+bbflow sets two environment variables in each terminal that it starts:
 
 | Variable | Value |
 | --- | --- |
-| `BONBON_SESSION` | The ID of the session that owns the terminal. |
-| `BONBON_DIR` | The instance directory. `bonbon` commands use it automatically. |
+| `BBFLOW_SESSION` | The ID of the session that owns the terminal. |
+| `BBFLOW_DIR` | The instance directory. `bbflow` commands use it automatically. |
 
-If `BONBON_SESSION` is empty, the terminal is not a BonBon terminal. Then ask the user
+If `BBFLOW_SESSION` is empty, the terminal is not a bbflow terminal. Then ask the user
 for a session ID, or list the sessions with SQL.
 
-A side terminal sets the same variables for its session. BonBon does not record a side
+A side terminal sets the same variables for its session. bbflow does not record a side
 terminal, so the archive has no events of its commands.
 
 ## Run a query
 
 ```sh
-bonbon query "SELECT id,title,workspace,created FROM sessions ORDER BY created DESC LIMIT 20"
+bbflow query "SELECT id,title,workspace,created FROM sessions ORDER BY created DESC LIMIT 20"
 ```
 
 - Give one SQL statement in one quoted argument. Use `SELECT`, `WITH ... SELECT`, or
   `VALUES`.
-- SQL selects the scope. BonBon adds no session filter. To read only your session,
-  include `session_id='$BONBON_SESSION'` in the SQL.
-- The command needs a running BonBon server. It does not start one. An agent sandbox
+- SQL selects the scope. bbflow adds no session filter. To read only your session,
+  include `session_id='$BBFLOW_SESSION'` in the SQL.
+- The command needs a running bbflow server. It does not start one. An agent sandbox
   that blocks local network access also blocks the command.
 - To read a different instance, put `--dir DIR` before `query`.
 
@@ -66,7 +66,7 @@ One row for each session. A session has one workspace and one or more terminals.
 
 | Column | Meaning |
 | --- | --- |
-| `id` | Session ID. `BONBON_SESSION` holds this value. |
+| `id` | Session ID. `BBFLOW_SESSION` holds this value. |
 | `title` | Title that the user sees. It can be empty. |
 | `workspace` | Working directory of the session. |
 | `created` | Creation time. |
@@ -162,7 +162,7 @@ One row with the appearance, tool list, and launch defaults of the instance.
 To see the exact definitions, read `sqlite_schema`:
 
 ```sh
-bonbon query "SELECT name,sql FROM sqlite_schema WHERE type='table'"
+bbflow query "SELECT name,sql FROM sqlite_schema WHERE type='table'"
 ```
 
 ## Examples
@@ -170,44 +170,44 @@ bonbon query "SELECT name,sql FROM sqlite_schema WHERE type='table'"
 List the terminals of your session, oldest first:
 
 ```sh
-bonbon query "SELECT id,status,started,ended,detail FROM runs WHERE session_id='$BONBON_SESSION' ORDER BY started"
+bbflow query "SELECT id,status,started,ended,detail FROM runs WHERE session_id='$BBFLOW_SESSION' ORDER BY started"
 ```
 
 Read the newest output of your session. The rows are newest first:
 
 ```sh
-bonbon query "SELECT seq,run_id,created,text FROM events WHERE session_id='$BONBON_SESSION' AND kind='output' AND text<>'' ORDER BY seq DESC LIMIT 100"
+bbflow query "SELECT seq,run_id,created,text FROM events WHERE session_id='$BBFLOW_SESSION' AND kind='output' AND text<>'' ORDER BY seq DESC LIMIT 100"
 ```
 
 Read the output of one terminal in parts. Replace `RUN_ID`. For the next part, replace
 `0` with the last `seq` of the previous part:
 
 ```sh
-bonbon query "SELECT seq,created,text FROM events WHERE run_id='RUN_ID' AND kind='output' AND text<>'' AND seq>0 ORDER BY seq LIMIT 500"
+bbflow query "SELECT seq,created,text FROM events WHERE run_id='RUN_ID' AND kind='output' AND text<>'' AND seq>0 ORDER BY seq LIMIT 500"
 ```
 
 Find the tool and command of each terminal of your session:
 
 ```sh
-bonbon query "SELECT run_id,created,CAST(data AS TEXT) AS start FROM events WHERE session_id='$BONBON_SESSION' AND kind='start' ORDER BY seq"
+bbflow query "SELECT run_id,created,CAST(data AS TEXT) AS start FROM events WHERE session_id='$BBFLOW_SESSION' AND kind='start' ORDER BY seq"
 ```
 
 Read the messages that the user sent through the message editor of your session:
 
 ```sh
-bonbon query "SELECT seq,created,CAST(data AS TEXT)->>'text' AS message FROM events WHERE session_id='$BONBON_SESSION' AND kind='draft' AND CAST(data AS TEXT)->>'pending'=1 ORDER BY seq"
+bbflow query "SELECT seq,created,CAST(data AS TEXT)->>'text' AS message FROM events WHERE session_id='$BBFLOW_SESSION' AND kind='draft' AND CAST(data AS TEXT)->>'pending'=1 ORDER BY seq"
 ```
 
 Search the output of all sessions for a word. Replace `WORD`:
 
 ```sh
-bonbon query "SELECT e.seq,e.session_id,s.title,e.created,e.text FROM events e JOIN sessions s ON s.id=e.session_id WHERE e.kind='output' AND e.text LIKE '%WORD%' ORDER BY e.seq DESC LIMIT 50"
+bbflow query "SELECT e.seq,e.session_id,s.title,e.created,e.text FROM events e JOIN sessions s ON s.id=e.session_id WHERE e.kind='output' AND e.text LIKE '%WORD%' ORDER BY e.seq DESC LIMIT 50"
 ```
 
 Find sessions that used a directory. Replace `PATH`:
 
 ```sh
-bonbon query "SELECT id,title,created,archived FROM sessions WHERE workspace='PATH' ORDER BY created DESC"
+bbflow query "SELECT id,title,created,archived FROM sessions WHERE workspace='PATH' ORDER BY created DESC"
 ```
 
 ## Limits
@@ -218,9 +218,9 @@ bonbon query "SELECT id,title,created,archived FROM sessions WHERE workspace='PA
   can miss a phrase that two chunks share. Search for a short, unusual word.
 - Text that the user typed directly in the terminal is in `input` and `output` events.
   It is not in `draft` events.
-- A `pending` draft shows that BonBon started to send a message. It does not prove that
+- A `pending` draft shows that bbflow started to send a message. It does not prove that
   the agent received the message.
-- BonBon has no fork history, summaries, or semantic search. The archive holds only
+- bbflow has no fork history, summaries, or semantic search. The archive holds only
   what the terminals recorded.
 - A session that continues in a new terminal also has a handoff folder with plain text
   transcripts. The first message of that terminal gives the folder path.
@@ -229,9 +229,9 @@ bonbon query "SELECT id,title,created,archived FROM sessions WHERE workspace='PA
 
 | Command | Effect |
 | --- | --- |
-| `bonbon skill` | Print this guide. |
-| `bonbon --help` | Print the command list. |
-| `bonbon --version` | Print the executable version. |
-| `bonbon ui` | Open the web UI in the default browser of the user. |
-| `bonbon server start`, `stop`, `restart` | Manage the server. `stop` and `restart` end all live sessions, also your own terminal. Do not run them without a request from the user. |
-| `bonbon update` | Install the latest release. Do not run it without a request from the user. |
+| `bbflow skill` | Print this guide. |
+| `bbflow --help` | Print the command list. |
+| `bbflow --version` | Print the executable version. |
+| `bbflow ui` | Open the web UI in the default browser of the user. |
+| `bbflow server start`, `stop`, `restart` | Manage the server. `stop` and `restart` end all live sessions, also your own terminal. Do not run them without a request from the user. |
+| `bbflow update` | Install the latest release. Do not run it without a request from the user. |

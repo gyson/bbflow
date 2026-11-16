@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"bonbon/internal/client"
+	"bbflow/internal/client"
 )
 
 // The same executable runs the CLI, server, and menu in separate processes. Normal EOF
@@ -36,7 +36,7 @@ func launchMenuBar(target client.Target) (*menuBarProcess, error) {
 	}
 	defer reader.Close()
 	cmd := exec.Command(executable, "--dir", target.Dir, "server", "start")
-	cmd.Env = append(os.Environ(), "BONBON_MENUBAR_CHILD=1")
+	cmd.Env = append(os.Environ(), "BBFLOW_MENUBAR_CHILD=1")
 	cmd.Dir = target.Dir
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	cmd.ExtraFiles = []*os.File{reader}
@@ -51,7 +51,7 @@ func launchMenuBar(target client.Target) (*menuBarProcess, error) {
 		select {
 		case <-menu.closing:
 		default:
-			fmt.Fprintf(os.Stderr, "BonBon menu bar exited before server shutdown (%v); sessions continue running.\n", err)
+			fmt.Fprintf(os.Stderr, "bbflow menu bar exited before server shutdown (%v); sessions continue running.\n", err)
 		}
 		menu.done <- err
 	}()
@@ -108,7 +108,7 @@ func runMenuBarChild(target client.Target) error {
 			}, func() error {
 				// This confirms receipt only. The lifetime pipe closes after server cleanup.
 				if err := client.StopInstance(info); err != nil {
-					return fmt.Errorf("cannot quit BonBon: %w", err)
+					return fmt.Errorf("cannot quit bbflow: %w", err)
 				}
 				return nil
 			})

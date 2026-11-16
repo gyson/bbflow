@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 func composerServer(t *testing.T) (*Server, string) {

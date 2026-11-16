@@ -10,7 +10,7 @@ type Send = typeof call;
 export interface Editor { showDiff: typeof showDiff; showFile: typeof showFile }
 
 const maxFolderRequest = 200; // The server lists at most this number of folders in one request.
-const listLimit = 'The file list is incomplete. BonBon limits the number of files that it lists.';
+const listLimit = 'The file list is incomplete. bbflow limits the number of files that it lists.';
 
 // One selected file of a view. preview shows the current file, not its diff.
 interface Pick { path: string; preview: boolean }

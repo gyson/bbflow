@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/protocol"
+	"bbflow/internal/protocol"
 	"github.com/gorilla/websocket"
 )
 
@@ -31,7 +31,7 @@ func TestBrowserLaunchAndReconnect(t *testing.T) {
 	}
 	t.Setenv("SHELL", "browser-shell")
 	t.Setenv("ENV", "")
-	t.Setenv("PS1", "BONBON_SHELL_PROMPT> ")
+	t.Setenv("PS1", "BBFLOW_SHELL_PROMPT> ")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	port := startTestServer(t, directory)
 	address := "127.0.0.1:" + port
@@ -52,7 +52,7 @@ func TestBrowserLaunchAndReconnect(t *testing.T) {
 		t.Fatalf("browser launch: %+v %v", session, err)
 	}
 	var output string
-	for !strings.Contains(output, "BONBON_SHELL_PROMPT> ") {
+	for !strings.Contains(output, "BBFLOW_SHELL_PROMPT> ") {
 		var message protocol.Message
 		if err = conn.ReadJSON(&message); err != nil {
 			t.Fatal(err)
@@ -131,7 +131,7 @@ func TestEmbeddedWebUI(t *testing.T) {
 	port := startTestServer(t, t.TempDir())
 	address := "127.0.0.1:" + port
 	client := &http.Client{Timeout: 3 * time.Second}
-	for _, path := range []string{"/", "/assets/app.js", "/assets/app.css", "/assets/bonbon.svg", "/assets/favicon.svg", "/assets/menubar.png", "/assets/licenses.txt", "/client-config"} {
+	for _, path := range []string{"/", "/assets/app.js", "/assets/app.css", "/assets/bbflow.svg", "/assets/favicon.svg", "/assets/menubar.png", "/assets/licenses.txt", "/client-config"} {
 		response, err := client.Get("http://" + address + path)
 		if err != nil {
 			t.Fatal(err)
@@ -227,7 +227,7 @@ func TestWebSocketEndpointAndBrowserOrigins(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Use plain JSON over the public endpoint, as the browser does. Do not use BonBon's
+			// Use plain JSON over the public endpoint, as the browser does. Do not use bbflow's
 			// client or transport helpers.
 			conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 			readGreeting(t, conn)

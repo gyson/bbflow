@@ -8,13 +8,13 @@ import (
 	"runtime"
 	"strings"
 
-	"bonbon/internal/client"
+	"bbflow/internal/client"
 )
 
 func ui(target client.Target, args []string) error {
 	flags := flag.NewFlagSet("ui", flag.ContinueOnError)
 	flags.Usage = func() {
-		fmt.Println("Usage: bonbon [--dir DIR] ui\n\nOpen the running server's home page in your default browser.")
+		fmt.Println("Usage: bbflow [--dir DIR] ui\n\nOpen the running server's home page in your default browser.")
 	}
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -24,7 +24,7 @@ func ui(target client.Target, args []string) error {
 	}
 	info, err := target.Health()
 	if err != nil {
-		return fmt.Errorf("cannot open the UI: %w\nStart the server with bonbon --dir %q server start", err, target.Dir)
+		return fmt.Errorf("cannot open the UI: %w\nStart the server with bbflow --dir %q server start", err, target.Dir)
 	}
 	url := fmt.Sprintf("http://127.0.0.1:%d/", info.Port)
 	var opener string

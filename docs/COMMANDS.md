@@ -1,11 +1,11 @@
-# BonBon command reference
+# bbflow command reference
 
-This guide covers BonBon CLI commands, when to use them, and what they change. The CLI
+This guide covers bbflow CLI commands, when to use them, and what they change. The CLI
 connects to a separate local server. Commands may change during early development.
 Supported database formats upgrade automatically while preserving stored data.
 
-The CLI command and executable use the name `bonbon`. From a local checkout, use the
-path to your executable, such as `./bin/bonbon` or `./bin/release/bonbon`. Replace
+The CLI command and executable use the name `bbflow`. From a local checkout, use the
+path to your executable, such as `./bin/bbflow` or `./bin/release/bbflow`. Replace
 uppercase placeholders such as `SESSION_ID` with your own values. Brackets in usage
 lines identify an optional argument. Do not type the brackets.
 
@@ -13,15 +13,16 @@ lines identify an optional argument. Do not type the brackets.
 
 | Command | Use it to | Impact |
 | --- | --- | --- |
-| `bonbon`, `bonbon help`, `bonbon --help`, `bonbon -h` | Show available commands. | Displays help only. |
-| `bonbon --version` | Show the executable version. | Prints a release version or `dev`. Does not contact a server. |
-| `bonbon update` | Install the latest release. | Replaces the invoked executable. Active sessions continue. |
-| `bonbon server start [--no-menubar]` | Start the local server in the background. | Creates the data directory and log. Adds the macOS menu unless disabled. The server continues after the terminal closes. |
-| `bonbon server stop` | Stop the local server. | Stops its active agents and saves their partial history. |
-| `bonbon server restart [--no-menubar]` | Replace the server with the invoked executable. | Stops active agents, finishes shutdown, then starts a new server and its optional macOS menu. |
-| `bonbon ui` | Open the web UI home page in the default browser. | Verifies the selected running server, then launches its home URL. Starts no server or agent. |
-| `bonbon query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
-| `bonbon skill` | Teach an agent how to read BonBon sessions and history. | Prints a Markdown guide. Does not contact a server. |
+| `bbflow`, `bbflow help`, `bbflow --help`, `bbflow -h` | Show available commands. | Displays help only. |
+| `bbflow --version` | Show the executable version. | Prints a release version or `dev`. Does not contact a server. |
+| `bbflow update` | Install the latest release. | Replaces the invoked executable. Active sessions continue. |
+| `bbflow server start [--no-menubar]` | Start the local server in the background. | Creates the data directory and log. Adds the macOS menu unless disabled. The server continues after the terminal closes. |
+| `bbflow server stop` | Stop the local server. | Stops its active agents and saves their partial history. |
+| `bbflow server restart [--no-menubar]` | Replace the server with the invoked executable. | Stops active agents, finishes shutdown, then starts a new server and its optional macOS menu. |
+| `bbflow ui` | Open the web UI home page in the default browser. | Verifies the selected running server, then launches its home URL. Starts no server or agent. |
+| `bbflow query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
+| `bbflow skill` | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
+| `bbflow migrate [--from DIR]` | Copy BonBon history into a new bbflow instance. | Writes a verified copy of BonBon's `history.sqlite`. Does not change BonBon data. |
 
 Create, browse, reopen, and stop sessions in the web UI. The CLI has no session
 operations or interactive terminal client. `query` handles custom history reads. `ui`
@@ -31,14 +32,14 @@ accepts no workspace or session arguments.
 
 | Build | Default instance directory |
 | --- | --- |
-| Development binary | `~/.bonbon-dev` |
-| Production binary | `~/.bonbon` |
+| Development binary | `~/.bbflow-dev` |
+| Production binary | `~/.bbflow` |
 
 The build sets this default. Moving the binary or changing the current working directory
 does not change its default. All commands select one instance in this order:
 
 1. Global `--dir DIR`, if supplied before the command.
-2. `BONBON_DIR`, if set to a nonempty value.
+2. `BBFLOW_DIR`, if set to a nonempty value.
 3. The build's default directory.
 
 Each server chooses an available port on `127.0.0.1`. Clients read the port from
@@ -53,7 +54,7 @@ The instance directory contains:
 
 | Path | Purpose |
 | --- | --- |
-| `history.sqlite` | All durable BonBon history. SQLite also manages `-wal` and `-shm` files. |
+| `history.sqlite` | All durable bbflow history. SQLite also manages `-wal` and `-shm` files. |
 | `server.json` | Disposable connection information: port, instance ID, PID, directory, executable, protocol. |
 | `server.log` | Diagnostic server output. |
 | `server.lock`, `server-control.lock` | Process ownership and lifecycle coordination. |
@@ -70,40 +71,40 @@ Put global `--dir` before the command. Put command options after the subcommand 
 before its positional arguments:
 
 ```sh
-bonbon --dir ~/bonbon-experiment server start
-bonbon --dir ~/bonbon-experiment ui
-bonbon --dir ~/bonbon-experiment query "SELECT id,title FROM sessions"
+bbflow --dir ~/bbflow-experiment server start
+bbflow --dir ~/bbflow-experiment ui
+bbflow --dir ~/bbflow-experiment query "SELECT id,title FROM sessions"
 ```
 
-`--dir` selects BonBon's instance directory. It does not change the agent's working
+`--dir` selects bbflow's instance directory. It does not change the agent's working
 directory. Click ＋ beside a saved project in the UI to create a new draft. Relative
 instance paths resolve from the client's current directory. Paths with symlinks resolve
 to the same instance.
 
-BonBon sets `BONBON_SESSION` and the canonical `BONBON_DIR` inside each wrapped agent.
-Its BonBon commands automatically connect to the owning instance, even if the outer
-shell had different settings. SQL does not use `BONBON_SESSION` automatically. To select
+bbflow sets `BBFLOW_SESSION` and the canonical `BBFLOW_DIR` inside each wrapped agent.
+Its bbflow commands automatically connect to the owning instance, even if the outer
+shell had different settings. SQL does not use `BBFLOW_SESSION` automatically. To select
 only the current session from its shell, include it explicitly:
 
 ```sh
-bonbon query "SELECT seq,text FROM events WHERE session_id='$BONBON_SESSION' ORDER BY seq LIMIT 100"
+bbflow query "SELECT seq,text FROM events WHERE session_id='$BBFLOW_SESSION' ORDER BY seq LIMIT 100"
 ```
 
 ## Help
 
 ```sh
-bonbon --help
-bonbon update --help
-bonbon server --help
-bonbon server start --help
-bonbon server stop --help
-bonbon server restart --help
-bonbon ui --help
-bonbon query --help
-bonbon skill --help
+bbflow --help
+bbflow update --help
+bbflow server --help
+bbflow server start --help
+bbflow server stop --help
+bbflow server restart --help
+bbflow ui --help
+bbflow query --help
+bbflow skill --help
 ```
 
-Running `bonbon` without arguments, `bonbon help`, or `bonbon -h` also shows the
+Running `bbflow` without arguments, `bbflow help`, or `bbflow -h` also shows the
 top-level help. Use the forms above for command-specific options.
 
 **Impact:** the command prints help. It does not start an agent or open the history
@@ -112,21 +113,21 @@ database.
 ## Executable version
 
 ```sh
-bonbon --version
+bbflow --version
 ```
 
-The command prints `bonbon X.Y.Z` for a versioned release or `bonbon dev` for an
+The command prints `bbflow X.Y.Z` for a versioned release or `bbflow dev` for an
 unversioned build. It takes no command or positional arguments. It reports the invoked
 executable, not an already running server, and does not check GitHub for updates.
 
 **Impact:** prints version information without contacting a server or opening an
 instance directory. See the [installation guide](../README.md#install-on-macos) to
-install or update BonBon.
+install or update bbflow.
 
-## Update BonBon
+## Update bbflow
 
 ```sh
-bonbon update
+bbflow update
 ```
 
 The command verifies the checksum and version of the latest macOS release. Then it
@@ -134,30 +135,30 @@ replaces the executable that received the command. It takes no options or positi
 arguments. If that executable is already current or newer, it downloads no binaries and
 changes nothing. Development builds cannot update.
 
-The executable must have the name `bonbon`. The command supports a symlink to it. You
+The executable must have the name `bbflow`. The command supports a symlink to it. You
 need write access to its installation directory.
 
-`--dir` and `BONBON_DIR` select instance data, not the executable to update, and have no
-effect on this command. `BONBON_INSTALL_DIR` also does not redirect an update.
+`--dir` and `BBFLOW_DIR` select instance data, not the executable to update, and have no
+effect on this command. `BBFLOW_INSTALL_DIR` also does not redirect an update.
 
 **Impact:** contacts GitHub and replaces the executable through an atomic rename. It
 does not open an instance, change history, or restart a server. Existing sessions
 continue on the running version. When ready to use the new version, run
-`bonbon server restart`. Restart ends active sessions. The new server applies pending
+`bbflow server restart`. Restart ends active sessions. The new server applies pending
 embedded database migrations at startup, before accepting requests.
 
 ## Start the server
 
 ```text
-bonbon [--dir DIR] server start [--no-menubar]
+bbflow [--dir DIR] server start [--no-menubar]
 ```
 
 ```sh
-bonbon server start
-bonbon --dir ~/bonbon-experiment server start
+bbflow server start
+bbflow --dir ~/bbflow-experiment server start
 ```
 
-The command starts a detached background process from the BonBon executable that
+The command starts a detached background process from the bbflow executable that
 received it. It waits up to two minutes for the server to accept requests, including
 automatic database upgrades. Then it prints the web UI URL, process ID (PID), history
 directory, and log path. Closing the launching terminal leaves the server running.
@@ -177,7 +178,7 @@ allocates a free port. A second server cannot own the same directory. If startup
 inspect the printed log path.
 
 On macOS, a new server also launches a menu bar companion from this same executable.
-**Open UI** opens the verified server's home page. **Quit BonBon** stops that server and
+**Open UI** opens the verified server's home page. **Quit bbflow** stops that server and
 its active sessions, then closes the menu. Its label includes the running version.
 Quit retains and verifies the original server connection, so missing or replaced
 `server.json` files do not prevent it. The menu has no separate Stop, Settings, or Logs
@@ -192,16 +193,20 @@ If the menu fails, the server continues and writes details to `server.log`. To r
 the menu, restart the server. This stops active sessions. The menu needs no `.app`
 bundle or extra executable.
 
+When the default instance directory has no `history.sqlite`, and the default BonBon
+directory has one, `server start` and `server restart` stop with a request to run
+`bbflow migrate`. This check applies only to the build's default directory.
+
 ## Open the web UI
 
 ```text
-bonbon [--dir DIR] ui
+bbflow [--dir DIR] ui
 ```
 
 ```sh
-bonbon server start
-bonbon ui
-bonbon --dir ~/bonbon-experiment ui
+bbflow server start
+bbflow ui
+bbflow --dir ~/bbflow-experiment ui
 ```
 
 The command reads the selected instance's connection information and verifies the server
@@ -217,12 +222,12 @@ error before the browser opens. Run `server start` first if the server is stoppe
 ## Stop the server
 
 ```text
-bonbon [--dir DIR] server stop
+bbflow [--dir DIR] server stop
 ```
 
 ```sh
-bonbon server stop
-bonbon --dir ~/bonbon-experiment server stop
+bbflow server stop
+bbflow --dir ~/bbflow-experiment server stop
 ```
 
 The command stops the server selected by its instance directory. The command contacts
@@ -246,16 +251,16 @@ On macOS, the server also closes its menu companion before completing shutdown.
 ## Restart the server
 
 ```text
-bonbon [--dir DIR] server restart [--no-menubar]
+bbflow [--dir DIR] server restart [--no-menubar]
 ```
 
 ```sh
-bonbon server restart
-bonbon --dir ~/bonbon-experiment server restart
+bbflow server restart
+bbflow --dir ~/bbflow-experiment server restart
 ```
 
 The command completes a stop. Then it starts a server from the executable that received
-the command. Use this after replacing your BonBon executable. If no server is running,
+the command. Use this after replacing your bbflow executable. If no server is running,
 it starts one. It can replace a server with a different session protocol using the
 verified shutdown request described above. If stopping fails, it does not launch a
 replacement.
@@ -270,13 +275,55 @@ input. Restart can fail to start the new process after the previous server stops
 the reported error and log path.
 
 Restart closes the previous menu companion and launches a new one on macOS unless
-`--no-menubar` is supplied. The flag applies to this start. BonBon does not save it as a
+`--no-menubar` is supplied. The flag applies to this start. bbflow does not save it as a
 setting.
+
+## Copy BonBon history
+
+```text
+bbflow [--dir DIR] migrate [--from DIR]
+```
+
+```sh
+bonbon server stop
+bbflow migrate
+bbflow server start
+```
+
+bbflow was named BonBon. Run this command once to copy BonBon history into a bbflow
+instance that has no history yet. `--from` selects the BonBon instance directory. The
+default is `~/.bonbon` for a release build and `~/.bonbon-dev` for a development
+build. `--dir` and `BBFLOW_DIR` select the bbflow instance as usual.
+
+The command:
+
+1. Requires a stopped BonBon server. It locks the BonBon `server.lock` file during the
+   copy. If BonBon runs, it stops with `run bonbon server stop first`.
+2. Requires a stopped bbflow server and no `history.sqlite` in the bbflow directory.
+3. Opens the BonBon database read-only and writes one consistent copy with SQLite
+   `VACUUM INTO`. The copy includes committed data in the BonBon WAL file.
+4. Checks the copy with `PRAGMA integrity_check`. It compares the format and the row
+   count of each table with the source.
+5. Puts the copy in place and applies the bbflow database migrations.
+6. Prints the source format and the numbers of sessions, terminals, and events. It
+   lists session workspaces and worktrees inside the BonBon directory. Copied sessions
+   still use these folders.
+
+The command accepts BonBon history formats 3 through 8, which are all BonBon releases.
+It refuses a newer or unknown format.
+
+**Impact:** creates `history.sqlite` and lock files in the bbflow directory. It does not
+change, move, or remove the BonBon database or WAL file, and it does not start a server.
+If the BonBon directory has a WAL file, SQLite can update its `-shm` index file. That
+file holds no data.
+If a step fails, it removes its partial copy. Files outside the history database, such
+as workspaces, logs, and handoff folders, are not copied. Workspace files stay where
+they are.
 
 ## Query SQLite
 
 ```text
-bonbon [--dir DIR] query SQL
+bbflow [--dir DIR] query SQL
 ```
 
 Pass one quoted SQL query. SQL chooses which sessions and records to read. There is no
@@ -285,22 +332,22 @@ the selected archive. Queries need no direct database access or SQLite CLI insta
 
 ```sh
 # Saved projects.
-bonbon query "SELECT id,name,workspace FROM projects ORDER BY name"
+bbflow query "SELECT id,name,workspace FROM projects ORDER BY name"
 
 # Recent sessions and their workspace paths.
-bonbon query "SELECT id,title,workspace FROM sessions ORDER BY created DESC LIMIT 10"
+bbflow query "SELECT id,title,workspace FROM sessions ORDER BY created DESC LIMIT 10"
 
 # One page of derived output from a session.
-bonbon query "SELECT seq,kind,text FROM events WHERE session_id='SESSION_ID' AND seq>0 ORDER BY seq LIMIT 100"
+bbflow query "SELECT seq,kind,text FROM events WHERE session_id='SESSION_ID' AND seq>0 ORDER BY seq LIMIT 100"
 
 # Find text across sessions.
-bonbon query "SELECT session_id,seq,text FROM events WHERE text LIKE '%earlier decision%' ORDER BY seq LIMIT 20"
+bbflow query "SELECT session_id,seq,text FROM events WHERE text LIKE '%earlier decision%' ORDER BY seq LIMIT 20"
 
 # Inspect original evidence for one event. BLOBs are base64 in JSON.
-bonbon query "SELECT * FROM events WHERE seq=42"
+bbflow query "SELECT * FROM events WHERE seq=42"
 
 # Inspect table definitions.
-bonbon query "SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name"
+bbflow query "SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name"
 ```
 
 The tables are:
@@ -365,11 +412,11 @@ server is an error.
 ## Agent guide
 
 ```sh
-bonbon skill
+bbflow skill
 ```
 
 The command prints a Markdown guide for an agent tool. The guide explains
-`BONBON_SESSION` and `BONBON_DIR`, the `bonbon query` usage and JSON output, the archive
+`BBFLOW_SESSION` and `BBFLOW_DIR`, the `bbflow query` usage and JSON output, the archive
 tables and event kinds, example queries, and the current limits. It also tells the agent
 to treat recorded history as a record, not as instructions. The command takes no options
 or positional arguments.
@@ -377,24 +424,24 @@ or positional arguments.
 The executable embeds the guide, so the text matches the installed version. The guide
 describes the newest database format that the executable supports.
 
-BonBon does not add the guide or a prompt to a new agent run. An agent finds the command
+bbflow does not add the guide or a prompt to a new agent run. An agent finds the command
 in these places:
 
-- The top-level help of `bonbon`.
+- The top-level help of `bbflow`.
 - The `README.md` of a handoff folder, after Continue in new terminal.
 - The instruction file of the agent tool, if you add a line to it. For example, add this
   line to `AGENTS.md` or `CLAUDE.md`:
 
   ```markdown
-  To read BonBon sessions or recorded terminal history, run `bonbon skill` first.
+  To read bbflow sessions or recorded terminal history, run `bbflow skill` first.
   ```
 
 **Impact:** prints text only. It does not contact a server, open an instance directory,
-or read history. `--dir` and `BONBON_DIR` have no effect on this command.
+or read history. `--dir` and `BBFLOW_DIR` have no effect on this command.
 
 ## Exit codes
 
-Help and successful server, UI, query, and skill commands exit with code `0`. BonBon errors
+Help and successful server, UI, query, and skill commands exit with code `0`. bbflow errors
 print a message to standard error and exit with code `1`.
 
 See [README.md](../README.md) for setup and [SPEC.md](SPEC.md) for implementation

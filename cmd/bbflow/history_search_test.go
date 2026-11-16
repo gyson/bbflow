@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 func TestHistorySearchEarlierTerminalsWhileLatestKeepsRunning(t *testing.T) {
@@ -28,7 +28,7 @@ func TestHistorySearchEarlierTerminalsWhileLatestKeepsRunning(t *testing.T) {
 	}
 	start := shellStartRequest(t, t.TempDir(), "History search fixture", protocol.Size{Cols: 80, Rows: 24})
 	first := openSessionView(t, start)
-	waitFor(t, func() bool { return strings.Contains(first.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(first.text(), "BBFLOW_SHELL_PROMPT> ") })
 	if _, err := first.Write([]byte("printf '\\146\\151\\156\\144\\040%s\\n' oldest\r")); err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestHistorySearchEarlierTerminalsWhileLatestKeepsRunning(t *testing.T) {
 	var session history.Session
 	rpc(protocol.Request{Operation: "session-config", Session: sid}, &session)
 	second := openSessionView(t, protocol.Request{Operation: "session-continue", Session: sid, LatestRun: session.Run.ID, Size: protocol.Size{Cols: 80, Rows: 24}})
-	waitFor(t, func() bool { return strings.Contains(second.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(second.text(), "BBFLOW_SHELL_PROMPT> ") })
 	if _, err := second.Write([]byte("printf '\\146\\151\\156\\144\\040%s\\n' newest\r")); err != nil {
 		t.Fatal(err)
 	}

@@ -62,7 +62,7 @@ func ValidateCommand(command string) error {
 	return nil
 }
 
-// ValidateContinueCommand checks a continue command template. BonBon quotes the prompt,
+// ValidateContinueCommand checks a continue command template. bbflow quotes the prompt,
 // so the placeholder must not have quotes around it.
 func ValidateContinueCommand(command string) error {
 	if err := ValidateCommand(command); err != nil {
@@ -73,7 +73,7 @@ func ValidateContinueCommand(command string) error {
 	}
 	before, after, _ := strings.Cut(command, PromptPlaceholder)
 	if strings.HasSuffix(before, "'") || strings.HasSuffix(before, `"`) || strings.HasPrefix(after, "'") || strings.HasPrefix(after, `"`) {
-		return errors.New("write {prompt} without quotes; BonBon quotes the prompt")
+		return errors.New("write {prompt} without quotes; bbflow quotes the prompt")
 	}
 	return nil
 }

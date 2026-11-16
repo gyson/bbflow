@@ -14,8 +14,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 const maxAttachment = 4 << 20

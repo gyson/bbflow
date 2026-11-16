@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/client"
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/client"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 )
 
 // A worktree session stops, continues in a new terminal, continues again after a server
@@ -81,7 +81,7 @@ func TestContinueWorktreeSessionInNewTerminal(t *testing.T) {
 	}
 	second := openSessionView(t, protocol.Request{Operation: "session-continue", Session: session.ID, LatestRun: firstRun.ID, Tool: "fixture", Size: size})
 	waitFor(t, func() bool {
-		return strings.Contains(second.text(), "PROMPT<Continue the work of BonBon session "+session.ID)
+		return strings.Contains(second.text(), "PROMPT<Continue the work of bbflow session "+session.ID)
 	})
 	// A second view that saw the same latest run cannot start another terminal.
 	duplicate := openSessionView(t, protocol.Request{Operation: "session-continue", Session: session.ID, LatestRun: firstRun.ID, Tool: "fixture", Size: size})
@@ -131,7 +131,7 @@ func TestContinueWorktreeSessionInNewTerminal(t *testing.T) {
 		t.Fatal(secondRun)
 	}
 	third := openSessionView(t, protocol.Request{Operation: "session-continue", Session: session.ID, LatestRun: secondRun.ID, Size: size})
-	waitFor(t, func() bool { return strings.Contains(third.text(), "BONBON_SHELL_PROMPT> ") })
+	waitFor(t, func() bool { return strings.Contains(third.text(), "BBFLOW_SHELL_PROMPT> ") })
 	text := readme()
 	two, one := strings.Index(text, "### Terminal 2 · stopped"), strings.Index(text, "### Terminal 1 · stopped")
 	if two < 0 || one < two || !strings.Contains(text, "Started from a handoff folder after terminal 1.") || !strings.Contains(text, "Tool: Fixture") {

@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BonBon</title>
+  <title>bbflow</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
   <link rel="stylesheet" href="/assets/app.css">
   <script type="module" src="/assets/app.js"></script>
 </head>
 <body>
   <aside id="sidebar" class="sidebar">
-    <a id="home-link" class="brand" href="/" title="Home" aria-label="BonBon home"><span class="brand-mark" aria-hidden="true"></span> BonBon <span class="local-label">LOCAL</span></a>
+    <a id="home-link" class="brand" href="/" title="Home" aria-label="bbflow home"><span class="brand-mark" aria-hidden="true"></span> bbflow <span class="local-label">LOCAL</span></a>
     <div class="session-scopes" aria-label="Session collection"><button id="sessions-open" aria-pressed="true">Sessions</button><button id="archives-open" aria-pressed="false">Archived</button></div>
     <label class="search-label"><span class="sr-only">Search projects and sessions</span><input id="filter" type="search" maxlength="200" placeholder="Search names and folders…"></label>
     <div class="section-heading"><span id="list-heading">PROJECTS · SESSIONS</span><button id="refresh" class="text-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button></div>
@@ -41,7 +41,7 @@
     <section id="welcome" class="welcome">
       <span class="eyebrow">PICK UP WHERE YOU LEFT OFF</span>
       <h2>Your agents. One workspace.</h2>
-      <p>Click ＋ beside a project to prepare a session, or reopen a session below it.<br>BonBon keeps recording while you’re away.</p>
+      <p>Click ＋ beside a project to prepare a session, or reopen a session below it.<br>bbflow keeps recording while you’re away.</p>
       <div class="welcome-notes"><div><strong>Stay connected</strong><p>Reopen a session or share it across browser tabs.</p></div><div><strong>Keep the history</strong><p>Return to recorded output even after a process ends.</p></div></div>
     </section>
     <div id="session-row">
@@ -136,7 +136,7 @@
           <p class="form-help">HEAD uses the project’s current commit. Uncommitted changes are not copied. Existing sessions keep their choices.</p>
         </section>
         <section class="settings-card"><div class="settings-heading"><div><h3>Tools</h3><p>A name, the first command submitted to your shell, and an optional continue command.</p></div><button id="tool-add" type="button">＋ Add tool</button></div>
-          <p class="form-help">Shell is always available and submits no command. Commands use your interactive shell’s syntax and can include model flags or wrappers. <strong>Continue in new terminal</strong> submits the continue command once. Write {prompt} once, without quotes, where the tool accepts its first prompt, for example <code>codex --no-alt-screen {prompt}</code> or <code>claude {prompt}</code>. BonBon quotes the handoff prompt. Without a continue command, BonBon starts the tool with its normal command and does not send the prompt. Run agents in the normal screen, for example Codex with <code>--no-alt-screen</code>. A transcript keeps only the last screen of a program that uses the alternate screen.</p>
+          <p class="form-help">Shell is always available and submits no command. Commands use your interactive shell’s syntax and can include model flags or wrappers. <strong>Continue in new terminal</strong> submits the continue command once. Write {prompt} once, without quotes, where the tool accepts its first prompt, for example <code>codex --no-alt-screen {prompt}</code> or <code>claude {prompt}</code>. bbflow quotes the handoff prompt. Without a continue command, bbflow starts the tool with its normal command and does not send the prompt. Run agents in the normal screen, for example Codex with <code>--no-alt-screen</code>. A transcript keeps only the last screen of a program that uses the alternate screen.</p>
           <div id="settings-tools"></div>
         </section>
         <p id="settings-error" class="form-error" role="alert" hidden></p>
@@ -166,7 +166,7 @@
   <dialog id="continue-dialog" class="continue-dialog" aria-labelledby="continue-title">
     <form id="continue-form">
       <div class="dialog-heading"><div><span class="eyebrow">NEW TERMINAL</span><h2 id="continue-title">Continue in a new terminal</h2></div><button type="button" id="cancel-continue" class="text-button" aria-label="Close new terminal">✕</button></div>
-      <p class="form-help">BonBon starts a new terminal in this session. The session keeps its ID, workspace, message draft, and history. Before the start, BonBon writes a read-only handoff folder with the earlier terminals and your sent messages.</p>
+      <p class="form-help">bbflow starts a new terminal in this session. The session keeps its ID, workspace, message draft, and history. Before the start, bbflow writes a read-only handoff folder with the earlier terminals and your sent messages.</p>
       <p id="continue-workspace" class="continue-path"></p>
       <label>Tool<select id="continue-tool"></select></label>
       <p id="continue-hint" class="form-help"></p>
@@ -178,7 +178,7 @@
   </dialog>
   <dialog id="handoff-dialog" class="continue-dialog" aria-labelledby="handoff-title">
     <div class="dialog-heading"><div><span class="eyebrow">MESSAGE EDITOR</span><h2 id="handoff-title">Handoff prompt</h2></div><button type="button" id="handoff-close" class="text-button" aria-label="Close handoff prompt">✕</button></div>
-    <p class="form-help">This prompt points an agent to the handoff folder of this session. The folder has the earlier terminals and your sent messages. BonBon rebuilds it each time you continue in a new terminal. Send the prompt when the agent is ready.</p>
+    <p class="form-help">This prompt points an agent to the handoff folder of this session. The folder has the earlier terminals and your sent messages. bbflow rebuilds it each time you continue in a new terminal. Send the prompt when the agent is ready.</p>
     <p id="handoff-folder" class="continue-path"></p>
     <textarea id="handoff-text" class="prompt-text" rows="6" readonly aria-label="Handoff prompt"></textarea>
     <p id="handoff-status" class="form-help" role="status"></p>
@@ -210,6 +210,6 @@
     </div>
     <p id="history-help" class="history-help">Derived terminal output · Read only. Redraws can repeat text or omit spaces.</p>
   </dialog>
-  <noscript>Enable JavaScript to use BonBon’s web UI.</noscript>
+  <noscript>Enable JavaScript to use bbflow’s web UI.</noscript>
 </body>
 </html>

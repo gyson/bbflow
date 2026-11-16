@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/client"
-	"bonbon/internal/protocol"
+	"bbflow/internal/client"
+	"bbflow/internal/protocol"
 )
 
 func TestSessionViewsDoNotChangeActivityOrder(t *testing.T) {
@@ -166,7 +166,7 @@ type statusWatch struct {
 
 func watchStatuses(t *testing.T) *statusWatch {
 	t.Helper()
-	conn, err := (client.Target{Dir: os.Getenv("BONBON_DIR")}).Connect(protocol.Request{Operation: "status-watch"})
+	conn, err := (client.Target{Dir: os.Getenv("BBFLOW_DIR")}).Connect(protocol.Request{Operation: "status-watch"})
 	if err != nil {
 		t.Fatal(err)
 	}

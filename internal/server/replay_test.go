@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
-	agent "bonbon/internal/runtime"
-	"bonbon/internal/terminal"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
+	agent "bbflow/internal/runtime"
+	"bbflow/internal/terminal"
 	"github.com/gorilla/websocket"
 )
 

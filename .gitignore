@@ -1,4 +1,4 @@
-.bonbon/
+.bbflow/
 *.sqlite*
 *.log
 .DS_Store

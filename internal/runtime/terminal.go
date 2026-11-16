@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"bonbon/internal/history"
-	"bonbon/internal/protocol"
+	"bbflow/internal/history"
+	"bbflow/internal/protocol"
 	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
 )
@@ -33,7 +33,7 @@ type Launch struct {
 	Env       []string
 	Tool      string // The tool name, or Shell.
 	Continues string // The previous run of the same session, for a new terminal.
-	Handoff   string // The handoff folder that BonBon wrote for a new terminal.
+	Handoff   string // The handoff folder that bbflow wrote for a new terminal.
 }
 
 // recording commits terminal events and run states. A side terminal keeps nothing.
@@ -125,7 +125,7 @@ func runPTY(ctx context.Context, record recording, run *history.Run, dataDir str
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Dir = session.Workspace
 	// Inherit the server's environment and normal interactive shell startup.
-	cmd.Env = append(request.Env, "BONBON_SESSION="+session.ID, "BONBON_DIR="+dataDir)
+	cmd.Env = append(request.Env, "BBFLOW_SESSION="+session.ID, "BBFLOW_DIR="+dataDir)
 	tty, err := pty.StartWithSize(cmd, size)
 	if err != nil {
 		run.Status, run.Ended, run.Detail = "failed", history.Now(), err.Error()
@@ -147,7 +147,7 @@ func runPTY(ctx context.Context, record recording, run *history.Run, dataDir str
 		run.Status, run.Ended, run.Detail = "failed", history.Now(), err.Error()
 		return 1, errors.Join(err, status())
 	}
-	tty = os.NewFile(uintptr(fd), "bonbon-pty")
+	tty = os.NewFile(uintptr(fd), "bbflow-pty")
 	defer tty.Close()
 	run.PID, run.Status = cmd.Process.Pid, "running"
 	failures := make(chan error, 4)

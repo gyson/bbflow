@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"bonbon/internal/history"
+	"bbflow/internal/history"
 )
 
 func TestSkillCommandPrintsGuideWithoutInstance(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "absent")
 	output, err := testCommand("--dir", directory, "skill").Output()
-	if err != nil || string(output) != skillText || !strings.HasPrefix(skillText, "# BonBon skill for agents\n") {
+	if err != nil || string(output) != skillText || !strings.HasPrefix(skillText, "# bbflow skill for agents\n") {
 		t.Fatalf("skill: %s %v", output, err)
 	}
 	for _, tc := range []struct {
@@ -24,8 +24,8 @@ func TestSkillCommandPrintsGuideWithoutInstance(t *testing.T) {
 		want string
 		ok   bool
 	}{
-		{[]string{"skill", "--help"}, "Usage: bonbon skill", true},
-		{[]string{"--help"}, "bonbon skill", true},
+		{[]string{"skill", "--help"}, "Usage: bbflow skill", true},
+		{[]string{"--help"}, "bbflow skill", true},
 		{[]string{"skill", "extra"}, "takes no arguments", false},
 	} {
 		output, err := testCommand(append([]string{"--dir", directory}, tc.args...)...).CombinedOutput()
@@ -95,18 +95,18 @@ func TestSkillExamplesRun(t *testing.T) {
 
 	bin := t.TempDir()
 	executable, _ := os.Executable()
-	if err := os.Symlink(executable, filepath.Join(bin, "bonbon")); err != nil {
+	if err := os.Symlink(executable, filepath.Join(bin, "bbflow")); err != nil {
 		t.Fatal(err)
 	}
-	examples := regexp.MustCompile("(?m)^```sh\n(bonbon query .+)\n```$").FindAllStringSubmatch(skillText, -1)
+	examples := regexp.MustCompile("(?m)^```sh\n(bbflow query .+)\n```$").FindAllStringSubmatch(skillText, -1)
 	if len(examples) < 8 {
 		t.Fatalf("found %d examples", len(examples))
 	}
 	results := make(map[string]history.QueryResult)
 	for _, example := range examples {
 		command := exec.Command("/bin/sh", "-c", example[1])
-		command.Env = append(os.Environ(), "BONBON_TEST_CLI=1", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-			"BONBON_DIR="+directory, "BONBON_SESSION="+session.ID)
+		command.Env = append(os.Environ(), "BBFLOW_TEST_CLI=1", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+			"BBFLOW_DIR="+directory, "BBFLOW_SESSION="+session.ID)
 		output, err := command.Output()
 		var result history.QueryResult
 		if err != nil || json.Unmarshal(output, &result) != nil || len(result.Columns) == 0 {
