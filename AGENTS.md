@@ -168,6 +168,19 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 - Read `docs/COMMANDS.md` for CLI usage and `docs/SPEC.md` for storage details. Backup
   and restore are deferred to the cloud backup plan.
 
+## Project skills
+
+A project skill is a procedure that an agent loads when a task needs it. Each skill is a
+folder with a `SKILL.md` file.
+
+- Keep each skill in `.agents/skills/<name>/`, where Codex reads it. Add a symbolic link
+  to it at `.claude/skills/<name>`, so that Claude Code reads the same files.
+- Use `review-loop` for a PR review that continues until LGTM. One session runs the
+  reviewer role and a second session runs the implementer role.
+- When you change the round comment format, update `SKILL.md`, the two role files, and
+  `scripts/wait-for-pr.sh` of `review-loop` together.
+- Add each skill script to the syntax check in `make check`.
+
 ## Product priorities
 
 - Treat browser tabs as equal views. Every view can send input. Do not add a controller

@@ -16,7 +16,7 @@ test: web-build
 
 check: web-build
 	go vet ./...
-	sh -n internal/install/install.sh scripts/package-release.sh scripts/smoke-release.sh
+	sh -n internal/install/install.sh scripts/package-release.sh scripts/smoke-release.sh .agents/skills/review-loop/scripts/wait-for-pr.sh
 
 web-build:
 	npm --prefix web run build
