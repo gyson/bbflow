@@ -29,9 +29,6 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
   Go FFI to load the built-in AppKit frameworks, without CGO. The server launches the
   same executable as a separate menu process. It needs no `.app` bundle or additional
   executable. Other platforms do not load native menu code.
-- `make build`, `make release`, `make test`, and `make check` build frontend assets
-  before compiling Go. `make web-build` builds only the frontend. `make web-check`
-  compiles and runs frontend fixtures. Direct Go commands need frontend assets first.
 - The server uses the pinned pure-Go `github.com/gitpod-io/xterm-go` headless emulator.
   It owns terminal screens independently of client connections.
 - A detached Go server owns pseudo-terminals (PTYs) and SQLite. Clients use JSON text
@@ -41,22 +38,16 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 - Every new session starts an interactive shell with `-i`, using the server environment.
   The server resolves `$SHELL` from PATH or an absolute path, falling back to `/bin/sh`
   when unset. Workspaces accept absolute paths, `~`, and `~/path`.
-- `make build` creates the development binary at `bin/bbflow`.
-- `make release` creates the production binary at `bin/release/bbflow`.
-- `make release VERSION=X.Y.Z` embeds that version. Unversioned builds report `dev`.
-- `make release-assets VERSION=X.Y.Z` builds macOS Apple Silicon and Intel archives, the
-  shell installer, and SHA-256 checksums under the ignored `bin/releases/vX.Y.Z/`.
-- `make test` and `make check` run Go tests and vet.
+- [DEVELOPMENT.md](DEVELOPMENT.md) gives the build, check, and release commands.
 
 The SQLite driver exposes query authorization and cancellation through supported APIs.
 This keeps read-only query enforcement in SQLite and avoids a custom SQL parser.
 
-Storage uses format version 8 with projects, sessions, runs, events, settings,
-preparations, worktree metadata, archive flags, and run indexes. Embedded SQL migrations
-upgrade formats 3–7 automatically at server startup. Format 8 needs no migration.
-Settings include the instance appearance. Each tool can have an optional continue command.
-Commands and APIs may still change during early development. Database upgrades preserve
-durable data.
+Storage has projects, sessions, runs, events, settings, preparations, worktree metadata,
+archive flags, and run indexes. Embedded SQL migrations upgrade older formats at server
+startup. See [database upgrades](#database-upgrades) for the format numbers. Commands
+and APIs may still change during early development. Database upgrades preserve durable
+data.
 
 The history package separates schema and models, session/run operations, event capture,
 replay, and read-only SQL. Database access stays inside that package. Server handlers
@@ -64,33 +55,16 @@ call its methods. Ordinary client commands do not open the live database.
 
 ## Commands
 
-See [COMMANDS.md](COMMANDS.md) for human-readable usage, examples, and effects.
+[COMMANDS.md](COMMANDS.md) is the reference for each command, its options, its output,
+and its effects. The CLI opens the UI, manages the server, runs read-only SQL queries,
+prints the agent guide, and updates the executable. It has no session operations,
+terminal attachment, or `history` command group.
 
-| Command | Implemented behavior |
-| --- | --- |
-| `bbflow --version` | Print the invoked executable's version without contacting a server or opening an instance. |
-| `bbflow update` | Install the latest macOS release at the invoked executable's path without restarting a server. |
-| `bbflow server start/stop/restart` | Manage the detached server. Stop/restart finalizes active runs. |
-| `bbflow ui` | Verify the selected server and open its home page in the default browser. Requires a running server. |
-| `bbflow query SQL` | Run one read-only SQL query and return JSON. SQL chooses the scope. |
-| `bbflow skill` | Print the embedded Markdown guide for agents without contacting a server or opening an instance. |
+`bbflow skill` prints `cmd/bbflow/skill.md`, which the executable embeds. Fixtures
+compare its tables and columns with the migrated schema. They also run each example
+through a shell against a test server.
 
-Every command accepts global `--dir DIR` before the command name. It selects the bbflow
-instance. The UI selects session workspaces. There are no CLI session operations or
-terminal attachments. `bbflow ui` takes no workspace or session arguments.
-
-There is no implicit session filter or `history` command group. Queries return JSON with
-`columns`, `rows`, and `truncated`. Raw BLOBs use base64. Requests go through the
-server. There is no bearer token or credential exchange.
-
-`bbflow skill` prints `cmd/bbflow/skill.md`, which the executable embeds. The guide
-covers the environment variables, `bbflow query`, the archive tables and event kinds,
-example queries, and limits. It describes only the newest supported database format.
-Fixtures compare its tables and columns with the migrated schema. They also run each
-example through a shell against a test server.
-
-The server listens only on `127.0.0.1`. It does not support remote access. Clients
-require an explicitly started server.
+The server listens only on `127.0.0.1`. It does not support remote access.
 
 ## Release installation
 
@@ -127,19 +101,13 @@ with the requested or latest version, including numeric version ordering. It cha
 installed files and downloads no binaries. Development versions cannot be compared.
 
 `bbflow update` runs the embedded copy of `internal/install/install.sh` with the invoked
-executable's directory. It resolves invocation symlinks and requires the target filename
-`bbflow`. Development builds and unsupported platforms are rejected. The command has no
-options and ignores instance and installer directory settings. It uses the same curl
-download, verification, and atomic replacement as initial installation. It never
-downloads or executes a remote installer script.
+executable's directory. It uses the same curl download, verification, and atomic
+replacement as initial installation. It never downloads or executes a remote installer
+script. Unsupported platforms are rejected. Failed downloads or verification preserve
+the installed executable. See [COMMANDS.md](COMMANDS.md#update-bbflow) for its usage,
+requirements, and effects.
 
-The installation directory must be writable. Existing servers and sessions continue.
-Users restart them explicitly when ready. Failed downloads or verification preserve the
-installed executable. Database migrations run only when the new server starts, not
-during `bbflow update`.
-
-There is no UI update action, background check, or automatic update. The executable
-version does not identify an already running server's build.
+There is no UI update action, background check, or automatic update.
 
 The tag-triggered Release workflow tests Apple Silicon and Intel macOS runners before
 publishing assets. Release notes are stored in `docs/releases/`. Linux and Windows
@@ -149,17 +117,17 @@ synthetic binaries and GitHub API responses. They do not access real credentials
 
 ## Server lifecycle
 
+See [COMMANDS.md](COMMANDS.md#start-the-server) for the effects of `server start`,
+`server stop`, and `server restart`, and for the selection of the instance directory.
+See [PROTOCOL.md](PROTOCOL.md#connections-and-requests) for the greeting and its
+verification, the shutdown request, the protocol version, and the message limits.
+
 `start` uses the invoked executable to launch a new detached process, with standard
 input disconnected and output appended to `server.log`. It waits up to two minutes for a
 successful protocol handshake, including database upgrades. A second start leaves the
 matching server unchanged. `stop` requests shutdown through the protocol and waits for
 the archive lock to be released. `restart` completes stop before launching the invoked
 executable again.
-
-Shutdown uses the verified server's advertised protocol version, so rebuilding with a
-new session protocol does not block stop or restart. It requires the same greeting and
-shutdown envelope, including an explicit `stopping: true` acknowledgment. It does not
-retry with other formats or signal a saved PID.
 
 Lifecycle commands serialize within an instance directory. An archive lock prevents
 multiple servers from owning it. When the lock is free, lifecycle commands can discard
@@ -170,71 +138,19 @@ If the lock is held, lifecycle commands require a verified server connection. Mi
 malformed, or mismatched connection information causes an error instead of starting a
 duplicate or stopping an unrelated server. A failed stop does not start a replacement.
 
-Production defaults to `~/.bbflow`. Development defaults to `~/.bbflow-dev`. All
-commands select the instance with global `--dir`, then `BBFLOW_DIR`, then the build's
-default. The server binds `127.0.0.1:0` and atomically publishes its assigned port and
-random instance ID in `server.json`, with private permissions.
+The server binds `127.0.0.1:0` and atomically publishes its connection information in
+`server.json`, with private permissions. The file is disposable. The server removes it
+after handlers and agents stop, before releasing the archive lock. Shutdown leaves the
+file intact if it belongs to another server instance.
 
-The file also includes protocol version, PID, canonical directory, and executable path.
-It is disposable and removed after handlers and agents stop, before releasing the
-archive lock. Shutdown leaves the descriptor intact if it belongs to another server
-instance.
+HTTP serves the WebSocket upgrade, the embedded UI, its static files, and the browser
+connection information. All session operations and history reads use WebSocket. There
+is no separate UI API. See [browser access](PROTOCOL.md#browser-access) for the routes
+and the Host and Origin policy.
 
-CLI clients read the connection file and open a WebSocket to its loopback port. The
-server sends a `server` greeting first. Before sending any operation, the client
-verifies the greeting's protocol, canonical directory, instance ID, PID, and port
-against `server.json` on that same connection. This prevents stale metadata from
-directing a command to another instance. A stop request also carries the instance ID
-from that connection's greeting. Health checks read the greeting and close without
-sending an operation.
-
-Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bbflow/24`.
-Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
-exactly one JSON object.
-
-The server rejects binary messages and invalid JSON. There is no extra length prefix.
-Protocol 15 creates independent project drafts and adds archive/restore, collection
-search, and pagination. SQLite format 6 adds a session archive flag.
-
-Settings, preparations, and worktree metadata remain server-owned. Formats 3–7 upgrade
-automatically to 8 at server startup. Reload the UI after starting the new server.
-Protocol 18 adds `session-continue` and `session-handoff` for a new terminal in an ended
-session. Protocol 19 adds `session-terminals` and an optional `run` for
-`session-resume`, so a view can show an earlier terminal. SQLite format 6 does not
-change.
-
-Protocol 20 adds `history-search` and `history-context`. These operations read existing
-recordings. SQLite format 7 adds run indexes through migration 7 without changing
-records.
-
-Protocol 22 adds the derived [session status](#session-status) to session summaries and
-session details. It also adds the `status` message of a live terminal stream, the
-`status-watch` stream, and the run status and run ID in the `exit` message. The SQLite
-format does not change.
-
-Protocol 23 adds `workspace-folders` for the Files tree of the
-[Changes pane](#changes-pane). `workspace-file` also reads a file in a folder that is
-not a Git repository. The SQLite format does not change.
-
-Protocol 24 adds `side-terminal-open`, `side-terminal-resume`, and `side-terminal-stop`
-for the [side terminal](#side-terminal). The SQLite format does not change.
-
-HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
-its static files, and `GET /client-config` for browser connection information. All
-session operations and history reads use WebSocket. There is no separate UI API. The
-request Host must be `127.0.0.1:PORT` or `localhost:PORT`. If present, Browser Origin
-must match the request host and port.
-
-The server rejects foreign and opaque origins. CLI connections omit Origin. This is an
-origin policy, not user authentication. HTTP headers, the upgrade, and the first
-protocol message have five-second timeouts. Attached sessions require traffic within 30
-seconds.
-
-Clients send heartbeats every five seconds. Frames have a 30-second acknowledgment
-deadline. Writes time out after five seconds. Shutdown closes HTTP connections and waits
-for upgraded handlers and agent cleanup before releasing the archive. An upgraded peer
-that sends no request can delay shutdown until its five-second request timeout.
+Shutdown closes HTTP connections and waits for upgraded handlers and agent cleanup
+before releasing the archive. An upgraded peer that sends no request can delay shutdown
+until its five-second request timeout.
 
 ### macOS menu bar
 
@@ -284,19 +200,14 @@ rainbow bands from violet to red. The visible product name is bbflow. The logo s
 brighter band colors when the browser uses dark appearance.
 
 Server start and repeated start print a clickable HTTP URL without opening a browser.
-`bbflow ui` verifies the selected instance through the same WebSocket health check as
-the other CLI commands, then opens the home page at `http://127.0.0.1:PORT/`. It uses
-`open` on macOS and `xdg-open` on Linux. It starts no server or agent. Missing or
-mismatched server information prevents browser launch.
+`bbflow ui` opens the home page of the verified server. See
+[COMMANDS.md](COMMANDS.md#open-the-web-ui).
 
-Launcher failures include the URL for manual opening. Global directory selection applies
-as usual. The UI uses that same origin, reads its `ServerInfo` from `/client-config`,
-and checks protocol, instance ID, directory, and port against every WebSocket greeting.
-
-A changed server requires a reload using its current URL. Assets and configuration
-disable caching. Host checks apply to every route. A content security policy restricts
-scripts and network access to the local origin and blocks framing. Terminal libraries
-are served locally.
+The UI checks every WebSocket greeting against `/client-config`. A changed server
+requires a reload using its current URL. A content security policy restricts scripts
+and network access to the local origin and blocks framing. Terminal libraries are
+served locally. See [browser access](PROTOCOL.md#browser-access) for the Host, Origin,
+and caching rules.
 
 The sidebar lists saved projects and groups sessions, including drafts, in pages of 100
 through `project-list` and `session-list`. General appears first. Custom projects follow
@@ -430,6 +341,7 @@ errors.
 
 ### Projects and launches
 
+**Add project** in the sidebar opens a dialog for a folder and an optional name.
 `project-add` saves an existing canonical directory and a name, defaulting to the folder
 basename. Git is not required. Canonical paths are unique across saved projects. Parent
 and child folders remain allowed. Project IDs are independent of their names and paths.
@@ -1039,10 +951,6 @@ application redraw. An ended view never starts another process or invokes native
 provider resume. Only an explicit `session-continue` starts a new terminal in an ended
 session.
 
-The protocol defaults to ten session entries. It accepts a limit of 1–1000 and a
-nonnegative offset. It also accepts an archive collection flag and an optional search
-query.
-
 The UI requests 101 to display 100 entries and detect another page. Normal listing
 excludes archived sessions. Archived listing includes only archived sessions. Ordering
 follows the latest terminal input, output, or run lifecycle event (`start`, `run`, or
@@ -1168,16 +1076,11 @@ server is a no-op.
 
 ## History and storage
 
-Local builds default to `~/.bbflow-dev`. Production builds default to `~/.bbflow`. Plain
-`go build` and `go run` use the development default. `make release` sets
-`main.instanceDirName=.bbflow` through Go's linker. The binary's location and working
-directory do not affect this choice.
-
-For all commands, directory selection is `--dir` first, then `BBFLOW_DIR`, then the
-build's default. Explicit overrides can share a directory across builds. Relative paths
-resolve from the caller's current directory. Symlinks resolve to the same canonical
-instance. bbflow creates SQLite (`history.sqlite`) under the selected directory with
-private permissions.
+The build sets the default instance directory. Plain `go build` and `go run` use the
+development default. `make release` sets `main.instanceDirName=.bbflow` through Go's
+linker. See [instance directory](COMMANDS.md#instance-directory) for the defaults and
+the selection order. bbflow creates SQLite (`history.sqlite`) under the selected
+directory with private permissions.
 
 The archive stores projects, sessions, runs, settings, preparation choices, worktree
 metadata, and append-only events with stable global sequence numbers. New runs set
@@ -1243,14 +1146,9 @@ The server rejects a second statement. The result must be read-only and have col
 SQL parser or prefix-only write check is maintained in bbflow.
 
 The connection uses a five-second cancellation context that applies during preparation
-and row stepping. It does not share the terminal capture connection. SQL is limited to
-64 KiB, column count to 128, SQLite value/row length to 1 MiB, and the query heap to 64
-MiB. The response has at most 1,000 rows and 8 MiB of JSON.
-
-An extra row or a byte limit sets `truncated: true`. SQL, timeout, and SQLite resource
-errors fail the request. Columns and row arrays preserve duplicate names, NULLs, and
-BLOBs. SQL selects the scope without implicit environment filters. `sqlite_schema`
-exposes table definitions.
+and row stepping. It does not share the terminal capture connection. See
+[COMMANDS.md](COMMANDS.md#query-sqlite) for the result format, the size limits, and the
+`truncated` flag.
 
 Input/output and launch arguments can include secrets. No redaction or encryption is
 implemented. The local archive is not isolated from other processes running as the same

@@ -164,7 +164,7 @@ directory, and log path. Closing the launching terminal leaves the server runnin
 
 A repeated start reports the existing matching server and its URL without replacing it.
 Open that URL in a browser to use the web UI. The command does not launch a browser. See
-the [web UI guide](../README.md#web-ui) for browser launch settings and controls.
+the [web client specification](SPEC.md#web-client) for the UI controls.
 
 **Impact:** creates or opens the selected history archive and appends server output to
 `server.log`. It creates private data and lock files as needed, saves the built-in
@@ -315,10 +315,9 @@ The tables are:
 | `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
 
-The schema uses format 8. Server startup upgrades formats 3–7 automatically. Format 8
-needs no migration. The upgrade adds the instance appearance to settings.
-Formats 1 and 2, nonempty unversioned databases, and newer formats are rejected
-without changing their contents. Downgrades are not supported.
+Server startup upgrades supported older database formats automatically. It rejects
+unsupported formats without changing their contents. Downgrades are not supported. See
+[database upgrades](SPEC.md#database-upgrades) for the format numbers.
 
 No separate migration command or SQLite CLI is needed. Manage projects in the UI. There
 are no project CLI commands. Removing a custom project clears session membership but
@@ -356,7 +355,7 @@ later event pages, use the last returned `seq` in `WHERE seq>LAST_SEQ ORDER BY s
 
 Use an explicit order and limit for repeatable pages. A query may contain up to 64 KiB
 of SQL and return at most 128 columns. SQLite values/rows are limited to 1 MiB and its
-query heap to 64 MiB. Queries that exceed these limits return an error.
+query heap to 64 MiB. Queries that exceed these limits or the timeout return an error.
 
 **Impact:** opens a separate read-only connection. It does not change history, replay
 input, start or stop agents, or block capture by sharing its write connection. A missing
@@ -397,5 +396,5 @@ or read history. `--dir` and `BBFLOW_DIR` have no effect on this command.
 Help and successful server, UI, query, and skill commands exit with code `0`. bbflow errors
 print a message to standard error and exit with code `1`.
 
-See [README.md](../README.md) for setup and [SPEC.md](SPEC.md) for implementation
-details and current limitations.
+See [README.md](../README.md) for installation, [DEVELOPMENT.md](DEVELOPMENT.md) for
+local builds, and [SPEC.md](SPEC.md) for implementation details and current limitations.
