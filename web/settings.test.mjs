@@ -89,3 +89,18 @@ test('a rebase applies tool edits field by field', () => {
   assert.deepEqual(result.tools[0], { id: 'a', name: 'Renamed', command: 'agent --new' });
   assert.deepEqual(result.tools[1], { id: 'b', name: 'Other', command: 'other --mine', continueCommand: 'other --theirs {prompt}' });
 });
+
+test('a form rebase on the committed copy keeps a pending edit that restores the saved value', () => {
+  const tools = command => [{ id: 'a', name: 'Agent', command }];
+  const base = { ...structuredClone(saved), tools: tools('A') };
+  const latest = { ...structuredClone(base), revision: 5, tools: tools('B') };
+  const committed = { ...structuredClone(base), tools: tools('C') };
+  const form = { ...structuredClone(base), tools: tools('A') };
+  const rebasedCommit = rebaseDraft(committed, base, latest);
+  const rebasedForm = rebaseDraft(form, committed, rebasedCommit);
+  assert.equal(rebasedCommit.tools[0].command, 'C');
+  assert.equal(rebasedForm.tools[0].command, 'A');
+  // A field without an edit since the commit takes the rebased committed value.
+  const unchanged = rebaseDraft(structuredClone(committed), committed, rebasedCommit);
+  assert.equal(unchanged.tools[0].command, 'C');
+});

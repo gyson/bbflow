@@ -276,7 +276,8 @@ Settings has no save button. Each change saves automatically to SQLite:
   that is still in edit stays in the form, also during a retry after a conflict. The page
   reuses each tool row by its ID and never moves the focused row, so the focused input
   stays mounted and saves on the next blur. A focused field without a pending edit shows
-  the latest saved value after a conflict.
+  the latest saved value after a conflict. The page rebases its committed changes on the
+  latest settings first. Then it applies the form changes since the last commit.
 - Add tool changes only the page. Move and Remove save at once.
 - A tool without a name or a command stays only in the page. If it is a saved tool, the
   server keeps its saved version until the row is complete again.
@@ -1338,7 +1339,8 @@ Web fixtures verify the automatic save payload: an unchanged page does not save,
 incomplete new tool is not saved, a cleared field keeps the saved tool, and a rejected
 tool does not stop other changes. They verify that a rebase after a revision conflict
 keeps page edits field by field, removals, order, and added tools, and takes other
-values from the latest settings. Protocol fixtures verify that a server error reply is
+values from the latest settings. They verify that a pending edit stays when it restores
+the earlier saved value after a commit. Protocol fixtures verify that a server error reply is
 marked apart from a transport failure.
 
 CLI fixtures run `bbflow tool` and `bbflow settings` against a temporary server. They

@@ -151,9 +151,9 @@ export class SettingsView {
   // must stay in its original input to save on blur.
   //
   // The draft always holds the text of each field, because capture runs first. Only a
-  // rebase can make a field differ from the draft: the user did not edit that field, so
-  // the rebase took the latest saved value. Thus an update never replaces a pending edit,
-  // also in the focused input.
+  // rebase can make a field differ from the draft: the field has no edit since the last
+  // commit, so the rebase took the latest value. Thus an update never replaces a pending
+  // edit, also in the focused input.
   private renderTools(): void {
     const settings = this.draft;
     if (!settings) return;
@@ -285,11 +285,14 @@ export class SettingsView {
       const latest = await call(server, { operation: 'settings-get' }).catch(() => null);
       if (!latest) return { failed: errorMessage(error) };
       if (latest.revision === payload.revision || !this.draft || !this.committed || !this.saved) return { rejected: errorMessage(error) };
-      // Another view or the CLI saved first. Apply the page changes to its settings.
-      // Rebase the form and the committed copy. The retry sends only committed values.
+      // Another view or the CLI saved first. Apply the committed changes to its
+      // settings. Then apply the form changes since the last commit to that result, so a
+      // pending edit stays even when it restores the earlier saved value. The retry
+      // sends only committed values.
       this.capture();
-      const draft = rebaseDraft(this.draft, this.saved, latest);
-      this.committed = rebaseDraft(this.committed, this.saved, latest);
+      const committed = rebaseDraft(this.committed, this.saved, latest);
+      const draft = rebaseDraft(this.draft, this.committed, committed);
+      this.committed = committed;
       this.saved = latest;
       this.merged = true;
       this.show(draft);
