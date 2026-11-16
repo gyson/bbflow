@@ -113,12 +113,15 @@ must do something. It prints one line and sets its exit status.
 | `event=closed` | 11 | The PR is merged or closed. | Stop. Report to the user. |
 | `event=timeout` | 12 | The deadline passed. | Stop. Report to the user. |
 | `event=limit` | 14 | Review round 5 ended without LGTM for the head commit. | Stop. Report to the user. |
-| An error message | 2 | The arguments or `gh` failed, or the first line of the latest round comment is incorrect. | Correct the cause. For a first line, post a new round comment. If you cannot, tell the user. |
+| An error message | 2 | The arguments or `gh` failed, or the first line of the latest round comment is incorrect. | Correct the cause. For a first line, post a new round comment with a correct first line. It replaces the incorrect one. If you cannot, tell the user. |
 
-One call usually waits for a maximum of 6 minutes. When it sees a new head commit, it
-can wait 3 more minutes. Then it prints `event=waiting`. Set the command time limit to
-10 minutes. If your tool can run a command in the background and tell you when it ends,
-add `--slice 0`. The script then waits until the deadline in one call.
+One call waits for a maximum of 9 minutes, then prints `event=waiting`. Set the command
+time limit to 10 minutes. If your tool can run a command in the background and tell you
+when it ends, add `--slice 0`. The script then waits until the deadline in one call.
+
+Use the same deadline for each call of one loop. The reviewer script saves its
+observation of a new head commit in a file in `TMPDIR`. The next call with the same PR,
+role, account, and deadline continues that observation.
 
 `event=review` has a `reason`:
 

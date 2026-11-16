@@ -26,6 +26,7 @@ chmod +x "$work/bin/gh"
 
 A=aaaaaaa1111111111111111111111111111111aa
 B=bbbbbbb2222222222222222222222222222222bb
+C=ccccccc3333333333333333333333333333333cc
 passed=0
 failed=0
 
@@ -54,7 +55,9 @@ check() {
 	want_text=$3
 	role=$4
 	shift 4
-	output=$(FIXTURE=$work/fixture.json PATH=$work/bin:$PATH ${TEST_SHELL:-sh} "$script" "$role" 32 "$@" --interval 1 2>&1)
+	# Each check gets an empty TMPDIR, unless SHARED names one for several calls.
+	temporary=${SHARED:-$(mktemp -d "$work/tmp.XXXXXX")}
+	output=$(FIXTURE=$work/fixture.json PATH=$work/bin:$PATH TMPDIR=$temporary ${TEST_SHELL:-sh} "$script" "$role" 32 "$@" --interval 1 2>&1)
 	status=$?
 	case $output in *"$want_text"*) found=yes ;; *) found=no ;; esac
 	if [ "$status" = "$want_status" ] && [ "$found" = yes ]; then
@@ -105,8 +108,18 @@ check 'READY for an earlier commit, settled' 0 "event=review reason=ready round=
 fixture OPEN $B "$review1"
 check 'review after settled commits' 0 "event=review reason=commits round=2 head=$B previous=$A" review --until "$(soon)" --settle 2
 check 'commits not settled before the deadline' 12 'event=timeout' review --until "$(soon 2)" --settle 30
-# The call continues after the slice until the observation of the head commit ends.
-check 'slice end keeps the observation' 0 'event=review reason=commits round=2' review --until "$(soon)" --settle 3 --slice 1
+check 'commits not settled in the slice' 13 'event=waiting' review --until "$(soon)" --settle 30 --slice 1
+
+# The next call with the same deadline continues the observation of the head commit.
+# Without the saved observation, the second call ends with event=waiting.
+SHARED=$(mktemp -d "$work/shared.XXXXXX")
+deadline=$(soon)
+check 'observation, first call' 13 'event=waiting' review --until "$deadline" --settle 4 --slice 2
+check 'observation, next call' 0 'event=review reason=commits round=2' review --until "$deadline" --settle 4 --slice 3
+# A new head commit starts a new observation.
+fixture OPEN $C "$review1"
+check 'observation of a new head' 13 'event=waiting' review --until "$deadline" --settle 4 --slice 2
+unset SHARED
 
 fixture OPEN $B "$review1" "$reply1" "$lgtm2"
 check 'review done' 10 'event=done round=2' review --until "$(soon)"
@@ -168,12 +181,26 @@ fixture OPEN $A 'tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, c
 check 'reviewer line with a short commit ID' 2 "$bad" review --until "$(soon)"
 fixture OPEN $A "tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: LGTM** and more"
 check 'reviewer line with more text' 2 "$bad" review --until "$(soon)"
+fixture OPEN $A "tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: LGTM**\tand more"
+check 'reviewer line with text after a tab' 2 "$bad" review --until "$(soon)"
+fixture OPEN $A "tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 0, commit $A: CHANGES REQUESTED**"
+check 'reviewer line with round 0' 2 "$bad" review --until "$(soon)"
+fixture OPEN $A "tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 01, commit $A: CHANGES REQUESTED**"
+check 'reviewer line with a leading zero' 2 "$bad" review --until "$(soon)"
+fixture OPEN $A "$review1" "tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 1, commit $A: READY**\tand more"
+check 'implementer line with text after a tab' 2 'implementer role has an incorrect first line' review --until "$(soon)"
 fixture OPEN $A "$review1" 'tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 1**'
 check 'implementer line without commit and result' 2 'implementer role has an incorrect first line' review --until "$(soon)"
 fixture OPEN $A "$review1" 'tester|2026-01-01T00:00:02Z|**[review-loop helper] round 1**'
 check 'unknown role' 2 'unknown role has an incorrect first line' fix --until "$(soon)"
 fixture OPEN $A 'tester|2026-01-01T00:00:00Z|**[review-loop reviewer] LGTM**' "$review1"
 check 'corrected reviewer line' 0 'event=fix round=1' fix --until "$(soon)"
+fixture OPEN $A 'tester|2026-01-01T00:00:00Z|**[review-loop reviwer] round 1**' "tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: LGTM**"
+check 'corrected unknown role' 10 'event=done round=1' fix --until "$(soon)"
+
+# A closed PR ends the loop also when a first line is incorrect.
+fixture CLOSED $A 'tester|2026-01-01T00:00:01Z|**[review-loop reviewer] LGTM**'
+check 'closed with an incorrect first line' 11 'event=closed state=CLOSED' review --until "$(soon)"
 
 fixture OPEN $A
 check 'no deadline' 2 'Usage' review

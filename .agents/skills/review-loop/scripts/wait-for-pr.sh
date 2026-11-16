@@ -11,13 +11,14 @@ Usage: wait-for-pr.sh review|fix PR --until EPOCH [options]
   fix                 Wait as the implementer.
   PR                  A pull request number or URL.
   --until EPOCH       The loop deadline, in seconds since the epoch. Required.
-  --slice SECONDS     The usual longest time that one call waits. A call that
-                      observes a new head commit continues for the settle time
-                      at most. 0 waits until the deadline. Default: 360.
+  --slice SECONDS     The longest time that one call waits. 0 waits until the
+                      deadline. Default: 540.
   --interval SECONDS  The time between two checks. Default: 60.
   --settle SECONDS    review only. Without a READY comment for the head commit,
                       a review starts after the head commit stays the same for
-                      this time. Default: 180.
+                      this time. Default: 180. Calls with the same PR, role,
+                      account, and deadline share this observation through a
+                      file in TMPDIR.
   --max-rounds N      The largest number of review rounds. Default: 5.
   --author LOGIN      The account that posts the round comments. Default: the
                       account of the gh command.
@@ -52,7 +53,7 @@ shift 2
 case $role in review | fix) ;; *) usage ;; esac
 
 deadline=''
-slice=360
+slice=540
 interval=60
 settle=180
 max_rounds=5
@@ -100,19 +101,23 @@ snapshot() {
 		$1 == "state" { state = $2 }
 		$1 == "head" { head = $2 }
 		$1 == "mark" {
-			number = part($2, "round [0-9]+", 6)
-			id = part($2, "commit [0-9a-f]+", 7)
-			if (length(id) != 40) number = ""
-			if (index($2, "**[review-loop reviewer] ") == 1) {
+			# The comment text can contain tabs. Keep all text after the first tab.
+			line = substr($0, 6)
+			number = part(line, "round [0-9]+", 6)
+			id = part(line, "commit [0-9a-f]+", 7)
+			if (number !~ /^[1-9][0-9]*$/ || length(id) != 40) number = ""
+			if (index(line, "**[review-loop reviewer] ") == 1) {
 				result = ""
-				if (number != "" && $2 == first("reviewer", "LGTM")) result = "lgtm"
-				if (number != "" && $2 == first("reviewer", "CHANGES REQUESTED")) result = "changes"
+				if (number != "" && line == first("reviewer", "LGTM")) result = "lgtm"
+				if (number != "" && line == first("reviewer", "CHANGES REQUESTED")) result = "changes"
 				badReview = (result == "")
-				if (!badReview) { round = number + 0; commit = id; verdict = result; answer = "-" }
-			} else if (index($2, "**[review-loop implementer] ") == 1) {
-				badReply = (number == "" || $2 != first("implementer", "READY"))
+				if (!badReview) { round = number + 0; commit = id; verdict = result; answer = "-"; badRole = 0 }
+			} else if (index(line, "**[review-loop implementer] ") == 1) {
+				badReply = (number == "" || line != first("implementer", "READY"))
+				if (!badReply) badRole = 0
 				if (!badReply && number + 0 == round) answer = id
 			} else {
+				# A later correct round comment of either role replaces this comment.
 				badRole = 1
 			}
 		}
@@ -131,22 +136,30 @@ else
 	slice_end=$deadline
 fi
 failures=0
+# The reviewer waits until a new head commit stays the same for the settle time. Save
+# the observation, so that the next call with the same deadline continues it.
+key=$(printf '%s-%s-%s-%s' "$pr" "$role" "$author" "$deadline" | tr -c 'A-Za-z0-9-' '_')
+observation=${TMPDIR:-/tmp}/review-loop-$key
 seen_head=''
 seen_at=0
+if [ -r "$observation" ]; then
+	read -r seen_head seen_at <"$observation" || :
+	case $seen_head$seen_at in *[!0-9a-f]*) seen_head='' seen_at=0 ;; esac
+fi
 
 while :; do
 	now=$(date +%s)
 	code=''
 	text=''
-	observing=no
 	if line=$(snapshot); then
 		failures=0
 		# shellcheck disable=SC2086
 		set -- $line
 		state=$1 head=$2 round=$3 commit=$4 verdict=$5 answer=$6 bad=$7
-		[ "$bad" = - ] || fail "the latest round comment of the $bad role has an incorrect first line"
 		if [ "$state" != OPEN ]; then
 			code=11 text="event=closed state=$state"
+		elif [ "$bad" != - ]; then
+			fail "the latest round comment of the $bad role has an incorrect first line"
 		elif [ "$round" -eq 0 ]; then
 			[ "$role" != review ] || code=0 text="event=review reason=first round=1 head=$head"
 		elif [ "$verdict" = lgtm ] && [ "$commit" = "$head" ]; then
@@ -165,13 +178,12 @@ while :; do
 			if [ "$head" != "$seen_head" ]; then
 				seen_head=$head
 				seen_at=$now
+				printf '%s %s\n' "$seen_head" "$seen_at" 2>/dev/null >"$observation" || :
 			fi
 			if [ $((now - seen_at)) -ge "$settle" ]; then
 				reason=commits
 				[ "$answer" = - ] || reason=ready
 				code=0 text="event=review reason=$reason round=$((round + 1)) head=$head previous=$commit"
-			else
-				observing=yes
 			fi
 		fi
 	else
@@ -182,14 +194,11 @@ while :; do
 	case $code in 10 | 11 | 14) finish "$code" "$text" ;; esac
 	[ "$now" -lt "$deadline" ] || finish 12 'event=timeout'
 	[ "$code" != 0 ] || finish 0 "$text"
-	# Do not discard an observation of the head commit at the end of the slice.
-	stop_at=$slice_end
-	[ "$observing" = no ] || stop_at=$((slice_end + settle))
-	[ "$now" -lt "$stop_at" ] || finish 13 'event=waiting'
+	[ "$now" -lt "$slice_end" ] || finish 13 'event=waiting'
 
 	pause=$interval
 	[ $((deadline - now)) -ge "$pause" ] || pause=$((deadline - now))
-	[ $((stop_at - now)) -ge "$pause" ] || pause=$((stop_at - now))
+	[ $((slice_end - now)) -ge "$pause" ] || pause=$((slice_end - now))
 	[ "$pause" -ge 1 ] || pause=1
 	sleep "$pause"
 done
