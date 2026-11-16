@@ -63,11 +63,6 @@ func serverCommand(target client.Target, args []string) error {
 		return fmt.Errorf("another server lifecycle command is in progress: %w", err)
 	}
 	defer unlock()
-	if action != "stop" {
-		if err = checkBonBonHistory(target); err != nil {
-			return err
-		}
-	}
 	if action == "stop" || action == "restart" {
 		if err = stopServer(target); err != nil {
 			return err
