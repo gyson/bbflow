@@ -29,12 +29,16 @@ export class SettingsView {
   // does not send it again until the user changes the tool.
   private readonly rejected = new Map<string, { key: string; error: string }>();
   private merged = false;
+  private rendering = false;
   private saving = false;
   private queued = false;
 
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void) {
     this.form.oninput = () => { this.capture(); this.merged = false; this.showStatus(); };
     this.form.onchange = event => {
+      // Chrome fires change when a render removes a focused input. That text is still in
+      // edit, so do not commit it.
+      if (this.rendering || !(event.target instanceof Node && event.target.isConnected)) return;
       this.commit();
       if (event.target === this.appearance) this.applyAppearance(this.appearance.value);
       void this.save();
@@ -120,6 +124,7 @@ export class SettingsView {
   }
 
   private commit(): void {
+    this.merged = false;
     this.capture();
     if (this.draft) this.committed = structuredClone(this.draft);
   }
@@ -140,56 +145,90 @@ export class SettingsView {
     }
   }
 
+  // renderTools reuses the row of each tool by its ID and updates its fields in place. It
+  // never moves the row with the focus or changes the focused input. Chrome fires no
+  // change event for a new input that gets its text before the focus, so text in edit
+  // must stay in its original input to save on blur.
   private renderTools(): void {
     const settings = this.draft;
     if (!settings) return;
-    const active = document.activeElement;
-    const focusRow = active instanceof HTMLInputElement ? active.closest<HTMLElement>('.tool-row') : null;
-    const focus = focusRow && active instanceof HTMLInputElement
-      ? { id: focusRow.dataset.id, field: Array.from(focusRow.querySelectorAll('input')).indexOf(active), start: active.selectionStart, end: active.selectionEnd }
-      : null;
-    this.tools.replaceChildren();
-    this.tool.replaceChildren(new Option('Shell', ''));
-    for (const [index, preset] of settings.tools.entries()) {
-      const option = new Option(preset.name || 'Unnamed tool', preset.id);
-      this.tool.add(option);
-      const row = document.createElement('div');
-      row.className = 'tool-row'; row.dataset.id = preset.id;
-      for (const [label, value, placeholder, max, required] of [
-        ['Name', preset.name, 'Codex 6 Astra', 200, true],
-        ['Command', preset.command, 'codex --model=gpt-6-astra', 1000, true],
-        ['Continue command', preset.continueCommand ?? '', 'codex --model=gpt-6-astra {prompt}', 1000, false],
-      ] as const) {
-        const field = document.createElement('label'); field.textContent = label;
-        if (!required) { const optional = document.createElement('span'); optional.className = 'optional'; optional.textContent = 'optional'; field.append(optional); }
-        const input = document.createElement('input'); input.value = value; input.placeholder = placeholder; input.maxLength = max; input.required = required;
-        if (label === 'Name') input.oninput = () => { option.textContent = input.value || 'Unnamed tool'; };
-        else input.spellcheck = false;
-        field.append(input); row.append(field);
+    this.rendering = true;
+    try {
+      const existing = new Map(Array.from(this.tools.querySelectorAll<HTMLElement>('.tool-row')).map(row => [row.dataset.id ?? '', row]));
+      const rows = settings.tools.map(preset => existing.get(preset.id) ?? this.createRow(preset.id));
+      for (const [id, row] of existing) if (!settings.tools.some(tool => tool.id === id)) row.remove();
+      const active = document.activeElement;
+      const anchor = rows.findIndex(row => row.contains(active));
+      if (anchor < 0) this.tools.append(...rows);
+      else {
+        for (const row of rows.slice(0, anchor)) this.tools.insertBefore(row, rows[anchor]!);
+        let previous = rows[anchor]!;
+        for (const row of rows.slice(anchor + 1)) { previous.after(row); previous = row; }
       }
-      const actions = document.createElement('div'); actions.className = 'tool-actions';
-      for (const [name, offset] of [['Move up', -1], ['Move down', 1], ['Remove', 0]] as const) {
-        const button = document.createElement('button'); button.type = 'button'; button.textContent = name === 'Move up' ? '↑' : name === 'Move down' ? '↓' : 'Remove';
-        button.setAttribute('aria-label', `${name} ${preset.name || 'tool'}`);
-        button.disabled = offset === -1 && index === 0 || offset === 1 && index === settings.tools.length - 1;
-        button.onclick = () => {
-          this.capture();
-          if (!offset) { settings.tools.splice(index, 1); if (settings.defaultTool === preset.id) settings.defaultTool = ''; }
-          else { settings.tools.splice(index, 1); settings.tools.splice(index + offset, 0, preset); }
-          this.committed = structuredClone(settings);
-          this.renderTools();
-          void this.save();
+      this.tool.replaceChildren(new Option('Shell', ''));
+      for (const [index, preset] of settings.tools.entries()) {
+        const row = rows[index]!;
+        const values = [preset.name, preset.command, preset.continueCommand ?? ''];
+        row.querySelectorAll('input').forEach((input, field) => {
+          if (input !== active && input.value !== values[field]) input.value = values[field] ?? '';
+        });
+        const name = row.querySelector('input')?.value || 'Unnamed tool';
+        this.tool.add(new Option(name, preset.id));
+        const buttons = row.querySelectorAll<HTMLButtonElement>('.tool-actions button');
+        for (const [position, label] of ['Move up', 'Move down', 'Remove'].entries()) {
+          const button = buttons[position];
+          if (!button) continue;
+          button.setAttribute('aria-label', `${label} ${preset.name || 'tool'}`);
+          button.disabled = position === 0 && index === 0 || position === 1 && index === settings.tools.length - 1;
+        }
+      }
+      this.tool.value = settings.defaultTool;
+    } finally { this.rendering = false; }
+  }
+
+  private createRow(id: string): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'tool-row'; row.dataset.id = id;
+    for (const [label, placeholder, max, required] of [
+      ['Name', 'Codex 6 Astra', 200, true],
+      ['Command', 'codex --model=gpt-6-astra', 1000, true],
+      ['Continue command', 'codex --model=gpt-6-astra {prompt}', 1000, false],
+    ] as const) {
+      const field = document.createElement('label'); field.textContent = label;
+      if (!required) { const optional = document.createElement('span'); optional.className = 'optional'; optional.textContent = 'optional'; field.append(optional); }
+      const input = document.createElement('input'); input.placeholder = placeholder; input.maxLength = max; input.required = required;
+      if (label === 'Name') {
+        input.oninput = () => {
+          const option = Array.from(this.tool.options).find(option => option.value === id);
+          if (option) option.textContent = input.value || 'Unnamed tool';
         };
-        actions.append(button);
-      }
-      const error = document.createElement('p'); error.className = 'form-error tool-error'; error.setAttribute('role', 'alert'); error.hidden = true;
-      row.append(actions, error); this.tools.append(row);
+      } else input.spellcheck = false;
+      field.append(input); row.append(field);
     }
-    this.tool.value = settings.defaultTool;
-    if (focus) {
-      const input = Array.from(this.tools.querySelectorAll<HTMLElement>('.tool-row')).find(row => row.dataset.id === focus.id)?.querySelectorAll('input')[focus.field];
-      if (input) { input.focus(); input.setSelectionRange(focus.start, focus.end); }
+    const actions = document.createElement('div'); actions.className = 'tool-actions';
+    for (const [name, offset] of [['Move up', -1], ['Move down', 1], ['Remove', 0]] as const) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = name === 'Move up' ? '↑' : name === 'Move down' ? '↓' : 'Remove';
+      button.onclick = () => {
+        // Read the current draft. A conflict can replace it after this row is built.
+        const draft = this.draft;
+        if (!draft) return;
+        this.capture();
+        const at = draft.tools.findIndex(tool => tool.id === id);
+        const tool = draft.tools[at];
+        if (!tool) return;
+        this.merged = false;
+        draft.tools.splice(at, 1);
+        if (!offset) { if (draft.defaultTool === tool.id) draft.defaultTool = ''; }
+        else draft.tools.splice(Math.max(0, Math.min(draft.tools.length, at + offset)), 0, tool);
+        this.committed = structuredClone(draft);
+        this.renderTools();
+        void this.save();
+      };
+      actions.append(button);
     }
+    const error = document.createElement('p'); error.className = 'form-error tool-error'; error.setAttribute('role', 'alert'); error.hidden = true;
+    row.append(actions, error);
+    return row;
   }
 
   private async save(): Promise<void> {
