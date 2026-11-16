@@ -24,7 +24,7 @@ Start the server with bbflow server start, then open bbflow ui.
 Create and manage interactive shell sessions in the web UI.
 Closing a browser view leaves its session running.
 Agents: run bbflow skill to learn how to read sessions and recorded history.
-bbflow was named BonBon. Run bbflow migrate once to copy BonBon history.`
+bbflow was named BonBon. Run bbflow migrate to copy BonBon history and worktrees.`
 
 // Local builds use development storage. The release target sets this at link time.
 var instanceDirName = ".bbflow-dev"

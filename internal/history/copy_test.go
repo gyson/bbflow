@@ -63,13 +63,6 @@ func TestCopyFromEveryReleasedFormat(t *testing.T) {
 			if report.Format != version || report.Rows["events"] != 6 || report.Rows["sessions"] != 2 {
 				t.Fatalf("report: %+v", report)
 			}
-			want := []string{filepath.Join(filepath.Dir(source), "workspaces", "general")}
-			if version >= 5 {
-				want = []string{want[0], filepath.Join(filepath.Dir(source), "worktrees", "saved")}
-			}
-			if !reflect.DeepEqual(report.Folders, want) {
-				t.Fatalf("folders: %q, want %q", report.Folders, want)
-			}
 			if after := fileHashes(t, source); !reflect.DeepEqual(before, after) {
 				t.Fatal("the source database or WAL changed")
 			}
@@ -80,6 +73,13 @@ func TestCopyFromEveryReleasedFormat(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer store.Close()
+			want := []string{filepath.Join(filepath.Dir(source), "workspaces", "general")}
+			if version >= 5 {
+				want = []string{want[0], filepath.Join(filepath.Dir(source), "worktrees", "saved")}
+			}
+			if folders, err := store.FoldersInside(filepath.Dir(source)); err != nil || !reflect.DeepEqual(folders, want) {
+				t.Fatalf("folders: %q, want %q %v", folders, want, err)
+			}
 			var events, current int
 			if err = store.db.QueryRow("SELECT count(*), (SELECT user_version FROM pragma_user_version) FROM events").Scan(&events, &current); err != nil {
 				t.Fatal(err)
@@ -174,5 +174,55 @@ func TestCopyFromAddsNoFilesBesideSource(t *testing.T) {
 	}
 	if len(before) != len(after) {
 		t.Fatalf("source directory changed from %v to %v", before, after)
+	}
+}
+
+func TestMoveWorktreeRecordsTheNewPath(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	old, moved := "/data/bonbon/worktrees/a", "/data/bbflow/worktrees/a"
+	sessions := map[string]string{}
+	for name, workspace := range map[string]string{
+		"root": old, "subfolder": old + "/web", "sibling": old + "b", "other": "/data/bonbon/workspaces/general",
+	} {
+		session, err := store.CreateSession(name, workspace, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessions[name] = session.ID
+	}
+	ready := Worktree{Path: old, Repository: "/repo", Base: "main", Commit: "c", Branch: "bbflow/a", State: "ready"}
+	removed := Worktree{Path: "/data/bonbon/worktrees/gone", Repository: "/repo", Base: "main", Commit: "c", Branch: "bbflow/b", State: "removed"}
+	must(0, store.SaveWorktree(sessions["root"], ready))
+	must(0, store.SaveWorktree(sessions["other"], removed))
+
+	worktrees, err := store.ReadyWorktreesIn("/data/bonbon/worktrees")
+	if err != nil || len(worktrees) != 1 || worktrees[0].Path != old {
+		t.Fatalf("ready worktrees: %+v %v", worktrees, err)
+	}
+	if err = store.MoveWorktree(old, moved); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"root": moved, "subfolder": moved + "/web", "sibling": old + "b", "other": "/data/bonbon/workspaces/general"}
+	for name, id := range sessions {
+		session, err := store.Session(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.Workspace != want[name] {
+			t.Errorf("%s workspace is %s, want %s", name, session.Workspace, want[name])
+		}
+	}
+	if session, _ := store.Session(sessions["root"]); session.Worktree == nil || session.Worktree.Path != moved {
+		t.Fatalf("worktree: %+v", session.Worktree)
+	}
+	if err = store.MoveWorktree(old, moved); err == nil {
+		t.Fatal("moved a worktree that is not recorded")
+	}
+	if worktrees, _ = store.ReadyWorktreesIn("/data/bonbon/worktrees"); len(worktrees) != 0 {
+		t.Fatalf("still listed: %+v", worktrees)
 	}
 }
