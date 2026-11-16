@@ -1,3 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
-  <path fill-rule="evenodd" d="M0 2h2v5h4v1h1v5h-1v1H0ZM2 9v3h3V9ZM9 2h2v5h4v1h1v5h-1v1H9ZM11 9v3h3V9Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <style>
+    @media (prefers-color-scheme: dark) {
+      .band1 { fill: #bf7af0 } .band2 { fill: #70b8ff } .band3 { fill: #3dd68c }
+      .band4 { fill: #ffc53d } .band5 { fill: #ff8b3e } .band6 { fill: #ff6369 }
+    }
+  </style>
+  <clipPath id="bb">
+    <path clip-rule="evenodd" d="M0 2h2v5h4v1h1v5h-1v1H0ZM2 9v3h3V9ZM9 2h2v5h4v1h1v5h-1v1H9ZM11 9v3h3V9Z"/>
+  </clipPath>
+  <g clip-path="url(#bb)">
+    <rect class="band1" y="2" width="16" height="2" fill="#8e4ec6"/>
+    <rect class="band2" y="4" width="16" height="2" fill="#0090ff"/>
+    <rect class="band3" y="6" width="16" height="2" fill="#30a46c"/>
+    <rect class="band4" y="8" width="16" height="2" fill="#f5a524"/>
+    <rect class="band5" y="10" width="16" height="2" fill="#f76b15"/>
+    <rect class="band6" y="12" width="16" height="2" fill="#e5484d"/>
+  </g>
 </svg>

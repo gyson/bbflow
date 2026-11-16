@@ -249,7 +249,7 @@ dev-1af9)**. Open UI calls the same verified home-page opener as the CLI.
 
 The build renders the menu icon from `web/src/bbflow.svg` and embeds it in the
 executable. The icon shows the letters "bb" on a 16-unit pixel grid and uses macOS
-template coloring. The 44-pixel PNG has a 3-unit margin around the grid, so macOS
+template coloring, so it ignores the logo colors. The 44-pixel PNG has a 3-unit margin around the grid, so macOS
 shows a 16-point mark with sharp edges in the 22-point status item.
 
 Quit retains the connection information verified when the companion starts. It
@@ -279,8 +279,9 @@ storage format change was needed.
 
 ## Web client
 
-The sidebar and browser favicon use the same pixel logo as the macOS menu bar. The visible product name is bbflow. The favicon adapts to light and dark browser
-appearances. The sidebar mark uses its text color.
+The sidebar and browser favicon use the same pixel logo as the macOS menu bar, in six
+rainbow bands from violet to red. The visible product name is bbflow. The logo selects
+brighter band colors when the browser uses dark appearance.
 
 Server start and repeated start print a clickable HTTP URL without opening a browser.
 `bbflow ui` verifies the selected instance through the same WebSocket health check as

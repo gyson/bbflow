@@ -2,7 +2,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/bbflow-dark.svg">
-  <img src="docs/images/bbflow-light.svg" width="64" alt="bbflow pixel logo: the letters bb on a 16-pixel grid">
+  <img src="docs/images/bbflow-light.svg" width="64" alt="bbflow logo: the letters bb on a 16-pixel grid in rainbow bands">
 </picture>
 
 bbflow is a local web workspace for agent command-line interface (CLI) tools. The server
@@ -392,11 +392,13 @@ compile Go. The frontend produces one `app.js` and one `app.css`, plus HTML, log
 assets, and dependency license notices, under `internal/webui/dist/`. The build reads
 the esbuild metafile and adds the license notices of every bundled npm package. Go
 embeds that
-directory. The shared logo source is `web/src/bbflow.svg`. It draws the letters "bb" on a 16-unit
-pixel grid. The npm build uses `@resvg/resvg-js` to render its transparent menu bar PNG
-at 2 pixels per grid unit. GitHub shows README images without the page text color, so
-the README uses fixed-color copies in `docs/images/` for its light and dark themes.
-`web/logo.test.mjs` checks that the copies keep the shape of the source.
+directory. The shared logo source is `web/src/bbflow.svg`. It draws the letters "bb" on
+a 16-unit pixel grid, with six rainbow bands from violet at the top to red at the bottom.
+Each band is two grid rows. The logo uses brighter band colors in dark appearance. The
+npm build uses `@resvg/resvg-js` to render its transparent menu bar PNG at 2 pixels per
+grid unit. GitHub selects README images from its own theme, so the README uses
+fixed-color light and dark copies in `docs/images/`. `web/logo.test.mjs` checks that the
+copies keep the shape and colors of the source.
 
 The final executable needs no separate renderer or image files. The build also downloads
 the pinned Go modules and collects bbflow, Go, and dependency license notices into the
