@@ -275,7 +275,8 @@ Settings has no save button. Each change saves automatically to SQLite:
 - A text field saves when it loses focus. A save sends only such committed values. Text
   that is still in edit stays in the form, also during a retry after a conflict. The page
   reuses each tool row by its ID and never moves the focused row, so the focused input
-  stays mounted and saves on the next blur.
+  stays mounted and saves on the next blur. A focused field without a pending edit shows
+  the latest saved value after a conflict.
 - Add tool changes only the page. Move and Remove save at once.
 - A tool without a name or a command stays only in the page. If it is a saved tool, the
   server keeps its saved version until the row is complete again.

@@ -146,9 +146,14 @@ export class SettingsView {
   }
 
   // renderTools reuses the row of each tool by its ID and updates its fields in place. It
-  // never moves the row with the focus or changes the focused input. Chrome fires no
-  // change event for a new input that gets its text before the focus, so text in edit
+  // never moves the row with the focus, so the focused input stays mounted. Chrome fires
+  // no change event for a new input that gets its text before the focus, so text in edit
   // must stay in its original input to save on blur.
+  //
+  // The draft always holds the text of each field, because capture runs first. Only a
+  // rebase can make a field differ from the draft: the user did not edit that field, so
+  // the rebase took the latest saved value. Thus an update never replaces a pending edit,
+  // also in the focused input.
   private renderTools(): void {
     const settings = this.draft;
     if (!settings) return;
@@ -170,7 +175,7 @@ export class SettingsView {
         const row = rows[index]!;
         const values = [preset.name, preset.command, preset.continueCommand ?? ''];
         row.querySelectorAll('input').forEach((input, field) => {
-          if (input !== active && input.value !== values[field]) input.value = values[field] ?? '';
+          if (input.value !== values[field]) input.value = values[field] ?? '';
         });
         const name = row.querySelector('input')?.value || 'Unnamed tool';
         this.tool.add(new Option(name, preset.id));
