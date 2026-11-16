@@ -16,15 +16,13 @@ const usage = `Usage:
   bbflow [--dir DIR] server start|stop|restart
   bbflow [--dir DIR] ui
   bbflow [--dir DIR] query SQL
-  bbflow [--dir DIR] migrate [--from DIR]
   bbflow skill
 
 --dir selects a bbflow instance, not the agent's working directory.
 Start the server with bbflow server start, then open bbflow ui.
 Create and manage interactive shell sessions in the web UI.
 Closing a browser view leaves its session running.
-Agents: run bbflow skill to learn how to read sessions and recorded history.
-bbflow was named BonBon. Run bbflow migrate to copy BonBon history and worktrees.`
+Agents: run bbflow skill to learn how to read sessions and recorded history.`
 
 // Local builds use development storage. The release target sets this at link time.
 var instanceDirName = ".bbflow-dev"
@@ -77,8 +75,6 @@ func run(args []string) error {
 		return ui(target, args[1:])
 	case "query":
 		return query(target, args[1:])
-	case "migrate":
-		return migrateCommand(target, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}

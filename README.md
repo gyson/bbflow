@@ -42,46 +42,6 @@ When ready, run `bbflow server restart`. Restart ends active sessions. The new s
 applies pending database migrations before it accepts requests. `bbflow update` itself
 only replaces the executable and leaves the database alone.
 
-## Move from BonBon
-
-bbflow was named BonBon. bbflow is a separate app with its own executable and data
-directory. BonBon 0.0.7 is the last BonBon release. To keep your BonBon history, copy it
-once, before the first bbflow start:
-
-```sh
-bonbon server stop
-bbflow migrate
-bbflow server start
-bbflow ui
-```
-
-`bonbon server stop` ends active BonBon sessions. `bbflow migrate` copies
-`~/.bonbon/history.sqlite` into `~/.bbflow`, verifies the copy, and upgrades it. It
-does not change the BonBon database or its WAL file. It accepts history from every
-BonBon release.
-Sessions, terminals, recordings, drafts, attachments, projects, and settings come with
-the copy.
-
-Then the command moves the managed worktrees of the copied sessions from
-`~/.bonbon/worktrees` to `~/.bbflow/worktrees` with `git worktree move`. Git updates its
-worktree records, and uncommitted files move with the worktree. The copied sessions use
-the new paths. After the move, BonBon cannot open those worktree sessions. If Git does
-not move a worktree, for example a locked worktree, the command reports it and the
-session keeps the old path.
-
-If you ran `bbflow migrate` with bbflow 0.0.8, stop the bbflow server and run
-`bbflow migrate` again. It does not copy the history again. It only moves the BonBon
-worktrees that bbflow sessions still use.
-
-Other copied sessions keep their recorded workspace paths. A session that used another
-folder inside `~/.bonbon`, such as `workspaces/general`, still uses that folder. The
-command lists these folders. Keep them until you finish with those sessions. When you no
-longer need BonBon, remove the `bonbon` executable and `~/.bonbon` yourself.
-
-While `~/.bbflow` has no history and `~/.bonbon` has history, `bbflow server start`
-stops and tells you to run `bbflow migrate`. To start without the BonBon history, use
-`--dir` with another directory.
-
 ## Build and run
 
 Builds require Go 1.27.3+, Node.js 22+, and npm. The binary includes the web UI and

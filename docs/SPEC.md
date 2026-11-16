@@ -74,7 +74,6 @@ See [COMMANDS.md](COMMANDS.md) for human-readable usage, examples, and effects.
 | `bbflow ui` | Verify the selected server and open its home page in the default browser. Requires a running server. |
 | `bbflow query SQL` | Run one read-only SQL query and return JSON. SQL chooses the scope. |
 | `bbflow skill` | Print the embedded Markdown guide for agents without contacting a server or opening an instance. |
-| `bbflow migrate [--from DIR]` | Copy a stopped BonBon instance's history into a bbflow instance without history, and move BonBon managed worktrees into bbflow. |
 
 Every command accepts global `--dir DIR` before the command name. It selects the bbflow
 instance. The UI selects session workspaces. There are no CLI session operations or
@@ -1193,52 +1192,6 @@ parser. Redraws can duplicate text.
 Cursor movement can omit spaces. SQL predicates such as `LIKE` match individual event
 chunks, so phrases spanning chunks may be missed. There is no semantic message search,
 fork ancestry, or inherited history yet.
-
-### Copy from BonBon
-
-bbflow was named BonBon. BonBon 0.0.7 is the last BonBon release. BonBon used
-`~/.bonbon` and `~/.bonbon-dev`. bbflow does not read these directories automatically.
-`bbflow migrate` copies a BonBon history database into a bbflow instance. Then it moves
-BonBon managed worktrees into the bbflow instance:
-
-- The BonBon `server.lock` must be free. The command holds it during the copy and does
-  not create it when it is absent. The bbflow `server-control.lock` and `server.lock`
-  must also be free.
-- When the bbflow `history.sqlite` exists, the command skips the copy and only moves
-  worktrees. This lets users of bbflow 0.0.8, which copied the history but did not move
-  worktrees, run the command again. The copy itself still requires that the bbflow
-  `history.sqlite`, `-wal`, and `-shm` files do not exist.
-- The source must have format 3 through 8. The command opens it read-only. Without a
-  WAL file, it opens the source as immutable, so SQLite adds no `-wal` or `-shm` files
-  beside it. With a WAL file, the copy includes its committed content, and SQLite can
-  update the existing `-shm` index file. The database and WAL bytes do not change.
-- `VACUUM INTO` writes a private temporary file in the bbflow directory. The command
-  verifies `PRAGMA integrity_check`, the format, and the row count of each table. A
-  hard link puts the file in place without replacing an existing file. Then the normal
-  migrations upgrade the copy. Any failure removes the temporary file or the copy.
-- The command selects each `ready` worktree record whose path is directly inside the
-  BonBon `worktrees` directory. It runs `git -C <repository> worktree move` to the same
-  name in the bbflow `worktrees` directory. Git updates the worktree records and keeps
-  uncommitted files. In one transaction, the command changes the worktree path and the
-  workspace of each session and project at or below the old path. If this transaction
-  fails, the command moves the worktree back. Git refuses locked worktrees and
-  worktrees with submodules. The command reports them and leaves their records
-  unchanged.
-- The report lists other session workspace and worktree paths inside the BonBon
-  directory. The copy keeps those recorded paths. The server moves the General project
-  to its own directory at startup. bbflow removes only worktrees inside its own
-  `worktrees` directory, so it cannot remove a worktree that stays in the BonBon
-  directory.
-
-The copy contains every table, including sessions, runs, events, settings, projects,
-preparations, and worktree records. It does not record the source path in the database.
-Logs, handoff folders, attachment caches, and other workspace files are not copied.
-Recorded events keep the original paths. A moved worktree changes the folder name that
-an agent CLI sees, so native agent state keyed by the folder path does not follow it.
-
-`server start` and `server restart` refuse to create history in the build's default
-directory while the default BonBon directory has `history.sqlite`. Explicit `--dir` and
-`BBFLOW_DIR` values that select another directory skip this check.
 
 ### Database upgrades
 

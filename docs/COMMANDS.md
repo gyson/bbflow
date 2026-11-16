@@ -22,7 +22,6 @@ lines identify an optional argument. Do not type the brackets.
 | `bbflow ui` | Open the web UI home page in the default browser. | Verifies the selected running server, then launches its home URL. Starts no server or agent. |
 | `bbflow query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
 | `bbflow skill` | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
-| `bbflow migrate [--from DIR]` | Copy BonBon history into a new bbflow instance and move BonBon worktrees. | Writes a verified copy of BonBon's `history.sqlite`. Moves managed worktrees with `git worktree move`. Does not change the BonBon database. |
 
 Create, browse, reopen, and stop sessions in the web UI. The CLI has no session
 operations or interactive terminal client. `query` handles custom history reads. `ui`
@@ -193,10 +192,6 @@ If the menu fails, the server continues and writes details to `server.log`. To r
 the menu, restart the server. This stops active sessions. The menu needs no `.app`
 bundle or extra executable.
 
-When the default instance directory has no `history.sqlite`, and the default BonBon
-directory has one, `server start` and `server restart` stop with a request to run
-`bbflow migrate`. This check applies only to the build's default directory.
-
 ## Open the web UI
 
 ```text
@@ -277,59 +272,6 @@ the reported error and log path.
 Restart closes the previous menu companion and launches a new one on macOS unless
 `--no-menubar` is supplied. The flag applies to this start. bbflow does not save it as a
 setting.
-
-## Copy BonBon history
-
-```text
-bbflow [--dir DIR] migrate [--from DIR]
-```
-
-```sh
-bonbon server stop
-bbflow migrate
-bbflow server start
-```
-
-bbflow was named BonBon. Run this command to copy BonBon history into a bbflow instance
-that has no history yet. If the bbflow instance has history, the command does not copy
-it again. It only moves BonBon worktrees. `--from` selects the BonBon instance directory. The
-default is `~/.bonbon` for a release build and `~/.bonbon-dev` for a development
-build. `--dir` and `BBFLOW_DIR` select the bbflow instance as usual.
-
-The command:
-
-1. Requires a stopped BonBon server. It locks the BonBon `server.lock` file during the
-   copy. If BonBon runs, it stops with `run bonbon server stop first`.
-2. Requires a stopped bbflow server. If the bbflow directory has `history.sqlite`, it
-   goes to step 7.
-3. Opens the BonBon database read-only and writes one consistent copy with SQLite
-   `VACUUM INTO`. The copy includes committed data in the BonBon WAL file.
-4. Checks the copy with `PRAGMA integrity_check`. It compares the format and the row
-   count of each table with the source.
-5. Puts the copy in place and applies the bbflow database migrations.
-6. Prints the source format and the numbers of sessions, terminals, and events.
-7. Finds each ready managed worktree that the bbflow history records directly inside
-   the BonBon `worktrees` directory. It moves the worktree to the bbflow `worktrees`
-   directory with `git worktree move`. Then it changes the recorded worktree path and
-   the workspace of each session in or below that worktree. It prints each move.
-8. Reports each worktree that Git did not move, with the Git message. Git refuses, for
-   example, a locked worktree or a worktree with submodules. These sessions keep the
-   old path.
-9. Lists the session workspaces and worktrees that are still inside the BonBon
-   directory. Copied sessions still use these folders.
-
-The command accepts BonBon history formats 3 through 8, which are all BonBon releases.
-It refuses a newer or unknown format.
-
-**Impact:** creates `history.sqlite`, `worktrees`, and lock files in the bbflow
-directory. It moves BonBon managed worktrees and updates their Git worktree records in
-the source repositories. After a move, BonBon cannot open those worktree sessions. It
-does not change, move, or remove the BonBon database or WAL file, and it does not start
-a server. If the BonBon directory has a WAL file, SQLite can update its `-shm` index
-file. That file holds no data.
-If a copy step fails, it removes its partial copy. Logs, handoff folders, and other
-workspace folders, such as `workspaces/general`, are not copied or moved. Recorded
-events keep the original paths. A second run with nothing to move changes nothing.
 
 ## Query SQLite
 
