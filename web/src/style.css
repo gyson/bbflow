@@ -292,9 +292,11 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
 .tool-row { border-top: 1px solid var(--divider); display: grid; grid-template-columns: 1fr 2fr 2fr auto; gap: 14px; padding: 18px 0; align-items: end; }
 .tool-actions { display: flex; gap: 5px; }
 .tool-actions button { padding: 9px; font-size: 12px; }
-.settings-save { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; }
+.settings-actions { display: flex; align-items: center; gap: 14px; }
+#settings-form { padding-bottom: 30px; }
+#settings-error { margin: 16px 0 0; }
 @media (max-width: 950px) { .tool-row { grid-template-columns: 1fr; } .tool-actions { justify-content: flex-end; } }
-@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 16px; } #session-view:has(#preparation:not([hidden])) { height: auto; } }
+@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 16px; } .settings-heading { flex-wrap: wrap; } #session-view:has(#preparation:not([hidden])) { height: auto; } }
 #launch-summary { margin: 6px 0 0; font-family: ui-monospace, monospace; font-size: 10px; color: var(--accent-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .continue-dialog { width: 620px; }
 .continue-dialog .form-help { margin: 0 0 14px; }

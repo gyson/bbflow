@@ -1,7 +1,8 @@
 # bbflow — Current Specification
 
 bbflow has a separate background server and a browser workspace. The CLI opens the UI,
-manages the server, runs read-only SQL queries, and updates the installed executable.
+manages the server, edits settings, runs read-only SQL queries, and updates the
+installed executable.
 See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 
 ## Architecture and build
@@ -56,9 +57,9 @@ call its methods. Ordinary client commands do not open the live database.
 ## Commands
 
 [COMMANDS.md](COMMANDS.md) is the reference for each command, its options, its output,
-and its effects. The CLI opens the UI, manages the server, runs read-only SQL queries,
-prints the agent guide, and updates the executable. It has no session operations,
-terminal attachment, or `history` command group.
+and its effects. The CLI opens the UI, manages the server, edits tools and settings,
+runs read-only SQL queries, prints the agent guide, and updates the executable. It has
+no session operations, terminal attachment, or `history` command group.
 
 `bbflow skill` prints `cmd/bbflow/skill.md`, which the executable embeds. Fixtures
 compare its tables and columns with the migrated schema. They also run each example
@@ -263,10 +264,26 @@ type and send messages. The PTY uses the size of the tab that most recently sent
 
 Settings is an instance-wide page at `/settings`. Its URL has no session ID.
 **Appearance** offers **System**, **Light**, and **Dark**. System is the default and
-follows the device appearance. **Save settings** applies the theme to the current view
-and stores it in SQLite. Other views read the saved theme on reload or when they open
-Settings without unsaved edits. The server includes the theme in each page so it applies
-before the first render. If the server cannot read the settings, the page uses System.
+follows the device appearance. A theme selection applies to the current view at once.
+Other views read the saved theme on reload or when they open Settings without unsaved
+edits. The server includes the theme in each page so it applies before the first render.
+If the server cannot read the settings, the page uses System.
+
+Settings has no save button. Each change saves automatically to SQLite:
+
+- A select or a checkbox saves when its value changes.
+- A text field saves when it loses focus.
+- Add tool changes only the page. Move and Remove save at once.
+- A tool without a name or a command stays only in the page. If it is a saved tool, the
+  server keeps its saved version until the row is complete again.
+- One save runs at a time. A change during a save starts one more save after it.
+
+The heading shows **Saving…**, **All settings saved**, or why a change is not saved yet.
+A server validation error appears above the cards, and the page keeps the change. If
+another view or a `bbflow tool` or `bbflow settings` command saved first, the page shows
+the latest settings and asks the user to make the last change again. It does not merge
+the two changes. The browser asks before it leaves the page with a change that is not
+saved. Remove has no undo. Drafts and sessions keep their own copy of a command.
 
 The theme covers the workspace, dialogs, terminal, and Changes pane. Dark uses charcoal
 surfaces, a near-black terminal, and blue for primary actions and focus. The terminal
@@ -1303,6 +1320,15 @@ subfolder and linked-checkout detection, clean creation, and rejection of remova
 active or dirty worktrees. Synthetic sh, bash, and zsh runs verify one startup input,
 shell availability afterward, reconnect without replay, and an untouched composer draft.
 These shell fixtures do not establish model availability or agent CLI compatibility.
+
+Web fixtures verify the automatic save payload: an unchanged page does not save, an
+incomplete new tool is not saved, and a cleared field keeps the saved tool.
+
+CLI fixtures run `bbflow tool` and `bbflow settings` against a temporary server. They
+verify that a repeated `tool add` updates the same tool, that removal of the default tool
+selects Shell, and that duplicate names stop `add` and `remove`. They verify that
+server validation errors change nothing, and that a change applies again after a
+revision conflict.
 
 Browser checks with a temporary instance verified settings, project drafts, saved
 preparations after refresh, and startup in a timestamped worktree. They verified

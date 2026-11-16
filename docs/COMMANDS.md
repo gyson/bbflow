@@ -21,11 +21,14 @@ lines identify an optional argument. Do not type the brackets.
 | `bbflow server restart [--no-menubar]` | Replace the server with the invoked executable. | Stops active agents, finishes shutdown, then starts a new server and its optional macOS menu. |
 | `bbflow ui` | Open the web UI home page in the default browser. | Verifies the selected running server, then launches its home URL. Starts no server or agent. |
 | `bbflow query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
+| `bbflow tool list\|add\|remove` | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
+| `bbflow settings get\|set` | Show or change appearance and session defaults. | Changes saved settings. Starts no session. |
 | `bbflow skill` | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
 
 Create, browse, reopen, and stop sessions in the web UI. The CLI has no session
 operations or interactive terminal client. `query` handles custom history reads. `ui`
-accepts no workspace or session arguments.
+accepts no workspace or session arguments. `tool` and `settings` change the same saved
+settings as the Settings page.
 
 ## Instance directory
 
@@ -46,8 +49,9 @@ Each server chooses an available port on `127.0.0.1`. Clients read the port from
 directory and instance ID on the same WebSocket connection. You do not configure a port.
 There are no `--port` or `--data-dir` options.
 
-Query and UI commands require a running server and do not start one automatically. The
-web UI uses the same server at its printed HTTP URL. There is no authentication token.
+Query, UI, tool, and settings commands require a running server and do not start one
+automatically. The web UI uses the same server at its printed HTTP URL. There is no
+authentication token.
 
 The instance directory contains:
 
@@ -100,6 +104,8 @@ bbflow server stop --help
 bbflow server restart --help
 bbflow ui --help
 bbflow query --help
+bbflow tool --help
+bbflow settings --help
 bbflow skill --help
 ```
 
@@ -361,6 +367,73 @@ query heap to 64 MiB. Queries that exceed these limits or the timeout return an 
 input, start or stop agents, or block capture by sharing its write connection. A missing
 server is an error.
 
+## Manage tools
+
+```text
+bbflow [--dir DIR] tool list
+bbflow [--dir DIR] tool add [--continue COMMAND] [--default] NAME COMMAND
+bbflow [--dir DIR] tool remove NAME
+```
+
+Use these commands to prepare tools from a setup script, for example to share a tool set
+with a team. The script must start the server first:
+
+```sh
+bbflow server start
+bbflow tool add --default Codex 'codex --no-alt-screen'
+bbflow tool add --continue 'claude {prompt}' Claude 'claude'
+```
+
+`tool list` prints the saved tools as a JSON array with `id`, `name`, `command`, and an
+optional `continueCommand`.
+
+`tool add` creates a tool at the end of the list. If a tool has the same name, the
+command updates that tool and keeps its position and ID. It replaces the startup command
+and the continue command. Without `--continue`, the tool has no continue command. Thus a
+script gives the same result each time it runs. `--default` makes the tool the default
+tool for new drafts.
+
+`tool remove` removes the tool with this name. If it was the default tool, Shell becomes
+the default tool. Drafts and sessions keep their own copy of the command.
+
+Names match exactly after bbflow removes leading and trailing spaces. If two tools have
+the same name, `add` and `remove` fail. Rename one of them in Settings. Put options
+before `NAME`. Quote a command that contains spaces. The
+[Settings rules](SPEC.md#session-preparation-settings-and-worktrees) for names and
+commands apply.
+
+**Impact:** saves the change in SQLite with a new settings revision. Open Settings pages
+show the change when they open again. The command starts no session and does not change
+drafts or sessions. If another client saves settings at the same time, the command
+applies its change again to the latest settings. Do not put secrets in a shared script.
+
+## Manage settings
+
+```text
+bbflow [--dir DIR] settings get
+bbflow [--dir DIR] settings set KEY VALUE
+```
+
+```sh
+bbflow settings set appearance dark
+bbflow settings set default-tool Codex
+bbflow settings set worktree true
+bbflow settings set base main
+```
+
+`settings get` prints the saved settings as JSON, including the revision and the tools.
+
+`settings set` changes one value:
+
+| Key | Value |
+| --- | --- |
+| `appearance` | `system`, `light`, or `dark` |
+| `default-tool` | The name of a tool, or `Shell` |
+| `worktree` | `true` or `false`. `true` selects **Use worktree** for new drafts in Git folders. |
+| `base` | The default starting branch or commit. An empty value selects `HEAD`. |
+
+**Impact:** the same as `tool add`. A rejected value changes nothing.
+
 ## Agent guide
 
 ```sh
@@ -393,8 +466,8 @@ or read history. `--dir` and `BBFLOW_DIR` have no effect on this command.
 
 ## Exit codes
 
-Help and successful server, UI, query, and skill commands exit with code `0`. bbflow errors
-print a message to standard error and exit with code `1`.
+Help and successful server, UI, query, tool, settings, and skill commands exit with
+code `0`. bbflow errors print a message to standard error and exit with code `1`.
 
 See [README.md](../README.md) for installation, [DEVELOPMENT.md](DEVELOPMENT.md) for
 local builds, and [SPEC.md](SPEC.md) for implementation details and current limitations.

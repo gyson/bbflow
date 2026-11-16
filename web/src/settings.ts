@@ -1,7 +1,10 @@
 import { element } from './dom.js';
 import { call, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings } from './protocol.js';
+import { sameSettings, savePayload, toolComplete } from './settings-model.js';
 
+// SettingsView saves each change automatically. A text field saves when it loses focus.
+// Only one save runs at a time. A change during a save starts one more save after it.
 export class SettingsView {
   private readonly panel = element('settings-view', HTMLElement);
   private readonly form = element('settings-form', HTMLFormElement);
@@ -12,39 +15,58 @@ export class SettingsView {
   private readonly base = element('settings-base', HTMLInputElement);
   private readonly error = element('settings-error', HTMLElement);
   private readonly status = element('settings-status', HTMLElement);
-  private settings: Settings | null = null;
-  private dirty = false;
+  // saved is the latest server copy. draft is the page state, with incomplete tools.
+  private saved: Settings | null = null;
+  private draft: Settings | null = null;
   private saving = false;
+  private queued = false;
 
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void) {
-    this.form.oninput = () => { this.dirty = true; this.status.textContent = 'Unsaved settings'; };
-    element('tool-add', HTMLButtonElement).onclick = () => {
-      if (!this.settings) return;
+    this.form.oninput = () => { this.capture(); this.showStatus(); };
+    this.form.onchange = event => {
       this.capture();
-      this.settings.tools.push({ id: crypto.randomUUID(), name: '', command: '' });
-      this.dirty = true;
+      if (event.target === this.appearance) this.applyAppearance(this.appearance.value);
+      void this.save();
+    };
+    this.form.onsubmit = event => { event.preventDefault(); this.capture(); void this.save(); };
+    element('tool-add', HTMLButtonElement).onclick = () => {
+      if (!this.draft) return;
+      this.capture();
+      this.draft.tools.push({ id: crypto.randomUUID(), name: '', command: '' });
       this.renderTools();
+      this.showStatus();
       this.tools.lastElementChild?.querySelector('input')?.focus();
     };
-    this.form.onsubmit = event => { event.preventDefault(); void this.save(); };
-    window.addEventListener('beforeunload', event => { if (this.dirty) event.preventDefault(); });
+    window.addEventListener('beforeunload', event => { if (this.pending()) event.preventDefault(); });
   }
 
   async open(): Promise<void> {
     const server = this.server();
     if (!server) return;
-    if (!this.dirty) {
-      this.settings = await call(server, { operation: 'settings-get' });
-      this.applyAppearance(this.settings.appearance);
-      this.worktree.checked = this.settings.worktree;
-      this.base.value = this.settings.base;
-      this.renderTools();
-      this.status.textContent = '';
+    if (!this.pending()) {
+      this.load(await call(server, { operation: 'settings-get' }));
+      this.error.hidden = true;
     }
     this.panel.hidden = false;
   }
 
   close(): void { this.panel.hidden = true; }
+
+  // pending is true while the page has a change that the server does not have.
+  private pending(): boolean {
+    if (!this.draft || !this.saved) return false;
+    return this.saving || this.queued || this.draft.tools.some(tool => !toolComplete(tool)) || !sameSettings(savePayload(this.draft, this.saved), this.saved);
+  }
+
+  private load(settings: Settings): void {
+    this.saved = settings;
+    this.draft = structuredClone(settings);
+    this.applyAppearance(settings.appearance);
+    this.worktree.checked = settings.worktree;
+    this.base.value = settings.base;
+    this.renderTools();
+    this.showStatus();
+  }
 
   private applyAppearance(appearance: string): void {
     this.appearance.value = appearance;
@@ -52,14 +74,22 @@ export class SettingsView {
     this.updateAppearance();
   }
 
+  private showStatus(): void {
+    if (!this.draft || !this.saved) { this.status.textContent = ''; return; }
+    if (this.saving) this.status.textContent = 'Saving…';
+    else if (this.draft.tools.some(tool => !toolComplete(tool))) this.status.textContent = 'A tool needs a name and a command before it is saved';
+    else if (!sameSettings(savePayload(this.draft, this.saved), this.saved)) this.status.textContent = this.error.hidden ? 'Not saved yet' : 'Not saved';
+    else this.status.textContent = 'All settings saved';
+  }
+
   private capture(): void {
-    if (!this.settings) return;
-    this.settings.appearance = this.appearance.value;
-    this.settings.defaultTool = this.tool.value;
-    this.settings.worktree = this.worktree.checked;
-    this.settings.base = this.base.value;
+    if (!this.draft) return;
+    this.draft.appearance = this.appearance.value;
+    this.draft.defaultTool = this.tool.value;
+    this.draft.worktree = this.worktree.checked;
+    this.draft.base = this.base.value;
     for (const row of this.tools.querySelectorAll<HTMLElement>('.tool-row')) {
-      const preset = this.settings.tools.find(tool => tool.id === row.dataset.id);
+      const preset = this.draft.tools.find(tool => tool.id === row.dataset.id);
       const fields = row.querySelectorAll('input');
       if (preset && fields[0] && fields[1] && fields[2]) {
         preset.name = fields[0].value; preset.command = fields[1].value;
@@ -69,7 +99,7 @@ export class SettingsView {
   }
 
   private renderTools(): void {
-    const settings = this.settings;
+    const settings = this.draft;
     if (!settings) return;
     this.tools.replaceChildren();
     this.tool.replaceChildren(new Option('Shell', ''));
@@ -86,7 +116,7 @@ export class SettingsView {
         if (!required) { const optional = document.createElement('span'); optional.className = 'optional'; optional.textContent = 'optional'; field.append(optional); }
         const input = document.createElement('input'); input.value = value; input.placeholder = placeholder; input.maxLength = max; input.required = required;
         if (label !== 'Name') input.spellcheck = false;
-        input.oninput = () => { this.capture(); const option = Array.from(this.tool.options).find(option => option.value === preset.id); if (option) option.textContent = preset.name || 'Unnamed tool'; };
+        input.oninput = () => { const option = Array.from(this.tool.options).find(option => option.value === preset.id); if (option) option.textContent = input.value || 'Unnamed tool'; };
         field.append(input); row.append(field);
       }
       const actions = document.createElement('div'); actions.className = 'tool-actions';
@@ -98,7 +128,8 @@ export class SettingsView {
           this.capture();
           if (!offset) { settings.tools.splice(index, 1); if (settings.defaultTool === preset.id) settings.defaultTool = ''; }
           else { settings.tools.splice(index, 1); settings.tools.splice(index + offset, 0, preset); }
-          this.dirty = true; this.status.textContent = 'Unsaved settings'; this.renderTools();
+          this.renderTools();
+          void this.save();
         };
         actions.append(button);
       }
@@ -108,19 +139,27 @@ export class SettingsView {
   }
 
   private async save(): Promise<void> {
-    if (this.saving || !this.settings) return;
+    if (!this.draft || !this.saved) return;
+    if (this.saving) { this.queued = true; return; }
     const server = this.server(); if (!server) return;
-    this.capture(); this.saving = true; this.error.hidden = true;
-    for (const field of this.form.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input,button,select')) field.disabled = true;
+    const payload = savePayload(this.draft, this.saved);
+    // The page again matches the server, for example after the user fixes a rejected value.
+    if (sameSettings(payload, this.saved)) { this.error.hidden = true; this.showStatus(); return; }
+    this.saving = true; this.error.hidden = true; this.showStatus();
     try {
-      this.settings = await call(server, { operation: 'settings-save', settings: this.settings });
-      this.applyAppearance(this.settings.appearance);
-      this.dirty = false; this.status.textContent = 'Settings saved';
-    } catch (error) { this.error.textContent = errorMessage(error); this.error.hidden = false; }
-    finally {
+      this.saved = await call(server, { operation: 'settings-save', settings: payload });
+    } catch (error) {
+      const latest = await call(server, { operation: 'settings-get' }).catch(() => null);
+      if (latest && latest.revision !== this.saved.revision) {
+        // Another view or the CLI saved first. Show its settings. Do not merge.
+        this.queued = false;
+        this.load(latest);
+        this.error.textContent = 'Another view or a bbflow command changed the settings first. The page shows the latest settings. Make your last change again.';
+      } else this.error.textContent = errorMessage(error);
+      this.error.hidden = false;
+    } finally {
       this.saving = false;
-      for (const field of this.form.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input,button,select')) field.disabled = false;
-      this.renderTools();
+      if (this.queued) { this.queued = false; void this.save(); } else this.showStatus();
     }
   }
 }
