@@ -249,64 +249,94 @@ func runTitleCommand(ctx context.Context, command, message string) (string, erro
 // pending draft revision of the send.
 const receiptPrefix = "draft-"
 
-// titleAfterReceipt runs after the PTY accepts an input with an ID. It starts the title
-// job for a send from the message editor. The ID names the pending draft revision of
-// the send, and data holds the accepted bytes.
+// titleAfterReceipt runs on the PTY goroutine after the PTY accepts an input with an
+// ID. For a send from the message editor, the ID names its pending draft revision, and
+// data holds the accepted bytes. The first such send with text claims the title of the
+// session, in the order that the PTY accepts input. Only the command runs later in a job.
 func (s *Server) titleAfterReceipt(sid, inputID string, data []byte) {
 	revision, err := strconv.ParseInt(strings.TrimPrefix(inputID, receiptPrefix), 10, 64)
 	if !strings.HasPrefix(inputID, receiptPrefix) || err != nil || revision <= 0 {
 		return
 	}
-	// The receipt arrives on the PTY goroutine. Read the archive in a job.
+	text, command, ok := s.claimTitle(sid, revision, data)
+	if !ok {
+		return
+	}
 	s.jobs.Add(1)
 	go func() {
 		defer s.jobs.Done()
-		s.generateTitle(sid, revision, data)
+		s.generateTitle(sid, command, text)
 	}()
 }
 
-// sentText reports that the accepted input bytes hold the text of a draft as the message
-// editor writes it: line breaks become carriage returns, in a bracketed paste or not.
-// The input ID comes from the browser, so the server checks the bytes.
-func sentText(input []byte, text string) bool {
-	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
-	return strings.Contains(string(input), strings.ReplaceAll(text, "\n", "\r"))
+// editorBytes returns the two inputs that the message editor can write for a send:
+// with bracketed paste, and without it. It follows composeInput in web/src/composer.ts.
+// Attachment paths follow the text in single quotes, one on each line. Line breaks
+// become carriage returns, and a carriage return ends the input.
+func editorBytes(text string, paths []string) (bracketed, plain string) {
+	quoted := make([]string, len(paths))
+	for i, path := range paths {
+		quoted[i] = "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+	}
+	message := text
+	if text != "" && len(quoted) > 0 {
+		message += "\n\n"
+	}
+	message += strings.Join(quoted, "\n")
+	message = strings.ReplaceAll(strings.ReplaceAll(message, "\r\n", "\n"), "\r", "\n")
+	paste := strings.ReplaceAll(message, "\n", "\r")
+	return "\x1b[200~" + paste + "\x1b[201~\r", paste + "\r"
 }
 
-// generateTitle replaces the derived title of a session with a summary of the first
-// send with text that reached the terminal. revision is the pending draft revision that
-// the input names, and input holds the accepted bytes. The text of the revision must be
-// in those bytes. A title event in the archive claims the request before the command
-// runs. Thus each session gets at most one request, also after a restart or a lost
-// receipt in the browser. Nothing runs when no title tool is selected or the session has
-// a user title. A failure keeps the current title and does not run again.
-func (s *Server) generateTitle(sid string, revision int64, input []byte) {
-	settings, err := s.store.Settings()
-	if err != nil || settings.TitleTool == "none" {
-		return
+// claimTitle checks a receipt and records the first verified send with text. The input
+// ID comes from the browser, so the accepted bytes must be exactly the input that the
+// editor writes for the named revision. The title event records the send also when it
+// starts no request. Thus a later send never becomes the first message, also after the
+// user selects a title tool or removes a user title. ok reports a request to start.
+func (s *Server) claimTitle(sid string, revision int64, data []byte) (text, command string, ok bool) {
+	send, pending, err := s.store.PendingSend(sid, revision)
+	if err != nil || !pending || strings.TrimSpace(send.Text) == "" {
+		return "", "", false
 	}
-	command, err := titleCommand(settings.TitleTool)
+	paths := make([]string, 0, len(send.Attachments))
+	for _, id := range send.Attachments {
+		attachment, err := s.attachment(sid, id, false)
+		if err != nil {
+			return "", "", false
+		}
+		paths = append(paths, attachment.Path)
+	}
+	if bracketed, plain := editorBytes(send.Text, paths); string(data) != bracketed && string(data) != plain {
+		return "", "", false
+	}
+	settings, err := s.store.Settings()
 	if err != nil {
-		return
+		return "", "", false
 	}
 	session, err := s.store.Session(sid)
-	if err != nil || session.Title != "" {
-		return
+	if err != nil {
+		return "", "", false
 	}
-	text, err := s.store.PendingSend(sid, revision)
-	if err != nil || strings.TrimSpace(text) == "" || !sentText(input, text) {
-		return
+	command, err = titleCommand(settings.TitleTool)
+	requested := err == nil && session.Title == ""
+	if claimed, err := s.store.ClaimTitle(sid, revision, settings.TitleTool, requested); err != nil || !claimed || !requested {
+		return "", "", false
 	}
-	if claimed, err := s.store.ClaimTitle(sid, revision, settings.TitleTool); err != nil || !claimed {
-		return
-	}
+	return send.Text, command, true
+}
+
+// generateTitle replaces the derived title of a session with a summary of its first
+// send. The title event already claims the request, so it runs at most once for each
+// session, also after a restart or a lost receipt in the browser. A failure keeps the
+// current title and does not run again.
+func (s *Server) generateTitle(sid, command, text string) {
 	title, err := runTitleCommand(s.ctx, command, text)
 	if err == nil {
 		err = s.store.SetAutoTitle(sid, title)
 	}
 	if err != nil {
 		if s.ctx.Err() == nil {
-			log.Printf("session %s: title tool %s: %v", sid, settings.TitleTool, err)
+			log.Printf("session %s: title command: %v", sid, err)
 		}
 		return
 	}

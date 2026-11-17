@@ -216,7 +216,8 @@ func titleServer(t *testing.T, command string) (*Server, history.Session) {
 // editorInput returns the bytes that the message editor writes for text in a bracketed
 // paste.
 func editorInput(text string) []byte {
-	return []byte("\x1b[200~" + strings.ReplaceAll(text, "\n", "\r") + "\x1b[201~\r")
+	bracketed, _ := editorBytes(text, nil)
+	return []byte(bracketed)
 }
 
 // submit saves a send as the message editor does: a pending revision, then, after an
@@ -366,20 +367,92 @@ func TestTitleRequestStaysOnceAfterRestart(t *testing.T) {
 	}
 }
 
-func TestSentTextMatchesEditorInput(t *testing.T) {
-	for _, test := range []struct {
-		input, text string
-		want        bool
-	}{
-		{"\x1b[200~Fix it\x1b[201~\r", "Fix it", true},
-		{"Fix it\r", "Fix it", true},
-		{"\x1b[200~Line one\rLine two\r\r'/tmp/a.png'\x1b[201~\r", "Line one\nLine two", true},
-		{"\x1b[200~Line one\rLine two\x1b[201~\r", "Line one\r\nLine two", true},
-		{"\x1b[200~Other\x1b[201~\r", "Fix it", false},
+func TestEditorBytesFollowComposeInput(t *testing.T) {
+	bracketed, plain := editorBytes("Fix it", nil)
+	if bracketed != "\x1b[200~Fix it\x1b[201~\r" || plain != "Fix it\r" {
+		t.Fatalf("one line: %q %q", bracketed, plain)
+	}
+	bracketed, _ = editorBytes("Line one\r\nLine two", []string{"/data/a.png", "/data/it's.txt"})
+	if want := "\x1b[200~Line one\rLine two\r\r'/data/a.png'\r'/data/it'\\''s.txt'\x1b[201~\r"; bracketed != want {
+		t.Fatalf("lines and files:\n got %q\nwant %q", bracketed, want)
+	}
+}
+
+// The server accepts a receipt only for the exact bytes of the named revision. Text
+// inside another submission, or only in the attachment part, starts nothing.
+func TestReceiptNeedsTheExactEditorInput(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	command, dir := writeTitleScript(t, "echo bbflow-title: Generated")
+	s, session := titleServer(t, command)
+	file, err := s.upload(session.ID, &protocol.Upload{Name: "Fix it.txt", MediaType: "text/plain", Data: []byte("x")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.composer(session.ID, &protocol.Draft{Revision: mustLatest(t, s, session.ID), Text: "Fix it", Attachments: []int64{file.ID}, Pending: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := fmt.Sprintf("draft-%d", pending.Draft.Revision)
+	quoted := "'" + file.Path + "'"
+	for _, input := range []string{
+		"\x1b[200~Please Fix it now\r\r" + quoted + "\x1b[201~\r", // Overlapping text.
+		"\x1b[200~Other\r\r" + quoted + "\x1b[201~\r",             // The text is only in the file name.
+		"\x1b[200~Fix it\x1b[201~\r",                              // The attachment is missing.
+		"\x1b[200~Fix it\r\r" + quoted + "\x1b[201~",              // No final Enter.
 	} {
-		if got := sentText([]byte(test.input), test.text); got != test.want {
-			t.Errorf("sentText(%q, %q) = %v", test.input, test.text, got)
+		s.titleAfterReceipt(session.ID, id, []byte(input))
+		if got := ranTitle(t, s, dir); got != "" {
+			t.Fatalf("input %q ran the title command: %q", input, got)
 		}
+	}
+	bracketed, _ := editorBytes("Fix it", []string{file.Path})
+	s.titleAfterReceipt(session.ID, id, []byte(bracketed))
+	if got := ranTitle(t, s, dir); !strings.Contains(got, "Fix it") {
+		t.Fatalf("the exact input did not run the title command: %q", got)
+	}
+}
+
+func TestMultilineReceiptRunsTheTitleCommand(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	command, dir := writeTitleScript(t, "echo bbflow-title: Generated")
+	s, session := titleServer(t, command)
+	pending, err := s.composer(session.ID, &protocol.Draft{Revision: mustLatest(t, s, session.ID), Text: "First line\nSecond line", Attachments: []int64{}, Pending: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bracketed, _ := editorBytes("First line\nSecond line", nil)
+	s.titleAfterReceipt(session.ID, fmt.Sprintf("draft-%d", pending.Draft.Revision), []byte(bracketed))
+	if got := ranTitle(t, s, dir); !strings.Contains(got, "First line\nSecond line") {
+		t.Fatalf("multiline input: %q", got)
+	}
+}
+
+// The first verified send decides, also when it starts no request. A title tool that the
+// user selects later does not make the second send the first message.
+func TestFirstSendCountsWhileTitlesAreOff(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	command, dir := writeTitleScript(t, "echo bbflow-title: Generated")
+	s, session := titleServer(t, command)
+	settings, err := s.store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.TitleTool = "none"
+	if settings, err = s.store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	submit(t, s, session.ID, "First message", true)
+	settings.TitleTool = "claude"
+	if _, err = s.store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	submit(t, s, session.ID, "Second message", true)
+	if got := ranTitle(t, s, dir); got != "" {
+		t.Fatalf("a later send became the first message: %q", got)
+	}
+	result, err := s.store.Query(context.Background(), "SELECT CAST(data AS TEXT) FROM events WHERE kind='title'")
+	if err != nil || len(result.Rows) != 1 || !strings.Contains(fmt.Sprint(result.Rows[0][0]), `"tool":"none","requested":false`) {
+		t.Fatalf("title events: %+v, %v", result, err)
 	}
 }
 
