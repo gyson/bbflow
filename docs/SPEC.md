@@ -14,11 +14,11 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 - Frontend sources are under `web/`, with strict TypeScript and CSS under `web/src`.
   Source builds require Node.js 22+ and npm. The TypeScript compiler checks types.
   esbuild bundles the application, xterm.js 6.0.0, FitAddon 0.11.0, CodeMirror 6 with
-  `@codemirror/merge` 6.12.3, and a fixed set of language modes into one ES2022
-  JavaScript file and one CSS file. The build also includes HTML and the licenses of
-  every bundled npm package, which it reads from the esbuild metafile. The JavaScript
-  file is about 1.1 MB. CodeMirror adds about 290 KB and its language modes about 400
-  KB.
+  `@codemirror/merge` 6.12.3, a fixed set of language modes, and markdown-it 15.0.3
+  into one ES2022 JavaScript file and one CSS file. The build also includes HTML and
+  the licenses of every bundled npm package, which it reads from the esbuild metafile.
+  The JavaScript file is about 1.2 MB. CodeMirror adds about 290 KB, its language modes
+  about 400 KB, and markdown-it about 100 KB.
 - Generated assets are in `internal/webui/dist`, which Go embeds. Git ignores this
   directory, test compiler output in `web/dist`, and npm dependencies. The deployed
   binary needs neither Node.js nor external frontend files.
@@ -860,6 +860,17 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
 - In Files, the file header shows the path only. For a changed file, **View diff**
   opens the diff of that file in the Changes view. **Copy path** copies the path
   relative to the workspace in both views.
+- For a Markdown file (`.md` or `.markdown`), **Preview** shows to the right of the
+  path in both views. It opens a dialog with the file path, a close button (✕), and the
+  rendered current text. The button is not shown for a deleted file, a binary file, a
+  file above 1 MiB, or a symlink. The dialog keeps its text while it is open. Use
+  **Refresh**, then **Preview** again, to see a later change.
+- Preview uses markdown-it with CommonMark, GitHub tables, strikethrough, and task
+  lists. Raw HTML shows as text. Images do not load. The dialog shows "Image not
+  loaded" with the alternative text and the source. Task list checkboxes are disabled.
+  Only `http:`, `https:`, and `mailto:` links open, in a new tab. Other links, such as
+  relative paths, show as text with the target in their tooltip. `javascript:`,
+  `vbscript:`, `file:`, and most `data:` links stay Markdown source text.
 - The pane reads its lists when it opens, on **Refresh**, on a change of the view, and
   when the window gets focus. It does not watch files. A refresh reads
   each open folder again. It closes a folder that is gone. A refresh keeps the shown
@@ -1369,13 +1380,22 @@ the tree rows and their notes and marks, the folders of a refresh, the language 
 the layout width rule, and late replies. They also cover replies for a folder that
 closed or opened again, a refresh at the shared entry limit, a folder that is gone, a
 failed request for one folder, the unread folders of a failed refresh, and a failed
-first read of the workspace folder.
+first read of the workspace folder. Markdown fixtures cover raw HTML, script links,
+relative and allowed links, images, tables, task lists, and the files that Preview
+accepts.
 
 A browser check used a temporary instance, a fixture repository, and a shell session in
 a managed worktree. It checked Split, Unified, folded regions, View file, deleted files,
 symlinks, binary files, both baselines, a non-Git General session, and an ended
 session. It also checked two tabs with separate selections, a phone width without
 horizontal scroll, and an empty browser console. Script text in a file showed as text.
+
+A browser check of Preview used a demo instance with a synthetic Markdown file. It
+checked an added file in Changes and an unchanged file in Files. It checked headings,
+a table, task lists, a code block, raw HTML and script links as text, an image
+placeholder, and an allowed and a relative link. It also checked that a deleted file
+and a Go file show no Preview button. It checked Esc, ✕, light and dark Appearance, a
+phone width without horizontal scroll, and an empty browser console.
 
 A browser check of the Files tree used a temporary instance, a fixture repository, and
 a folder outside Git, each with a shell session. It checked open and closed folders,
