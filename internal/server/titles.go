@@ -314,7 +314,9 @@ func (s *Server) claimTitle(sid string, revision int64, data []byte) (text, comm
 		return "", "", false
 	}
 	session, err := s.store.Session(sid)
-	if err != nil {
+	// A session from before the upgrade has no derived title. The archive cannot show
+	// that this send is its first, so it gets no automatic title.
+	if err != nil || session.AutoTitle == "" {
 		return "", "", false
 	}
 	command, err = titleCommand(settings.TitleTool)

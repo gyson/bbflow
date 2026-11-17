@@ -456,6 +456,30 @@ func TestFirstSendCountsWhileTitlesAreOff(t *testing.T) {
 	}
 }
 
+// A session from before the upgrade keeps its title and has no derived title. After the
+// user clears its title and selects a tool, a send still starts no request: the archive
+// cannot show that the send is the first of the session.
+func TestSessionFromBeforeUpgradeGetsNoTitle(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	command, dir := writeTitleScript(t, "echo bbflow-title: Generated")
+	s, _ := titleServer(t, command)
+	old, err := s.store.CreateSession("Saved title", t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.store.RenameSession(old.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	submit(t, s, old.ID, "A later message", true)
+	if got := ranTitle(t, s, dir); got != "" {
+		t.Fatalf("a session from before the upgrade ran the title command: %q", got)
+	}
+	got, err := s.store.Session(old.ID)
+	if err != nil || got.Title != "" || got.AutoTitle != "" {
+		t.Fatalf("session: %+v, %v", got, err)
+	}
+}
+
 func mustLatest(t *testing.T, s *Server, sid string) int64 {
 	t.Helper()
 	state, err := s.composer(sid, nil)

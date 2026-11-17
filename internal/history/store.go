@@ -25,7 +25,8 @@ var ErrNotFound = errors.New("session not found")
 var ErrRunNotFound = errors.New("terminal not found in this session")
 
 // Title is the title that the user set, or empty. AutoTitle is derived: the tool name
-// and folder at launch, then a summary from the title tool. Use DisplayTitle to show.
+// and folder at launch, then a summary from the title tool. It is empty for a session
+// from before format 10. Use DisplayTitle to show.
 type Session struct {
 	Archived    bool         `json:"archived"`
 	ProjectID   string       `json:"projectId"`

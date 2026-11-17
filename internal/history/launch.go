@@ -256,7 +256,8 @@ func (s *Store) SetPreparationState(id string, revision int64, from, to string) 
 	return revisionChanged(result, err)
 }
 
-// SetLaunchWorkspace records the launch workspace and the default derived title.
+// SetLaunchWorkspace records the launch workspace and the default derived title. Each
+// launch sets it, also under a user title.
 func (s *Store) SetLaunchWorkspace(id, autoTitle, workspace string) error {
 	_, err := s.db.Exec("UPDATE sessions SET auto_title=?,workspace=? WHERE id=?", autoTitle, workspace, id)
 	return err

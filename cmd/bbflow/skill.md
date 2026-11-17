@@ -72,7 +72,7 @@ One row for each session. A session has one workspace and one or more terminals.
 | `created` | Creation time. |
 | `project_id` | ID of the project in `projects`, or NULL. |
 | `archived` | `1` when the user archived the session, else `0`. |
-| `auto_title` | Derived title: the tool and folder at launch, then a summary from the title tool. It can be empty. |
+| `auto_title` | Derived title: the tool and folder at launch, then a summary from the title tool. It is empty for sessions from before automatic titles. |
 
 ### `runs`
 

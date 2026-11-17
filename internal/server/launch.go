@@ -113,9 +113,10 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 		}
 		session.Worktree = &worktree
 	}
-	autoTitle := ""
+	// Each launch records the derived title, also under a user title. A session from
+	// before the upgrade has none, so it never gets an automatic title.
+	autoTitle := p.ToolName + " · " + filepath.Base(source)
 	if run.Title == "" {
-		autoTitle = p.ToolName + " · " + filepath.Base(source)
 		run.Title = autoTitle
 	}
 	run.Tool = p.ToolName

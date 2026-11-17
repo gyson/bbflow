@@ -414,9 +414,9 @@ The server rejects a nonempty relative shell path. It accepts names on PATH and 
 paths. Requests cannot override the shell or environment.
 
 A selected tool supplies an optional startup command to submit through that shell. The
-server inherits its startup environment and sets `TERM=xterm-256color`. When the user
-set no title, the launch stores the tool name and workspace basename as the derived
-title.
+server inherits its startup environment and sets `TERM=xterm-256color`. The launch
+stores the tool name and workspace basename as the derived title, also when the user
+set a title.
 
 Workspaces accept absolute paths, `~`, and `~/path`. Home expansion uses the server's
 `HOME` from startup, before canonicalization. Other relative paths, `~user`, and
@@ -487,10 +487,14 @@ the draft form or in **Rename**. It is empty when the user set no title.
 `sessions.auto_title` holds a derived title. The UI shows the user title. Without it,
 the UI shows the derived title. Search matches both fields.
 
-The launch writes the tool name and workspace basename to the derived title. A launch
-with a user title leaves the derived title empty. A rename to an empty title removes
-the user title, and the session shows its derived title again. Neither field ever
-changes the other.
+Each launch writes the tool name and workspace basename to the derived title, also
+under a user title. A rename to an empty title removes the user title, and the session
+shows its derived title. Neither field ever changes the other.
+
+Automatic titles apply only to sessions that start after the upgrade to format 10. An
+older session keeps its title and has an empty derived title. The archive cannot show
+which send was its first, so it never gets an automatic title, also after the user
+clears its title.
 
 **Automatic titles** in Settings selects the title tool: None, Claude, Codex, or Code
 Puppy. The settings JSON stores `titleTool` as `none`, `claude`, `codex`, or
@@ -1296,7 +1300,8 @@ WAL is enabled after the schema transaction commits.
   revision.
 - Format 9 gains the `sessions.auto_title` column through migration 10. Existing
   sessions keep their titles as user titles, with an empty derived title. The upgrade
-  does not guess which old titles were defaults. It also adds `titleTool: "none"` to
+  does not guess which old titles were defaults. Sessions with an empty derived title
+  never get automatic titles. It also adds `titleTool: "none"` to
   the settings JSON, so automatic titles start off. The settings revision stays.
 - Format 10 opens without running scripts or rewriting history, settings, or metadata.
 
@@ -1579,7 +1584,8 @@ temporary folder, the marker rule, failures, cancel, and a missing CLI. Send fix
 verify that only the input receipt of the first send with text runs the command, with
 the text of that send. An autosave, a send without a receipt, a receipt for another
 revision or for other bytes, an emptied draft after a failed send, and later sends do
-not run it. Byte fixtures reject text inside another submission, text only in an
+not run it. A session without a derived title, as after an upgrade, starts no request
+after the user clears its title. Byte fixtures reject text inside another submission, text only in an
 attachment path, a missing attachment, and a missing final Enter. They accept valid
 sends with attachments and with several lines. A fixture turns titles on between two
 accepted sends, and the second send runs no request. A fixture reopens the archive after a request with a lost receipt, and a
