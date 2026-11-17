@@ -187,8 +187,9 @@ A removal of the checkout worktree also discards these files, with no warning. T
 - `seed` adds data only to a new instance. It refuses an instance with projects,
   sessions, events, saved settings, or files that a new server does not create.
   `clean` refuses an instance that `seed` did not mark.
-- `seed` claims the `demo/` folder before it does anything else. Of several seeds at the
-  same time, only one adds data. The others stop.
+- `seed` and `clean` lock the instance directory while they run. A second `seed` or
+  `clean` then stops at once. The system releases the lock when the process ends, also
+  after a crash.
 - The seed removes inherited `GIT_` variables, such as `GIT_DIR`, before its Git
   commands. Thus it changes only the repositories in the demo instance.
 - Terminal output and files in the demo are simulated data. Do not use them as

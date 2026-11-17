@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"bbflow/internal/client"
@@ -92,6 +93,22 @@ type demo struct {
 	seeded   string // Shows that the seed is complete.
 	binary   string // The bbflow executable next to this executable.
 	target   client.Target
+	locked   *os.File // The open instance directory that holds the lock.
+}
+
+// lock takes an exclusive lock on the instance directory for the rest of the process.
+// seed and clean take it, so that only one of them runs at a time. The system releases
+// it when the process ends, also after a crash or a kill.
+func (d *demo) lock() {
+	dir, err := os.Open(d.dir)
+	check(err)
+	if err = syscall.Flock(int(dir.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); errors.Is(err, syscall.EWOULDBLOCK) {
+		dir.Close()
+		fail("another seed or clean of %s runs now; wait for it to end, then try again", d.dir)
+	}
+	check(err)
+	// Keep the file open. Its finalizer would close it and release the lock.
+	d.locked = dir
 }
 
 // locate does not read BBFLOW_DIR. Inside a bbflow session, it selects the instance
@@ -145,29 +162,21 @@ func (d *demo) seed() {
 	if err != nil {
 		fail("no bbflow server runs in %s: %w\nStart it first:\n  DISABLE_AUTO_UPDATE=true %s --dir %s server start", d.dir, err, d.binary, d.dir)
 	}
+	d.lock()
 	if exists(d.seeded) {
 		fmt.Printf("%s already has the demo data.\n", d.dir)
 		d.sessions(info.Port)
 		return
 	}
-	// Claim the demo folder before the checks and any change. Only one seed can create
-	// it, also when several seeds start at the same time. It stays until clean.
-	claim := filepath.Dir(d.marker)
-	if err := os.Mkdir(claim, 0o755); errors.Is(err, os.ErrExist) {
-		fail("another seed of %s runs now, or an earlier seed stopped before it completed; wait for it, or run \"clean\", start the server, and seed again", d.dir)
-	} else {
-		check(err)
+	// With the lock, no other seed runs. A marker without the seed record comes from a
+	// seed that stopped. clean can remove that instance.
+	if exists(d.marker) {
+		fail("an earlier seed of %s stopped before it completed; run \"clean\", start the server, and seed again", d.dir)
 	}
-	func() {
-		// Release the claim when the instance is not new.
-		defer func() {
-			if r := recover(); r != nil {
-				os.Remove(claim)
-				panic(r)
-			}
-		}()
-		d.requireNew()
-	}()
+	d.requireNew()
+	// The marker comes before each change, so that clean can remove the result of a seed
+	// that stops after this point.
+	check(os.MkdirAll(filepath.Dir(d.marker), 0o755))
 	check(os.WriteFile(d.marker, []byte("bbflow demo instance. \"bbflow-demo clean\" removes this instance directory.\n"), 0o644))
 	d.addData()
 	check(os.WriteFile(d.seeded, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644))
@@ -176,9 +185,8 @@ func (d *demo) seed() {
 }
 
 // newInstanceFiles are the entries of an instance directory after the first server
-// start, and the empty demo folder of the claim. The General folder is empty.
+// start. The General folder is empty.
 var newInstanceFiles = map[string]bool{
-	"demo":           true,
 	"history.sqlite": true, "history.sqlite-shm": true, "history.sqlite-wal": true,
 	"server.json": true, "server.log": true, "server.lock": true, "server-control.lock": true,
 	"workspaces": true,
@@ -195,6 +203,12 @@ func (d *demo) requireNew() {
 	check(err)
 	var other []string
 	for _, entry := range entries {
+		// An empty demo folder comes from a seed that stopped before the marker.
+		if entry.Name() == "demo" && entry.IsDir() {
+			if files, err := os.ReadDir(filepath.Join(d.dir, "demo")); err == nil && len(files) == 0 {
+				continue
+			}
+		}
 		if !newInstanceFiles[entry.Name()] {
 			other = append(other, entry.Name())
 		}
@@ -285,9 +299,13 @@ func (d *demo) clean(force bool) {
 		fmt.Printf("No demo instance in %s.\n", d.dir)
 		return
 	}
-	if !exists(d.marker) {
-		fail("%s is not a demo instance; bbflow-demo removes only an instance that it seeded", d.dir)
+	d.lock()
+	requireMarker := func() {
+		if !exists(d.marker) {
+			fail("%s is not a demo instance; bbflow-demo removes only an instance that it seeded", d.dir)
+		}
 	}
+	requireMarker()
 	refuse := func(foreign []string) {
 		if len(foreign) > 0 && !force {
 			fail("these worktrees belong to repositories outside the demo instance, or to unknown repositories:\n  %s\nRemove each worktree in the UI, or run \"clean --force\" to discard their files",
@@ -305,9 +323,11 @@ func (d *demo) clean(force bool) {
 	if err := stop.Run(); err != nil {
 		fail("stop the demo server: %w; stop it with Quit bbflow in the menu bar, then run \"clean\" again", err)
 	}
-	// The server can create a worktree before it stops. Examine the worktrees again.
+	// The server can create a worktree before it stops. Examine the directory again
+	// just before the removal.
 	outside := d.foreignWorktrees()
 	refuse(outside)
+	requireMarker()
 	check(os.RemoveAll(d.dir))
 	fmt.Printf("Removed %s.\n", d.dir)
 	if len(outside) > 0 {

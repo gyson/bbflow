@@ -36,6 +36,7 @@ func TestDemo(t *testing.T) {
 	temporary := t.TempDir()
 	demo := filepath.Join(temporary, "demo")
 	other := filepath.Join(temporary, "other")
+	crashed := filepath.Join(temporary, "crashed")
 	executeWith := func(env []string, name, dir string, args ...string) (string, error) {
 		command := exec.Command(filepath.Join(bin, name), append([]string{"--dir", dir}, args...)...)
 		// /bin/sh keeps the test independent of the shell settings of the user.
@@ -87,7 +88,7 @@ func TestDemo(t *testing.T) {
 	}
 	// This runs before t.TempDir removes the folders.
 	t.Cleanup(func() {
-		for _, dir := range []string{demo, other} {
+		for _, dir := range []string{demo, other, crashed} {
 			execute("bbflow", dir, "server", "stop")
 		}
 	})
@@ -114,13 +115,17 @@ func TestDemo(t *testing.T) {
 
 	// seed adds the projects, tools, and sessions. GIT_DIR and GIT_WORK_TREE select an
 	// unrelated repository, which the seed must not change. Of several seeds at the same
-	// time, only one adds data.
+	// time, only one adds data. An empty demo folder from a seed that stopped before its
+	// marker does not prevent a new seed.
 	fixture := filepath.Join(temporary, "fixture")
 	write(filepath.Join(fixture, "README.md"), "fixture\n")
 	git(temporary, "init", "--quiet", fixture)
 	git(fixture, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--quiet", "--allow-empty", "--message", "fixture")
 	write(filepath.Join(fixture, "edit.txt"), "uncommitted\n")
 	pass("bbflow", demo, "server", "start", "--no-menubar")
+	if err := os.Mkdir(filepath.Join(demo, "demo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	outputs, errs := make([]string, 8), make([]error, 8)
 	var seeds sync.WaitGroup
 	for i := range outputs {
@@ -135,7 +140,7 @@ func TestDemo(t *testing.T) {
 		case errs[i] == nil && regexp.MustCompile(`Added the demo data to .*\nURL: http://127\.0\.0\.1:\d+/\n`).MatchString(output):
 			added++
 		case errs[i] == nil && strings.Contains(output, "already has the demo data"):
-		case errs[i] != nil && strings.Contains(output, "another seed of"):
+		case errs[i] != nil && strings.Contains(output, "another seed or clean of"):
 		default:
 			t.Errorf("concurrent seed: %v\n%s", errs[i], output)
 		}
@@ -190,6 +195,32 @@ func TestDemo(t *testing.T) {
 	}
 	refused("is not a demo instance", "bbflow-demo", other, "clean", "--force")
 	if !exists(filepath.Join(other, "history.sqlite")) {
+		t.Fatal("a refused clean removed files")
+	}
+
+	// A marker without the seed record comes from a seed that stopped. seed refuses to
+	// continue it, and clean removes it.
+	pass("bbflow", crashed, "server", "start", "--no-menubar")
+	write(filepath.Join(crashed, "demo", "DEMO"), "")
+	refused("an earlier seed", "bbflow-demo", crashed, "seed")
+	pass("bbflow-demo", crashed, "clean")
+	if exists(crashed) {
+		t.Fatal("clean kept the instance of a seed that stopped")
+	}
+
+	// A seed that runs holds the lock of the instance directory. Then seed and clean
+	// stop at once.
+	held, err := os.Open(demo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(int(held.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	refused("another seed or clean", "bbflow-demo", demo, "clean")
+	refused("another seed or clean", "bbflow-demo", demo, "seed")
+	held.Close()
+	if !exists(filepath.Join(demo, "demo", "seeded")) {
 		t.Fatal("a refused clean removed files")
 	}
 
