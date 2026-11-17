@@ -157,9 +157,12 @@ main { min-width: 0; flex: 1; display: flex; flex-direction: column; overflow: a
 .session-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 7px; }
 #status { flex: none; padding: 3px 8px; }
 h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#workspace { margin: 0; color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#workspace { display: flex; gap: .35em; margin: 0; color: var(--text-muted); font-size: 12px; }
+#workspace-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#workspace-removed { flex: none; color: var(--warning-text); white-space: nowrap; }
 /* The margin keeps the actions at the right when they wrap below the title. */
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; margin-left: auto; font-size: 12px; }
+#continue-action[data-tip] > button:disabled { pointer-events: none; }
 #session-menu-box { position: relative; display: flex; }
 #session-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; display: flex; flex-direction: column; min-width: 180px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px var(--shadow-overlay); }
 #session-menu button { margin: 1px 0; padding: 7px 10px; border-color: transparent; background: transparent; text-align: left; }
@@ -191,7 +194,8 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 .terminal-item .terminal-status, .terminal-item .terminal-times { color: var(--text-muted); font-size: 11px; }
 .terminal-item .terminal-status.warning { color: var(--warning); }
 #terminal-latest { flex: none; padding: 4px 10px; font-size: 11px; }
-#session-id { font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: 0; }
+#continue-action, #stop { flex: none; letter-spacing: 0; }
+#continue-session, #stop { padding: 4px 10px; font-size: 11px; }
 #terminal { flex: 1; min-height: 0; background: var(--terminal-background); border-radius: 9px; padding: 16px; overflow: auto; }
 .terminal-host { height: 100%; }
 .terminal-footer { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 12px; color: var(--text-muted); font-size: 11px; padding: 10px 0 0; }

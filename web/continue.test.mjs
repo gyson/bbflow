@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canContinue, continueHint, defaultContinueTool } from './dist/continue.js';
+import { continueAction, continueHint, defaultContinueTool } from './dist/continue.js';
 import { insertProblem } from './dist/composer.js';
 
 const tools = [
@@ -8,14 +8,31 @@ const tools = [
   { id: 'plain', name: 'Plain', command: 'plain --interactive' },
 ];
 
-test('only an ended, unarchived session without a live view can continue', () => {
+test('only an ended, unarchived session without a live view shows Continue', () => {
   const run = { id: 'run-1' };
-  assert.equal(canContinue({ status: 'ended', run }, false), true);
-  for (const status of ['running', 'idle', 'draft']) assert.equal(canContinue({ status, run }, false), false, status);
-  assert.equal(canContinue({ status: 'ended' }, false), false, 'a session without a run');
-  assert.equal(canContinue({ status: 'ended', run, archived: true }, false), false, 'an archived session');
-  assert.equal(canContinue({ status: 'ended', run }, true), false, 'a live view');
-  assert.equal(canContinue(null, false), false);
+  assert.deepEqual(continueAction({ status: 'ended', run }, false), { visible: true, problem: '' });
+  for (const status of ['running', 'idle', 'draft']) assert.equal(continueAction({ status, run }, false).visible, false, status);
+  assert.equal(continueAction({ status: 'ended' }, false).visible, false, 'a session without a run');
+  assert.equal(continueAction({ status: 'ended', run, archived: true }, false).visible, false, 'an archived session');
+  assert.equal(continueAction({ status: 'ended', run }, true).visible, false, 'a live view');
+  assert.equal(continueAction(null, false).visible, false);
+});
+
+test('viewing an earlier terminal hides Continue', () => {
+  const session = { status: 'ended', run: { id: 'run-2' } };
+  assert.equal(continueAction(session, false, 'run-1').visible, false);
+  assert.equal(continueAction(session, false, '').visible, true);
+});
+
+test('an unavailable managed worktree keeps Continue visible with a reason', () => {
+  const session = { status: 'ended', run: { id: 'run-1' } };
+  assert.deepEqual(continueAction({ ...session, worktree: { state: 'ready' } }, false), { visible: true, problem: '' });
+  assert.deepEqual(continueAction({ ...session, worktree: { state: 'removed' } }, false), {
+    visible: true, problem: 'Worktree removed. A new terminal cannot start here.',
+  });
+  assert.deepEqual(continueAction({ ...session, worktree: { state: 'creating' } }, false), {
+    visible: true, problem: 'Worktree unavailable. A new terminal cannot start here.',
+  });
 });
 
 test('the form prefers the original tool, then the default tool, then Shell', () => {

@@ -1,10 +1,13 @@
 import type { Tool } from './protocol.js';
 
-export interface ContinueTarget { status: string; archived?: boolean; run?: { id: string } }
+export interface ContinueTarget { status: string; archived?: boolean; run?: { id: string }; worktree?: { state: string } }
 
-// A new terminal can start only after the latest terminal of a session ended.
-export function canContinue(session: ContinueTarget | null, live: boolean): boolean {
-  return !!session?.run && !session.archived && !live && session.status === 'ended';
+// An empty run selects the latest terminal.
+export function continueAction(session: ContinueTarget | null, live: boolean, shownRun = ''): { visible: boolean; problem: string } {
+  if (shownRun || !session?.run || session.archived || live || session.status !== 'ended') return { visible: false, problem: '' };
+  if (session.worktree?.state === 'removed') return { visible: true, problem: 'Worktree removed. A new terminal cannot start here.' };
+  if (session.worktree && session.worktree.state !== 'ready') return { visible: true, problem: 'Worktree unavailable. A new terminal cannot start here.' };
+  return { visible: true, problem: '' };
 }
 
 // Prefer the tool that the session started with, if it still exists.

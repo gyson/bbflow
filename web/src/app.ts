@@ -5,7 +5,7 @@ import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
 import { SideTerminal } from './side-terminal.js';
 import { WorkspacePane } from './workspace-pane.js';
-import { canContinue, continueHint, defaultContinueTool } from './continue.js';
+import { continueAction, continueHint, defaultContinueTool } from './continue.js';
 import { endReasonText, exitReason, hasTerminal, listStatus, listStatusText, live, statusText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
 import { Watch } from './watch.js';
@@ -55,6 +55,7 @@ const elements = {
   'project-remove-help': element('project-remove-help', HTMLElement),
   'cancel-project': element('cancel-project', HTMLButtonElement),
   'rename-session': element('rename-session', HTMLButtonElement),
+  'copy-session-id': element('copy-session-id', HTMLButtonElement),
   'rename-dialog': element('rename-dialog', HTMLDialogElement),
   'rename-form': element('rename-form', HTMLFormElement),
   'rename-name': element('rename-name', HTMLInputElement),
@@ -65,7 +66,9 @@ const elements = {
   'stop': element('stop', HTMLButtonElement),
   'reconnect': element('reconnect', HTMLButtonElement),
   'reload-output': element('reload-output', HTMLButtonElement),
+  'continue-action': element('continue-action', HTMLElement),
   'continue-session': element('continue-session', HTMLButtonElement),
+  'continue-unavailable': element('continue-unavailable', HTMLElement),
   'continue-dialog': element('continue-dialog', HTMLDialogElement),
   'continue-form': element('continue-form', HTMLFormElement),
   'continue-workspace': element('continue-workspace', HTMLElement),
@@ -84,13 +87,14 @@ const elements = {
   'connection': element('connection', HTMLElement),
   'session-title': element('session-title', HTMLElement),
   'workspace': element('workspace', HTMLElement),
+  'workspace-path': element('workspace-path', HTMLElement),
+  'workspace-removed': element('workspace-removed', HTMLElement),
   'terminal': element('terminal', HTMLElement),
   'dimensions': element('dimensions', HTMLElement),
   'status': element('status', HTMLElement),
   'terminal-hint': element('terminal-hint', HTMLElement),
   'welcome': element('welcome', HTMLElement),
   'session-view': element('session-view', HTMLElement),
-  'session-id': element('session-id', HTMLElement),
   'instance-dir': element('instance-dir', HTMLElement),
 };
 
@@ -168,7 +172,7 @@ const preparation = new PreparationEditor({
     if (selected?.id === session.id) {
       selected = { ...selected, ...session };
       heading(session.title || 'Untitled draft');
-      $('workspace').textContent = session.workspace;
+      showWorkspace(session.workspace, session.worktree);
     }
     void refreshSessions();
   },
@@ -206,6 +210,15 @@ function heading(title: string, tab = title) {
   document.title = tab;
 }
 
+function showWorkspace(path: string, worktree?: Worktree) {
+  const branch = worktree ? `⑂ ${worktree.branch}` : '';
+  const label = branch ? `${branch} · ${path}` : path;
+  const removed = worktree?.state === 'removed';
+  $('workspace-path').textContent = removed ? path : label;
+  $('workspace-removed').hidden = !removed;
+  $('workspace').title = removed ? `${path} · ${branch}` : label;
+}
+
 function controls() {
   $('history-open').disabled = busy || !server;
   const launch = selected?.preparation;
@@ -226,24 +239,36 @@ function controls() {
   $('add-project').disabled = busy || !server;
   // Worktree creation shows as running, but only a terminal can stop or reconnect.
   const terminalLive = !!connection?.peer?.active || hasTerminal(selected);
-  $('stop').hidden = showingSettings || !terminalLive;
+  const shownRun = terminalPicker.shownRun;
+  $('stop').hidden = showingSettings || !terminalLive || !!shownRun;
   $('stop').disabled = busy;
   // A view of an earlier terminal uses Back to live terminal instead. A live terminal
   // gets Reconnect in the toolbar. An ended terminal gets Reload output in the More menu.
-  const connected = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active || !!terminalPicker.shownRun;
+  const connected = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active || !!shownRun;
   $('reconnect').hidden = connected || !terminalLive;
   $('reload-output').hidden = connected || terminalLive;
   $('reconnect').disabled = $('reload-output').disabled = busy;
-  $('continue-session').hidden = showingSettings || !canContinue(selected, !!connection?.peer?.active);
-  $('continue-session').disabled = $('continue-submit').disabled = busy;
+  const continuation = continueAction(selected, !!connection?.peer?.active, shownRun);
+  const continueControl = $('continue-action');
+  continueControl.hidden = showingSettings || !continuation.visible;
+  $('continue-session').disabled = $('continue-submit').disabled = busy || !!continuation.problem;
+  $('continue-unavailable').textContent = continuation.problem;
+  if (continuation.problem) {
+    continueControl.dataset.tip = continuation.problem;
+    continueControl.tabIndex = 0;
+    if ($('continue-dialog').open) $('continue-dialog').close();
+  } else {
+    delete continueControl.dataset.tip;
+    continueControl.removeAttribute('tabindex');
+  }
   $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
   $('handoff-open').disabled = busy;
   terminalPicker.controls(busy);
   $('project-submit').disabled = $('project-remove').disabled = $('rename-submit').disabled = busy;
-  $('rename-session').hidden = showingSettings || !selected?.id || selected.status === 'draft';
+  $('rename-session').hidden = $('copy-session-id').hidden = showingSettings || !selected?.id || selected.status === 'draft';
   // The More menu lists only the actions that apply. A live session keeps its worktree.
   $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed' || live(selected.status);
-  $('remove-worktree').disabled = $('rename-session').disabled = busy;
+  $('remove-worktree').disabled = $('rename-session').disabled = $('copy-session-id').disabled = busy;
   sessionMenu.controls();
   $('project-name').disabled = $('project-workspace').disabled = $('rename-name').disabled = busy;
   for (const button of $('sessions').querySelectorAll('button')) button.disabled = busy;
@@ -275,11 +300,6 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
     const workspace = document.createElement('small');
     workspace.textContent = session.workspace;
     button.append(workspace);
-  }
-  if (session.worktree) {
-    const label = document.createElement('small');
-    label.textContent = `⑂ ${session.worktree.branch}${session.worktree.state === 'removed' ? ' · removed' : ''}`;
-    button.append(label);
   }
   button.append(status);
   button.onclick = () => action(() => openSession(session));
@@ -435,8 +455,7 @@ async function refreshSessions() {
         if (connection?.ready) showStatus();
       }
       heading(selected.title || 'Untitled session');
-      $('workspace').textContent = selected.workspace;
-      $('workspace').title = selected.workspace;
+      showWorkspace(selected.workspace, selected.worktree);
     }
     renderSessions();
   } catch (error) {
@@ -557,9 +576,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   const preparing = session.status === 'draft' && !start;
   workspacePane.select(preparing ? '' : session.id ?? '');
   heading(session.title || (preparing ? 'Untitled draft' : 'Untitled session'));
-  $('workspace').textContent = session.workspace;
-  $('workspace').title = session.workspace;
-  $('session-id').textContent = session.id || '';
+  showWorkspace(session.workspace, session.worktree);
   $('status').hidden = false;
   $('status').textContent = 'Connecting';
   history.replaceState(null, '', sessionURL(session.id ?? ''));
@@ -605,7 +622,6 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           // does not change the status of the session.
           if (message.active) { if (!live(selected.status)) selected.status = 'running'; }
           else if (!terminalPicker.shownRun) selected.status = 'ended';
-          $('session-id').textContent = message.session;
           $('status').textContent = 'Restoring';
           $('terminal-hint').textContent = message.active ? 'Click the terminal to type. Ctrl+C reaches the application.' :
             terminalPicker.shownRun ? earlierHint(terminalPicker.shown()) : 'Recorded output of the latest terminal. No process was started.';
@@ -691,7 +707,12 @@ async function showContinue(): Promise<void> {
   ]);
   if (selected?.id !== id) return;
   selected = withDetail(selected, detail);
-  if (!canContinue(selected, !!connection?.peer?.active)) {
+  const continuation = continueAction(selected, !!connection?.peer?.active, terminalPicker.shownRun);
+  if (continuation.problem) {
+    showWorkspace(selected.workspace, selected.worktree);
+    return;
+  }
+  if (!continuation.visible) {
     notice('This session cannot start a new terminal now. Another view may have started one. Reload the session.');
     return;
   }
@@ -730,7 +751,7 @@ async function showWelcome(): Promise<void> {
   $('session-view').hidden = true;
   $('welcome').hidden = false;
   heading('Your workspace', 'bbflow');
-  $('workspace').textContent = 'A home for your terminal sessions.';
+  showWorkspace('A home for your terminal sessions.');
   $('status').hidden = true;
   history.replaceState(null, '', homePath);
   renderSessions();
@@ -743,7 +764,7 @@ async function showSettings(): Promise<void> {
   workspacePane.select('');
   $('session-view').hidden = $('welcome').hidden = true;
   heading('Settings');
-  $('workspace').textContent = 'Defaults and tools for this instance';
+  showWorkspace('Defaults and tools for this instance');
   $('status').hidden = true;
   history.replaceState(null, '', settingsPath);
 }
@@ -846,6 +867,11 @@ async function initialize() {
     $('rename-error').hidden = true;
     $('rename-dialog').showModal();
   };
+  $('copy-session-id').onclick = () => action(async () => {
+    if (!selected?.id) return;
+    await navigator.clipboard.writeText(selected.id);
+    notice('Session ID copied.');
+  });
   $('cancel-rename').onclick = () => $('rename-dialog').close();
   $('rename-form').onsubmit = event => {
     event.preventDefault();
@@ -906,13 +932,15 @@ async function initialize() {
     event.preventDefault();
     action(async () => {
       if (!selected?.id) return;
+      const continuation = continueAction(selected, !!connection?.peer?.active, terminalPicker.shownRun);
+      if (!continuation.visible || continuation.problem) return;
       const tool = $('continue-tool').value;
       $('continue-dialog').close();
       await openSession(selected, { kind: 'continue', tool });
     });
   };
   $('stop').onclick = () => action(async () => {
-    if (!server || !selected?.id) return;
+    if (!server || !selected?.id || terminalPicker.shownRun) return;
     const { stopped } = await call(server, { operation: 'session-stop', session: selected.id });
     if (stopped) {
       selected.status = 'ended';
