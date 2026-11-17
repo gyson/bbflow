@@ -291,6 +291,10 @@ fields. The primary action spans **Edit** and **Move up**. **Cancel** spans
 **Cancel** discards the current entry or edit. An error keeps the entered values.
 **Remove** and the move buttons save at once. Remove has no undo.
 
+A move returns keyboard focus to its button if another move in that direction is
+available. Otherwise focus goes to **Edit** on the moved row. After a removal, focus
+goes to **Edit** on the nearest row. If the list is empty, focus goes to the add row.
+
 The page sends one settings save at a time. If another view or the CLI saved first,
 the page applies the requested change to the latest settings. An edit keeps the latest
 value of each tool field that the user did not change. The browser can warn about

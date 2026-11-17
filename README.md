@@ -68,16 +68,9 @@ and applies pending database migrations.
 7. Click the search icon to search the recorded output of a session, a project, or all
    sessions.
 
-A handoff transcript keeps only the last screen of a program that uses the alternate
-screen. Run agents in the normal screen to keep their full output. These settings
-passed a live check:
-
-| Tool | Command |
-| --- | --- |
-| Codex CLI 0.160.0 | `codex --no-alt-screen` |
-| Claude Code 2.1.312 | `claude` |
-
-Do not turn on the fullscreen renderer of Claude Code.
+Run agents in the normal screen to keep their full output in the handoff transcript.
+For Codex, use `codex --no-alt-screen`. For Claude Code, keep the fullscreen renderer
+off.
 
 To share a tool set with a team, write a setup script with `bbflow tool add` and
 `bbflow settings set`. See [Manage tools](docs/COMMANDS.md#manage-tools).

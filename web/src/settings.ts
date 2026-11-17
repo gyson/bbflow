@@ -130,6 +130,7 @@ export class SettingsView {
       }
       const row = document.createElement('div');
       row.className = 'tool-row';
+      row.dataset.toolId = tool.id;
       const name = document.createElement('span');
       name.textContent = tool.name;
       const command = document.createElement('code');
@@ -237,6 +238,9 @@ export class SettingsView {
 
   private async changeTool(change: SettingsChange, error = this.toolError, done?: () => void): Promise<void> {
     if (this.toolBusy) return;
+    const focused = document.activeElement;
+    const toolId = focused?.closest<HTMLElement>('#settings-tools > [data-tool-id]')?.dataset.toolId;
+    const index = this.saved?.tools.findIndex(tool => tool.id === toolId) ?? -1;
     this.setToolBusy(true);
     error.hidden = true;
     this.renderTools();
@@ -250,8 +254,24 @@ export class SettingsView {
     } finally {
       this.setToolBusy(false);
       this.renderTools();
-      if (saved) done?.();
+      if (saved && done) done();
+      else if (focused instanceof HTMLButtonElement && toolId && index >= 0 &&
+          document.activeElement === document.body && !this.panel.hidden) {
+        this.restoreToolFocus(focused.id, toolId, index);
+      }
     }
+  }
+
+  private restoreToolFocus(buttonId: string, toolId: string, index: number): void {
+    const button = document.getElementById(buttonId);
+    if (button instanceof HTMLButtonElement && !button.disabled) {
+      button.focus();
+      return;
+    }
+    const tools = this.saved?.tools ?? [];
+    const tool = tools.find(tool => tool.id === toolId) ?? tools[Math.min(index, tools.length - 1)];
+    const edit = tool ? document.getElementById(`tool-edit-${tool.id}`) : null;
+    (edit ?? this.addTool.name).focus();
   }
 
   private saveBase(): void {
