@@ -126,23 +126,43 @@
     </div>
     <section id="settings-view" aria-label="Settings" hidden>
       <div class="settings-heading"><div><span class="eyebrow">MAKE IT YOURS</span><h2>Settings</h2></div><div class="settings-actions"><span id="settings-status" role="status"></span><button id="settings-close">Back to session</button></div></div>
-      <form id="settings-form">
+      <div class="settings-content">
         <p id="settings-error" class="form-error" role="alert" hidden></p>
-        <section class="settings-card"><h3>Appearance</h3>
-          <label>Theme<select id="settings-appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
-          <p class="form-help">System follows your device appearance.</p>
+        <form id="settings-form">
+          <section class="settings-card"><h3>Appearance</h3>
+            <label>Theme<select id="settings-appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+            <p class="form-help">System follows your device appearance.</p>
+          </section>
+          <section class="settings-card"><h3>Session defaults</h3>
+            <label>Default tool<select id="settings-tool"></select></label>
+            <label class="checkbox"><input id="settings-worktree" type="checkbox">Use worktree for new Git sessions</label>
+            <label>Default starting branch or commit<input id="settings-base" placeholder="HEAD" maxlength="250"></label>
+            <p class="form-help">HEAD uses the project’s current commit. Uncommitted changes are not copied. Existing sessions keep their choices.</p>
+          </section>
+        </form>
+        <section class="settings-card">
+          <div class="settings-heading"><h3>Tools</h3></div>
+          <p class="form-help">Shell starts without a command. Tool commands use your shell’s syntax and can include flags or wrappers. Use the normal screen to record scrollback. For Codex, add <code>--no-alt-screen</code>.</p>
+          <div class="tool-grid">
+            <p id="tool-error" class="form-error" role="alert" hidden></p>
+            <div class="tool-columns" aria-hidden="true"><span>Name</span><span>Command</span></div>
+            <div id="settings-tools">
+              <form id="edit-tool-editor" class="tool-row" aria-label="Edit tool" hidden>
+                <label><span class="tool-field-label">Name</span><input id="edit-tool-name" maxlength="200" required></label>
+                <label><span class="tool-field-label">Command</span><input id="edit-tool-command" class="tool-command" maxlength="1000" spellcheck="false" required></label>
+                <div class="tool-actions"><button id="edit-tool-submit" type="submit" class="primary">Save</button><button id="edit-tool-cancel" type="button">Cancel</button></div>
+                <p id="edit-tool-error" class="form-error" role="alert" hidden></p>
+              </form>
+              <form id="add-tool-editor" class="tool-row" aria-label="Add tool">
+                <label><span class="tool-field-label">Name</span><input id="add-tool-name" maxlength="200" placeholder="Codex" required></label>
+                <label><span class="tool-field-label">Command</span><input id="add-tool-command" class="tool-command" maxlength="1000" placeholder="codex --no-alt-screen" spellcheck="false" required></label>
+                <div class="tool-actions"><button id="add-tool-submit" type="submit" class="primary">Add tool</button><button id="add-tool-cancel" type="button">Cancel</button></div>
+                <p id="add-tool-error" class="form-error" role="alert" hidden></p>
+              </form>
+            </div>
+          </div>
         </section>
-        <section class="settings-card"><h3>Session defaults</h3>
-          <label>Default tool<select id="settings-tool"></select></label>
-          <label class="checkbox"><input id="settings-worktree" type="checkbox">Use worktree for new Git sessions</label>
-          <label>Default starting branch or commit<input id="settings-base" placeholder="HEAD" maxlength="250"></label>
-          <p class="form-help">HEAD uses the project’s current commit. Uncommitted changes are not copied. Existing sessions keep their choices.</p>
-        </section>
-        <section class="settings-card"><div class="settings-heading"><div><h3>Tools</h3><p>A name, the first command submitted to your shell, and an optional continue command.</p></div><button id="tool-add" type="button">＋ Add tool</button></div>
-          <p class="form-help">Shell is always available and submits no command. Commands use your interactive shell’s syntax and can include model flags or wrappers. <strong>Continue in new terminal</strong> submits the continue command once. Write {prompt} once, without quotes, where the tool accepts its first prompt, for example <code>codex --no-alt-screen {prompt}</code> or <code>claude {prompt}</code>. bbflow quotes the handoff prompt. Without a continue command, bbflow starts the tool with its normal command and does not send the prompt. Run agents in the normal screen, for example Codex with <code>--no-alt-screen</code>. A transcript keeps only the last screen of a program that uses the alternate screen.</p>
-          <div id="settings-tools"></div>
-        </section>
-      </form>
+      </div>
     </section>
   </main>
   <dialog id="project-dialog" aria-labelledby="project-title">
@@ -170,7 +190,7 @@
       <p class="form-help">bbflow starts a new terminal in this session. The session keeps its ID, workspace, message draft, and history. Before the start, bbflow writes a read-only handoff folder with the earlier terminals and your sent messages.</p>
       <p id="continue-workspace" class="continue-path"></p>
       <label>Tool<select id="continue-tool"></select></label>
-      <p id="continue-hint" class="form-help"></p>
+      <p class="form-help">Send the handoff prompt when the agent is ready. Use <strong>Handoff prompt</strong> in the message editor to open it again.</p>
       <label>Handoff prompt<textarea id="continue-prompt" class="prompt-text" rows="6" readonly></textarea></label>
       <p id="continue-warning" class="form-warning" role="alert" hidden>The latest terminal was interrupted. If the server stopped unexpectedly, its agent can still run and change files in this workspace. Check this before you continue.</p>
       <p id="continue-error" class="form-error" role="alert" hidden></p>

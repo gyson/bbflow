@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -182,13 +181,11 @@ func TestHandoffFolderKeepsEveryEarlierTerminalAndMessage(t *testing.T) {
 	}
 }
 
-func TestPrepareContinueChecksSessionAndQuotesPrompt(t *testing.T) {
+func TestPrepareContinueChecksSessionAndUsesStartupCommand(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	s, session := handoffFixture(t)
 	if _, err := s.store.SaveSettings(history.Settings{Tools: []history.Tool{
-		{ID: "agent", Name: "Agent", Command: "agent", ContinueCommand: "agent --model=fixture {prompt}"},
-		{ID: "plain", Name: "Plain", Command: "plain --interactive"},
-		{ID: "long", Name: "Long", Command: "long", ContinueCommand: "long " + strings.Repeat("x", 700) + " {prompt}"},
+		{ID: "agent", Name: "Agent", Command: "agent --label '{prompt}'"},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +208,6 @@ func TestPrepareContinueChecksSessionAndQuotesPrompt(t *testing.T) {
 	}
 	fails("a stale view", request("older-run", "agent"), "another view started")
 	fails("a missing tool", request(first.ID, "missing"), "tool no longer exists")
-	fails("a long command", request(first.ID, "long"), "longer than 1000 bytes")
 	s.sessions[session.ID] = &runningSession{id: session.ID}
 	fails("a live terminal", request(first.ID, "agent"), "live terminal")
 	delete(s.sessions, session.ID)
@@ -241,7 +237,7 @@ func TestPrepareContinueChecksSessionAndQuotesPrompt(t *testing.T) {
 		t.Fatal("handoff is available before the first continue", info, err)
 	}
 	handoff := s.handoff(session.ID)
-	for tool, want := range map[string]string{"agent": "agent --model=fixture " + shellQuote(handoff.Prompt), "plain": "plain --interactive", "": ""} {
+	for tool, want := range map[string]string{"agent": "agent --label '{prompt}'", "": ""} {
 		_, run, err := s.prepareContinue(request(first.ID, tool))
 		if err != nil {
 			t.Fatal(tool, err)
@@ -256,16 +252,6 @@ func TestPrepareContinueChecksSessionAndQuotesPrompt(t *testing.T) {
 	readHandoff(t, s, session.ID, "README.md")
 	if info, err := s.handoffInfo(session.ID); err != nil || !info.Available || info.Prompt != handoff.Prompt || info.Folder != handoff.Folder {
 		t.Fatal("handoff is not available after a continue", info, err)
-	}
-	// Each shell must give the agent the exact prompt as one argument.
-	for _, shell := range []string{"/bin/sh", "/bin/bash", "/bin/zsh"} {
-		if _, err := os.Stat(shell); err != nil {
-			continue
-		}
-		output, err := exec.Command(shell, "-c", "printf '%s|' "+shellQuote(handoff.Prompt)).Output()
-		if err != nil || string(output) != handoff.Prompt+"|" {
-			t.Fatalf("%s: %q %v", shell, output, err)
-		}
 	}
 	if err := os.RemoveAll(session.Workspace); err != nil {
 		t.Fatal(err)

@@ -157,7 +157,7 @@ One row with the appearance, tool list, and launch defaults of the instance.
 | --- | --- |
 | `id` | Always `1`. |
 | `revision` | Revision of the settings. |
-| `data` | JSON with the appearance, launch defaults, and tools. |
+| `data` | JSON with the appearance, launch defaults, and tools. Each tool has an ID, name, and startup command. |
 
 To see the exact definitions, read `sqlite_schema`:
 

@@ -98,13 +98,6 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 	if err != nil {
 		return session, nil, err
 	}
-	handoff := s.handoff(session.ID)
-	if strings.Contains(command, history.PromptPlaceholder) {
-		command = strings.Replace(command, history.PromptPlaceholder, shellQuote(handoff.Prompt), 1)
-		if history.ValidateCommand(command) != nil {
-			return session, nil, errors.New("the continue command with the handoff prompt is longer than 1000 bytes; shorten the continue command in Settings")
-		}
-	}
 	run, err := prepareRun(&protocol.Run{Workspace: session.Workspace, Title: session.Title, Command: command, Size: request.Size})
 	if err != nil {
 		return session, nil, err
@@ -112,12 +105,11 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 	if err = s.writeHandoff(session); err != nil {
 		return session, nil, fmt.Errorf("write the handoff folder: %w", err)
 	}
-	run.Tool, run.Continues, run.Handoff = tool, session.Run.ID, handoff.Folder
+	run.Tool, run.Continues, run.Handoff = tool, session.Run.ID, s.handoff(session.ID).Folder
 	return session, run, nil
 }
 
-// continueTool returns the name and command of a tool. A tool without a continue
-// command starts with its normal command and gets no prompt.
+// continueTool returns the tool name and its startup command.
 func (s *Server) continueTool(id string) (name, command string, err error) {
 	if id == "" {
 		return "Shell", "", nil
@@ -128,9 +120,6 @@ func (s *Server) continueTool(id string) (name, command string, err error) {
 	}
 	for _, tool := range settings.Tools {
 		if tool.ID == id {
-			if tool.ContinueCommand != "" {
-				return tool.Name, tool.ContinueCommand, nil
-			}
 			return tool.Name, tool.Command, nil
 		}
 	}

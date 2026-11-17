@@ -1,11 +1,11 @@
 import { call, encodeBytes, errorMessage, VERSION } from './protocol.js';
-import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Tool, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
+import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
 import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
 import { SideTerminal } from './side-terminal.js';
 import { WorkspacePane } from './workspace-pane.js';
-import { continueAction, continueDialogProblem, continueHint, defaultContinueTool } from './continue.js';
+import { continueAction, continueDialogProblem, defaultContinueTool } from './continue.js';
 import { endReasonText, exitReason, hasTerminal, listStatus, listStatusText, live, statusText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
 import { Watch } from './watch.js';
@@ -73,7 +73,6 @@ const elements = {
   'continue-form': element('continue-form', HTMLFormElement),
   'continue-workspace': element('continue-workspace', HTMLElement),
   'continue-tool': element('continue-tool', HTMLSelectElement),
-  'continue-hint': element('continue-hint', HTMLElement),
   'continue-prompt': element('continue-prompt', HTMLTextAreaElement),
   'continue-warning': element('continue-warning', HTMLElement),
   'continue-error': element('continue-error', HTMLElement),
@@ -131,7 +130,6 @@ let renderedSidebar = '';
 // in place, so the buttons and the keyboard focus stay.
 const statusMarks: { session: SessionInfo; dot: HTMLElement; text: Text }[] = [];
 let selected: SessionView | null = null;
-let continueTools: Tool[] = [];
 let continueRun: string | undefined;
 // The handoff prompt of the selected session. It stays available after a new terminal
 // starts, so the user can copy or send it later.
@@ -721,10 +719,8 @@ async function showContinue(): Promise<void> {
     notice(problem);
     return;
   }
-  continueTools = settings.tools;
   $('continue-tool').replaceChildren(new Option('Shell', ''), ...settings.tools.map(tool => new Option(tool.name || 'Unnamed tool', tool.id)));
   $('continue-tool').value = defaultContinueTool(settings.tools, selected.preparation?.toolId, settings.defaultTool);
-  $('continue-hint').textContent = continueHint(continueTools.find(tool => tool.id === $('continue-tool').value));
   $('continue-prompt').value = handoff.prompt;
   $('continue-workspace').textContent = selected.worktree ? `⑂ ${selected.worktree.branch} · ${selected.workspace}` : selected.workspace;
   $('continue-warning').hidden = selected.run?.status !== 'interrupted';
@@ -922,9 +918,6 @@ async function initialize() {
     else notice('The handoff folder of this session is not available. Continue in a new terminal to write it again.');
   });
   $('cancel-continue').onclick = () => $('continue-dialog').close();
-  $('continue-tool').oninput = () => {
-    $('continue-hint').textContent = continueHint(continueTools.find(tool => tool.id === $('continue-tool').value));
-  };
   $('continue-copy').onclick = async () => {
     try {
       await navigator.clipboard.writeText($('continue-prompt').value);

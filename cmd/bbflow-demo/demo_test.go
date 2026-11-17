@@ -159,6 +159,9 @@ func TestDemo(t *testing.T) {
 	expect("SELECT count(*) FROM events WHERE kind='draft' AND CAST(data AS TEXT)->>'text'='List the changes since the last release.'", "[[1]]")
 	expect("SELECT group_concat(value->>'name', ','), data->>'$.defaultTool'=data->>'$.tools[0].id', data->>'$.worktree' FROM settings, json_each(data, '$.tools')",
 		"[[Demo agent,Busy agent,Claude,Codex 1 1]]")
+	expect(`SELECT count(*) FROM events AS input
+		JOIN events AS start ON start.run_id=input.run_id AND start.kind='start'
+		WHERE input.kind='input' AND CAST(start.data AS TEXT)->>'continues' IS NOT NULL`, "[[1]]")
 	expect("SELECT s.title, CAST(p.data AS TEXT)->>'worktree' FROM preparations p JOIN sessions s ON s.id=p.session_id WHERE p.state='draft'",
 		"[[Plan release notes 1]]")
 

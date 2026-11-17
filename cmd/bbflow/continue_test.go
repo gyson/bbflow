@@ -39,7 +39,7 @@ func TestContinueWorktreeSessionInNewTerminal(t *testing.T) {
 	}
 	size := protocol.Size{Rows: 24, Cols: 80}
 	rpc(protocol.Request{Operation: "settings-save", Settings: &history.Settings{DefaultTool: "fixture", Worktree: true, Base: "HEAD", Tools: []history.Tool{
-		{ID: "fixture", Name: "Fixture", Command: "printf 'FIRST_%s\\n' run", ContinueCommand: "printf 'PROMPT<%s>\\n' {prompt}"},
+		{ID: "fixture", Name: "Fixture", Command: "printf 'START_%s\\n' run"},
 	}}}, nil)
 	var project history.Project
 	rpc(protocol.Request{Operation: "project-add", Workspace: repo}, &project)
@@ -49,7 +49,7 @@ func TestContinueWorktreeSessionInNewTerminal(t *testing.T) {
 		t.Fatal("worktree default not applied", session.Preparation)
 	}
 	first := openSessionView(t, protocol.Request{Operation: "session-start", Session: session.ID, Revision: session.Preparation.Revision, Size: size})
-	waitFor(t, func() bool { return strings.Contains(first.text(), "FIRST_run") })
+	waitFor(t, func() bool { return strings.Contains(first.text(), "START_run") })
 	// Send one message as the editor does: save it as pending, write it, then clear it.
 	var draft protocol.Composer
 	rpc(protocol.Request{Operation: "composer-draft", Session: session.ID, Draft: &protocol.Draft{Text: "echo first request", Attachments: []int64{}, Pending: true}}, &draft)
@@ -80,9 +80,7 @@ func TestContinueWorktreeSessionInNewTerminal(t *testing.T) {
 		t.Fatal("handoff is available before the first continue", handoff)
 	}
 	second := openSessionView(t, protocol.Request{Operation: "session-continue", Session: session.ID, LatestRun: firstRun.ID, Tool: "fixture", Size: size})
-	waitFor(t, func() bool {
-		return strings.Contains(second.text(), "PROMPT<Continue the work of bbflow session "+session.ID)
-	})
+	waitFor(t, func() bool { return strings.Contains(second.text(), "START_run") })
 	// A second view that saw the same latest run cannot start another terminal.
 	duplicate := openSessionView(t, protocol.Request{Operation: "session-continue", Session: session.ID, LatestRun: firstRun.ID, Tool: "fixture", Size: size})
 	if message := <-duplicate.done; message.Type != "error" || !strings.Contains(message.Error, "live terminal") {
@@ -106,7 +104,7 @@ func TestContinueWorktreeSessionInNewTerminal(t *testing.T) {
 		t.Fatal("handoff prompt is not available later", later)
 	}
 	transcript, err := os.ReadFile(filepath.Join(handoff.Folder, "terminals", "1-"+firstRun.ID+".txt"))
-	if err != nil || !strings.Contains(string(transcript), "FIRST_run") {
+	if err != nil || !strings.Contains(string(transcript), "START_run") {
 		t.Fatal(string(transcript), err)
 	}
 	messages, err := os.ReadFile(filepath.Join(handoff.Folder, "messages.md"))
@@ -138,21 +136,26 @@ func TestContinueWorktreeSessionInNewTerminal(t *testing.T) {
 		t.Fatal(text)
 	}
 	transcript, err = os.ReadFile(filepath.Join(handoff.Folder, "terminals", "2-"+secondRun.ID+".txt"))
-	if err != nil || !strings.Contains(string(transcript), "PROMPT<Continue the work") {
+	if err != nil || !strings.Contains(string(transcript), "START_run") {
 		t.Fatal(string(transcript), err)
 	}
 	stopTestSession(t, session.ID)
 	third.wait(t, 129)
 	// The ended view shows only the latest terminal.
 	ended := resumeView(t, session.ID)
-	if message := <-ended.done; message.Type != "history-end" || strings.Contains(ended.text(), "PROMPT<") || strings.Contains(ended.text(), "FIRST_run") {
+	if message := <-ended.done; message.Type != "history-end" || strings.Contains(ended.text(), "START_run") {
 		t.Fatalf("%+v %q", message, ended.text())
 	}
-	// Each startup command was recorded once, in its own run. No input was replayed.
+	// Each tool run starts with the same command. The only other inputs were sent by the test.
 	var query history.QueryResult
-	rpc(protocol.Request{Operation: "query", SQL: fmt.Sprintf("SELECT run_id,count(*) FROM events WHERE session_id='%s' AND kind='input' AND (CAST(data AS TEXT) LIKE '%%FIRST_%%' OR CAST(data AS TEXT) LIKE '%%first request%%') GROUP BY run_id", session.ID)}, &query)
-	if len(query.Rows) != 1 || query.Rows[0][0] != firstRun.ID || query.Rows[0][1] != float64(2) {
-		t.Fatal("input replayed", query.Rows)
+	rpc(protocol.Request{Operation: "query", SQL: fmt.Sprintf("SELECT run_id,CAST(data AS TEXT) FROM events WHERE session_id='%s' AND kind='input' ORDER BY seq", session.ID)}, &query)
+	if len(query.Rows) != 4 ||
+		query.Rows[0][0] != firstRun.ID || query.Rows[1][0] != firstRun.ID ||
+		query.Rows[2][0] != secondRun.ID || query.Rows[3][0] != secondRun.ID ||
+		query.Rows[0][1] != query.Rows[2][1] ||
+		!strings.Contains(query.Rows[1][1].(string), "echo first request") ||
+		!strings.Contains(query.Rows[3][1].(string), "IN_%s") {
+		t.Fatal("unexpected terminal input", query.Rows)
 	}
 	rpc(protocol.Request{Operation: "query", SQL: fmt.Sprintf("SELECT count(*) FROM runs WHERE session_id='%s'", session.ID)}, &query)
 	if query.Rows[0][0] != float64(3) {

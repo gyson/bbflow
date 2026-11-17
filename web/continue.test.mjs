@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { continueAction, continueDialogProblem, continueHint, defaultContinueTool } from './dist/continue.js';
+import { continueAction, continueDialogProblem, defaultContinueTool } from './dist/continue.js';
 import { insertProblem } from './dist/composer.js';
 
 const tools = [
-  { id: 'codex', name: 'Codex', command: 'codex', continueCommand: 'codex {prompt}' },
+  { id: 'codex', name: 'Codex', command: 'codex' },
   { id: 'plain', name: 'Plain', command: 'plain --interactive' },
 ];
 
@@ -52,12 +52,6 @@ test('the form prefers the original tool, then the default tool, then Shell', ()
   assert.equal(defaultContinueTool(tools, undefined, 'removed'), '');
 });
 
-test('the hint says when bbflow sends the prompt', () => {
-  assert.match(continueHint(tools[0]), /submits “codex \{prompt\}” once/);
-  assert.match(continueHint(tools[1]), /submits “plain --interactive” and does not send the prompt/);
-  assert.match(continueHint(undefined), /submits no command/);
-});
-
 test('the handoff prompt goes only into an empty editor without a pending send', () => {
   const ready = { loaded: true, pending: false, text: ' \n', files: 0 };
   assert.equal(insertProblem(ready), undefined);
@@ -65,9 +59,4 @@ test('the handoff prompt goes only into an empty editor without a pending send',
   assert.match(insertProblem({ ...ready, pending: true }), /unlock the draft/);
   assert.match(insertProblem({ ...ready, text: 'my request' }), /already has a draft/);
   assert.match(insertProblem({ ...ready, files: 1 }), /already has a draft/);
-});
-
-test('the hint says where to find the prompt later', () => {
-  assert.match(continueHint(tools[1]), /Handoff prompt in the message editor shows it again/);
-  assert.match(continueHint(undefined), /Handoff prompt in the message editor shows it again/);
 });
