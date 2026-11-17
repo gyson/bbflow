@@ -113,17 +113,19 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 		}
 		session.Worktree = &worktree
 	}
+	autoTitle := ""
 	if run.Title == "" {
-		run.Title = p.ToolName + " · " + filepath.Base(source)
+		autoTitle = p.ToolName + " · " + filepath.Base(source)
+		run.Title = autoTitle
 	}
 	run.Tool = p.ToolName
-	if err = s.store.SetLaunchWorkspace(id, run.Title, run.Workspace); err != nil {
+	if err = s.store.SetLaunchWorkspace(id, autoTitle, run.Workspace); err != nil {
 		return session, nil, err
 	}
 	if err = s.store.SetPreparationState(id, revision, "creating", "launched"); err != nil {
 		return session, nil, err
 	}
-	session.Workspace, session.Title = run.Workspace, run.Title
+	session.Workspace, session.AutoTitle = run.Workspace, autoTitle
 	session.Preparation.State = "launched"
 	return session, run, nil
 }

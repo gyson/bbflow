@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"bbflow/internal/history"
@@ -31,6 +32,12 @@ type Server struct {
 	sides    map[string]*runningSession // Side terminals by session ID.
 	watchMu  sync.Mutex
 	watchers map[string]map[*draftWatcher]struct{} // Draft watchers by session ID.
+	// ctx ends at server stop. Background jobs use it, and Serve waits for them before
+	// the caller closes the archive.
+	ctx  context.Context
+	jobs sync.WaitGroup
+	// titles counts title changes. A status watch sends it, so that views read titles again.
+	titles atomic.Int64
 }
 
 // On cancellation, Serve stops new requests and waits for agent cleanup. The caller
@@ -39,7 +46,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	executable, _ := os.Executable()
-	s := &Server{store: store, cancel: cancel, sessions: make(map[string]*runningSession), sides: make(map[string]*runningSession), info: protocol.ServerInfo{
+	s := &Server{ctx: ctx, store: store, cancel: cancel, sessions: make(map[string]*runningSession), sides: make(map[string]*runningSession), info: protocol.ServerInfo{
 		Protocol: protocol.Version, Instance: history.ID(), PID: os.Getpid(),
 		DataDir: filepath.Dir(store.Path), Port: listener.Addr().(*net.TCPAddr).Port,
 		Executable: executable,
@@ -102,6 +109,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 	s.mu.Unlock()
 	httpServer.Close()
 	s.wg.Wait()
+	s.jobs.Wait()
 	if errors.Is(err, http.ErrServerClosed) || errors.Is(err, net.ErrClosed) {
 		return nil
 	}
@@ -189,7 +197,25 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.reply(conn, map[string]bool{"removed": err == nil}, err)
 	case "session-rename":
 		err := s.store.RenameSession(request.Session, request.Name)
+		if err == nil {
+			s.titles.Add(1)
+		}
 		s.reply(conn, map[string]bool{"renamed": err == nil}, err)
+	case "title-tools":
+		s.reply(conn, titleTools, nil)
+	case "title-test":
+		if request.Settings == nil {
+			s.reply(conn, nil, errors.New("missing title tool"))
+			return
+		}
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) {
+			command, err := titleCommand(request.Settings.TitleTool)
+			if err != nil {
+				return nil, err
+			}
+			title, err := runTitleCommand(ctx, command, request.Text)
+			return map[string]string{"title": title}, err
+		})
 	case "session-resume":
 		s.resumeSession(conn, request.Session, request.Run, request.Size)
 	case "session-terminals":

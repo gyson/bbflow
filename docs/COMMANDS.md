@@ -316,7 +316,7 @@ The tables are:
 | Table | Columns |
 | --- | --- |
 | `projects` | `id`, `name`, `workspace`, `created` |
-| `sessions` | `id`, `title`, `workspace`, `created`, `project_id` (NULL for standalone), `archived` (0 or 1) |
+| `sessions` | `id`, `title` (user title, or empty), `auto_title` (derived title), `workspace`, `created`, `project_id` (NULL for standalone), `archived` (0 or 1) |
 | `runs` | `id`, `session_id`, `status`, `started`, `ended`, `pid`, `detail` |
 | `settings` | `id`, `revision`, `data` (JSON appearance, defaults, and tool presets) |
 | `preparations` | `session_id`, `revision`, `state`, `data` (JSON launch choices) |
@@ -418,6 +418,7 @@ bbflow settings set appearance dark
 bbflow settings set default-tool Codex
 bbflow settings set worktree true
 bbflow settings set base main
+bbflow settings set title-tool codex
 ```
 
 `settings get` prints the saved settings as JSON, including the revision and the tools.
@@ -430,6 +431,7 @@ bbflow settings set base main
 | `default-tool` | The name of a tool. An empty value, `""`, selects the built-in Shell. |
 | `worktree` | `true` or `false`. `true` selects **Use worktree** for new drafts in Git folders. A new installation starts with `true`. An upgrade keeps the saved value. |
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
+| `title-tool` | `none`, `claude`, `codex`, or `code-puppy`. It selects the agent CLI that makes automatic session titles. `none` turns them off. A new installation and an upgrade start with `none`. See [session titles](SPEC.md#session-titles) for the commands. |
 
 **Impact:** the same as `tool add`. A rejected value changes nothing.
 

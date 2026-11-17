@@ -30,7 +30,8 @@ Keys:
   appearance    system, light, or dark
   default-tool  a tool name, or "" for the built-in Shell
   worktree      true or false
-  base          the default Git branch or commit, such as HEAD`
+  base          the default Git branch or commit, such as HEAD
+  title-tool    none, claude, codex, or code-puppy for automatic session titles`
 
 func toolCommand(target client.Target, args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
@@ -159,8 +160,10 @@ func settingsCommand(target client.Target, args []string) error {
 				settings.Worktree = enabled
 			case "base":
 				settings.Base = value
+			case "title-tool":
+				settings.TitleTool = strings.TrimSpace(value)
 			default:
-				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, or base", key)
+				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, or title-tool", key)
 			}
 			return nil
 		})

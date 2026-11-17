@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/26`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/27`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/26",
+    "protocol": "bbflow/27",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -66,7 +66,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/26",
+    "protocol": "bbflow/27",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -84,7 +84,7 @@ operations.
 | `project-add` | `workspace`, optional `name` | `result`, containing the new project |
 | `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
 | `project-remove` | `project` ID | `result`, containing `removed`. Sessions become standalone. |
-| `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
+| `session-rename` | `session` ID, `name` | `result`, containing `renamed`. An empty `name` removes the user title. |
 | `session-list` | `groups` (group keys, required), `limit` for each group (default 10; `limit` times the number of groups is at most 100), optional `offset` (default 0, needs exactly one group), optional `session` ID to include (not with `offset`), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status). |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
@@ -103,6 +103,8 @@ operations.
 | `stop` | `instance`, from the verified greeting | `result`, containing `stopping`. The server then shuts down. |
 | `settings-get` | none | `result`, saved settings and revision |
 | `settings-save` | `settings`, including current revision | `result`, updated settings and revision |
+| `title-tools` | None | `result`, containing the title tools with `id`, `name`, and `command` |
+| `title-test` | `settings` with `titleTool`, and `text` | `result`, containing `title`. It runs the title tool once with `text` and saves nothing. |
 | `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
 | `project-draft` | `project` ID | `result`, a new independent draft with saved defaults and `status`. Starts no process. |
 | `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
@@ -146,8 +148,11 @@ own `HOME`. Other relative paths, `~user`, and environment-variable expansion ar
 unsupported. Workspaces must resolve to existing directories. History records their
 canonical paths.
 
-Multiple sessions may share the same or overlapping workspace. An empty title defaults
-to the tool and workspace names. Terminal size is `{"rows":24,"cols":80}`, with 2–512
+Multiple sessions may share the same or overlapping workspace. Session records and
+summaries have `title`, the title that the user set, and `autoTitle`, the derived title.
+Show `title`, or `autoTitle` when `title` is empty. A launch without a user title sets
+`autoTitle` to the tool and workspace names. See
+[session titles](SPEC.md#session-titles). Terminal size is `{"rows":24,"cols":80}`, with 2–512
 columns and 1–256 rows.
 
 Protocol 15 supports multiple drafts per project, archive/restore, and paginated
@@ -173,6 +178,11 @@ for [side terminals](#side-terminals). The SQLite format does not change.
 
 Protocol 25 removes `continueCommand` from tools. SQLite format 9 removes this field
 from saved tools.
+
+Protocol 27 adds automatic session titles. Session records and summaries add
+`autoTitle`, and `title` holds only the user title. Settings add `titleTool`. The
+operations `title-tools` and `title-test` are new. A `statuses` message adds
+`revision`. SQLite format 10 adds the `auto_title` column and `titleTool: "none"`.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -555,7 +565,9 @@ session status.
 `statuses` message. Its `statuses` object maps the ID of each session that has a live
 terminal to `running` or `idle`. The server omits the object when no terminal is live.
 The server reads the statuses from memory five times each second. It sends the complete
-object again after each change. A session is absent before its terminal starts and
+object again after each change. Its `revision` counts the session title changes since
+the server started. The server also sends the message after each title change. Then a
+client reads `session-list` again. A session is absent before its terminal starts and
 after its terminal ends. Read `session-list` for those sessions. The client sends `ping`
 at least every 30 seconds and gets `pong`. Closing the stream only removes the watch.
 
@@ -727,13 +739,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/26") {
+    if (message.server.protocol !== "bbflow/27") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/26", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/27", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);

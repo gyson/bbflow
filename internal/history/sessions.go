@@ -63,7 +63,7 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	query := strings.TrimSpace(filter.Query)
 	// Each group reads one session more than its limit to report more sessions.
 	rows, err := s.db.Query(`WITH listed AS (
-            SELECT sessions.id,title,workspace,sessions.created,COALESCE(project_id,'') AS project,archived,
+            SELECT sessions.id,title,auto_title,workspace,sessions.created,COALESCE(project_id,'') AS project,archived,
                 COALESCE(activity.created,sessions.created) AS updated,COALESCE(activity.seq,0) AS activity,
                 sessions.rowid AS creation,
                 CASE WHEN EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id) THEN project_id ELSE '' END AS grp
@@ -71,7 +71,7 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
                 SELECT seq FROM events WHERE session_id=sessions.id
                 AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
             )
-            WHERE archived=? AND (?='' OR instr(lower(title),lower(?))>0
+            WHERE archived=? AND (?='' OR instr(lower(title),lower(?))>0 OR instr(lower(auto_title),lower(?))>0
                 OR instr(lower(workspace),lower(?))>0 OR instr(lower(sessions.id),lower(?))>0
                 OR EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id
                     AND (instr(lower(projects.name),lower(?))>0 OR instr(lower(projects.workspace),lower(?))>0)))
@@ -79,10 +79,10 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
             SELECT *,ROW_NUMBER() OVER (PARTITION BY grp ORDER BY julianday(updated) DESC,activity DESC,creation DESC) AS position
             FROM listed
         )
-        SELECT id,title,workspace,created,project,archived,updated,grp,position>?+? FROM ranked
+        SELECT id,title,auto_title,workspace,created,project,archived,updated,grp,position>?+? FROM ranked
         WHERE (? OR grp IN (SELECT value FROM json_each(?))) AND position>? AND (position<=?+?+1 OR id=?)
         ORDER BY julianday(updated) DESC,activity DESC,creation DESC`,
-		filter.Archived, query, query, query, query, query, query,
+		filter.Archived, query, query, query, query, query, query, query,
 		filter.Offset, filter.Limit, filter.Groups == nil, string(groups), filter.Offset, filter.Offset, filter.Limit, filter.Include)
 	if err != nil {
 		return SessionPage{}, err
@@ -93,7 +93,7 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 		var item ListedSession
 		var group string
 		var beyond bool
-		if err = rows.Scan(&item.ID, &item.Title, &item.Workspace, &item.Created, &item.ProjectID, &item.Archived, &item.Updated, &group, &beyond); err != nil {
+		if err = rows.Scan(&item.ID, &item.Title, &item.AutoTitle, &item.Workspace, &item.Created, &item.ProjectID, &item.Archived, &item.Updated, &group, &beyond); err != nil {
 			rows.Close()
 			return SessionPage{}, err
 		}

@@ -73,6 +73,9 @@ func (s *Server) composer(sid string, draft *protocol.Draft) (protocol.Composer,
 			return result, err
 		}
 		s.publishDraft(sid, result)
+		if draft.Pending {
+			s.generateTitle(sid, result.Draft.Revision, draft.Text)
+		}
 	}
 	return result, nil
 }

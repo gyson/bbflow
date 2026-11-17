@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/26"
+const Version = "bbflow/27"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -62,6 +62,7 @@ type Request struct {
 	Size        Size               `json:"size,omitempty"`
 	Draft       *Draft             `json:"draft,omitempty"`
 	Upload      *Upload            `json:"upload,omitempty"`
+	Text        string             `json:"text,omitempty"` // A sample message for title-test.
 
 	Search  *history.SearchFilter   `json:"search,omitempty"`
 	Context *history.ContextRequest `json:"context,omitempty"`
@@ -262,10 +263,19 @@ type SessionInfo struct {
 	ProjectID   string               `json:"projectId"`
 	ID          string               `json:"id"`
 	Title       string               `json:"title"`
+	AutoTitle   string               `json:"autoTitle"`
 	Workspace   string               `json:"workspace"`
 	Updated     string               `json:"updated"`
 	Status      string               `json:"status"`
 	Viewers     int                  `json:"viewers"`
+}
+
+// TitleTool is an agent CLI that can make automatic session titles. The server owns its
+// command.
+type TitleTool struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Command string `json:"command"`
 }
 
 type ServerInfo struct {
@@ -279,8 +289,8 @@ type ServerInfo struct {
 
 // Message carries one request, reply, or terminal event. Set only the fields that its
 // Type needs. Input bytes and rendered frames use base64 in JSON. Statuses holds running
-// or idle for each session that has a live terminal. Run identifies the run that an exit
-// message is about.
+// or idle for each session that has a live terminal. In a statuses message, Revision
+// counts session title changes. Run identifies the run that an exit message is about.
 type Message struct {
 	Type     string            `json:"type"`
 	Revision int64             `json:"revision,omitempty"`

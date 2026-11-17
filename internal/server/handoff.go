@@ -98,7 +98,7 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 	if err != nil {
 		return session, nil, err
 	}
-	run, err := prepareRun(&protocol.Run{Workspace: session.Workspace, Title: session.Title, Command: command, Size: request.Size})
+	run, err := prepareRun(&protocol.Run{Workspace: session.Workspace, Title: session.DisplayTitle(), Command: command, Size: request.Size})
 	if err != nil {
 		return session, nil, err
 	}
@@ -239,7 +239,7 @@ func (s *Server) replaceHandoff(sid string, files map[string]string) error {
 
 func handoffReadme(session history.Session, terminals []handoffTerminal, info protocol.ServerInfo, now time.Time) string {
 	var b strings.Builder
-	title := session.Title
+	title := session.DisplayTitle()
 	if title == "" {
 		title = "Untitled session"
 	}

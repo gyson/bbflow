@@ -18,7 +18,8 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
 // The revision tracks saves. The other fields determine if a save is necessary.
 export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&
-    a.worktree === b.worktree && a.base === b.base && sameTools(a.tools, b.tools);
+    a.worktree === b.worktree && a.base === b.base && a.titleTool === b.titleTool &&
+    sameTools(a.tools, b.tools);
 }
 
 export function sameTools(a: Tool[], b: Tool[]): boolean {

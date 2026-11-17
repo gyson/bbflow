@@ -33,7 +33,7 @@ terminal, so the archive has no events of its commands.
 ## Run a query
 
 ```sh
-bbflow query "SELECT id,title,workspace,created FROM sessions ORDER BY created DESC LIMIT 20"
+bbflow query "SELECT id,COALESCE(NULLIF(title,''),auto_title) AS title,workspace,created FROM sessions ORDER BY created DESC LIMIT 20"
 ```
 
 - Give one SQL statement in one quoted argument. Use `SELECT`, `WITH ... SELECT`, or
@@ -67,11 +67,12 @@ One row for each session. A session has one workspace and one or more terminals.
 | Column | Meaning |
 | --- | --- |
 | `id` | Session ID. `BBFLOW_SESSION` holds this value. |
-| `title` | Title that the user sees. It can be empty. |
+| `title` | Title that the user set. It is empty when the user set no title. |
 | `workspace` | Working directory of the session. |
 | `created` | Creation time. |
 | `project_id` | ID of the project in `projects`, or NULL. |
 | `archived` | `1` when the user archived the session, else `0`. |
+| `auto_title` | Derived title: the tool and folder at launch, then a summary from the title tool. It can be empty. |
 
 ### `runs`
 

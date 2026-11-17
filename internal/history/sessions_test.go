@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -226,5 +227,64 @@ func TestSessionGroupWindows(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("windows listed %d sessions; want %d in order", len(got), len(want))
+	}
+}
+
+func TestSessionTitlesKeepUserAndDerivedValues(t *testing.T) {
+	store := testStore(t)
+	session, err := store.CreateSession("", "/missing/workspace", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SetLaunchWorkspace(session.ID, "Shell · workspace", session.Workspace); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SetAutoTitle(session.ID, "Fix login redirect"); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SetAutoTitle("missing", "Other"); err == nil {
+		t.Fatal("set a title of a missing session")
+	}
+	if err = store.RenameSession(session.ID, "  My name  "); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Session(session.ID)
+	if err != nil || got.Title != "My name" || got.AutoTitle != "Fix login redirect" || got.DisplayTitle() != "My name" {
+		t.Fatalf("session: %+v, %v", got, err)
+	}
+	// Search matches both titles.
+	for _, query := range []string{"my name", "LOGIN"} {
+		page, err := store.ListSessions(SessionFilter{Query: query})
+		if err != nil || len(page.Sessions) != 1 || page.Sessions[0].AutoTitle != "Fix login redirect" {
+			t.Fatalf("search %q: %+v, %v", query, page, err)
+		}
+	}
+	if err = store.RenameSession(session.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = store.Session(session.ID); err != nil || got.DisplayTitle() != "Fix login redirect" {
+		t.Fatalf("cleared session: %+v, %v", got, err)
+	}
+}
+
+func TestTitleToolSettings(t *testing.T) {
+	store := testStore(t)
+	settings, err := store.Settings()
+	if err != nil || settings.TitleTool != "none" {
+		t.Fatalf("default title tool: %+v, %v", settings, err)
+	}
+	for _, tool := range TitleTools {
+		settings.TitleTool = tool
+		if settings, err = store.SaveSettings(settings); err != nil || settings.TitleTool != tool {
+			t.Fatalf("save %s: %+v, %v", tool, settings, err)
+		}
+	}
+	settings.TitleTool = ""
+	if settings, err = store.SaveSettings(settings); err != nil || settings.TitleTool != "none" {
+		t.Fatalf("an empty title tool did not select none: %+v, %v", settings, err)
+	}
+	settings.TitleTool = "claude -p"
+	if _, err = store.SaveSettings(settings); err == nil || !strings.Contains(err.Error(), "none, claude, codex, code-puppy") {
+		t.Fatalf("accepted an unknown title tool: %v", err)
 	}
 }

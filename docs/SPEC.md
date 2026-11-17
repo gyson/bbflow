@@ -387,8 +387,8 @@ and child folders remain allowed. Project IDs are independent of their names and
 Names contain 1–200 characters without control characters. Custom projects can be
 renamed and removed. Removal sets their sessions' `project_id` to NULL. The UI shows
 these sessions under Standalone. Removal preserves recorded workspace paths, runs,
-recordings, drafts, and files. `session-rename` changes a session title without changing
-its ID or recorded activity.
+recordings, drafts, and files. `session-rename` changes the user title of a session
+without changing its ID or recorded activity. See [session titles](#session-titles).
 
 On startup the server creates the General project with ID `general` and a private
 `<instance>/workspaces/general` folder. General cannot be renamed or removed. The folder
@@ -414,8 +414,9 @@ The server rejects a nonempty relative shell path. It accepts names on PATH and 
 paths. Requests cannot override the shell or environment.
 
 A selected tool supplies an optional startup command to submit through that shell. The
-server inherits its startup environment and sets `TERM=xterm-256color`. An empty title
-defaults to the selected tool name and workspace basename.
+server inherits its startup environment and sets `TERM=xterm-256color`. When the user
+set no title, the launch stores the tool name and workspace basename as the derived
+title.
 
 Workspaces accept absolute paths, `~`, and `~/path`. Home expansion uses the server's
 `HOME` from startup, before canonicalization. Other relative paths, `~user`, and
@@ -478,6 +479,92 @@ sent messages, recorded-output search, a read-only Changes pane, and a side term
 There is no browser
 SQL client. The `bbflow query` command reads archived events. There is no semantic chat
 transcript.
+
+### Session titles
+
+A session has two title fields. `sessions.title` holds the title that the user set in
+the draft form or in **Rename**. It is empty when the user set no title.
+`sessions.auto_title` holds a derived title. The UI shows the user title. Without it,
+the UI shows the derived title. Search matches both fields.
+
+The launch writes the tool name and workspace basename to the derived title. A launch
+with a user title leaves the derived title empty. A rename to an empty title removes
+the user title, and the session shows its derived title again. Neither field ever
+changes the other.
+
+**Automatic titles** in Settings selects the title tool: None, Claude, Codex, or Code
+Puppy. The settings JSON stores `titleTool` as `none`, `claude`, `codex`, or
+`code-puppy`. None turns automatic titles off. This is the default.
+`bbflow settings set title-tool` sets the same value. A change saves at once.
+
+The server owns the command of each title tool. Users cannot edit these commands:
+
+| Title tool | Command |
+| --- | --- |
+| Claude | `claude -p --model haiku` |
+| Codex | `codex exec --skip-git-repo-check --model gpt-6-luna -c model_reasoning_effort=low -` |
+| Code Puppy | `code-puppy --no-tools --model codex-gpt-6-luna -p "$(cat)"` |
+
+Claude uses Haiku. Codex and Code Puppy use Luna. Codex sets low reasoning effort,
+because a Codex config can select a slow default effort. Codex also needs
+`--skip-git-repo-check`, because the temporary folder is not a Git repository.
+`--no-tools` turns off the tools and MCP servers of Code Puppy for the title request.
+Settings shows the command of the selected tool.
+
+The first send from the message editor starts the title command once. A send is a
+pending draft revision with text. The server skips the command when the session has a
+user title or an earlier send. The command does not run for autosaves, attachments
+without text, terminal input, or later messages.
+
+The server runs the command with `$SHELL -c`, or `/bin/sh -c` when `$SHELL` is unset. It
+uses the server environment. The shell is not interactive, so it does not read
+interactive startup files. The command runs in a new empty temporary folder, so agent
+CLIs do not read project files. It is not a session terminal, and the archive records
+no events for it.
+
+Standard input holds a fixed instruction and the message text. The server cuts the text
+at 2,000 bytes. Message text never enters the command line that bbflow writes. Code
+Puppy takes the prompt only as an argument, so its command reads standard input with
+`"$(cat)"`. The shell does not parse the text again. The request starts with plain text, so a CLI does
+not treat it as a `!` or `/` command.
+
+The instruction asks the model for one line that starts with `bbflow-title:`. The
+instruction describes this marker but does not contain it. The server breaks each
+marker in the message text, for example `bbflow-title :`. Thus a CLI that prints the
+request back prints no marker.
+
+The server reads up to 64 KiB of standard output. It uses the text after the marker
+on the last line with a marker. Output without a marker is accepted only when it has
+one line with text. The server rejects other output, because agent CLIs can print status
+lines and errors on standard output with exit status 0. It removes control characters,
+`Title:` labels, Markdown marks, quotes, and a final period. It keeps at most 200
+characters.
+
+The server stops the command process group after 90 seconds or at server stop. A
+nonzero exit, a timeout, or empty output keeps the current title. Exit status 127
+reports that the CLI is not installed or not on the PATH of the server. The server writes
+the error and the first 4 KiB of standard error to `server.log`. Server stop waits for
+title commands before the archive closes. A title command that is running at a server
+crash or restart is lost. The server does not run it again.
+
+After each title change, the status watch sends a new title revision. Each view then
+reads the session list again.
+
+**Test** in Settings runs the selected title tool once. It is not available for None.
+It sends a fixed sample message, not a message of a session, and saves nothing. The
+result shows the sample message first. Under it, a green line shows **Test passed**
+with the title from the sample message. A red line shows **Test failed** with the
+error. A change of the title tool hides the result.
+
+The title tool sends the first message to its provider. It uses the installation,
+authentication, account, and configuration of the user. Agent CLIs can save each call
+in their own history. A CLI can also read local file paths in the message as
+attachments. Code Puppy does this for existing files of supported types.
+
+Code Puppy prints status lines and the request before the answer. It prints request
+errors on standard output with exit status 0. It also asks for `puppy_name` and
+`owner_name` at each start until `puppy.cfg` has values. Complete this setup before you
+select Code Puppy.
 
 ### History search
 
@@ -1073,7 +1160,8 @@ When the session ends, **Continue in new terminal** shows there in the latest te
 
 **More actions** (⋯) opens a menu that lists only the actions that apply:
 
-- **Rename** shows for started sessions.
+- **Rename** shows for started sessions. The field shows the user title, or the derived
+  title as a placeholder. An empty field removes the user title.
 - **Copy session ID** copies the ID of a started session to the clipboard.
 - **Archive** shows for `draft` and `ended` sessions. It changes to **Restore** for an
   archived session.
@@ -1153,7 +1241,7 @@ as one transaction after column, index, and foreign-key checks. Any failure roll
 the entire upgrade and stops startup. A failed SQL step reports its migration number.
 WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4 through 9. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 10. In the same
   transaction, a new database sets `worktree` to true in the settings JSON. Thus new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -1170,7 +1258,11 @@ WAL is enabled after the schema transaction commits.
 - Format 8 removes the obsolete `continueCommand` field from saved tools through
   migration 9. The upgrade keeps tool IDs, order, startup commands, and the settings
   revision.
-- Format 9 opens without running scripts or rewriting history, settings, or metadata.
+- Format 9 gains the `sessions.auto_title` column through migration 10. Existing
+  sessions keep their titles as user titles, with an empty derived title. The upgrade
+  does not guess which old titles were defaults. It also adds `titleTool: "none"` to
+  the settings JSON, so automatic titles start off. The settings revision stays.
+- Format 10 opens without running scripts or rewriting history, settings, or metadata.
 
 The upgrade preserves IDs, timestamps, event sequences, original blobs, text, drafts,
 and attachments. It also preserves the highest allocated event sequence. Migration
@@ -1179,7 +1271,7 @@ afterward. Repeated or concurrent opens see the committed version and skip compl
 steps.
 
 Formats 1 and 2 have no known migration path in this repository. They, nonempty
-unversioned databases, and formats newer than 9 are rejected without changing their
+unversioned databases, and formats newer than 10 are rejected without changing their
 schema or records. A newer format error asks for a newer executable. There is no
 downgrade path, external migration command, or automatic backup.
 

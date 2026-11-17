@@ -4,7 +4,7 @@ import type { Project, SessionInfo, SessionPage } from './protocol.js';
 // drafts.
 export function sessionGroups(projects: Project[], sessions: SessionInfo[], filter: string) {
   const query = filter.trim().toLowerCase();
-  const matches = (session: SessionInfo) => `${session.title} ${session.workspace} ${session.id}`.toLowerCase().includes(query);
+  const matches = (session: SessionInfo) => `${session.title} ${session.autoTitle} ${session.workspace} ${session.id}`.toLowerCase().includes(query);
   const groups: { project: Project | null; sessions: SessionInfo[] }[] = projects.map(project => {
     const projectMatches = `${project.name} ${project.workspace}`.toLowerCase().includes(query);
     return { project, sessions: sessions.filter(session => session.projectId === project.id && (projectMatches || matches(session))) };
