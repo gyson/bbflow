@@ -5,6 +5,7 @@ import { countText, effectiveLayout, fileEntries, FolderTree, Generation, sideNo
 import type { DiffLayout, FileEntry, FileScope, TreeRow } from './diff-model.js';
 import { showDiff, showFile } from './diff-editor.js';
 import type { CodeView } from './diff-editor.js';
+import { previewable, renderMarkdown } from './markdown.js';
 
 type Send = typeof call;
 export interface Editor { showDiff: typeof showDiff; showFile: typeof showFile }
@@ -35,6 +36,10 @@ export class DiffPane {
   private readonly counts = element('diff-counts', HTMLElement);
   private readonly toggleButton = element('diff-toggle', HTMLButtonElement);
   private readonly copyButton = element('diff-copy', HTMLButtonElement);
+  private readonly previewButton = element('diff-preview', HTMLButtonElement);
+  private readonly previewDialog = element('preview-dialog', HTMLDialogElement);
+  private readonly previewTitle = element('preview-title', HTMLElement);
+  private readonly previewBody = element('preview-body', HTMLElement);
   private readonly note = element('diff-note', HTMLElement);
   private readonly editorParent = element('diff-editor', HTMLElement);
 
@@ -108,6 +113,8 @@ export class DiffPane {
       }
       setTimeout(() => { this.copyButton.textContent = 'Copy path'; this.copyButton.title = ''; }, 1500);
     };
+    this.previewButton.onclick = () => this.openPreview();
+    element('preview-close', HTMLButtonElement).onclick = () => this.previewDialog.close();
     new ResizeObserver(() => this.relayout()).observe(this.pane);
     // Files change while agents work. Read them again when the user comes back.
     window.addEventListener('focus', () => {
@@ -476,6 +483,7 @@ export class DiffPane {
     } catch (error) {
       if (!this.fileGeneration.current(generation) || abort.signal.aborted) return;
       this.file = null;
+      this.previewButton.hidden = true;
       this.destroyView();
       this.showNote(`Cannot read this file: ${errorMessage(error)}`);
     }
@@ -504,6 +512,26 @@ export class DiffPane {
     this.toggleButton.textContent = this.pick.preview ? 'View diff' : 'View file';
     this.toggleButton.title = this.scope === 'files' ? 'Show the diff of this file in Changes' : '';
     this.copyButton.hidden = !this.selected;
+    this.previewButton.hidden = !this.previewFile();
+  }
+
+  // The loaded file of the selection, when it is a Markdown file that Preview can show.
+  private previewFile(): WorkspaceFile | null {
+    const file = this.file;
+    return file && file.path === this.selected && previewable(file) ? file : null;
+  }
+
+  // Show the rendered text of the loaded file. The dialog keeps this text until it
+  // closes. Refresh reads the file again, and the next Preview shows the new text.
+  private openPreview(): void {
+    const file = this.previewFile();
+    if (!file) return;
+    this.previewTitle.replaceChildren(pathLabel(file.path));
+    this.previewTitle.title = file.path;
+    // renderMarkdown escapes the file text and adds no raw HTML from it.
+    this.previewBody.innerHTML = renderMarkdown(file.new.text ?? '');
+    this.previewBody.scrollTop = 0;
+    this.previewDialog.showModal();
   }
 
   private renderFile(): void {
@@ -550,7 +578,7 @@ export class DiffPane {
     this.file = null;
     this.path.replaceChildren();
     this.counts.replaceChildren();
-    this.toggleButton.hidden = this.copyButton.hidden = true;
+    this.toggleButton.hidden = this.copyButton.hidden = this.previewButton.hidden = true;
     this.showNote('');
   }
 }

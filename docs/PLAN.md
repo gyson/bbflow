@@ -52,6 +52,8 @@ following work remains.
 - Insert a file path and a line range into the message editor from the diff.
 - Show the list of commits since the worktree base.
 - Show image previews as blobs in `<img>` elements. Never put SVG inline.
+- Extend the Markdown preview. Open relative links in the Files view. Show workspace
+  images after image previews exist.
 - Record `HEAD` at the start of each run, to add a "Since this terminal started"
   baseline. This needs a migration.
 - Show all changed files on one page, like a pull request, with lazy editors.
