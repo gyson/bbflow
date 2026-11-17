@@ -105,11 +105,11 @@ func (d *demo) addTools() (demoAgent, busyAgent string) {
 	// The copy keeps the tools usable after a checkout of a different commit.
 	check(os.WriteFile(d.agent, demoAgentScript, 0o644))
 	command := "sh " + shellQuote(d.agent)
-	agent := history.Tool{ID: history.ID(), Name: "Demo agent", Command: command, ContinueCommand: command + " --handoff " + history.PromptPlaceholder}
+	agent := history.Tool{ID: history.ID(), Name: "Demo agent", Command: command}
 	busy := history.Tool{ID: history.ID(), Name: "Busy agent", Command: command + " --busy"}
 	settings := call[history.Settings](d.target, protocol.Request{Operation: "settings-get"})
-	claude := history.Tool{ID: history.ID(), Name: "Claude", Command: "claude", ContinueCommand: "claude " + history.PromptPlaceholder}
-	codex := history.Tool{ID: history.ID(), Name: "Codex", Command: "codex --no-alt-screen", ContinueCommand: "codex --no-alt-screen " + history.PromptPlaceholder}
+	claude := history.Tool{ID: history.ID(), Name: "Claude", Command: "claude"}
+	codex := history.Tool{ID: history.ID(), Name: "Codex", Command: "codex --no-alt-screen"}
 	settings.Tools = append(settings.Tools, agent, busy, claude, codex)
 	settings.DefaultTool = agent.ID
 	// New drafts in Git folders select Use worktree.

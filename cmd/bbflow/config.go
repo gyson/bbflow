@@ -16,10 +16,10 @@ import (
 
 const toolUsage = `Usage:
   bbflow [--dir DIR] tool list
-  bbflow [--dir DIR] tool add [--continue COMMAND] [--default] NAME COMMAND
+  bbflow [--dir DIR] tool add [--default] NAME COMMAND
   bbflow [--dir DIR] tool remove NAME
 
-add creates a tool, or replaces the commands of the tool with this name.
+add creates a tool or replaces the command of the tool with this name.
 Put options before NAME. Quote a command that contains spaces.`
 
 const settingsUsage = `Usage:
@@ -53,7 +53,6 @@ func toolCommand(target client.Target, args []string) error {
 		}
 		return printJSON(settings.Tools)
 	case "add":
-		continueCommand := flags.String("continue", "", "continue command with {prompt} once")
 		makeDefault := flags.Bool("default", false, "make this tool the default tool")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
@@ -74,7 +73,7 @@ func toolCommand(target client.Target, args []string) error {
 				index = len(settings.Tools) - 1
 			}
 			tool := &settings.Tools[index]
-			tool.Command, tool.ContinueCommand = command, *continueCommand
+			tool.Command = command
 			if *makeDefault {
 				settings.DefaultTool = tool.ID
 			}

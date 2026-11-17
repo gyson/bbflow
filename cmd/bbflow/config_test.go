@@ -40,10 +40,10 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	// A setup script can run again. The second add updates the same tool.
 	for range 2 {
 		cli("tool", "add", "--default", "Agent", "agent --fast")
-		cli("tool", "add", "--continue", "other {prompt}", "Other", "other")
+		cli("tool", "add", "Other", "other")
 	}
 	settings := saved()
-	if len(settings.Tools) != 2 || settings.Tools[0].Name != "Agent" || settings.Tools[1].ContinueCommand != "other {prompt}" || settings.DefaultTool != settings.Tools[0].ID {
+	if len(settings.Tools) != 2 || settings.Tools[0].Name != "Agent" || settings.Tools[1].Command != "other" || settings.DefaultTool != settings.Tools[0].ID {
 		t.Fatalf("tools after add: %+v", settings)
 	}
 	agent := settings.Tools[0].ID
@@ -66,7 +66,7 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 
 	// The server validation applies to the CLI too.
 	fails("appearance must be", "settings", "set", "appearance", "blue")
-	fails("must contain {prompt} once", "tool", "add", "--continue", "other", "Other", "other")
+	fails("tool command is required", "tool", "add", "Other", " ")
 	fails("worktree must be true or false", "settings", "set", "worktree", "maybe")
 	fails("unknown settings key", "settings", "set", "theme", "dark")
 	fails(`tool "Absent" does not exist`, "tool", "remove", "Absent")

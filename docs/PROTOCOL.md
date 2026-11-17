@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/24`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/25`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/24",
+    "protocol": "bbflow/25",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -66,7 +66,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/24",
+    "protocol": "bbflow/25",
     "operation": "session-list",
     "limit": 10
   }
@@ -161,16 +161,17 @@ drafts. The SQLite format does not change.
 Protocol 17 adds the read-only `composer-sent` operation. It lists the messages that the
 message editor sent. The SQLite format does not change.
 
-Protocol 18 adds `session-handoff` and `session-continue`. A session can now have
-several runs, one after another. Each run has its own terminal. Ended views show the
-latest run. Tools in settings can have an optional `continueCommand`. The SQLite format
-does not change.
+Protocol 18 adds `session-handoff` and `session-continue`. A session can have several
+runs, one after another. Each run has its own terminal.
 
 Protocol 19 adds `session-terminals` and the optional `run` field of `session-resume`.
 A view can show an earlier terminal of a session. The SQLite format does not change.
 
 Protocol 24 adds `side-terminal-open`, `side-terminal-resume`, and `side-terminal-stop`
 for [side terminals](#side-terminals). The SQLite format does not change.
+
+Protocol 25 removes `continueCommand` from tools. SQLite format 9 removes this field
+from saved tools.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -416,8 +417,7 @@ Request such a folder alone before you replace its shown entries.
 
 Settings contain revision, defaultTool (empty means Shell), worktree, base (default
 HEAD), and an ordered tools array. Each tool has a stable client-generated id, name, and
-command. A tool can also have a `continueCommand`. It has the same limits as a command
-and contains `{prompt}` once, without quotes around it. An empty value removes it.
+command.
 Saving requires the current revision. Removing a default tool requires selecting
 another default in the same save. These operations do not install or authenticate
 tools.
@@ -469,10 +469,9 @@ terminal has no run record until its process starts. Until then, the list ends w
 `starting` terminal that has an empty `run`. The operation starts no process and writes
 no files.
 
-A tool with a `continueCommand` gets the shell-quoted prompt in place of `{prompt}`. The
-server records and submits that line once. A tool without one submits its normal
-`command`. Shell submits nothing. The start event of the new run records `tool`,
-`continues` (the previous run ID), and `handoff` (the folder).
+The server records and submits the selected tool's `command` once. Shell submits
+nothing. The client shows the handoff prompt for the user to send. The start event of
+the new run records `tool`, `continues` (the previous run ID), and `handoff` (the folder).
 
 Managed worktree metadata includes path, repository, requested base, resolved commit,
 creation branch, and state (creating, ready, failed, or removed). Creation uses the
@@ -717,13 +716,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/24") {
+    if (message.server.protocol !== "bbflow/25") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/24", operation: "session-list", limit: 10 }
+      request: { protocol: "bbflow/25", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

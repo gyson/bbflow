@@ -81,10 +81,10 @@ The simulated data has these parts:
 | --- | --- |
 | Project **Orbit API** | A repository with three commits. Its working files have one modified, one deleted, one renamed, and two untracked files for the Changes pane. |
 | Project **Tide Web** | A repository with clean working files and a second branch, `feature/tide-chart`. |
-| Tool **Demo agent** | The default tool. It prints a fixed reply to each message. It has a continue command. |
+| Tool **Demo agent** | The default tool. It prints a fixed reply to each message. |
 | Tool **Busy agent** | It prints one line each second until it stops. |
-| Tool **Claude** | The real `claude` CLI of the user, with `claude {prompt}` as the continue command. |
-| Tool **Codex** | The real `codex --no-alt-screen` CLI of the user, with a continue command. |
+| Tool **Claude** | The real `claude` CLI of the user. |
+| Tool **Codex** | The real `codex --no-alt-screen` CLI of the user. |
 | Setting **Use worktree** | On. New drafts in Git folders select a managed worktree. The draft **Plan release notes** also has it. |
 
 The seed never starts Claude or Codex. A Claude or Codex session uses the installation,

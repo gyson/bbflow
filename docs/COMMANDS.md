@@ -373,7 +373,7 @@ server is an error.
 
 ```text
 bbflow [--dir DIR] tool list
-bbflow [--dir DIR] tool add [--continue COMMAND] [--default] NAME COMMAND
+bbflow [--dir DIR] tool add [--default] NAME COMMAND
 bbflow [--dir DIR] tool remove NAME
 ```
 
@@ -383,17 +383,14 @@ with a team. The script must start the server first:
 ```sh
 bbflow server start
 bbflow tool add --default Codex 'codex --no-alt-screen'
-bbflow tool add --continue 'claude {prompt}' Claude 'claude'
+bbflow tool add Claude claude
 ```
 
-`tool list` prints the saved tools as a JSON array with `id`, `name`, `command`, and an
-optional `continueCommand`.
+`tool list` prints the saved tools as a JSON array with `id`, `name`, and `command`.
 
 `tool add` creates a tool at the end of the list. If a tool has the same name, the
-command updates that tool and keeps its position and ID. It replaces the startup command
-and the continue command. Without `--continue`, the tool has no continue command. Thus a
-script gives the same result each time it runs. `--default` makes the tool the default
-tool for new drafts.
+command replaces its startup command and keeps its position and ID. `--default` makes
+the tool the default for new drafts.
 
 `tool remove` removes the tool with this name. If it was the default tool, Shell becomes
 the default tool. Drafts and sessions keep their own copy of the command.

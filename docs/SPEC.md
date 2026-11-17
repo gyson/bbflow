@@ -278,35 +278,23 @@ Other views read the saved theme on reload or when they open Settings without un
 edits. The server includes the theme in each page so it applies before the first render.
 If the server cannot read the settings, the page uses System.
 
-Settings has no save button. Each change saves automatically to SQLite:
+Appearance and session defaults save to SQLite automatically. The default starting
+branch or commit saves when the field loses focus.
 
-- A select or a checkbox saves when its value changes.
-- A text field saves when it loses focus. A save sends only such committed values. Text
-  that is still in edit stays in the form, also during a retry after a conflict. The page
-  reuses each tool row by its ID and never moves the focused row, so the focused input
-  stays mounted and saves on the next blur. A focused field without a pending edit shows
-  the latest saved value after a conflict. The page rebases its committed changes on the
-  latest settings first. Then it applies the form changes since the last commit.
-- Add tool changes only the page. Move and Remove save at once.
-- A tool without a name or a command stays only in the page. If it is a saved tool, the
-  server keeps its saved version until the row is complete again.
-- One save runs at a time. A change during a save starts one more save after it.
+In **Tools**, enter a name and command in the blank row at the bottom. Click **Add tool**
+to save the new tool. Click **Edit** beside a saved tool to edit it in its row. Click
+**Save** to apply changes. The add row stays at the bottom during an edit.
 
-The heading shows **Saving…**, **All settings saved**, or why a change is not saved yet.
-If the server rejects a save, the page saves each changed tool alone. A rejected tool
-keeps its edit and shows the error below its row. The page does not send that edit again
-until the user changes the tool. The other changes save without it. An error that no
-tool causes appears above the cards. A transport failure holds no tool. Its error
-appears above the cards, and the next change sends all unsaved changes again.
+In a wide view, **Name** and **Command** head the columns for saved tools and editor
+fields. The primary action spans **Edit** and **Move up**. **Cancel** spans
+**Move down** and **Remove**. A narrow view puts each label above its field.
+**Cancel** discards the current entry or edit. An error keeps the entered values.
+**Remove** and the move buttons save at once. Remove has no undo.
 
-If another view or a `bbflow tool` or `bbflow settings` command saved first, the page
-applies its own changes to the latest settings and saves again. A value or tool field
-that the page did not change takes the latest saved value. Thus a rename in the page
-keeps a command that another client saved. The page keeps its added, edited,
-removed, and moved tools, including incomplete tools. The heading then shows **All
-settings saved, with changes from another view**. The browser asks before it leaves the
-page with a change that is not saved. Remove has no undo. Drafts and sessions keep their
-own copy of a command.
+The page sends one settings save at a time. If another view or the CLI saved first,
+the page applies the requested change to the latest settings. An edit keeps the latest
+value of each tool field that the user did not change. The browser can warn about
+unsaved changes when the user reloads or closes the tab.
 
 The theme covers the workspace, dialogs, terminal, and Changes pane. Dark uses charcoal
 surfaces, a near-black terminal, and blue for primary actions and focus. The terminal
@@ -316,9 +304,7 @@ without CSS `light-dark()` support uses the Light palette.
 Settings also has a default tool, default worktree choice, default Git base, and an
 ordered list of named commands. Shell is built in and sends no startup command.
 Users can add, edit, reorder, and remove other presets. A command is one line of shell
-syntax, at most 1,000 UTF-8 bytes, without control characters. Each preset can have a continue
-command for [Continue in a new terminal](#continue-in-a-new-terminal). It has the same
-limits and contains `{prompt}` once, without quotes around it. bbflow does not install
+syntax, at most 1,000 UTF-8 bytes, without control characters. bbflow does not install
 tools, choose models, or check provider-specific arguments. Commands may contain secrets
 and are stored locally in the same unencrypted archive as terminal input.
 
@@ -605,8 +591,7 @@ launch lock and rejects the request in these conditions:
 - The latest run has not ended, the session is archived, or it has no run.
 - The managed worktree is not `ready`, or the session workspace no longer exists.
   bbflow does not create a replacement worktree.
-- The selected tool no longer exists, or the command with the prompt exceeds 1,000
-  bytes.
+- The selected tool no longer exists.
 
 A rejected request writes no files and starts no process. Otherwise the server writes
 the handoff folder, then starts `$SHELL -i` in the session's recorded workspace. The
@@ -638,12 +623,8 @@ agent state is lost and that the files are a record, not instructions. It asks t
 agent to check the current files, summarize where the work stopped, and wait for the
 next message.
 
-If the selected tool has a continue command, bbflow puts the shell-quoted prompt in
-place of `{prompt}`. It records and submits that line once, as it does for a startup
-command. A tool without a continue command starts with its normal command, and bbflow
-sends no prompt. Shell submits no command. The user can copy the prompt from the dialog.
-bbflow never sends the prompt through the message editor and never detects agent
-readiness.
+bbflow records and submits the selected tool's startup command once. Shell starts
+without a command. The user can copy the handoff prompt from the dialog.
 
 The prompt stays available after the new terminal starts. When the handoff folder of
 the selected session has its README, **Handoff prompt** appears in the message editor
@@ -1154,7 +1135,7 @@ as one transaction after column, index, and foreign-key checks. Any failure roll
 the entire upgrade and stops startup. A failed SQL step reports its migration number.
 WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4 through 8. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 9. In the same
   transaction, a new database sets `worktree` to true in the settings JSON. Thus new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -1168,7 +1149,10 @@ WAL is enabled after the schema transaction commits.
   events through migration 7. Existing records and allocated sequences remain unchanged.
 - Format 7 gains `appearance: "system"` in the settings JSON through migration 8.
   The upgrade preserves the settings revision and existing values.
-- Format 8 opens without running scripts or rewriting history, settings, or metadata.
+- Format 8 removes the obsolete `continueCommand` field from saved tools through
+  migration 9. The upgrade keeps tool IDs, order, startup commands, and the settings
+  revision.
+- Format 9 opens without running scripts or rewriting history, settings, or metadata.
 
 The upgrade preserves IDs, timestamps, event sequences, original blobs, text, drafts,
 and attachments. It also preserves the highest allocated event sequence. Migration
@@ -1177,7 +1161,7 @@ afterward. Repeated or concurrent opens see the committed version and skip compl
 steps.
 
 Formats 1 and 2 have no known migration path in this repository. They, nonempty
-unversioned databases, and formats newer than 8 are rejected without changing their
+unversioned databases, and formats newer than 9 are rejected without changing their
 schema or records. A newer format error asks for a newer executable. There is no
 downgrade path, external migration command, or automatic backup.
 
@@ -1351,12 +1335,8 @@ active or dirty worktrees. Synthetic sh, bash, and zsh runs verify one startup i
 shell availability afterward, reconnect without replay, and an untouched composer draft.
 These shell fixtures do not establish model availability or agent CLI compatibility.
 
-Web fixtures verify the automatic save payload: an unchanged page does not save, an
-incomplete new tool is not saved, a cleared field keeps the saved tool, and a rejected
-tool does not stop other changes. They verify that a rebase after a revision conflict
-keeps page edits field by field, removals, order, and added tools, and takes other
-values from the latest settings. They verify that a pending edit stays when it restores
-the earlier saved value after a commit. Protocol fixtures verify that a server error reply is
+Web fixtures cover settings comparison, edits that preserve fields changed by another
+view, and repeated add requests. Protocol fixtures verify that a server error reply is
 marked apart from a transport failure.
 
 CLI fixtures run `bbflow tool` and `bbflow settings` against a temporary server. They
@@ -1433,7 +1413,7 @@ launch in a worktree, and separate drafts for subsequent sessions.
 
 No real agent CLI was used for these project checks.
 
-Frozen schemas from repository history test upgrades from formats 3–7 to format 8 and
+Frozen schemas from repository history test upgrades from formats 3–8 to format 9 and
 verify that reopen preserves the upgraded data. Fixtures compare original blobs, archive
 flags, metadata, and event allocation state. They test rollback of the entire upgrade
 after SQL, schema, or foreign-key failures. They also cover repeated opens, concurrent
@@ -1480,29 +1460,23 @@ Continuation fixtures cover per-run replay, where an interrupted second run does
 show the saved screen of the first run. They cover handoff folders with three terminals,
 newest-first order, tool names from start events and preparations, and exact messages
 grouped by terminal. They also cover Sent and Not confirmed states, fenced text,
-read-only files, rebuilds without leftover staging folders, and continue command
-validation. Request fixtures reject live terminals, old run IDs, running records,
-archived sessions, removed worktrees, missing workspaces, unknown tools, and long
-commands. A rejected request writes no handoff folder. sh, bash, and zsh each receive
-the quoted prompt as one exact argument.
+read-only files, and rebuilds without leftover staging folders. Request fixtures reject
+live terminals, old run IDs, running records, archived sessions, removed worktrees,
+missing workspaces, and unknown tools. A rejected request writes no handoff folder.
+A startup command can contain literal `{prompt}` text.
 
-A real temporary server test starts a worktree session with a synthetic tool and sends
-one editor message. It stops the session and continues it with a continue command that
-prints the prompt. It verifies the worktree path, the handoff files, and the rejection
-of a second continue request. Then it restarts the server and continues again with
-Shell. The README then lists both earlier terminals, newest first. The ended view shows
-only the latest terminal. Each startup command and message was recorded once, in its own
-run. These checks use synthetic shells, not a real agent CLI.
+A temporary server test starts a worktree session with a synthetic tool and sends one
+editor message. It stops the session and continues it with the same tool. It verifies
+the startup command, absence of automatic handoff input, the worktree path, the handoff
+files, and the rejection of a second continue request. After a server restart, it
+continues with Shell. The README lists both earlier terminals, newest first.
 
-A browser check with a temporary instance and a synthetic zsh tool started a worktree
-session, sent one editor message, and stopped the session. **Continue in new terminal**
-showed the worktree, the tool, the hint, and the prompt. The new terminal received the
-prompt as one argument in the same worktree. After a second stop and a server restart,
-the handoff README listed both earlier terminals, newest first, with no staging folders
-left. A change of the tool to Shell updated the hint. After a page reload, **Handoff
-prompt** showed the same prompt. Put in message editor filled the empty editor and saved
-the draft. A second attempt with text in the editor was refused and left the text
-unchanged. No browser errors were reported.
+A browser check with the demo instance verified that tool fields do not save on blur.
+**Add tool** and **Save** saved the requested changes. **Cancel** discarded an edit.
+A rejected command stayed in the editor, and a session default saved during the edit.
+After a reload, the tool and the default showed their saved values. A move changed the
+tool order. A new terminal started the Demo agent. **Put in message editor** inserted
+the handoff prompt, and **Send** delivered it to the simulated agent.
 
 Earlier-terminal fixtures cover the terminal list with tools from start events and from
 the preparation, a `starting` terminal without a run record, and the change to its run.
@@ -1524,31 +1498,9 @@ No real agent CLI was used.
 `README.md` from outside its working directory. In the same sandbox, `bbflow query`
 failed with "connect: operation not permitted". These checks ran no model.
 
-A live check used a temporary instance, a Git worktree session, and the real agent
-CLIs with models. The server started with a clean environment that had only `HOME`,
-`PATH`, and a plain zsh. One session had six terminals:
-
-1. Codex CLI 0.160.0 got a task from the message editor. It wrote a codename into an
-   uncommitted file.
-2. A continue with `codex {prompt}` started Codex with the prompt as its first message.
-   Codex reported the codename and the uncommitted file, then waited.
-3. A continue with the Claude CLI that is bundled in the desktop app stopped at its
-   login screen.
-4. A continue with `codex --no-alt-screen {prompt}` read the README, `messages.md`, and
-   the transcript of terminal 3. It ran `git status`, `git log`, and `git diff`, and
-   summarized all earlier terminals.
-5. A Shell continue only rebuilt the handoff folder.
-6. A continue with `claude {prompt}` and Claude Code 2.1.312 summarized terminals 1–5
-   and the uncommitted file, then waited.
-
-Neither agent asked for approval to read the handoff folder. Claude ran in its auto
-permission mode, which allowed the reads. Its default permission mode was not checked.
-Codex uses the alternate screen by default. The transcript of terminal 1 kept only its
-last 12 lines. With `--no-alt-screen`, the transcript of terminal 4 kept the full
-output, including each command. Claude Code ran in the normal screen, and its transcript
-kept the full reply, with some repeated rows from dialog redraws. The agents also showed
-their own folder trust questions and, for Codex, a shared background server question.
-These are agent behavior, not bbflow behavior.
+Earlier live checks verified that Codex CLI 0.160.0 and Claude Code 2.1.312 could read
+the handoff files. See the [v0.0.5 release notes](releases/0.0.5.md#validation) for the
+agent versions, permission modes, and results.
 
 Session status fixtures use fixed times and a real PTY. Time fixtures cover the start of
 a terminal, background output, the idle delay, typed input at short intervals, and

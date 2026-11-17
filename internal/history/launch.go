@@ -4,24 +4,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 )
 
-// Tool is a named startup command. ContinueCommand is optional. A new terminal in an
-// ended session uses it to submit the handoff prompt in place of PromptPlaceholder.
+// Tool is a named startup command.
 type Tool struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Command         string `json:"command"`
-	ContinueCommand string `json:"continueCommand,omitempty"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Command string `json:"command"`
 }
-
-// PromptPlaceholder marks the position of the quoted handoff prompt in a continue
-// command.
-const PromptPlaceholder = "{prompt}"
 
 type Settings struct {
 	Revision    int64  `json:"revision"`
@@ -58,22 +51,6 @@ func ValidateCommand(command string) error {
 	// One submitted shell line, below common canonical PTY input limits.
 	if len(command) > 1000 || !utf8.ValidString(command) || strings.IndexFunc(command, unicode.IsControl) >= 0 {
 		return errors.New("startup command must be one line, at most 1000 bytes, without control characters")
-	}
-	return nil
-}
-
-// ValidateContinueCommand checks a continue command template. bbflow quotes the prompt,
-// so the placeholder must not have quotes around it.
-func ValidateContinueCommand(command string) error {
-	if err := ValidateCommand(command); err != nil {
-		return errors.New("continue command must be one line, at most 1000 bytes, without control characters")
-	}
-	if strings.Count(command, PromptPlaceholder) != 1 {
-		return errors.New("continue command must contain {prompt} once")
-	}
-	before, after, _ := strings.Cut(command, PromptPlaceholder)
-	if strings.HasSuffix(before, "'") || strings.HasSuffix(before, `"`) || strings.HasPrefix(after, "'") || strings.HasPrefix(after, `"`) {
-		return errors.New("write {prompt} without quotes; bbflow quotes the prompt")
 	}
 	return nil
 }
@@ -118,11 +95,6 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 		}
 		if err = ValidateCommand(tool.Command); err != nil {
 			return settings, err
-		}
-		if strings.TrimSpace(tool.ContinueCommand) == "" {
-			tool.ContinueCommand = ""
-		} else if err = ValidateContinueCommand(tool.ContinueCommand); err != nil {
-			return settings, fmt.Errorf("%s: %w", tool.Name, err)
 		}
 	}
 	if !seen[settings.DefaultTool] {

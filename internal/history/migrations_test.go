@@ -114,13 +114,15 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 			if err := json.Unmarshal([]byte(got[0][2].(string)), &saved); err != nil {
 				t.Fatal(err)
 			}
-			if saved["appearance"] != "system" {
-				t.Fatal("invalid appearance after migration", saved)
-			}
-			delete(saved, "appearance")
 			var original map[string]any
 			if err := json.Unmarshal([]byte(want[0][2].(string)), &original); err != nil {
 				t.Fatal(err)
+			}
+			if _, exists := original["appearance"]; !exists {
+				original["appearance"] = "system"
+			}
+			for _, tool := range original["tools"].([]any) {
+				delete(tool.(map[string]any), "continueCommand")
 			}
 			if !reflect.DeepEqual(saved, original) {
 				t.Fatal("migration changed existing settings", saved, original)
@@ -134,7 +136,7 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -149,7 +151,11 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 				t.Fatal("wrong version", got)
 			}
 			settings, err := store.Settings()
-			if err != nil || settings.Appearance != "system" || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}})) {
+			appearance := "system"
+			if version == 8 {
+				appearance = "dark"
+			}
+			if err != nil || settings.Appearance != appearance || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
@@ -235,6 +241,20 @@ func TestAppearanceUpgradeRollsBack(t *testing.T) {
 	assertSnapshot(t, rawDatabase(t, path), before, true)
 }
 
+func TestToolSettingsUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 8)
+	execSQL(t, db, "CREATE TRIGGER reject_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted blocked tool settings update")
+	} else if !strings.Contains(err.Error(), "apply history migration 9") {
+		t.Fatal(err)
+	}
+	assertSnapshot(t, rawDatabase(t, path), before, true)
+}
+
 func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 	for _, test := range []struct {
 		name, schema, message string
@@ -264,7 +284,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6, 7} {
+	for _, version := range []int{3, 6, 7, 8} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }

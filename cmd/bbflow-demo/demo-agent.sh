@@ -5,7 +5,6 @@
 # Usage:
 #   sh demo-agent.sh                    Chat mode.
 #   sh demo-agent.sh --busy             Print one progress line each second.
-#   sh demo-agent.sh --handoff PROMPT   Chat mode. Show the handoff prompt first.
 set -u
 
 say() {
@@ -23,11 +22,6 @@ if [ "${1:-}" = --busy ]; then
         say "step $step: simulated work in progress"
         sleep 1
     done
-fi
-
-if [ "${1:-}" = --handoff ]; then
-    say 'Handoff prompt received:'
-    say "  ${2:-}"
 fi
 
 say 'Commands: /work, /edit, /exit. Other text gets a fixed reply.'

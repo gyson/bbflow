@@ -68,36 +68,6 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 	}
 }
 
-func TestContinueCommandNeedsOneUnquotedPromptPlaceholder(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	settings, err := store.Settings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, command := range []string{"codex", "codex {prompt} {prompt}", "codex '{prompt}'", `codex "{prompt}"`, "codex {prompt}\rwhoami"} {
-		settings.Tools = []Tool{{ID: "codex", Name: "Codex", Command: "codex", ContinueCommand: command}}
-		if _, err = store.SaveSettings(settings); err == nil {
-			t.Fatalf("accepted continue command %q", command)
-		}
-	}
-	settings.Tools = []Tool{
-		{ID: "codex", Name: "Codex", Command: "codex", ContinueCommand: "codex --model=gpt-6-astra {prompt}"},
-		{ID: "plain", Name: "Plain", Command: "plain", ContinueCommand: "   "},
-	}
-	saved, err := store.SaveSettings(settings)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := store.Settings()
-	if err != nil || got.Revision != saved.Revision || got.Tools[0].ContinueCommand != "codex --model=gpt-6-astra {prompt}" || got.Tools[1].ContinueCommand != "" {
-		t.Fatal(got, err)
-	}
-}
-
 func TestRunsListEachTerminalOfASessionInOrder(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
 	if err != nil {

@@ -63,8 +63,8 @@ and applies pending database migrations.
 5. Close the tab when you want. The session and its recording continue in the server.
    Click **Stop session** to end the session.
 6. After a session ends, click **Continue in new terminal**. bbflow writes a read-only
-   handoff folder with the earlier terminals and messages. The new agent can read this
-   folder. It does not get the internal state of the earlier agent.
+   handoff folder with the earlier terminals and messages. When the new agent is ready,
+   send the **Handoff prompt** from the message editor.
 7. Click the search icon to search the recorded output of a session, a project, or all
    sessions.
 
@@ -72,10 +72,10 @@ A handoff transcript keeps only the last screen of a program that uses the alter
 screen. Run agents in the normal screen to keep their full output. These settings
 passed a live check:
 
-| Tool | Command | Continue command |
-| --- | --- | --- |
-| Codex CLI 0.160.0 | `codex --no-alt-screen` | `codex --no-alt-screen {prompt}` |
-| Claude Code 2.1.312 | `claude` | `claude {prompt}` |
+| Tool | Command |
+| --- | --- |
+| Codex CLI 0.160.0 | `codex --no-alt-screen` |
+| Claude Code 2.1.312 | `claude` |
 
 Do not turn on the fullscreen renderer of Claude Code.
 
