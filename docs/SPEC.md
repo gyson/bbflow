@@ -361,8 +361,9 @@ subfolders fail the launch and preserve the checkout for inspection and explicit
 cleanup.
 
 SQLite records the checkout path, repository, requested base, resolved commit, creation
-branch, and lifecycle state. Sessions retain their actual launch paths. The sidebar
-shows the creation branch. It does not track later branch changes in the shell.
+branch, and lifecycle state. Sessions retain their actual launch paths. The session
+header shows the creation branch and launch path. After removal, **(worktree removed)**
+follows the path, and the tooltip shows the creation branch.
 
 Only committed files are checked out. Uncommitted changes, untracked/ignored files,
 dependencies, and local environment files are not copied. Worktree files remain outside
@@ -582,14 +583,19 @@ The final display kept its recorded layout. This check did not run a real agent 
 
 A session can have several terminals, one after another. Each terminal is a run with its
 own PTY, emulator, saved screen, and recording. **Continue in new terminal** appears
-when the latest run of a session ended (`exited`, `stopped`, `failed`, or
-`interrupted`). The session must not be archived, and the view must not have a live
-terminal.
+while you view the latest terminal of an unarchived session after that terminal ends
+(`exited`, `stopped`, `failed`, or `interrupted`). A managed worktree needs the stored
+state `ready` to enable the button.
+If the worktree state blocks the action, hover over the button or use Tab to see the reason.
 
 The dialog shows the session workspace, a tool choice, the handoff prompt, and a Copy
 button. The default tool is the session's original tool if it still exists, then the
 default tool, then Shell. For an `interrupted` run, the dialog warns that an agent from
 a crashed server can still run in the workspace.
+
+If the session changes while the dialog opens, the UI explains why continuation is unavailable.
+If the latest run changes or continuation becomes unavailable while the dialog is open,
+the UI closes the dialog and shows the reason.
 
 `session-continue` carries the latest run ID that the view saw. The server holds the
 launch lock and rejects the request in these conditions:
@@ -660,9 +666,10 @@ are off. **Back to live terminal** in the terminal footer opens the latest termi
 again. When the latest terminal has ended, the button is **Back to latest terminal**.
 Reload and the session link also open the latest terminal.
 
-A view of an earlier terminal never joins the live process, so it never becomes the
-size owner. The process, its capture, and the other views continue. The status badge,
-**Stop session**, and **Continue in new terminal** still apply to the whole session.
+A view of an earlier terminal leaves the live process, its capture, and its views active.
+Only views of the live terminal can change its size. The status badge applies to the whole
+session. The terminal header hides **Stop session** and **Continue in new terminal** while
+you view an earlier terminal.
 
 The UI reads the list with `session-terminals` when it opens a session, when a terminal
 starts or exits, and when the selector opens. The tool name comes from the start event
@@ -1058,19 +1065,17 @@ later terminal, each view shows the stored status of the later run.
 
 The session toolbar shows the status next to the session title. At the right, a search
 icon opens **Search history**. Three icons show the Changes, Files, and Terminal views of
-the workspace pane. The text
-buttons after them follow the session status:
+the workspace pane. **Reconnect** shows when a view of a live terminal has no connection.
 
-- **Stop session** shows when the session has a live terminal. It does not show during
-  worktree creation, which shows as `running` without a terminal. When the server
-  reports that it stopped no terminal, the page says so and does not show an end.
-- **Continue in new terminal** shows for `ended` sessions.
-- **Reconnect** shows when a view of a live terminal has no connection. **Stop session**
-  stays next to it.
+The terminal header shows **Stop session** at the right when you view the live terminal.
+During worktree creation, the session shows `running` before a terminal exists. When the
+server reports that it stopped no terminal, the page says so and leaves the status as is.
+When the session ends, **Continue in new terminal** shows there in the latest terminal view.
 
 **More actions** (⋯) opens a menu that lists only the actions that apply:
 
 - **Rename** shows for started sessions.
+- **Copy session ID** copies the ID of a started session to the clipboard.
 - **Archive** shows for `draft` and `ended` sessions. It changes to **Restore** for an
   archived session.
 - **Reload output** shows for an ended session, in a view of its latest terminal.
@@ -1512,9 +1517,8 @@ in start order. Terminal 1 and terminal 2 showed their own output with input and
 off. The sidebar did not count those views of the live session. **Back to live
 terminal** joined the third terminal, and Send then reached it. After a server restart,
 the button was **Back to latest terminal**, and Escape closed the list. **Continue in
-new terminal** then started a fourth terminal. **Stop session** from a view of an
-earlier terminal stopped it and changed the button to **Back to latest terminal**. No
-browser errors were reported. No real agent CLI was used.
+new terminal** then started a fourth terminal. No browser errors were reported.
+No real agent CLI was used.
 
 `codex sandbox` from Codex CLI 0.160.0, with default settings, read the handoff
 `README.md` from outside its working directory. In the same sandbox, `bbflow query`
