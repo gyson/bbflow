@@ -234,8 +234,18 @@ func (d *demo) requireNew() {
 func (d *demo) sessions(port int) {
 	address := fmt.Sprintf("http://127.0.0.1:%d", port)
 	fmt.Printf("URL: %s/\n", address)
-	sessions := call[[]protocol.SessionInfo](d.target, protocol.Request{Operation: "session-list", Limit: 100})
-	sessions = append(sessions, call[[]protocol.SessionInfo](d.target, protocol.Request{Operation: "session-list", Limit: 100, Archived: true})...)
+	// One request lists 100 sessions at most, so each group gets its own request.
+	groups := []string{""}
+	for _, project := range call[[]history.Project](d.target, protocol.Request{Operation: "project-list"}) {
+		groups = append(groups, project.ID)
+	}
+	var sessions []protocol.SessionInfo
+	for _, archived := range []bool{false, true} {
+		for _, group := range groups {
+			request := protocol.Request{Operation: "session-list", Limit: history.MaxSessionLimit, Groups: []string{group}, Archived: archived}
+			sessions = append(sessions, call[protocol.SessionPage](d.target, request).Sessions...)
+		}
+	}
 	for _, session := range sessions {
 		state := session.Status
 		if session.Archived {

@@ -208,7 +208,14 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		result, err := s.stopSide(request.Session, request.Shell)
 		s.reply(conn, result, err)
 	case "session-list":
-		result, err := s.listSessions(history.SessionFilter{Limit: request.Limit, Offset: request.Offset, Archived: request.Archived, Query: request.Query})
+		// The groups bound the reply. Without them, a reply could list each project.
+		var result protocol.SessionPage
+		err := errors.New("session-list needs groups")
+		if len(request.Groups) > 0 {
+			result, err = s.listSessions(history.SessionFilter{
+				Limit: request.Limit, Groups: request.Groups, Offset: request.Offset, Include: request.Session, Archived: request.Archived, Query: request.Query,
+			})
+		}
 		s.reply(conn, result, err)
 	case "status-watch":
 		s.watchStatus(ctx, conn)
@@ -267,7 +274,10 @@ func (s *Server) reply(conn *protocol.Conn, result any, err error) {
 		conn.Send(protocol.Message{Type: "error", Error: err.Error()})
 		return
 	}
-	conn.Send(protocol.Message{Type: "result", Result: data})
+	// The client must get an answer, also when the result is too large to send.
+	if errors.Is(conn.Send(protocol.Message{Type: "result", Result: data}), protocol.ErrMessageTooLarge) {
+		conn.Send(protocol.Message{Type: "error", Error: "the result exceeds 16 MiB"})
+	}
 }
 
 // A read connection carries one request. Disconnecting cancels its SQLite or Git work.

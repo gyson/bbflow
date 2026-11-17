@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -274,7 +275,8 @@ func TestShellRunsCommandWithArgumentsBytesAndResize(t *testing.T) {
 	c := launchAgent(t, workspace, args...)
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, dataDir)
-	sessions, err := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, err := store.ListSessions(history.SessionFilter{Limit: 100})
+	sessions := listed.Sessions
 	if err != nil || len(sessions) != 1 {
 		t.Fatal(sessions, err)
 	}
@@ -348,7 +350,8 @@ func TestViewClosureKeepsProcessAndHistory(t *testing.T) {
 	c := launchAgent(t, t.TempDir(), "wait")
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, dataDir)
-	sessions, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, _ := store.ListSessions(history.SessionFilter{Limit: 100})
+	sessions := listed.Sessions
 	pid := sessions[0].Run.PID
 	c.Close()
 	if err := syscall.Kill(pid, 0); err != nil {
@@ -423,7 +426,8 @@ func TestConcurrentShellsShareSameAndOverlappingWorkspaces(t *testing.T) {
 		}
 	}
 	store := archive(t, dataDir)
-	sessions, err := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, err := store.ListSessions(history.SessionFilter{Limit: 100})
+	sessions := listed.Sessions
 	if err != nil || len(sessions) != len(paths) {
 		t.Fatal(sessions, err)
 	}
@@ -491,7 +495,8 @@ func TestInterruptedHistoryDoesNotBlockNewSessionsOrReplayInput(t *testing.T) {
 	}
 	c := launchAgent(t, workspace, "scope")
 	c.wait(t, 0)
-	sessions, err := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, err := store.ListSessions(history.SessionFilter{Limit: 100})
+	sessions := listed.Sessions
 	if err != nil || len(sessions) != 2 {
 		t.Fatal("wrong session count", sessions, err)
 	}
@@ -514,17 +519,37 @@ func TestInterruptedHistoryDoesNotBlockNewSessionsOrReplayInput(t *testing.T) {
 	}
 }
 
+// sessionGroups returns the key of each session list group: each project and Standalone.
+func sessionGroups(t *testing.T, target client.Target) []string {
+	t.Helper()
+	output, err := target.Call(protocol.Request{Operation: "project-list"})
+	var projects []history.Project
+	if err != nil || json.Unmarshal(output, &projects) != nil {
+		t.Fatalf("projects: %s: %v", output, err)
+	}
+	groups := []string{""}
+	for _, project := range projects {
+		groups = append(groups, project.ID)
+	}
+	return groups
+}
+
+// sessionInfos lists the most recent sessions of all groups. A reply holds at most
+// history.MaxSessionLimit sessions, so limit is smaller for many groups.
 func sessionInfos(t *testing.T, limit int) []protocol.SessionInfo {
 	t.Helper()
-	output, err := (client.Target{Dir: os.Getenv("BBFLOW_DIR")}).Call(protocol.Request{Operation: "session-list", Limit: limit})
+	target := client.Target{Dir: os.Getenv("BBFLOW_DIR")}
+	groups := sessionGroups(t, target)
+	limit = min(limit, history.MaxSessionLimit/len(groups))
+	output, err := target.Call(protocol.Request{Operation: "session-list", Limit: limit, Groups: groups})
 	if err != nil {
 		t.Fatalf("list: %s: %v", output, err)
 	}
-	var sessions []protocol.SessionInfo
-	if err := json.Unmarshal(output, &sessions); err != nil {
+	var page protocol.SessionPage
+	if err := json.Unmarshal(output, &page); err != nil {
 		t.Fatal(err)
 	}
-	return sessions
+	return page.Sessions
 }
 
 func stopTestSession(t *testing.T, id string) {
@@ -540,7 +565,8 @@ func TestViewReconnectKeepsProcessAndBackgroundRecording(t *testing.T) {
 	first := launchAgent(t, t.TempDir(), "stream")
 	waitFor(t, func() bool { return strings.Contains(first.text(), "READY") })
 	store := archive(t, dataDir)
-	sessions, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, _ := store.ListSessions(history.SessionFilter{Limit: 100})
+	sessions := listed.Sessions
 	id, pid := sessions[0].ID, sessions[0].Run.PID
 	first.Close()
 	waitFor(t, func() bool { return sessionInfos(t, 10)[0].Viewers == 0 })
@@ -582,7 +608,8 @@ func TestViewReconnectKeepsProcessAndBackgroundRecording(t *testing.T) {
 	if !reflect.DeepEqual(events, after) {
 		t.Fatal("ended view changed history")
 	}
-	sessions, _ = store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, _ = store.ListSessions(history.SessionFilter{Limit: 100})
+	sessions = listed.Sessions
 	if len(sessions) != 1 || sessions[0].Run.PID != pid {
 		t.Fatal("ended view created a run", sessions)
 	}
@@ -660,7 +687,7 @@ func TestRecentSessionList(t *testing.T) {
 	dataDir := t.TempDir()
 	startTestServer(t, dataDir)
 	store := archive(t, dataDir)
-	var first history.Session
+	var created []history.Session
 	for i := 0; i < 12; i++ {
 		session, err := store.CreateSession(fmt.Sprintf("session %d", i), t.TempDir(), "")
 		if err != nil {
@@ -670,23 +697,47 @@ func TestRecentSessionList(t *testing.T) {
 		run.Status = "exited"
 		store.SaveRun(run)
 		store.Append(session.ID, run.ID, "output", []byte("OLD"), "OLD")
-		if i == 0 {
-			first = session
-		}
+		created = append(created, session)
 	}
+	first, oldest := created[0], created[1]
 	firstRun, _ := store.LatestRun(first.ID)
 	if _, err := store.Append(first.ID, firstRun.ID, "output", []byte("LATEST"), "LATEST"); err != nil {
 		t.Fatal(err)
 	}
-	output, err := (client.Target{Dir: dataDir}).Call(protocol.Request{Operation: "session-list"})
-	var recent []protocol.SessionInfo
-	if err != nil || json.Unmarshal(output, &recent) != nil || len(recent) != 10 || recent[0].ID != first.ID {
-		t.Fatalf("recent list: %s %v", output, err)
+	list := func(request protocol.Request) protocol.SessionPage {
+		t.Helper()
+		request.Operation = "session-list"
+		if request.Groups == nil {
+			request.Groups = sessionGroups(t, client.Target{Dir: dataDir})
+		}
+		output, err := (client.Target{Dir: dataDir}).Call(request)
+		var page protocol.SessionPage
+		if err != nil || json.Unmarshal(output, &page) != nil {
+			t.Fatalf("list: %s %v", output, err)
+		}
+		return page
+	}
+	// The groups bound the reply, so a request needs them.
+	if output, err := (client.Target{Dir: dataDir}).Call(protocol.Request{Operation: "session-list"}); err == nil {
+		t.Fatalf("list without groups: %s", output)
+	}
+	// Sessions without a saved project form the Standalone group, with the key "".
+	recent := list(protocol.Request{})
+	if len(recent.Sessions) != 10 || recent.Sessions[0].ID != first.ID || !slices.Equal(recent.More, []string{""}) {
+		t.Fatalf("recent list: %+v", recent)
+	}
+	standalone := ""
+	if page := list(protocol.Request{Groups: []string{standalone}, Offset: 10, Limit: 10}); len(page.Sessions) != 2 || page.Sessions[1].ID != oldest.ID || len(page.More) != 0 {
+		t.Fatalf("group window ignored: %+v", page)
+	}
+	// The selected session stays in the list outside the group limit.
+	included := list(protocol.Request{Session: oldest.ID})
+	if len(included.Sessions) != 11 || included.Sessions[10].ID != oldest.ID || !slices.Equal(included.More, []string{""}) {
+		t.Fatalf("selected session missing: %+v", included)
 	}
 	if len(sessionInfos(t, 50)) != 12 {
 		t.Fatal("limit override ignored")
 	}
-
 }
 
 func recordedEvents(t *testing.T, store *history.Store, id string) ([]history.Event, error) {

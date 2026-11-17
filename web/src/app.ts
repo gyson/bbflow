@@ -18,7 +18,7 @@ import { Composer } from './composer.js';
 import { SessionMenu } from './session-menu.js';
 import { SessionSplit } from './session-split.js';
 import { Sidebar } from './sidebar.js';
-import { sessionGroups } from './projects.js';
+import { mergeSessions, sessionGroups, sessionWindow } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
@@ -31,10 +31,6 @@ const elements = {
   'sessions-open': element('sessions-open', HTMLButtonElement),
   'archives-open': element('archives-open', HTMLButtonElement),
   'list-heading': element('list-heading', HTMLElement),
-  'session-pages': element('session-pages', HTMLElement),
-  'sessions-previous': element('sessions-previous', HTMLButtonElement),
-  'sessions-next': element('sessions-next', HTMLButtonElement),
-  'sessions-page': element('sessions-page', HTMLElement),
   'archive-session': element('archive-session', HTMLButtonElement),
   'launch-summary': element('launch-summary', HTMLElement),
   'settings-open': element('settings-open', HTMLButtonElement),
@@ -138,10 +134,16 @@ let handoff: { session: string; info: Handoff } | null = null;
 // code, or the recorded run status.
 let endReason: EndReason | null = null;
 let terminalsGeneration = 0;
-let busy = false, refreshing = false;
-let archivedList = false, pageOffset = 0, hasNextPage = false, refreshGeneration = 0;
+let busy = false;
+let archivedList = false, refreshGeneration = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
-const pageSize = 100;
+// The sidebar shows the most recent sessions of each project group. Show more adds a step.
+// The group key is a project ID, or '' for Standalone. The list and Archived keep separate
+// limits. moreGroups holds the groups that have more sessions.
+const sessionStep = 10;
+const groupLimits = { list: new Map<string, number>(), archived: new Map<string, number>() };
+let moreGroups = new Set<string>();
+const limits = () => archivedList ? groupLimits.archived : groupLimits.list;
 const composer = new Composer({
   server: () => server,
   peer: () => connection?.peer ?? null,
@@ -226,8 +228,6 @@ function controls() {
   $('launch-summary').title = $('launch-summary').textContent;
   preparation.controls(busy, !!selected?.archived);
   $('sessions-open').disabled = $('archives-open').disabled = busy || !server;
-  $('sessions-previous').disabled = busy || refreshing || pageOffset === 0;
-  $('sessions-next').disabled = busy || refreshing || !hasNextPage;
   $('archive-session').hidden = showingSettings || !selected?.id || live(selected.status);
   $('archive-session').disabled = busy;
   $('archive-session').textContent = selected?.archived ? 'Restore' : 'Archive';
@@ -325,7 +325,7 @@ function showListStatuses() {
 function renderSessions() {
   const query = $('filter').value.toLowerCase();
   // A status is not part of the fingerprint. A status change must not replace the buttons.
-  const fingerprint = JSON.stringify([projects, sessions, query, archivedList, pageOffset, hasNextPage, selected?.id, showingSettings, [...collapsedProjects]]);
+  const fingerprint = JSON.stringify([projects, sessions, query, archivedList, [...moreGroups], selected?.id, showingSettings, [...collapsedProjects]]);
   if (fingerprint === renderedSidebar) { showListStatuses(); controls(); return; }
   renderedSidebar = fingerprint;
   // New buttons replace the list. Give the keyboard focus to the new button of the same item.
@@ -336,8 +336,6 @@ function renderSessions() {
   $('archives-open').setAttribute('aria-pressed', String(archivedList));
   $('list-heading').textContent = archivedList ? 'ARCHIVED SESSIONS' : 'PROJECTS · SESSIONS';
   $('add-project').hidden = archivedList;
-  $('session-pages').hidden = pageOffset === 0 && !hasNextPage;
-  $('sessions-page').textContent = `Page ${pageOffset / pageSize + 1}`;
   const groups = sessionGroups(projects, sessions, query).filter(group => !archivedList || group.sessions.length);
   for (const group of groups) {
     const project = group.project;
@@ -391,10 +389,28 @@ function renderSessions() {
       }
     }
     for (const session of group.sessions) list.append(sessionButton(session, !project));
+    if (moreGroups.has(id)) {
+      const more = document.createElement('button');
+      more.className = 'project-more';
+      more.textContent = 'Show more';
+      more.title = `Show ${sessionStep} more sessions of ${name}`;
+      more.dataset.focus = `more:${id}`;
+      more.onclick = async () => {
+        // A busy action disables the sidebar buttons, and a disabled button loses the focus.
+        // Thus give the focus back after the action.
+        const keyboard = document.activeElement === more;
+        await action(async () => {
+          limits().set(id, (limits().get(id) ?? sessionStep) + sessionStep);
+          await refreshSessions();
+        });
+        if (keyboard && (document.activeElement === document.body || !document.activeElement)) focusSidebar(more.dataset.focus!);
+      };
+      list.append(more);
+    }
     if (!group.sessions.length) {
       const empty = document.createElement('p');
       empty.className = 'project-empty';
-      empty.textContent = query ? 'No matching sessions.' : pageOffset ? 'No sessions on this page.' : 'Create a draft with ＋.';
+      empty.textContent = query ? 'No matching sessions.' : 'Create a draft with ＋.';
       list.append(empty);
     }
     section.append(heading, list);
@@ -407,12 +423,16 @@ function renderSessions() {
     $('sessions').append(empty);
   }
   showListStatuses();
-  if (focused) {
-    for (const button of $('sessions').querySelectorAll<HTMLElement>('[data-focus]')) {
-      if (button.dataset.focus === focused) { button.focus({ preventScroll: true }); break; }
-    }
-  }
+  if (focused) focusSidebar(focused);
   controls();
+}
+
+// Give the keyboard focus to the sidebar button with this focus key. Show more is not there
+// after a group shows all of its sessions. Then its key selects the last session of the group.
+function focusSidebar(key: string): void {
+  const target = [...$('sessions').querySelectorAll<HTMLElement>('[data-focus]')].find(button => button.dataset.focus === key)
+    ?? (key.startsWith('more:') ? [...document.getElementById(`project-sessions-${key.slice(5) || 'standalone'}`)?.querySelectorAll<HTMLElement>('.session-item') ?? []].at(-1) : undefined);
+  target?.focus({ preventScroll: true });
 }
 
 // Show brief activity of each session in the list. The list refresh is too slow for it.
@@ -439,18 +459,38 @@ async function refreshSessions() {
   if (!server) return;
   const generation = ++refreshGeneration;
   const selectedId = selected?.id;
-  refreshing = true;
   $('refresh').disabled = true;
   try {
-    const [nextProjects, nextSessions, detail] = await Promise.all([
+    const filter = { archived: archivedList, query: $('filter').value };
+    const [nextProjects, detail] = await Promise.all([
       call(server, { operation: 'project-list' }),
-      call(server, { operation: 'session-list', limit: pageSize + 1, offset: pageOffset, archived: archivedList, query: $('filter').value }),
       selectedId ? call(server, { operation: 'session-config', session: selectedId }) : Promise.resolve(null),
     ]);
     if (generation !== refreshGeneration) return;
+    // One reply lists at most sessionWindow sessions. Thus the most recent sessions come in
+    // batches of groups, and a group that shows more than one step reads its older sessions
+    // in windows. The selected session stays in its group, also when it is older.
+    const groups = ['', ...nextProjects.map(project => project.id)];
+    const batch = sessionWindow / sessionStep;
+    const recentReads = [];
+    for (let i = 0; i < groups.length; i += batch) {
+      recentReads.push(call(server, { operation: 'session-list', limit: sessionStep, groups: groups.slice(i, i + batch), ...filter, ...(selectedId ? { session: selectedId } : {}) }));
+    }
+    const windowReads = [...limits()].flatMap(([group, limit]) => {
+      const reads = [];
+      for (let offset = sessionStep; offset < limit; offset += sessionWindow) {
+        reads.push(call(server!, { operation: 'session-list', groups: [group], offset, limit: Math.min(sessionWindow, limit - offset), ...filter })
+          .then(page => ({ group, offset, page })));
+      }
+      return reads;
+    });
+    const [recentPages, nextWindows] = await Promise.all([Promise.all(recentReads), Promise.all(windowReads)]);
+    if (generation !== refreshGeneration) return;
+    const recent = { sessions: recentPages.flatMap(page => page.sessions), more: recentPages.flatMap(page => page.more) };
     projects = nextProjects;
-    hasNextPage = nextSessions.length > pageSize;
-    sessions = nextSessions.slice(0, pageSize);
+    const merged = mergeSessions(projects, recent, nextWindows, sessionStep);
+    sessions = merged.sessions;
+    moreGroups = new Set(merged.more);
     if (detail && selected && selected.id === selectedId) selected.archived = detail.archived;
     $('connection').textContent = '● Local server connected';
     clearNotice('list');
@@ -469,7 +509,6 @@ async function refreshSessions() {
     notice(errorMessage(error), 'list');
   } finally {
     if (generation === refreshGeneration) {
-      refreshing = false;
       $('refresh').disabled = false;
       controls();
     }
@@ -573,7 +612,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   selected = session;
   terminalPicker.show(start ? '' : run);
   if (archivedList !== !!session.archived) {
-    archivedList = !!session.archived; pageOffset = 0; $('filter').value = '';
+    archivedList = !!session.archived; $('filter').value = '';
     await refreshSessions();
   }
   $('welcome').hidden = true;
@@ -734,7 +773,7 @@ async function showLaunch(projectId: string): Promise<void> {
   if (!server) return;
   await leaveView();
   const session = await call(server, { operation: 'project-draft', project: projectId });
-  archivedList = false; pageOffset = 0; $('filter').value = '';
+  archivedList = false; $('filter').value = '';
   collapsedProjects.delete(projectId);
   await openSession({ ...session, status: 'draft' });
   await refreshSessions();
@@ -798,7 +837,7 @@ async function initialize() {
     selected.archived = archived;
     if (archived) await showWelcome();
     else {
-      archivedList = false; pageOffset = 0; $('filter').value = '';
+      archivedList = false; $('filter').value = '';
       collapsedProjects.delete(selected.projectId ?? '');
       await openSession(selected);
     }
@@ -807,12 +846,10 @@ async function initialize() {
   });
   for (const [button, archived] of [[$('sessions-open'), false], [$('archives-open'), true]] as const) {
     button.onclick = () => action(async () => {
-      archivedList = archived; pageOffset = 0;
+      archivedList = archived;
       await refreshSessions();
     });
   }
-  $('sessions-previous').onclick = () => action(async () => { pageOffset = Math.max(0, pageOffset - pageSize); await refreshSessions(); });
-  $('sessions-next').onclick = () => action(async () => { pageOffset += pageSize; await refreshSessions(); });
   $('home-link').onclick = event => {
     // Keep a plain click in this page so drafts save. Let modified clicks open a new tab.
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -903,7 +940,6 @@ async function initialize() {
   }, true);
   $('refresh').onclick = refreshSessions;
   $('filter').oninput = () => {
-    pageOffset = 0;
     // Invalidate pending results before the debounce delay ends.
     refreshGeneration++;
     clearTimeout(searchTimer);

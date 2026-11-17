@@ -3,7 +3,9 @@ package history
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -50,37 +52,28 @@ func TestArchivePersistenceAndSearchAcrossPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	visible, err := s.ListSessions(SessionFilter{Limit: 1000})
-	if err != nil || len(visible) != 0 {
+	visible, err := s.ListSessions(SessionFilter{Limit: 100})
+	if err != nil || len(visible.Sessions) != 0 || len(visible.More) != 0 {
 		t.Fatal("archived drafts leaked into normal list", visible, err)
 	}
 	page, err := s.ListSessions(SessionFilter{Limit: 100, Archived: true})
-	if err != nil || len(page) != 100 {
+	if err != nil || len(page.Sessions) != 100 || !slices.Equal(page.More, []string{project.ID}) {
 		t.Fatal(page, err)
 	}
-	seen := map[string]bool{}
-	for _, item := range page {
-		seen[item.ID] = true
-	}
-	page, err = s.ListSessions(SessionFilter{Limit: 100, Offset: 100, Archived: true})
-	if err != nil || len(page) != 6 || page[5].ID != first.ID {
+	page, err = s.ListSessions(SessionFilter{Limit: 100, Groups: []string{project.ID}, Offset: 100, Archived: true})
+	if err != nil || len(page.Sessions) != 6 || page.Sessions[5].ID != first.ID || len(page.More) != 0 {
 		t.Fatal("old drafts are not reachable", page, err)
-	}
-	for _, item := range page {
-		if seen[item.ID] {
-			t.Fatal("overlapping pages", item.ID)
-		}
 	}
 	for _, query := range []string{"OLD", "100%_", first.ID} {
 		found, err := s.ListSessions(SessionFilter{Limit: 1, Archived: true, Query: query})
-		if err != nil || len(found) != 1 || found[0].ID != first.ID {
+		if err != nil || len(found.Sessions) != 1 || found.Sessions[0].ID != first.ID {
 			t.Fatal("search did not find old draft", query, found, err)
 		}
 	}
 	for _, query := range []string{"saved WORK", "/workspace"} {
-		found, err := s.ListSessions(SessionFilter{Limit: 1000, Archived: true, Query: query})
-		if err != nil || len(found) != 106 {
-			t.Fatal("project search failed", query, len(found), err)
+		found, err := s.ListSessions(SessionFilter{Limit: 100, Groups: []string{project.ID}, Offset: 6, Archived: true, Query: query})
+		if err != nil || len(found.Sessions) != 100 || found.Sessions[99].ID != first.ID {
+			t.Fatal("project search failed", query, len(found.Sessions), err)
 		}
 	}
 	if err = s.RemoveProject(project.ID); err != nil {
@@ -102,7 +95,7 @@ func TestArchivePersistenceAndSearchAcrossPages(t *testing.T) {
 		t.Fatal("archive lost original attachment", file, err)
 	}
 	visible, err = s.ListSessions(SessionFilter{})
-	if err != nil || len(visible) != 1 || visible[0].ID != first.ID {
+	if err != nil || len(visible.Sessions) != 1 || visible.Sessions[0].ID != first.ID {
 		t.Fatal("restore did not return draft to normal list", visible, err)
 	}
 }
@@ -149,7 +142,8 @@ func TestArchiveRejectsActiveRunsAndLaunchClaims(t *testing.T) {
 	if err = s.SetSessionArchived("missing", true); err == nil {
 		t.Fatal("archived nonexistent session")
 	}
-	for _, filter := range []SessionFilter{{Limit: -1}, {Limit: 1001}, {Offset: -1}} {
+	standalone := ""
+	for _, filter := range []SessionFilter{{Limit: -1}, {Limit: 101}, {Offset: -1, Groups: []string{standalone}}, {Offset: 1}, {Groups: []string{standalone}, Offset: 1, Include: draft.ID}, {Limit: 50, Groups: []string{"a", "b", "c"}}, {Limit: math.MaxInt/2 + 1, Groups: []string{"a", "b"}}} {
 		if _, err = s.ListSessions(filter); err == nil {
 			t.Fatal("accepted invalid filter", filter)
 		}

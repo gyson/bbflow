@@ -460,21 +460,21 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 	}
 }
 
-func (s *Server) listSessions(filter history.SessionFilter) ([]protocol.SessionInfo, error) {
-	sessions, err := s.store.ListSessions(filter)
+func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPage, error) {
+	page, err := s.store.ListSessions(filter)
 	if err != nil {
-		return nil, err
+		return protocol.SessionPage{}, err
 	}
-	result := make([]protocol.SessionInfo, 0, len(sessions))
+	result := protocol.SessionPage{Sessions: make([]protocol.SessionInfo, 0, len(page.Sessions)), More: page.More}
 	now := time.Now()
-	for _, session := range sessions {
+	for _, session := range page.Sessions {
 		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Archived: session.Archived, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: s.sessionStatus(session.Session, now), Preparation: session.Preparation, Worktree: session.Worktree}
 		if r := s.running(session.ID); r != nil {
 			r.mu.Lock()
 			info.Viewers = len(r.clients)
 			r.mu.Unlock()
 		}
-		result = append(result, info)
+		result.Sessions = append(result.Sessions, info)
 	}
 	return result, nil
 }

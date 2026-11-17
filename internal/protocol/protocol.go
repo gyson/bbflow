@@ -11,9 +11,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/25"
+const Version = "bbflow/26"
 const Path = "/ws"
 const maxMessage = 16 << 20
+
+var ErrMessageTooLarge = errors.New("protocol message exceeds 16 MiB")
 
 type Size struct {
 	Rows uint16 `json:"rows"`
@@ -38,7 +40,6 @@ type PreparationConfig struct {
 
 type Request struct {
 	Archived    bool               `json:"archived,omitempty"`
-	Offset      int                `json:"offset,omitempty"`
 	Query       string             `json:"query,omitempty"`
 	Settings    *history.Settings  `json:"settings,omitempty"`
 	Preparation *PreparationConfig `json:"preparation,omitempty"`
@@ -56,6 +57,8 @@ type Request struct {
 	Shell       string             `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
 	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
 	Limit       int                `json:"limit,omitempty"`
+	Groups      []string           `json:"groups,omitempty"` // Session list group keys. "" is Standalone.
+	Offset      int                `json:"offset,omitempty"` // The sessions of the group to skip.
 	Size        Size               `json:"size,omitempty"`
 	Draft       *Draft             `json:"draft,omitempty"`
 	Upload      *Upload            `json:"upload,omitempty"`
@@ -241,6 +244,13 @@ type SessionDetail struct {
 	Status string `json:"status"`
 }
 
+// SessionPage lists the most recent sessions of the requested project groups, or one
+// window of one group. More holds the keys of the groups that have more sessions.
+type SessionPage struct {
+	Sessions []SessionInfo `json:"sessions"`
+	More     []string      `json:"more"`
+}
+
 // SessionInfo is a session summary. Status is draft, running, idle, or ended. The
 // server derives it. Running means that a live terminal had application output in the
 // last seconds, or that the session starts. Idle means a live terminal without recent
@@ -324,7 +334,7 @@ func (c *Conn) Send(message Message) error {
 		return err
 	}
 	if len(data) > maxMessage {
-		return errors.New("protocol message exceeds 16 MiB")
+		return ErrMessageTooLarge
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -95,7 +95,8 @@ func TestProjectDraftsAreIndependentAndCommandsComeFromSettings(t *testing.T) {
 	if err != nil || len(projects) != 1 || projects[0].ID != project.ID {
 		t.Fatal(projects, err)
 	}
-	recent, err := s.store.ListSessions(history.SessionFilter{Limit: 100})
+	listed, err := s.store.ListSessions(history.SessionFilter{Limit: 100})
+	recent := listed.Sessions
 	if err != nil || len(recent) != 9 { // Eight project drafts and the composer fixture.
 		t.Fatal("drafts missing from session list", recent, err)
 	}

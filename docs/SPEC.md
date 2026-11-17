@@ -219,9 +219,16 @@ and network access to the local origin and blocks framing. Terminal libraries ar
 served locally. See [browser access](PROTOCOL.md#browser-access) for the Host, Origin,
 and caching rules.
 
-The sidebar lists saved projects and groups sessions, including drafts, in pages of 100
-through `project-list` and `session-list`. General appears first. Custom projects follow
-in name order. Groups can be collapsed in each view.
+The sidebar lists saved projects and groups sessions, including drafts, through
+`project-list` and `session-list`. General appears first. Custom projects follow in name
+order. Groups can be collapsed in each view. Each group shows its 10 most recent
+sessions. **Show more** below a group shows 10 more of its sessions. It has no upper
+limit. Each reply holds at most 100 sessions. Thus the list reads the 10 most recent
+sessions of 10 groups in each request. It reads the sessions after the first 10 of a
+group in separate windows of at most 100 sessions. When the group then shows all of its sessions, the
+keyboard focus moves from **Show more** to its last session. The list and
+Archived keep separate group sizes until reload. The selected session stays in its
+group, also when it is older than the other sessions that the group shows.
 
 A vertical divider on the right edge of the sidebar changes its width. Drag it with a
 mouse or touch. Or focus it and use Left/Right to resize. Use Home/End to reach the
@@ -235,10 +242,10 @@ and visibility stay with the browser view across session switches and reset on r
 Below 620 pixels, the sidebar is above the main area and the divider is not available.
 
 Server-side search matches project names and paths, or session titles, workspaces, and
-IDs, before pagination. It uses SQLite's case-insensitive ASCII matching and treats
-wildcard characters literally. This UI does not search message or terminal contents.
-Previous and Next reach older results. Each page reflects current activity. Activity
-changes can move items between pages.
+IDs, before the group limits. It uses SQLite's case-insensitive ASCII matching and
+treats wildcard characters literally. This UI does not search message or terminal
+contents. Each refresh reads the most recent sessions again, so activity changes can
+move a session into or out of the shown part of a group.
 
 The list refreshes every five seconds while visible. Project names are plain text. The
 small arrow expands or collapses a group. Each project's **＋** creates and selects a new
@@ -251,7 +258,7 @@ the home page shows `bbflow`.
 
 **Archive** saves the current launch choices and message editor. It hides a draft or
 finished session from the normal list and returns to the welcome view. **Archived**
-provides the same search and pagination across all archived sessions. **Restore**
+provides the same search and groups across all archived sessions. **Restore**
 returns an item to its project, or Standalone if that project was removed, without
 launching it.
 
@@ -893,6 +900,13 @@ Each message shows its time, text, and attached file names. **Sent** means that 
 editor got an input receipt and then cleared the draft. **Not confirmed** means that
 there was no receipt, or the user unlocked the draft. This status is derived. It does
 not confirm that the application accepted the message.
+
+A long message shows its first 8 lines, and the list is the only scroll area. **Show
+more** below the text shows 16 more lines. Each later click shows double the lines of the
+previous click. The button shows the number of hidden lines. When fewer than 4 lines
+would stay hidden, all of the text shows. **Show less** returns to the first 8 lines.
+When a click hides its button, the other button gets the keyboard focus.
+The line count follows the current text wrap.
 
 **Copy** puts the message text on the system clipboard. Users can then paste it into
 any session. Copy does not include attachments or their file paths. It is not available
