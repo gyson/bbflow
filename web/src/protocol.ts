@@ -314,7 +314,7 @@ export class Peer {
 
   // This receipt confirms a PTY write. It does not confirm application acceptance or
   // completion. Never retry input. A successful write can have a lost receipt.
-  writeInput(data: string, id = crypto.randomUUID()): Promise<void> {
+  writeInput(data: string, id: string = crypto.randomUUID()): Promise<void> {
     if (this.input) return Promise.reject(new Error('A submission is already in progress.'));
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => this.input?.settle('Input delivery was not confirmed. Check the terminal before submitting again.'), 8000);

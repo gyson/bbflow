@@ -38,6 +38,8 @@ type Server struct {
 	jobs sync.WaitGroup
 	// titles counts title changes. A status watch sends it, so that views read titles again.
 	titles atomic.Int64
+	// titled holds the sessions whose title job started while the server runs.
+	titled sync.Map
 }
 
 // On cancellation, Serve stops new requests and waits for agent cleanup. The caller

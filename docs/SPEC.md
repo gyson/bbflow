@@ -518,19 +518,27 @@ selected tool. Each command gives the model only the request text:
   Git repository. Codex sets low reasoning effort.
 - Code Puppy: `--no-tools` turns off its tools and MCP servers. Code Puppy always
   attaches existing files whose paths are in the prompt, so bbflow masks paths in the
-  request.
+  request. Code Puppy 0.0.969 also always loads the user plugins in
+  `~/.code_puppy/plugins`, and no option turns them off. So a title run can execute
+  plugin code that the user installed for Code Puppy.
 
 The empty temporary folder alone is not a file access limit, because an absolute path
 or `~` reaches other folders.
 
 The title command runs once, after the terminal accepts the first send with text from
 the message editor. The editor saves a pending draft revision before it writes to the
-terminal. It saves an empty revision that is not pending only after the input receipt.
-That empty revision confirms the send and starts the command. Thus a message that never
-reached the terminal never goes to the title provider. The server skips the command
-when the session has a user title or an earlier confirmed send with text. The command
-does not run for autosaves, unconfirmed sends, attachments without text, terminal
-input, or later messages.
+terminal. It sends the input with the ID `draft-REVISION`, where `REVISION` is that
+pending revision. The server starts the command only after the PTY accepts this input,
+with the text of that revision. Thus a message that never reached the terminal never
+goes to the title provider.
+
+The server skips the command when the session has a user title, or when an earlier send
+with text looks confirmed: its next revision is an empty draft that is not pending. The
+editor saves such a revision after an input receipt. A user can also save one when they
+unlock and empty a draft after a failed send. Then the session gets no automatic title.
+The check fails closed and sends no discarded text. The server starts at most one
+command for each session while it runs. The command does not run for autosaves, sends
+without a receipt, attachments without text, terminal input, or later messages.
 
 The server runs the command with `$SHELL -c`, or `/bin/sh -c` when `$SHELL` is unset. It
 uses the server environment. The shell is not interactive, so it does not read
@@ -570,7 +578,8 @@ reads the session list again.
 
 **Test** in Settings runs the selected title tool once. It is not available for None.
 Test and the tool list stay disabled until the test ends, also when another setting
-saves. The browser waits 100 seconds for the reply, longer than the 90-second server
+saves. A result shows only while its tool stays selected, also after another view
+changes the tool. The browser waits 100 seconds for the reply, longer than the 90-second server
 limit.
 It sends a fixed sample message, not a message of a session, and saves nothing. The
 result shows the sample message first. Under it, a green line shows **Test passed**
@@ -1560,8 +1569,9 @@ Title fixtures verify the separate user and derived titles, search on both, and 
 title tool values. A failed settings update in migration 10 rolls back the new column
 and keeps format 9. Synthetic title commands verify standard input, path masking, the
 temporary folder, the marker rule, failures, cancel, and a missing CLI. Send fixtures
-verify that only the first confirmed send with text runs the command. An autosave, a
-send that the terminal did not accept, and later sends do not run it. Live checks used
+verify that only the input receipt of the first send with text runs the command, with
+the text of that send. An autosave, a send without a receipt, a receipt for another
+revision, an emptied draft after a failed send, and later sends do not run it. Live checks used
 Claude Code 2.1.312, Codex CLI 0.160.0, and Code Puppy 0.0.969 with synthetic messages.
 A message that named a local canary file did not give its content to the hardened
 Claude and Codex commands.

@@ -130,33 +130,45 @@ func (s *Store) SentDrafts(sid string, before int64, limit int) (sent []SentDraf
 	return sent, false, rows.Err()
 }
 
-// FirstConfirmedSend returns the earliest send with text whose next draft revision
-// confirms delivery. The message editor saves an empty draft that is not pending only
-// after the terminal accepts the input. confirmation is the sequence of that next
-// revision. ok is false when no send with text is confirmed. The scan stops at the
-// first such send.
-func (s *Store) FirstConfirmedSend(sid string) (sent SentDraft, confirmation int64, ok bool, err error) {
-	rows, err := s.db.Query("SELECT seq,created,data FROM events WHERE session_id=? AND kind='draft' ORDER BY seq", sid)
+// ReceiptSend reads the send that the draft revision records. The message editor saves
+// a pending revision before it writes the input. text is the text of that revision, or
+// empty when revision is not a pending revision of the session. first is false when an
+// earlier send with text looks confirmed: its next revision is an empty draft that is
+// not pending. Only the editor saves such a revision after an input receipt, except when
+// the user empties an unlocked draft. Then first is false too, so that the check never
+// sends a later message for the wrong reason.
+func (s *Store) ReceiptSend(sid string, revision int64) (text string, first bool, err error) {
+	rows, err := s.db.Query("SELECT seq,data FROM events WHERE session_id=? AND kind='draft' AND seq<=? ORDER BY seq", sid, revision)
 	if err != nil {
-		return sent, 0, false, err
+		return "", false, err
 	}
 	defer rows.Close()
-	var previous *SentDraft
+	first = true
+	sent := false
 	for rows.Next() {
-		var draft SentDraft
-		if err = rows.Scan(&draft.Seq, &draft.Created, &draft.Data); err != nil {
-			return sent, 0, false, err
+		var seq int64
+		var data []byte
+		if err = rows.Scan(&seq, &data); err != nil {
+			return "", false, err
 		}
-		if previous != nil && confirms(draft.Data) {
-			previous.Next = draft.Data
-			return *previous, draft.Seq, true, nil
+		if seq == revision {
+			if !pending(data) {
+				return "", false, rows.Err()
+			}
+			var draft struct {
+				Text string `json:"text"`
+			}
+			if err = json.Unmarshal(data, &draft); err != nil {
+				return "", false, err
+			}
+			return strings.TrimSpace(draft.Text), first, rows.Err()
 		}
-		previous = nil
-		if pending(draft.Data) && hasText(draft.Data) {
-			previous = &draft
+		if sent && confirms(data) {
+			first = false
 		}
+		sent = pending(data) && hasText(data)
 	}
-	return sent, 0, false, rows.Err()
+	return "", false, rows.Err()
 }
 
 // confirms reports a draft revision that confirms the send before it: an empty draft

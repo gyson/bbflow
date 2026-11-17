@@ -51,6 +51,8 @@ export class SettingsView {
   // The number of the latest title test. A result shows only for the latest test.
   private titleRun = 0;
   private testing = false;
+  // The tool of the shown test result. A result shows only under this tool.
+  private testedTool = '';
   private editing: Tool | null = null;
   private newToolId = '';
   private toolBusy = false;
@@ -305,6 +307,8 @@ export class SettingsView {
   // Show the command of the selected title tool. None has no command and no test. A
   // running test keeps Test and the list disabled, also across a render.
   private showTitleTool(): void {
+    // Another view or a reload can change the saved tool. Hide a result of another tool.
+    if (this.titleTool.value !== this.testedTool) this.testResult.hidden = true;
     const controls = titleControls(this.titleTools, this.titleTool.value, this.testing);
     this.titleCommand.textContent = controls.command;
     this.titleCommand.parentElement!.hidden = !controls.command;
@@ -330,13 +334,14 @@ export class SettingsView {
     if (!server || tool === 'none' || this.testing) return;
     const run = ++this.titleRun;
     this.testing = true;
+    this.testedTool = tool;
     this.showTitleTool();
     this.showTest('running', 'Testing the title tool…');
     try {
       const result = await call(server, { operation: 'title-test', settings: { titleTool: tool }, text: titleSample });
-      if (run === this.titleRun) this.showTest('passed', `✓ Test passed. The tool made the title “${result.title}” from the sample message.`);
+      if (run === this.titleRun && tool === this.titleTool.value) this.showTest('passed', `✓ Test passed. The tool made the title “${result.title}” from the sample message.`);
     } catch (error) {
-      if (run === this.titleRun) this.showTest('failed', `✕ Test failed: ${errorMessage(error)}`,
+      if (run === this.titleRun && tool === this.titleTool.value) this.showTest('failed', `✕ Test failed: ${errorMessage(error)}`,
         'Sessions keep their current title when the tool fails.');
     } finally {
       if (run === this.titleRun) {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -212,61 +213,71 @@ func titleServer(t *testing.T, command string) (*Server, history.Session) {
 	return s, session
 }
 
-func TestFirstConfirmedSendSetsDerivedTitle(t *testing.T) {
+// submit saves a send as the message editor does: a pending revision, then, after an
+// input receipt, an empty revision. receipt false leaves the send without a receipt.
+func submit(t *testing.T, s *Server, sid, text string, receipt bool) int64 {
+	t.Helper()
+	pending, err := s.composer(sid, &protocol.Draft{Revision: mustLatest(t, s, sid), Text: text, Attachments: []int64{}, Pending: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt {
+		s.titleAfterReceipt(sid, fmt.Sprintf("draft-%d", pending.Draft.Revision))
+		if _, err = s.composer(sid, &protocol.Draft{Revision: pending.Draft.Revision, Attachments: []int64{}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return pending.Draft.Revision
+}
+
+// ranTitle returns the standard input of the last title command, and removes it.
+func ranTitle(t *testing.T, s *Server, dir string) string {
+	t.Helper()
+	s.jobs.Wait()
+	input, err := os.ReadFile(filepath.Join(dir, "input"))
+	if os.IsNotExist(err) {
+		return ""
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(dir, "input"))
+	return string(input)
+}
+
+func TestInputReceiptSetsDerivedTitle(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	command, dir := writeTitleScript(t, "echo bbflow-title: Fix login redirect")
 	s, session := titleServer(t, command)
-	ran := func() string {
-		t.Helper()
-		s.jobs.Wait()
-		input, err := os.ReadFile(filepath.Join(dir, "input"))
-		if os.IsNotExist(err) {
-			return ""
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		os.Remove(filepath.Join(dir, "input"))
-		return string(input)
-	}
 	// An autosave is not a send.
-	state, err := s.composer(session.ID, &protocol.Draft{Text: "Draft only"})
-	if err != nil {
+	if _, err := s.composer(session.ID, &protocol.Draft{Text: "Draft only"}); err != nil {
 		t.Fatal(err)
 	}
-	if ran() != "" {
-		t.Fatal("an autosave ran the title command")
-	}
-	// The terminal did not accept this send. The editor kept the text, and the next
-	// revision does not confirm the send.
-	pending, err := s.composer(session.ID, &protocol.Draft{Revision: state.Draft.Revision, Text: "Lost message", Attachments: []int64{}, Pending: true})
-	if err == nil {
-		_, err = s.composer(session.ID, &protocol.Draft{Revision: pending.Draft.Revision, Text: "Lost message", Attachments: []int64{}})
-	}
-	if err != nil {
+	// The terminal did not accept this send. The editor kept the text.
+	lost := submit(t, s, session.ID, "Lost message", false)
+	if _, err := s.composer(session.ID, &protocol.Draft{Revision: lost, Text: "Lost message", Attachments: []int64{}}); err != nil {
 		t.Fatal(err)
 	}
-	// A pending send without a receipt does not run the command either.
-	send(t, s, session.ID, "Unconfirmed message", false)
-	if ran() != "" {
-		t.Fatal("an unconfirmed send ran the title command")
+	// A receipt that names no pending revision of the session does nothing.
+	s.titleAfterReceipt(session.ID, fmt.Sprintf("draft-%d", mustLatest(t, s, session.ID)))
+	s.titleAfterReceipt(session.ID, "other-input")
+	if input := ranTitle(t, s, dir); input != "" {
+		t.Fatalf("a send without a receipt ran the title command: %q", input)
 	}
-	if _, err = s.composer(session.ID, &protocol.Draft{Revision: mustLatest(t, s, session.ID), Attachments: []int64{}}); err != nil {
-		t.Fatal(err)
-	}
-	if input := ran(); !strings.Contains(input, "Unconfirmed message") {
-		t.Fatalf("the confirmed send did not run the title command with its text: %q", input)
+	submit(t, s, session.ID, "Fix the login redirect", true)
+	if input := ranTitle(t, s, dir); !strings.Contains(input, "Fix the login redirect") || strings.Contains(input, "Lost message") {
+		t.Fatalf("the receipt did not run the title command with its own text: %q", input)
 	}
 	got, err := s.store.Session(session.ID)
 	if err != nil || got.Title != "" || got.AutoTitle != "Fix login redirect" || got.DisplayTitle() != "Fix login redirect" {
-		t.Fatalf("session after first confirmed send: %+v, %v", got, err)
+		t.Fatalf("session after the receipt: %+v, %v", got, err)
 	}
 	if s.titles.Load() != 1 {
 		t.Fatal("title change was not counted", s.titles.Load())
 	}
 	// Later sends keep the first summary.
-	send(t, s, session.ID, "Now add tests", true)
-	if ran() != "" {
+	submit(t, s, session.ID, "Now add tests", true)
+	if ranTitle(t, s, dir) != "" {
 		t.Fatal("a later send ran the title command")
 	}
 	// A user title has priority. Removing it shows the derived title again.
@@ -281,6 +292,31 @@ func TestFirstConfirmedSendSetsDerivedTitle(t *testing.T) {
 	}
 	if got, _ = s.store.Session(session.ID); got.Title != "" || got.DisplayTitle() != "Fix login redirect" {
 		t.Fatalf("clear rename: %+v", got)
+	}
+}
+
+// After a failed send, the user can unlock the draft and empty it before the autosave.
+// That saves one empty revision that is not pending, with no receipt. The discarded
+// text must never go to the title command.
+func TestUnlockedAndEmptiedDraftSendsNoText(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	command, dir := writeTitleScript(t, "echo bbflow-title: Generated")
+	s, session := titleServer(t, command)
+	discarded := submit(t, s, session.ID, "Discarded message", false)
+	if _, err := s.composer(session.ID, &protocol.Draft{Revision: discarded, Attachments: []int64{}}); err != nil {
+		t.Fatal(err)
+	}
+	if input := ranTitle(t, s, dir); input != "" {
+		t.Fatalf("an emptied draft ran the title command: %q", input)
+	}
+	// The emptied draft looks like a confirmed send, so a later send gets no title. The
+	// check fails closed.
+	submit(t, s, session.ID, "Real message", true)
+	if input := ranTitle(t, s, dir); input != "" {
+		t.Fatalf("the title command got text after an emptied draft: %q", input)
+	}
+	if got, _ := s.store.Session(session.ID); got.DisplayTitle() != "Shell · fixture" {
+		t.Fatalf("session: %+v", got)
 	}
 }
 
@@ -300,9 +336,8 @@ func TestUserTitleSkipsTitleCommand(t *testing.T) {
 	if err := s.store.RenameSession(session.ID, "Named by user"); err != nil {
 		t.Fatal(err)
 	}
-	send(t, s, session.ID, "Fix it", true)
-	s.jobs.Wait()
-	if _, err := os.Stat(filepath.Join(dir, "input")); !os.IsNotExist(err) {
+	submit(t, s, session.ID, "Fix it", true)
+	if ranTitle(t, s, dir) != "" {
 		t.Fatal("a session with a user title ran the title command")
 	}
 	if got, _ := s.store.Session(session.ID); got.DisplayTitle() != "Named by user" || got.AutoTitle != "Shell · fixture" {
@@ -314,7 +349,7 @@ func TestFailedTitleCommandKeepsDefaultTitle(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	command, _ := writeTitleScript(t, "exit 1")
 	s, session := titleServer(t, command)
-	send(t, s, session.ID, "Fix it", true)
+	submit(t, s, session.ID, "Fix it", true)
 	s.jobs.Wait()
 	if got, _ := s.store.Session(session.ID); got.DisplayTitle() != "Shell · fixture" || s.titles.Load() != 0 {
 		t.Fatalf("session: %+v", got)

@@ -34,8 +34,10 @@ type runningSession struct {
 	ended     bool
 	exit      protocol.Message
 	activity  activity
-	side      bool   // A side terminal has no run, no recording, and no session status.
-	shell     string // Identifies the shell of a side terminal.
+	side      bool // A side terminal has no run, no recording, and no session status.
+	// received runs after the PTY accepts an input that has an ID. It can be nil.
+	received func(id string)
+	shell    string // Identifies the shell of a side terminal.
 }
 
 type attachment struct {
@@ -123,7 +125,13 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 	if message.Type != "resize" || r.sizeOwner == a {
 		control := agent.Control{Message: message}
 		if message.Type == "input" && message.ID != "" {
-			control.Ack = func(err error) { a.inputAck(message.ID, err) }
+			received := r.received
+			control.Ack = func(err error) {
+				a.inputAck(message.ID, err)
+				if err == nil && received != nil {
+					received(message.ID)
+				}
+			}
 		}
 		controls = append(controls, control)
 	}
@@ -185,6 +193,7 @@ func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, ses
 	s.mu.Lock()
 	runContext, cancel := context.WithCancel(ctx)
 	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool, activity: activity{output: time.Now()}}
+	r.received = func(id string) { s.titleAfterReceipt(session.ID, id) }
 	s.sessions[session.ID] = r
 	s.mu.Unlock()
 	launch := func() {

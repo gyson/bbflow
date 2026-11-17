@@ -3,13 +3,13 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -244,12 +244,32 @@ func runTitleCommand(ctx context.Context, command, message string) (string, erro
 	return parseTitle(stdout.String())
 }
 
-// generateTitle replaces the derived title of a session after the terminal accepts the
-// first send with text from the message editor. confirmation is the draft revision that
-// the editor saved after the input receipt. The job runs once: only when this revision
-// confirms the first such send. It does not run when no title tool is selected or the
-// session has a user title. A failure keeps the current title.
-func (s *Server) generateTitle(sid string, confirmation int64) {
+// receiptPrefix starts the input ID of a send from the message editor. The rest is the
+// pending draft revision of the send.
+const receiptPrefix = "draft-"
+
+// titleAfterReceipt runs after the PTY accepts an input with an ID. It starts the title
+// job for a send from the message editor. The receipt names the pending draft revision,
+// so the job sends only text that reached the terminal.
+func (s *Server) titleAfterReceipt(sid, inputID string) {
+	revision, err := strconv.ParseInt(strings.TrimPrefix(inputID, receiptPrefix), 10, 64)
+	if !strings.HasPrefix(inputID, receiptPrefix) || err != nil || revision <= 0 {
+		return
+	}
+	// The receipt arrives on the PTY goroutine. Read the archive in a job.
+	s.jobs.Add(1)
+	go func() {
+		defer s.jobs.Done()
+		s.generateTitle(sid, revision)
+	}()
+}
+
+// generateTitle replaces the derived title of a session with a summary of the first
+// send with text that reached the terminal. revision is the pending draft revision of a
+// send with an input receipt. The job runs once for each session while the server
+// runs. It does not run when no title tool is selected, the session has a user title,
+// or an earlier send with text looks confirmed. A failure keeps the current title.
+func (s *Server) generateTitle(sid string, revision int64) {
 	settings, err := s.store.Settings()
 	if err != nil || settings.TitleTool == "none" {
 		return
@@ -262,29 +282,22 @@ func (s *Server) generateTitle(sid string, confirmation int64) {
 	if err != nil || session.Title != "" {
 		return
 	}
-	first, confirmed, ok, err := s.store.FirstConfirmedSend(sid)
-	if err != nil || !ok || confirmed != confirmation {
+	text, first, err := s.store.ReceiptSend(sid, revision)
+	if err != nil || !first || text == "" {
 		return
 	}
-	var draft struct {
-		Text string `json:"text"`
-	}
-	if err = json.Unmarshal(first.Data, &draft); err != nil {
+	if _, started := s.titled.LoadOrStore(sid, true); started {
 		return
 	}
-	s.jobs.Add(1)
-	go func() {
-		defer s.jobs.Done()
-		title, err := runTitleCommand(s.ctx, command, draft.Text)
-		if err == nil {
-			err = s.store.SetAutoTitle(sid, title)
+	title, err := runTitleCommand(s.ctx, command, text)
+	if err == nil {
+		err = s.store.SetAutoTitle(sid, title)
+	}
+	if err != nil {
+		if s.ctx.Err() == nil {
+			log.Printf("session %s: title tool %s: %v", sid, settings.TitleTool, err)
 		}
-		if err != nil {
-			if s.ctx.Err() == nil {
-				log.Printf("session %s: title tool %s: %v", sid, settings.TitleTool, err)
-			}
-			return
-		}
-		s.titles.Add(1)
-	}()
+		return
+	}
+	s.titles.Add(1)
 }

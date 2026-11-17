@@ -603,7 +603,7 @@ everyone.
 | Server → client | `pong` | Reply to `ping` |
 | Server → client | `frame` | Base64 rendered ANSI in `data`, `size`, `revision`, and optional `full` |
 | Server → client | `status` | The session `status` of a live process: `running` or `idle` |
-| Server → client | `input-ack` | Matching `id`. An optional `error` indicates uncertain delivery. |
+| Server → client | `input-ack` | Matching `id`. An optional `error` indicates uncertain delivery. A message editor send uses the `id` `draft-REVISION`, with its pending draft revision. A receipt without `error` for such an `id` can start the [automatic title](SPEC.md#session-titles). |
 | Server → client | `exit` | Exit `code`, the recorded run `status` (`exited`, `stopped`, or `failed`), the `run` ID, and optional `error`. `status` and `run` are absent when the terminal failed before its run started. Each view gets the same message. Follows the final frame acknowledgment. |
 | Server → client | `history-end` | End of a read-only ended-session view |
 | Server → client | `error` | Error description in `error` |
