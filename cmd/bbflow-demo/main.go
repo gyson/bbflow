@@ -150,11 +150,24 @@ func (d *demo) seed() {
 		d.sessions(info.Port)
 		return
 	}
-	if exists(d.marker) {
-		fail("the seed of %s is not complete; run \"clean\", then start the server and seed again", d.dir)
+	// Claim the demo folder before the checks and any change. Only one seed can create
+	// it, also when several seeds start at the same time. It stays until clean.
+	claim := filepath.Dir(d.marker)
+	if err := os.Mkdir(claim, 0o755); errors.Is(err, os.ErrExist) {
+		fail("another seed of %s runs now, or an earlier seed stopped before it completed; wait for it, or run \"clean\", start the server, and seed again", d.dir)
+	} else {
+		check(err)
 	}
-	d.requireNew()
-	check(os.MkdirAll(filepath.Dir(d.marker), 0o755))
+	func() {
+		// Release the claim when the instance is not new.
+		defer func() {
+			if r := recover(); r != nil {
+				os.Remove(claim)
+				panic(r)
+			}
+		}()
+		d.requireNew()
+	}()
 	check(os.WriteFile(d.marker, []byte("bbflow demo instance. \"bbflow-demo clean\" removes this instance directory.\n"), 0o644))
 	d.addData()
 	check(os.WriteFile(d.seeded, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644))
@@ -163,8 +176,9 @@ func (d *demo) seed() {
 }
 
 // newInstanceFiles are the entries of an instance directory after the first server
-// start. The General folder is empty.
+// start, and the empty demo folder of the claim. The General folder is empty.
 var newInstanceFiles = map[string]bool{
+	"demo":           true,
 	"history.sqlite": true, "history.sqlite-shm": true, "history.sqlite-wal": true,
 	"server.json": true, "server.log": true, "server.lock": true, "server-control.lock": true,
 	"workspaces": true,
@@ -242,11 +256,13 @@ func (d *demo) foreignWorktrees() []string {
 }
 
 // ownedRepository reports whether the files of a folder belong to a repository inside
-// the directory inside. A folder without a .git entry holds only demo files.
+// the directory inside. A folder with files but no .git entry can be a worktree whose
+// pointer moved, so its repository is not known. An empty folder holds no files.
 func ownedRepository(path, inside string) bool {
 	info, err := os.Lstat(filepath.Join(path, ".git"))
 	if errors.Is(err, os.ErrNotExist) {
-		return true
+		entries, err := os.ReadDir(path)
+		return err == nil && len(entries) == 0
 	}
 	if err != nil || info.IsDir() {
 		// A .git folder holds its own repository, inside the instance directory.

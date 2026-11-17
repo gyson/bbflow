@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -112,16 +113,35 @@ func TestDemo(t *testing.T) {
 	}
 
 	// seed adds the projects, tools, and sessions. GIT_DIR and GIT_WORK_TREE select an
-	// unrelated repository, which the seed must not change.
+	// unrelated repository, which the seed must not change. Of several seeds at the same
+	// time, only one adds data.
 	fixture := filepath.Join(temporary, "fixture")
 	write(filepath.Join(fixture, "README.md"), "fixture\n")
 	git(temporary, "init", "--quiet", fixture)
 	git(fixture, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--quiet", "--allow-empty", "--message", "fixture")
 	write(filepath.Join(fixture, "edit.txt"), "uncommitted\n")
 	pass("bbflow", demo, "server", "start", "--no-menubar")
-	output, err := executeWith([]string{"GIT_DIR=" + filepath.Join(fixture, ".git"), "GIT_WORK_TREE=" + fixture}, "bbflow-demo", demo, "seed")
-	if err != nil || !regexp.MustCompile(`Added the demo data to .*\nURL: http://127\.0\.0\.1:\d+/\n`).MatchString(output) {
-		t.Fatalf("seed: %v\n%s", err, output)
+	outputs, errs := make([]string, 8), make([]error, 8)
+	var seeds sync.WaitGroup
+	for i := range outputs {
+		seeds.Go(func() {
+			outputs[i], errs[i] = executeWith([]string{"GIT_DIR=" + filepath.Join(fixture, ".git"), "GIT_WORK_TREE=" + fixture}, "bbflow-demo", demo, "seed")
+		})
+	}
+	seeds.Wait()
+	added := 0
+	for i, output := range outputs {
+		switch {
+		case errs[i] == nil && regexp.MustCompile(`Added the demo data to .*\nURL: http://127\.0\.0\.1:\d+/\n`).MatchString(output):
+			added++
+		case errs[i] == nil && strings.Contains(output, "already has the demo data"):
+		case errs[i] != nil && strings.Contains(output, "another seed of"):
+		default:
+			t.Errorf("concurrent seed: %v\n%s", errs[i], output)
+		}
+	}
+	if added != 1 {
+		t.Fatalf("%d concurrent seeds added data:\n%s", added, strings.Join(outputs, "\n---\n"))
 	}
 	if count, config, status := git(fixture, "rev-list", "--count", "HEAD"), git(fixture, "config", "--local", "--list"), git(fixture, "status", "--porcelain"); count != "1" || strings.Contains(config, "user.") || !strings.Contains(status, "edit.txt") {
 		t.Fatalf("seed changed the repository of GIT_DIR: commits %s, status %q, config:\n%s", count, status, config)
@@ -138,7 +158,7 @@ func TestDemo(t *testing.T) {
 		"[[Plan release notes 1]]")
 
 	// A second seed adds nothing and prints each session.
-	output = pass("bbflow-demo", demo, "seed")
+	output := pass("bbflow-demo", demo, "seed")
 	expect("SELECT count(*) FROM sessions", "[[7]]")
 	for _, state := range []string{"running", "ended", "draft", "archived"} {
 		if !strings.Contains(output, "\n  "+state+" ") {
@@ -192,6 +212,16 @@ func TestDemo(t *testing.T) {
 	// A repository path that does not resolve is not known, so clean keeps it too.
 	write(filepath.Join(worktree, ".git"), "gitdir: ../missing\n")
 	refused("unknown repositories", "bbflow-demo", demo, "clean")
+	// A folder with files but no .git entry can be a worktree whose pointer moved.
+	if err := os.Remove(filepath.Join(worktree, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join(worktree, "edit.txt"), "uncommitted\n")
+	refused("unknown repositories", "bbflow-demo", demo, "clean")
+	// An empty folder holds no files, so clean can remove it.
+	if err := os.MkdirAll(filepath.Join(demo, "worktrees", "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	server, err := instance.Read(demo)
 	if err != nil {
 		t.Fatal(err)
