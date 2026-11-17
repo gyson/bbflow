@@ -15,15 +15,15 @@ import (
 
 func TestParseTitle(t *testing.T) {
 	for _, test := range []struct{ output, want string }{
-		{"Fix login redirect\n", "Fix login redirect"},
-		{"\n\n  Title: \"Fix login redirect.\"\n", "Fix login redirect"},
-		{"## **Refactor the parser**", "Refactor the parser"},
-		{"`Add tests`", "Add tests"},
-		{"「修复登录」。", "修复登录"},
-		{"Tabs\tand   spaces", "Tabs and spaces"},
-		{strings.Repeat("é", 300), strings.Repeat("é", 200)},
-		{"bbflow-title: Fix login redirect", "Fix login redirect"},
-		{"**BBFLOW-TITLE:** Fix login redirect.", "Fix login redirect"},
+		{"bbflow-title: Fix login redirect\n", "Fix login redirect"},
+		{"\n\n  bbflow-title: Title: \"Fix login redirect.\"\n", "Fix login redirect"},
+		{"## **bbflow-title:** **Refactor the parser**", "Refactor the parser"},
+		{"> - `bbflow-title: Add tests`", "Add tests"},
+		{"BBFLOW-TITLE: 「修复登录」。", "修复登录"},
+		{"bbflow-title: Tabs\tand   spaces", "Tabs and spaces"},
+		{"bbflow-title: " + strings.Repeat("é", 300), strings.Repeat("é", 200)},
+		// The request masks paths. The title gets them back.
+		{"bbflow-title: Fix src\u2215app.ts in \u223c\u2215work", "Fix src/app.ts in ~/work"},
 		// Synthetic output in the form of code-puppy 0.0.969 with -p. The CLI prints
 		// status lines and the request before the answer.
 		{"🎯 Using model: small\nExecuting prompt: Write a short title for a work session.\n" +
@@ -40,12 +40,28 @@ func TestParseTitle(t *testing.T) {
 	for _, test := range []struct{ output, want string }{
 		{"\n \n", "printed no title"},
 		{"bbflow-title:  **  ", "empty title"},
+		// One line without the marker can be a status line or an error.
+		{"Fix login redirect\n", "no line starts with bbflow-title:"},
+		{"Error executing prompt: usage limit\n", "no line starts with bbflow-title:"},
+		// The marker must start the line.
+		{"The answer is bbflow-title: Fix it\n", "no line starts with bbflow-title:"},
 		// An error message with exit status 0 must not become a title.
 		{"🎯 Using model: small\nExecuting prompt: Write a short title\nError executing prompt: usage limit\n", "no line starts with bbflow-title:"},
 	} {
 		if got, err := parseTitle(test.output); err == nil || !strings.Contains(err.Error(), test.want) {
 			t.Errorf("parseTitle(%q) = %q, %v, want error %q", test.output, got, err, test.want)
 		}
+	}
+}
+
+func TestTitleRequestMasksPaths(t *testing.T) {
+	request := titleRequest("Read /etc/hosts, ~/notes.txt, ../../secret.png, and https://example.com/a.mp4")
+	message := request[strings.Index(request, "<message>"):]
+	if strings.ContainsAny(message[len("<message>"):len(message)-len("</message>\n")], "/~") {
+		t.Fatalf("request has a path character:\n%s", request)
+	}
+	if !strings.Contains(message, "\u2215etc\u2215hosts") || !strings.Contains(message, "\u223c\u2215notes.txt") {
+		t.Fatalf("request lost the path text:\n%s", request)
 	}
 }
 
@@ -88,14 +104,14 @@ func writeTitleScript(t *testing.T, body string) (command, dir string) {
 
 func TestRunTitleCommandUsesStandardInputAndEmptyFolder(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
-	command, dir := writeTitleScript(t, `printf '\n"Title: Fix the login page."\n'`)
+	command, dir := writeTitleScript(t, `printf '\nbbflow-title: "Fix the login page."\n'`)
 	message := "Fix the login page; $(touch injected) `rm -rf /` 'quote"
 	title, err := runTitleCommand(context.Background(), command, message)
 	if err != nil || title != "Fix the login page" {
 		t.Fatalf("title %q, %v", title, err)
 	}
 	input, err := os.ReadFile(filepath.Join(dir, "input"))
-	if err != nil || !strings.Contains(string(input), message) {
+	if err != nil || !strings.Contains(string(input), pathMask.Replace(message)) {
 		t.Fatalf("standard input %q, %v", input, err)
 	}
 	cwd, err := os.ReadFile(filepath.Join(dir, "cwd"))
@@ -196,43 +212,62 @@ func titleServer(t *testing.T, command string) (*Server, history.Session) {
 	return s, session
 }
 
-func TestFirstEditorMessageSetsDerivedTitle(t *testing.T) {
+func TestFirstConfirmedSendSetsDerivedTitle(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
-	command, dir := writeTitleScript(t, "echo Fix login redirect")
+	command, dir := writeTitleScript(t, "echo bbflow-title: Fix login redirect")
 	s, session := titleServer(t, command)
+	ran := func() string {
+		t.Helper()
+		s.jobs.Wait()
+		input, err := os.ReadFile(filepath.Join(dir, "input"))
+		if os.IsNotExist(err) {
+			return ""
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Remove(filepath.Join(dir, "input"))
+		return string(input)
+	}
 	// An autosave is not a send.
 	state, err := s.composer(session.ID, &protocol.Draft{Text: "Draft only"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.jobs.Wait()
-	if _, err = os.Stat(filepath.Join(dir, "input")); !os.IsNotExist(err) {
+	if ran() != "" {
 		t.Fatal("an autosave ran the title command")
 	}
-	state, err = s.composer(session.ID, &protocol.Draft{Revision: state.Draft.Revision, Text: "Fix the login redirect", Pending: true})
+	// The terminal did not accept this send. The editor kept the text, and the next
+	// revision does not confirm the send.
+	pending, err := s.composer(session.ID, &protocol.Draft{Revision: state.Draft.Revision, Text: "Lost message", Attachments: []int64{}, Pending: true})
+	if err == nil {
+		_, err = s.composer(session.ID, &protocol.Draft{Revision: pending.Draft.Revision, Text: "Lost message", Attachments: []int64{}})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.jobs.Wait()
+	// A pending send without a receipt does not run the command either.
+	send(t, s, session.ID, "Unconfirmed message", false)
+	if ran() != "" {
+		t.Fatal("an unconfirmed send ran the title command")
+	}
+	if _, err = s.composer(session.ID, &protocol.Draft{Revision: mustLatest(t, s, session.ID), Attachments: []int64{}}); err != nil {
+		t.Fatal(err)
+	}
+	if input := ran(); !strings.Contains(input, "Unconfirmed message") {
+		t.Fatalf("the confirmed send did not run the title command with its text: %q", input)
+	}
 	got, err := s.store.Session(session.ID)
 	if err != nil || got.Title != "" || got.AutoTitle != "Fix login redirect" || got.DisplayTitle() != "Fix login redirect" {
-		t.Fatalf("session after first message: %+v, %v", got, err)
+		t.Fatalf("session after first confirmed send: %+v, %v", got, err)
 	}
 	if s.titles.Load() != 1 {
 		t.Fatal("title change was not counted", s.titles.Load())
 	}
-	// Later messages keep the first summary.
-	os.Remove(filepath.Join(dir, "input"))
-	state, err = s.composer(session.ID, &protocol.Draft{Revision: state.Draft.Revision, Attachments: []int64{}})
-	if err == nil {
-		_, err = s.composer(session.ID, &protocol.Draft{Revision: state.Draft.Revision, Text: "Now add tests", Pending: true})
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.jobs.Wait()
-	if _, err = os.Stat(filepath.Join(dir, "input")); !os.IsNotExist(err) {
-		t.Fatal("a later message ran the title command")
+	// Later sends keep the first summary.
+	send(t, s, session.ID, "Now add tests", true)
+	if ran() != "" {
+		t.Fatal("a later send ran the title command")
 	}
 	// A user title has priority. Removing it shows the derived title again.
 	if err = s.store.RenameSession(session.ID, "My name"); err != nil {
@@ -249,16 +284,23 @@ func TestFirstEditorMessageSetsDerivedTitle(t *testing.T) {
 	}
 }
 
+func mustLatest(t *testing.T, s *Server, sid string) int64 {
+	t.Helper()
+	state, err := s.composer(sid, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state.Draft.Revision
+}
+
 func TestUserTitleSkipsTitleCommand(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
-	command, dir := writeTitleScript(t, "echo Generated")
+	command, dir := writeTitleScript(t, "echo bbflow-title: Generated")
 	s, session := titleServer(t, command)
 	if err := s.store.RenameSession(session.ID, "Named by user"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.composer(session.ID, &protocol.Draft{Text: "Fix it", Pending: true}); err != nil {
-		t.Fatal(err)
-	}
+	send(t, s, session.ID, "Fix it", true)
 	s.jobs.Wait()
 	if _, err := os.Stat(filepath.Join(dir, "input")); !os.IsNotExist(err) {
 		t.Fatal("a session with a user title ran the title command")
@@ -272,9 +314,7 @@ func TestFailedTitleCommandKeepsDefaultTitle(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	command, _ := writeTitleScript(t, "exit 1")
 	s, session := titleServer(t, command)
-	if _, err := s.composer(session.ID, &protocol.Draft{Text: "Fix it", Pending: true}); err != nil {
-		t.Fatal(err)
-	}
+	send(t, s, session.ID, "Fix it", true)
 	s.jobs.Wait()
 	if got, _ := s.store.Session(session.ID); got.DisplayTitle() != "Shell · fixture" || s.titles.Load() != 0 {
 		t.Fatalf("session: %+v", got)

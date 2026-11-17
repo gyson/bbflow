@@ -73,8 +73,9 @@ func (s *Server) composer(sid string, draft *protocol.Draft) (protocol.Composer,
 			return result, err
 		}
 		s.publishDraft(sid, result)
-		if draft.Pending {
-			s.generateTitle(sid, result.Draft.Revision, draft.Text)
+		// The editor clears the draft only after the terminal accepts a send.
+		if !draft.Pending && draft.Text == "" && len(draft.Attachments) == 0 {
+			s.generateTitle(sid, result.Draft.Revision)
 		}
 	}
 	return result, nil

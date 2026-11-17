@@ -1,7 +1,7 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { mergeToolEdit, sameSettings, sameTools } from './settings-model.js';
+import { mergeToolEdit, sameSettings, sameTools, titleControls } from './settings-model.js';
 
 type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool'>;
 type SettingsChange = (settings: Settings) => Settings;
@@ -48,6 +48,9 @@ export class SettingsView {
   private renderedBase = '';
   // The title tools and their commands come from the server.
   private titleTools: TitleTool[] = [];
+  // The number of the latest title test. A result shows only for the latest test.
+  private titleRun = 0;
+  private testing = false;
   private editing: Tool | null = null;
   private newToolId = '';
   private toolBusy = false;
@@ -299,12 +302,14 @@ export class SettingsView {
     (edit ?? this.addTool.name).focus();
   }
 
-  // Show the command of the selected title tool. None has no command and no test.
+  // Show the command of the selected title tool. None has no command and no test. A
+  // running test keeps Test and the list disabled, also across a render.
   private showTitleTool(): void {
-    const tool = this.titleTools.find(tool => tool.id === this.titleTool.value);
-    this.titleCommand.textContent = tool?.command ?? '';
-    this.titleCommand.parentElement!.hidden = !tool;
-    this.titleTest.disabled = !tool;
+    const controls = titleControls(this.titleTools, this.titleTool.value, this.testing);
+    this.titleCommand.textContent = controls.command;
+    this.titleCommand.parentElement!.hidden = !controls.command;
+    this.titleTest.disabled = !controls.test;
+    this.titleTool.disabled = !controls.select;
   }
 
   // Show the state of a test: the sample message, then the outcome, then a note. state is
@@ -322,19 +327,23 @@ export class SettingsView {
   private async testTitleTool(): Promise<void> {
     const server = this.server();
     const tool = this.titleTool.value;
-    if (!server || tool === 'none') return;
-    this.titleTool.disabled = this.titleTest.disabled = true;
+    if (!server || tool === 'none' || this.testing) return;
+    const run = ++this.titleRun;
+    this.testing = true;
+    this.showTitleTool();
     this.showTest('running', 'Testing the title tool…');
     try {
       const result = await call(server, { operation: 'title-test', settings: { titleTool: tool }, text: titleSample });
-      this.showTest('passed', `✓ Test passed. The tool made the title “${result.title}” from the sample message.`);
+      if (run === this.titleRun) this.showTest('passed', `✓ Test passed. The tool made the title “${result.title}” from the sample message.`);
     } catch (error) {
-      this.showTest('failed', `✕ Test failed: ${errorMessage(error)}`,
+      if (run === this.titleRun) this.showTest('failed', `✕ Test failed: ${errorMessage(error)}`,
         'Sessions keep their current title when the tool fails.');
     } finally {
-      this.titleTool.disabled = false;
-      this.showTitleTool();
-      this.titleTest.focus({ preventScroll: true });
+      if (run === this.titleRun) {
+        this.testing = false;
+        this.showTitleTool();
+        this.titleTest.focus({ preventScroll: true });
+      }
     }
   }
 

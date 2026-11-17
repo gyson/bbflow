@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 )
 
 // ErrDraftSent reports that another view started a send after the base revision of a
@@ -127,6 +128,53 @@ func (s *Store) SentDrafts(sid string, before int64, limit int) (sent []SentDraf
 		next = draft.Data
 	}
 	return sent, false, rows.Err()
+}
+
+// FirstConfirmedSend returns the earliest send with text whose next draft revision
+// confirms delivery. The message editor saves an empty draft that is not pending only
+// after the terminal accepts the input. confirmation is the sequence of that next
+// revision. ok is false when no send with text is confirmed. The scan stops at the
+// first such send.
+func (s *Store) FirstConfirmedSend(sid string) (sent SentDraft, confirmation int64, ok bool, err error) {
+	rows, err := s.db.Query("SELECT seq,created,data FROM events WHERE session_id=? AND kind='draft' ORDER BY seq", sid)
+	if err != nil {
+		return sent, 0, false, err
+	}
+	defer rows.Close()
+	var previous *SentDraft
+	for rows.Next() {
+		var draft SentDraft
+		if err = rows.Scan(&draft.Seq, &draft.Created, &draft.Data); err != nil {
+			return sent, 0, false, err
+		}
+		if previous != nil && confirms(draft.Data) {
+			previous.Next = draft.Data
+			return *previous, draft.Seq, true, nil
+		}
+		previous = nil
+		if pending(draft.Data) && hasText(draft.Data) {
+			previous = &draft
+		}
+	}
+	return sent, 0, false, rows.Err()
+}
+
+// confirms reports a draft revision that confirms the send before it: an empty draft
+// that is not pending.
+func confirms(data []byte) bool {
+	var draft struct {
+		Text        string  `json:"text"`
+		Attachments []int64 `json:"attachments"`
+		Pending     bool    `json:"pending"`
+	}
+	return json.Unmarshal(data, &draft) == nil && !draft.Pending && draft.Text == "" && len(draft.Attachments) == 0
+}
+
+func hasText(data []byte) bool {
+	var draft struct {
+		Text string `json:"text"`
+	}
+	return json.Unmarshal(data, &draft) == nil && strings.TrimSpace(draft.Text) != ""
 }
 
 // Verify attachment scope on every read, including draft references.

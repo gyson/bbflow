@@ -501,20 +501,36 @@ The server owns the command of each title tool. Users cannot edit these commands
 
 | Title tool | Command |
 | --- | --- |
-| Claude | `claude -p --model haiku` |
-| Codex | `codex exec --skip-git-repo-check --model gpt-6-luna -c model_reasoning_effort=low -` |
+| Claude | `claude -p --model haiku --restricted --tools "" --strict-mcp-config` |
+| Codex | `codex exec --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --disable shell_tool --disable unified_exec --disable view_image --disable code_mode_host --disable apps --disable plugins --disable hooks --disable multi_agent --disable browser_use --disable computer_use --disable image_generation --disable mentions_v2 -c web_search=disabled --model gpt-6-luna -c model_reasoning_effort=low -` |
 | Code Puppy | `code-puppy --no-tools --model codex-gpt-6-luna -p "$(cat)"` |
 
-Claude uses Haiku. Codex and Code Puppy use Luna. Codex sets low reasoning effort,
-because a Codex config can select a slow default effort. Codex also needs
-`--skip-git-repo-check`, because the temporary folder is not a Git repository.
-`--no-tools` turns off the tools and MCP servers of Code Puppy for the title request.
-Settings shows the command of the selected tool.
+Claude uses Haiku. Codex and Code Puppy use Luna. Settings shows the command of the
+selected tool. Each command gives the model only the request text:
 
-The first send from the message editor starts the title command once. A send is a
-pending draft revision with text. The server skips the command when the session has a
-user title or an earlier send. The command does not run for autosaves, attachments
-without text, terminal input, or later messages.
+- Claude: `--restricted` ignores the settings files, with their hooks and plugins. It
+  also limits `@` file references to the working folder. `--tools ""` turns off all
+  built-in tools. `--strict-mcp-config` skips MCP servers.
+- Codex: `--ignore-user-config` skips `config.toml`, with its hooks, MCP servers, and
+  default reasoning effort. The sign-in stays. The read-only sandbox and the disabled
+  features remove the tools that read files or run code. `--ephemeral` saves no
+  session. `--skip-git-repo-check` is necessary, because the temporary folder is not a
+  Git repository. Codex sets low reasoning effort.
+- Code Puppy: `--no-tools` turns off its tools and MCP servers. Code Puppy always
+  attaches existing files whose paths are in the prompt, so bbflow masks paths in the
+  request.
+
+The empty temporary folder alone is not a file access limit, because an absolute path
+or `~` reaches other folders.
+
+The title command runs once, after the terminal accepts the first send with text from
+the message editor. The editor saves a pending draft revision before it writes to the
+terminal. It saves an empty revision that is not pending only after the input receipt.
+That empty revision confirms the send and starts the command. Thus a message that never
+reached the terminal never goes to the title provider. The server skips the command
+when the session has a user title or an earlier confirmed send with text. The command
+does not run for autosaves, unconfirmed sends, attachments without text, terminal
+input, or later messages.
 
 The server runs the command with `$SHELL -c`, or `/bin/sh -c` when `$SHELL` is unset. It
 uses the server environment. The shell is not interactive, so it does not read
@@ -523,7 +539,9 @@ CLIs do not read project files. It is not a session terminal, and the archive re
 no events for it.
 
 Standard input holds a fixed instruction and the message text. The server cuts the text
-at 2,000 bytes. Message text never enters the command line that bbflow writes. Code
+at 2,000 bytes. It replaces each `/` with `∕` (U+2215) and each `~` with `∼`
+(U+223C). Thus no path, home reference, or link in the request names a file. The
+server changes these characters back in the title. Message text never enters the command line that bbflow writes. Code
 Puppy takes the prompt only as an argument, so its command reads standard input with
 `"$(cat)"`. The shell does not parse the text again. The request starts with plain text, so a CLI does
 not treat it as a `!` or `/` command.
@@ -533,10 +551,10 @@ instruction describes this marker but does not contain it. The server breaks eac
 marker in the message text, for example `bbflow-title :`. Thus a CLI that prints the
 request back prints no marker.
 
-The server reads up to 64 KiB of standard output. It uses the text after the marker
-on the last line with a marker. Output without a marker is accepted only when it has
-one line with text. The server rejects other output, because agent CLIs can print status
-lines and errors on standard output with exit status 0. It removes control characters,
+The server reads up to 64 KiB of standard output. It uses the last line that starts
+with the marker, after Markdown marks and spaces. The server rejects output without
+such a line, also one line of text, because agent CLIs can print status lines and errors
+on standard output with exit status 0. It removes control characters,
 `Title:` labels, Markdown marks, quotes, and a final period. It keeps at most 200
 characters.
 
@@ -551,15 +569,17 @@ After each title change, the status watch sends a new title revision. Each view 
 reads the session list again.
 
 **Test** in Settings runs the selected title tool once. It is not available for None.
+Test and the tool list stay disabled until the test ends, also when another setting
+saves. The browser waits 100 seconds for the reply, longer than the 90-second server
+limit.
 It sends a fixed sample message, not a message of a session, and saves nothing. The
 result shows the sample message first. Under it, a green line shows **Test passed**
 with the title from the sample message. A red line shows **Test failed** with the
 error. A change of the title tool hides the result.
 
-The title tool sends the first message to its provider. It uses the installation,
-authentication, account, and configuration of the user. Agent CLIs can save each call
-in their own history. A CLI can also read local file paths in the message as
-attachments. Code Puppy does this for existing files of supported types.
+The title tool sends the first message to its provider. It uses the installation and
+authentication of the user. Claude and Code Puppy can save each call in their own
+history. Codex saves none.
 
 Code Puppy prints status lines and the request before the answer. It prints request
 errors on standard output with exit status 0. It also asks for `puppy_name` and
@@ -1523,7 +1543,7 @@ launch in a worktree, and separate drafts for subsequent sessions.
 
 No real agent CLI was used for these project checks.
 
-Frozen schemas from repository history test upgrades from formats 3–8 to format 9 and
+Frozen schemas from repository history test upgrades from formats 3–9 to format 10 and
 verify that reopen preserves the upgraded data. Fixtures compare original blobs, archive
 flags, metadata, and event allocation state. They test rollback of the entire upgrade
 after SQL, schema, or foreign-key failures. They also cover repeated opens, concurrent
@@ -1535,6 +1555,16 @@ Appearance fixtures verify the System default, successful Dark saves, and reject
 an invalid value. The migration tests preserve other settings and verify rollback and
 concurrent opens. A Chrome check with a synthetic Shell session verified Light, Dark,
 and System, saved appearance on reload, terminal replay, dialogs, and both diff layouts.
+
+Title fixtures verify the separate user and derived titles, search on both, and the
+title tool values. A failed settings update in migration 10 rolls back the new column
+and keeps format 9. Synthetic title commands verify standard input, path masking, the
+temporary folder, the marker rule, failures, cancel, and a missing CLI. Send fixtures
+verify that only the first confirmed send with text runs the command. An autosave, a
+send that the terminal did not accept, and later sends do not run it. Live checks used
+Claude Code 2.1.312, Codex CLI 0.160.0, and Code Puppy 0.0.969 with synthetic messages.
+A message that named a local canary file did not give its content to the hardened
+Claude and Codex commands.
 
 A compiled release binary also passed startup, SQL queries, restart, and shutdown with
 temporary format 3–6 fixtures, running outside the repository. Checks confirmed format

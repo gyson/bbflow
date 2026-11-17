@@ -3,11 +3,13 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -29,16 +31,35 @@ const (
 )
 
 // titleTools holds the command of each title tool in history.TitleTools, except none.
-// Each command reads the request on standard input. The commands select small models.
-// Codex uses low reasoning effort, because a Codex config can select a slow default.
-// Tests replace the commands.
+// Each command reads the request on standard input and selects a small model. Each
+// command turns off the agent tools, hooks, plugins, and MCP servers of its CLI, so
+// that the model gets only the request text. The empty temporary folder is not a file
+// access limit. Tests replace the commands.
 var titleTools = []protocol.TitleTool{
-	{ID: "claude", Name: "Claude", Command: "claude -p --model haiku"},
-	{ID: "codex", Name: "Codex", Command: "codex exec --skip-git-repo-check --model gpt-6-luna -c model_reasoning_effort=low -"},
+	// --restricted ignores the settings files, with their hooks and plugins. It also
+	// limits @ file references to the working folder. --tools "" turns off all
+	// built-in tools.
+	{ID: "claude", Name: "Claude", Command: `claude -p --model haiku --restricted --tools "" --strict-mcp-config`},
+	// --ignore-user-config skips config.toml, with its hooks, MCP servers, and slow
+	// reasoning effort, but keeps the sign-in. The read-only sandbox and the disabled
+	// features remove the tools that read files or run code. --ephemeral saves no
+	// session.
+	{ID: "codex", Name: "Codex", Command: "codex exec --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules " +
+		"--sandbox read-only --disable shell_tool --disable unified_exec --disable view_image --disable code_mode_host " +
+		"--disable apps --disable plugins --disable hooks --disable multi_agent --disable browser_use --disable computer_use " +
+		"--disable image_generation --disable mentions_v2 -c web_search=disabled --model gpt-6-luna -c model_reasoning_effort=low -"},
 	// Code Puppy takes the prompt only as an argument. "$(cat)" reads standard input, and
-	// the shell does not parse the text again.
+	// the shell does not parse the text again. --no-tools turns off its tools and MCP
+	// servers. It always attaches existing files whose paths are in the prompt, so
+	// titleRequest masks paths.
 	{ID: "code-puppy", Name: "Code Puppy", Command: `code-puppy --no-tools --model codex-gpt-6-luna -p "$(cat)"`},
 }
+
+// pathMask replaces the characters that start or separate a local path in the message.
+// The look-alike characters keep the text readable for the model. No path, home
+// reference, or link in the masked text names a file. cleanTitle changes them back.
+var pathMask = strings.NewReplacer("/", "\u2215", "~", "\u223c")
+var pathUnmask = strings.NewReplacer("\u2215", "/", "\u223c", "~")
 
 // titleCommand returns the command of a title tool.
 func titleCommand(tool string) (string, error) {
@@ -71,10 +92,10 @@ Reply with one line only. Start the line with the word bbflow-title and a colon,
 `
 
 // titleRequest returns the standard input for the title command. It cuts the message
-// at a rune boundary. It breaks each marker in the message, so that the message cannot
-// supply the answer line.
+// at a rune boundary and masks local paths. It breaks each marker in the message, so
+// that the message cannot supply the answer line.
 func titleRequest(message string) string {
-	message = strings.TrimSpace(message)
+	message = pathMask.Replace(strings.TrimSpace(message))
 	if len(message) > titleInput {
 		cut := titleInput
 		for cut > 0 && !utf8.RuneStart(message[cut]) {
@@ -99,49 +120,48 @@ func markerIndex(text string) int {
 	return -1
 }
 
-// parseTitle reads the title from the command output. It uses the text after the
-// marker on the last line that has one. Output without a marker is accepted only when
-// it has one line with text. Other output is rejected, because it can be an error
-// message or a status line.
+// parseTitle reads the title from the command output. It uses the last line that
+// starts with the marker, after Markdown marks and spaces. Other output is rejected,
+// because it can be an error message or a status line.
 func parseTitle(output string) (string, error) {
-	var lines []string
-	for _, line := range strings.Split(output, "\n") {
+	lines := 0
+	for _, line := range slices.Backward(strings.Split(output, "\n")) {
 		line = strings.Map(func(r rune) rune {
 			if unicode.IsControl(r) {
 				return ' '
 			}
 			return r
 		}, line)
-		if line = strings.Join(strings.Fields(line), " "); line != "" {
-			lines = append(lines, line)
+		if line = strings.Join(strings.Fields(line), " "); line == "" {
+			continue
 		}
+		lines++
+		answer := strings.TrimLeft(line, "#>*-•`_ ")
+		if len(answer) < len(titleMarker) || !strings.EqualFold(answer[:len(titleMarker)], titleMarker) {
+			continue
+		}
+		if answer = cleanTitle(answer[len(titleMarker):]); answer == "" {
+			return "", errors.New("the command printed an empty title")
+		}
+		return answer, nil
 	}
-	if len(lines) == 0 {
+	if lines == 0 {
 		return "", errors.New("the command printed no title")
 	}
-	answer := ""
-	for i := len(lines) - 1; i >= 0 && answer == ""; i-- {
-		if at := markerIndex(lines[i]); at >= 0 {
-			answer = lines[i][at+len(titleMarker):]
-			if answer = cleanTitle(answer); answer == "" {
-				return "", errors.New("the command printed an empty title")
-			}
+	first := ""
+	for _, line := range strings.Split(output, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			first = cleanTitle(line)
+			break
 		}
 	}
-	if answer == "" {
-		if len(lines) > 1 {
-			return "", fmt.Errorf("the command printed %d lines, but no line starts with %s. First line: %s", len(lines), titleMarker, cleanTitle(lines[0]))
-		}
-		if answer = cleanTitle(lines[0]); answer == "" {
-			return "", errors.New("the command printed no title")
-		}
-	}
-	return answer, nil
+	return "", fmt.Errorf("the command printed %d lines, but no line starts with %s. First line: %s", lines, titleMarker, first)
 }
 
-// cleanTitle removes common labels, quotes, and Markdown marks from one line. It keeps
-// at most titleRunes characters.
+// cleanTitle removes common labels, quotes, and Markdown marks from one line. It changes
+// masked path characters back. It keeps at most titleRunes characters.
 func cleanTitle(line string) string {
+	line = pathUnmask.Replace(line)
 	for {
 		before := line
 		line = strings.TrimLeft(line, "#>*-• ")
@@ -224,13 +244,12 @@ func runTitleCommand(ctx context.Context, command, message string) (string, erro
 	return parseTitle(stdout.String())
 }
 
-// generateTitle replaces the derived title of a session after its first message from
-// the message editor. It runs only when a title tool is selected and the session has no
-// user title. A failure keeps the current title.
-func (s *Server) generateTitle(sid string, revision int64, message string) {
-	if strings.TrimSpace(message) == "" {
-		return
-	}
+// generateTitle replaces the derived title of a session after the terminal accepts the
+// first send with text from the message editor. confirmation is the draft revision that
+// the editor saved after the input receipt. The job runs once: only when this revision
+// confirms the first such send. It does not run when no title tool is selected or the
+// session has a user title. A failure keeps the current title.
+func (s *Server) generateTitle(sid string, confirmation int64) {
 	settings, err := s.store.Settings()
 	if err != nil || settings.TitleTool == "none" {
 		return
@@ -243,14 +262,20 @@ func (s *Server) generateTitle(sid string, revision int64, message string) {
 	if err != nil || session.Title != "" {
 		return
 	}
-	earlier, _, err := s.store.SentDrafts(sid, revision, 1)
-	if err != nil || len(earlier) > 0 {
+	first, confirmed, ok, err := s.store.FirstConfirmedSend(sid)
+	if err != nil || !ok || confirmed != confirmation {
+		return
+	}
+	var draft struct {
+		Text string `json:"text"`
+	}
+	if err = json.Unmarshal(first.Data, &draft); err != nil {
 		return
 	}
 	s.jobs.Add(1)
 	go func() {
 		defer s.jobs.Done()
-		title, err := runTitleCommand(s.ctx, command, message)
+		title, err := runTitleCommand(s.ctx, command, draft.Text)
 		if err == nil {
 			err = s.store.SetAutoTitle(sid, title)
 		}

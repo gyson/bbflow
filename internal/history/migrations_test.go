@@ -261,6 +261,26 @@ func TestToolSettingsUpgradeRollsBack(t *testing.T) {
 	assertSnapshot(t, rawDatabase(t, path), before, true)
 }
 
+// Migration 10 adds a column and changes the settings. A failed settings update must
+// also remove the column and keep format 9.
+func TestTitleUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 9)
+	execSQL(t, db, "CREATE TRIGGER reject_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted blocked title settings update")
+	} else if !strings.Contains(err.Error(), "apply history migration 10") {
+		t.Fatal(err)
+	}
+	db = rawDatabase(t, path)
+	assertSnapshot(t, db, before, true)
+	if got := sqlRows(t, db, "SELECT count(*) FROM pragma_table_info('sessions') WHERE name='auto_title'"); got[0][0] != int64(0) {
+		t.Fatal("the auto_title column survived the rollback")
+	}
+}
+
 func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 	for _, test := range []struct {
 		name, schema, message string

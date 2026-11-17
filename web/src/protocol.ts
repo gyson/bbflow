@@ -201,6 +201,12 @@ export class ConnectionError extends Error {
   constructor(message: string, readonly retryable = false, readonly fromServer = false) { super(message); }
 }
 
+// A title test runs an agent CLI. The server stops it after 90 seconds, so the browser
+// waits a little longer for the reply. See titleTimeout in internal/server/titles.go.
+export const titleTestLimit = 100000;
+// The time that the browser waits for the reply of a request.
+const responseLimit = (request: Request) => request.operation === 'title-test' ? titleTestLimit : 12000;
+
 export class Peer {
   readonly socket: Socket;
   active = false;
@@ -208,6 +214,8 @@ export class Peer {
   private heartbeat: ReturnType<typeof setInterval>;
   private receivedAt = Date.now();
   private greeted = false;
+  // True after the first message that follows the greeting.
+  private replied = false;
   private timer: ReturnType<typeof setTimeout>;
   private input: { id: string; settle: (error?: string) => void } | undefined;
 
@@ -219,10 +227,12 @@ export class Peer {
     host = location.host,
   ) {
     this.socket = new Socket(`ws://${host}/ws`);
-    this.timer = setTimeout(() => this.fail('Server response timed out.', true), 12000);
+    const limit = responseLimit(request);
+    this.timer = setTimeout(() => this.fail('Server response timed out.', true), limit);
     this.heartbeat = setInterval(() => {
       if (this.finished) return;
-      if (Date.now() - this.receivedAt > 20000) this.fail('Connection timed out. Input was not resent.', true);
+      // The server sends nothing until the first reply. Do not end the wait for it early.
+      if (Date.now() - this.receivedAt > (this.replied ? 20000 : Math.max(20000, limit))) this.fail('Connection timed out. Input was not resent.', true);
       else if (this.greeted && this.active) this.send({ type: 'ping' });
     }, 5000);
     this.socket.onmessage = event => {
@@ -242,6 +252,7 @@ export class Peer {
           return;
         }
         clearTimeout(this.timer);
+        this.replied = true;
         if (message.type === 'error') {
           this.fail(message.error || 'Request failed.', false, true);
           return;
