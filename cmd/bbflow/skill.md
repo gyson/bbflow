@@ -114,6 +114,7 @@ Event kinds:
 | `notice` | Text that reports an interrupted terminal. | Empty. |
 | `draft` | JSON with `text`, `attachments`, and `pending` for one message editor revision. | Empty. |
 | `attachment` | Bytes of an attached file. | JSON with `name`, `mediaType`, and `size`. |
+| `title` | JSON with `revision`, the `draft` event of the send, and `tool`, for the one automatic title request of the session. | Empty. |
 | `terminal-response`, `terminal-screen` | Internal terminal state. | Empty. |
 
 ### `projects`

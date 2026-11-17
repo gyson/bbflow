@@ -31,10 +31,11 @@ const (
 )
 
 // titleTools holds the command of each title tool in history.TitleTools, except none.
-// Each command reads the request on standard input and selects a small model. Each
-// command turns off the agent tools, hooks, plugins, and MCP servers of its CLI, so
-// that the model gets only the request text. The empty temporary folder is not a file
-// access limit. Tests replace the commands.
+// Each command reads the request on standard input and selects a small model. The Claude
+// and Codex commands turn off the agent tools, hooks, plugins, and MCP servers of their
+// CLI, so that the model gets only the request text. Code Puppy turns off its tools and
+// MCP servers, but it always loads the user plugins. The empty temporary folder is not a
+// file access limit. Tests replace the commands.
 var titleTools = []protocol.TitleTool{
 	// --restricted ignores the settings files, with their hooks and plugins. It also
 	// limits @ file references to the working folder. --tools "" turns off all
@@ -249,9 +250,9 @@ func runTitleCommand(ctx context.Context, command, message string) (string, erro
 const receiptPrefix = "draft-"
 
 // titleAfterReceipt runs after the PTY accepts an input with an ID. It starts the title
-// job for a send from the message editor. The receipt names the pending draft revision,
-// so the job sends only text that reached the terminal.
-func (s *Server) titleAfterReceipt(sid, inputID string) {
+// job for a send from the message editor. The ID names the pending draft revision of
+// the send, and data holds the accepted bytes.
+func (s *Server) titleAfterReceipt(sid, inputID string, data []byte) {
 	revision, err := strconv.ParseInt(strings.TrimPrefix(inputID, receiptPrefix), 10, 64)
 	if !strings.HasPrefix(inputID, receiptPrefix) || err != nil || revision <= 0 {
 		return
@@ -260,16 +261,26 @@ func (s *Server) titleAfterReceipt(sid, inputID string) {
 	s.jobs.Add(1)
 	go func() {
 		defer s.jobs.Done()
-		s.generateTitle(sid, revision)
+		s.generateTitle(sid, revision, data)
 	}()
 }
 
+// sentText reports that the accepted input bytes hold the text of a draft as the message
+// editor writes it: line breaks become carriage returns, in a bracketed paste or not.
+// The input ID comes from the browser, so the server checks the bytes.
+func sentText(input []byte, text string) bool {
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	return strings.Contains(string(input), strings.ReplaceAll(text, "\n", "\r"))
+}
+
 // generateTitle replaces the derived title of a session with a summary of the first
-// send with text that reached the terminal. revision is the pending draft revision of a
-// send with an input receipt. The job runs once for each session while the server
-// runs. It does not run when no title tool is selected, the session has a user title,
-// or an earlier send with text looks confirmed. A failure keeps the current title.
-func (s *Server) generateTitle(sid string, revision int64) {
+// send with text that reached the terminal. revision is the pending draft revision that
+// the input names, and input holds the accepted bytes. The text of the revision must be
+// in those bytes. A title event in the archive claims the request before the command
+// runs. Thus each session gets at most one request, also after a restart or a lost
+// receipt in the browser. Nothing runs when no title tool is selected or the session has
+// a user title. A failure keeps the current title and does not run again.
+func (s *Server) generateTitle(sid string, revision int64, input []byte) {
 	settings, err := s.store.Settings()
 	if err != nil || settings.TitleTool == "none" {
 		return
@@ -282,11 +293,11 @@ func (s *Server) generateTitle(sid string, revision int64) {
 	if err != nil || session.Title != "" {
 		return
 	}
-	text, first, err := s.store.ReceiptSend(sid, revision)
-	if err != nil || !first || text == "" {
+	text, err := s.store.PendingSend(sid, revision)
+	if err != nil || strings.TrimSpace(text) == "" || !sentText(input, text) {
 		return
 	}
-	if _, started := s.titled.LoadOrStore(sid, true); started {
+	if claimed, err := s.store.ClaimTitle(sid, revision, settings.TitleTool); err != nil || !claimed {
 		return
 	}
 	title, err := runTitleCommand(s.ctx, command, text)

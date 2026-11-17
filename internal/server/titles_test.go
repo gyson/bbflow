@@ -213,6 +213,12 @@ func titleServer(t *testing.T, command string) (*Server, history.Session) {
 	return s, session
 }
 
+// editorInput returns the bytes that the message editor writes for text in a bracketed
+// paste.
+func editorInput(text string) []byte {
+	return []byte("\x1b[200~" + strings.ReplaceAll(text, "\n", "\r") + "\x1b[201~\r")
+}
+
 // submit saves a send as the message editor does: a pending revision, then, after an
 // input receipt, an empty revision. receipt false leaves the send without a receipt.
 func submit(t *testing.T, s *Server, sid, text string, receipt bool) int64 {
@@ -222,7 +228,7 @@ func submit(t *testing.T, s *Server, sid, text string, receipt bool) int64 {
 		t.Fatal(err)
 	}
 	if receipt {
-		s.titleAfterReceipt(sid, fmt.Sprintf("draft-%d", pending.Draft.Revision))
+		s.titleAfterReceipt(sid, fmt.Sprintf("draft-%d", pending.Draft.Revision), editorInput(text))
 		if _, err = s.composer(sid, &protocol.Draft{Revision: pending.Draft.Revision, Attachments: []int64{}}); err != nil {
 			t.Fatal(err)
 		}
@@ -259,8 +265,10 @@ func TestInputReceiptSetsDerivedTitle(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A receipt that names no pending revision of the session does nothing.
-	s.titleAfterReceipt(session.ID, fmt.Sprintf("draft-%d", mustLatest(t, s, session.ID)))
-	s.titleAfterReceipt(session.ID, "other-input")
+	s.titleAfterReceipt(session.ID, fmt.Sprintf("draft-%d", mustLatest(t, s, session.ID)), editorInput("Lost message"))
+	s.titleAfterReceipt(session.ID, "other-input", editorInput("Lost message"))
+	// A receipt for the pending revision, but with other bytes, does nothing too.
+	s.titleAfterReceipt(session.ID, fmt.Sprintf("draft-%d", lost), editorInput("Other text"))
 	if input := ranTitle(t, s, dir); input != "" {
 		t.Fatalf("a send without a receipt ran the title command: %q", input)
 	}
@@ -297,7 +305,7 @@ func TestInputReceiptSetsDerivedTitle(t *testing.T) {
 
 // After a failed send, the user can unlock the draft and empty it before the autosave.
 // That saves one empty revision that is not pending, with no receipt. The discarded
-// text must never go to the title command.
+// text must never go to the title command. The next accepted send gets the title.
 func TestUnlockedAndEmptiedDraftSendsNoText(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	command, dir := writeTitleScript(t, "echo bbflow-title: Generated")
@@ -309,14 +317,69 @@ func TestUnlockedAndEmptiedDraftSendsNoText(t *testing.T) {
 	if input := ranTitle(t, s, dir); input != "" {
 		t.Fatalf("an emptied draft ran the title command: %q", input)
 	}
-	// The emptied draft looks like a confirmed send, so a later send gets no title. The
-	// check fails closed.
 	submit(t, s, session.ID, "Real message", true)
-	if input := ranTitle(t, s, dir); input != "" {
-		t.Fatalf("the title command got text after an emptied draft: %q", input)
+	if input := ranTitle(t, s, dir); !strings.Contains(input, "Real message") || strings.Contains(input, "Discarded message") {
+		t.Fatalf("the title command did not get only the accepted text: %q", input)
 	}
-	if got, _ := s.store.Session(session.ID); got.DisplayTitle() != "Shell · fixture" {
-		t.Fatalf("session: %+v", got)
+}
+
+// The title event in the archive keeps the request once-only. A lost receipt in the
+// browser leaves the draft pending, and a restart clears the server memory.
+func TestTitleRequestStaysOnceAfterRestart(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	command, dir := writeTitleScript(t, "echo bbflow-title: First title")
+	s, session := titleServer(t, command)
+	// The server accepted the input, but the browser lost the receipt. The draft stays
+	// pending, with no empty revision after it.
+	first, err := s.composer(session.ID, &protocol.Draft{Revision: mustLatest(t, s, session.ID), Text: "First message", Attachments: []int64{}, Pending: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.titleAfterReceipt(session.ID, fmt.Sprintf("draft-%d", first.Draft.Revision), editorInput("First message"))
+	if input := ranTitle(t, s, dir); !strings.Contains(input, "First message") {
+		t.Fatalf("first request: %q", input)
+	}
+	if err = s.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := history.Open(s.store.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	s.store = store
+	// The user unlocks the draft and sends a second message after the restart.
+	if _, err = s.composer(session.ID, &protocol.Draft{Revision: first.Draft.Revision, Text: "Second message", Attachments: []int64{}}); err != nil {
+		t.Fatal(err)
+	}
+	submit(t, s, session.ID, "Second message", true)
+	if input := ranTitle(t, s, dir); input != "" {
+		t.Fatalf("a second request ran after the restart: %q", input)
+	}
+	got, err := store.Session(session.ID)
+	if err != nil || got.AutoTitle != "First title" {
+		t.Fatalf("session: %+v, %v", got, err)
+	}
+	result, err := store.Query(context.Background(), "SELECT count(*), data->>'$.tool' FROM events WHERE kind='title'")
+	if err != nil || fmt.Sprint(result.Rows) != "[[1 claude]]" {
+		t.Fatalf("title events: %+v, %v", result, err)
+	}
+}
+
+func TestSentTextMatchesEditorInput(t *testing.T) {
+	for _, test := range []struct {
+		input, text string
+		want        bool
+	}{
+		{"\x1b[200~Fix it\x1b[201~\r", "Fix it", true},
+		{"Fix it\r", "Fix it", true},
+		{"\x1b[200~Line one\rLine two\r\r'/tmp/a.png'\x1b[201~\r", "Line one\nLine two", true},
+		{"\x1b[200~Line one\rLine two\x1b[201~\r", "Line one\r\nLine two", true},
+		{"\x1b[200~Other\x1b[201~\r", "Fix it", false},
+	} {
+		if got := sentText([]byte(test.input), test.text); got != test.want {
+			t.Errorf("sentText(%q, %q) = %v", test.input, test.text, got)
+		}
 	}
 }
 

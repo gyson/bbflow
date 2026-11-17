@@ -528,17 +528,19 @@ or `~` reaches other folders.
 The title command runs once, after the terminal accepts the first send with text from
 the message editor. The editor saves a pending draft revision before it writes to the
 terminal. It sends the input with the ID `draft-REVISION`, where `REVISION` is that
-pending revision. The server starts the command only after the PTY accepts this input,
-with the text of that revision. Thus a message that never reached the terminal never
-goes to the title provider.
+pending revision. The server records the input bytes and writes them to the PTY. After
+the PTY accepts them, the server reads the text of that revision. The input ID comes
+from the browser, so the server also checks that the accepted bytes hold that text, as
+the editor writes it. Thus only text that reached the terminal goes to the title
+provider.
 
-The server skips the command when the session has a user title, or when an earlier send
-with text looks confirmed: its next revision is an empty draft that is not pending. The
-editor saves such a revision after an input receipt. A user can also save one when they
-unlock and empty a draft after a failed send. Then the session gets no automatic title.
-The check fails closed and sends no discarded text. The server starts at most one
-command for each session while it runs. The command does not run for autosaves, sends
-without a receipt, attachments without text, terminal input, or later messages.
+Before the command starts, the server records a `title` event in the archive. Its data
+holds the draft revision and the title tool. One statement checks that the session has
+no `title` event and inserts it. So each session gets at most one title request, also
+after a server restart, a lost receipt in the browser, or an unlocked draft. A failed
+request does not run again. The server skips the request when the session has a user
+title. The command does not run for autosaves, sends without a receipt, attachments
+without text, or terminal input from the keyboard.
 
 The server runs the command with `$SHELL -c`, or `/bin/sh -c` when `$SHELL` is unset. It
 uses the server environment. The shell is not interactive, so it does not read
@@ -1571,7 +1573,9 @@ and keeps format 9. Synthetic title commands verify standard input, path masking
 temporary folder, the marker rule, failures, cancel, and a missing CLI. Send fixtures
 verify that only the input receipt of the first send with text runs the command, with
 the text of that send. An autosave, a send without a receipt, a receipt for another
-revision, an emptied draft after a failed send, and later sends do not run it. Live checks used
+revision or for other bytes, an emptied draft after a failed send, and later sends do
+not run it. A fixture reopens the archive after a request with a lost receipt, and a
+second send then runs no second request. Live checks used
 Claude Code 2.1.312, Codex CLI 0.160.0, and Code Puppy 0.0.969 with synthetic messages.
 A message that named a local canary file did not give its content to the hardened
 Claude and Codex commands.

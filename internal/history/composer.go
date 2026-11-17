@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"strings"
 )
 
 // ErrDraftSent reports that another view started a send after the base revision of a
@@ -130,63 +129,47 @@ func (s *Store) SentDrafts(sid string, before int64, limit int) (sent []SentDraf
 	return sent, false, rows.Err()
 }
 
-// ReceiptSend reads the send that the draft revision records. The message editor saves
-// a pending revision before it writes the input. text is the text of that revision, or
-// empty when revision is not a pending revision of the session. first is false when an
-// earlier send with text looks confirmed: its next revision is an empty draft that is
-// not pending. Only the editor saves such a revision after an input receipt, except when
-// the user empties an unlocked draft. Then first is false too, so that the check never
-// sends a later message for the wrong reason.
-func (s *Store) ReceiptSend(sid string, revision int64) (text string, first bool, err error) {
-	rows, err := s.db.Query("SELECT seq,data FROM events WHERE session_id=? AND kind='draft' AND seq<=? ORDER BY seq", sid, revision)
+// PendingSend returns the text of a pending draft revision of the session. The message
+// editor saves a pending revision before it writes a send to the terminal. The text is
+// empty when revision is not a pending revision of the session.
+func (s *Store) PendingSend(sid string, revision int64) (string, error) {
+	var data []byte
+	err := s.db.QueryRow("SELECT data FROM events WHERE session_id=? AND seq=? AND kind='draft'", sid, revision).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
-	defer rows.Close()
-	first = true
-	sent := false
-	for rows.Next() {
-		var seq int64
-		var data []byte
-		if err = rows.Scan(&seq, &data); err != nil {
-			return "", false, err
-		}
-		if seq == revision {
-			if !pending(data) {
-				return "", false, rows.Err()
-			}
-			var draft struct {
-				Text string `json:"text"`
-			}
-			if err = json.Unmarshal(data, &draft); err != nil {
-				return "", false, err
-			}
-			return strings.TrimSpace(draft.Text), first, rows.Err()
-		}
-		if sent && confirms(data) {
-			first = false
-		}
-		sent = pending(data) && hasText(data)
+	var draft struct {
+		Text    string `json:"text"`
+		Pending bool   `json:"pending"`
 	}
-	return "", false, rows.Err()
+	if err = json.Unmarshal(data, &draft); err != nil || !draft.Pending {
+		return "", err
+	}
+	return draft.Text, nil
 }
 
-// confirms reports a draft revision that confirms the send before it: an empty draft
-// that is not pending.
-func confirms(data []byte) bool {
-	var draft struct {
-		Text        string  `json:"text"`
-		Attachments []int64 `json:"attachments"`
-		Pending     bool    `json:"pending"`
+// ClaimTitle records one automatic title request for a session as a title event. The
+// data holds the draft revision of the send and the title tool. The event has no run.
+// claimed is false when the session already has a title event, also from before a
+// restart. The check and the insert are one statement.
+func (s *Store) ClaimTitle(sid string, revision int64, tool string) (claimed bool, err error) {
+	data, err := json.Marshal(struct {
+		Revision int64  `json:"revision"`
+		Tool     string `json:"tool"`
+	}{revision, tool})
+	if err != nil {
+		return false, err
 	}
-	return json.Unmarshal(data, &draft) == nil && !draft.Pending && draft.Text == "" && len(draft.Attachments) == 0
-}
-
-func hasText(data []byte) bool {
-	var draft struct {
-		Text string `json:"text"`
+	result, err := s.db.Exec(`INSERT INTO events(session_id,run_id,kind,data,text,created)
+        SELECT ?,'','title',?,'',? WHERE NOT EXISTS (SELECT 1 FROM events WHERE session_id=? AND kind='title')`, sid, data, Now(), sid)
+	if err != nil {
+		return false, err
 	}
-	return json.Unmarshal(data, &draft) == nil && strings.TrimSpace(draft.Text) != ""
+	n, err := result.RowsAffected()
+	return n == 1, err
 }
 
 // Verify attachment scope on every read, including draft references.
