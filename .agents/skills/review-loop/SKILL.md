@@ -100,21 +100,24 @@ LGTM is a comment. It is not a GitHub approval and it does not merge the PR.
 
 ## Read Codex session metadata
 
-Use the latest `turn_context` record from the active Codex thread's local session log.
-The lookup prints only the `model` and `effort` fields.
+Use the latest `turn_context` record from the active Codex thread's local session logs.
+Codex puts the date and time in the log paths and can split a thread across files.
+This lookup needs `jq` and prints only the `model` and `effort` fields.
 
 ```sh
-if [ -n "${CODEX_THREAD_ID:-}" ]; then
-  log=$(rg --files --hidden --no-ignore "${CODEX_HOME:-$HOME/.codex}/sessions" \
-    -g "rollout-*-${CODEX_THREAD_ID}.jsonl" | head -n 1)
-  if [ -n "$log" ]; then
-    jq -Rrc 'fromjson? | select(.type == "turn_context") | .payload | {model, effort}' \
-      "$log" | tail -n 1
-  fi
+if [ -n "${CODEX_THREAD_ID:-}" ] && command -v jq >/dev/null 2>&1; then
+  find "${CODEX_HOME:-$HOME/.codex}/sessions" -type f \
+    \( -name "rollout-*-${CODEX_THREAD_ID}.jsonl" \
+      -o -name "rollout-*-${CODEX_THREAD_ID}_*.jsonl" \) -print 2>/dev/null |
+    LC_ALL=C sort |
+    while IFS= read -r log; do
+      jq -Rrc 'fromjson? | select(.type == "turn_context") | .payload | {model, effort}' \
+        "$log"
+    done | tail -n 1
 fi
 ```
 
-If the local log is unavailable, use the fallback in [Round comments](#round-comments).
+If the lookup gives no value, use the fallback in [Round comments](#round-comments).
 
 ## Wait for the other role
 
