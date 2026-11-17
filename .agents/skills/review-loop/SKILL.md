@@ -72,13 +72,17 @@ round, the commit, and the result.
   review only when it has the same round number and comes after that review.
 - `SHA` is the full 40-character commit ID. For the reviewer, it is the commit that the
   review examined. For the implementer, it is the head commit after the push.
-- Write the agent tool and the model of the session in the second line. Use the names
-  that your system context or session settings give. If you do not know a name, write
-  `unknown`. Do not guess. If the model changes during the loop, write the current
-  model.
+- Write the tool, full model name, and reasoning effort in the second line of each
+  round comment. Check the active session's model and effort before each post.
+- Use the model's full display name, including its version and variant when available.
+  If only the exact model ID is available, use that ID. Use the effort label or value
+  the tool reports for this session.
+- Get these values from the active session's status, metadata, or settings. If a field
+  is missing, use the value the user confirmed for this session. Write `unknown` for
+  each field you cannot verify.
 
   ```markdown
-  Tool: Claude Code. Model: Claude Opus 5.5.
+  Tool: Codex. Model: GPT-6.1 Sol. Reasoning effort: Extra High.
   ```
 
 - Post a round comment as a PR comment:

@@ -81,8 +81,8 @@ if [ -z "$author" ]; then
 fi
 case $author in '' | *[!A-Za-z0-9_-]*) fail "unsupported account name: $author" ;; esac
 
-# Round comments start with a fixed first line. Only comments from the selected
-# account count, so other accounts cannot start a round.
+# The first line identifies a round comment. Ignore the second line and later lines.
+# Only comments from the selected account count.
 filter='"state\t\(.state)", "head\t\(.headRefOid)", (.comments | sort_by(.createdAt)[] | select(.author.login == "'$author'") | (.body | split("\n")[0] | rtrimstr("\r")) | select(startswith("**[review-loop ")) | "mark\t\(.)")'
 
 # Print: state, head commit, round and commit and verdict of the latest review, the

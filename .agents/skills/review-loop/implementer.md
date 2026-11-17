@@ -72,11 +72,12 @@ findings that are correct. Decline the others with a reason.
 
 Answer each finding by its ID. Use the round number of the latest review, also when it
 is LGTM and you answer other comments. The wait script accepts the comment only as the
-answer to the review with this number.
+answer to the review with this number. Follow the shared
+[round comment rules](SKILL.md#round-comments) for the second line.
 
 ```markdown
 **[review-loop implementer] round 2, commit 89abcdef0123456789abcdef0123456789abcdef: READY**
-Tool: Claude Code. Model: <the model name>.
+Tool: <tool>. Model: <full model name or ID>. Reasoning effort: <effort>.
 
 - **R2-1** fixed in 89abcde: <what changed>.
 - **R2-2** declined: <the technical reason>.
