@@ -72,13 +72,19 @@ round, the commit, and the result.
   review only when it has the same round number and comes after that review.
 - `SHA` is the full 40-character commit ID. For the reviewer, it is the commit that the
   review examined. For the implementer, it is the head commit after the push.
-- Write the agent tool and the model of the session in the second line. Use the names
-  that your system context or session settings give. If you do not know a name, write
-  `unknown`. Do not guess. If the model changes during the loop, write the current
-  model.
+- Check the active session's model and effort before each post. In Codex, use the
+  [local session lookup](#read-codex-session-metadata) for any missing value.
+- In Claude Code, run `printenv CLAUDE_EFFORT` in the active session's Bash tool.
+  If the command returns a level, use it for the reasoning effort field.
+- Use the model's full display name, including its version and variant when available.
+  If only the exact model ID is available, use that ID. Use the effort label or value
+  the tool reports for this session.
+- If a field is still missing, use a value the user already gave for this session.
+  Write `unknown` for each field you cannot verify.
+- Write the tool, model, and reasoning effort in the second line of each round comment.
 
   ```markdown
-  Tool: Claude Code. Model: Claude Opus 5.5.
+  Tool: Codex. Model: GPT-6.1 Sol. Reasoning effort: Extra High.
   ```
 
 - Post a round comment as a PR comment:
@@ -91,6 +97,27 @@ round, the commit, and the result.
 - Do not start other comments with `**[review-loop`.
 
 LGTM is a comment. It is not a GitHub approval and it does not merge the PR.
+
+## Read Codex session metadata
+
+Use the latest `turn_context` record from the active Codex thread's local session logs.
+Codex puts the date and time in the log paths and can split a thread across files.
+This lookup needs `jq` and prints only the `model` and `effort` fields.
+
+```sh
+if [ -n "${CODEX_THREAD_ID:-}" ] && command -v jq >/dev/null 2>&1; then
+  find "${CODEX_HOME:-$HOME/.codex}/sessions" -type f \
+    \( -name "rollout-*-${CODEX_THREAD_ID}.jsonl" \
+      -o -name "rollout-*-${CODEX_THREAD_ID}_*.jsonl" \) -print 2>/dev/null |
+    LC_ALL=C sort |
+    while IFS= read -r log; do
+      jq -Rrc 'fromjson? | select(.type == "turn_context") | .payload | {model, effort}' \
+        "$log"
+    done | tail -n 1
+fi
+```
+
+If the lookup gives no value, use the fallback in [Round comments](#round-comments).
 
 ## Wait for the other role
 

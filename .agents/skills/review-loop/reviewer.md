@@ -84,11 +84,12 @@ for context. If the PR does not explain a decision, that is a finding.
 ## Round comment
 
 Give each finding an ID: `R` + the round number + `-` + a counter. Keep the ID in later
-rounds. Omit a section that has no items.
+rounds. Omit a section that has no items. Follow the shared
+[round comment rules](SKILL.md#round-comments) for the second line.
 
 ```markdown
 **[review-loop reviewer] round 2, commit 0123456789abcdef0123456789abcdef01234567: CHANGES REQUESTED**
-Tool: Codex. Model: <the model name>.
+Tool: <tool>. Model: <full model name or ID>. Reasoning effort: <effort>.
 
 ## Blocking
 
