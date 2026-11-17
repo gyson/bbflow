@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { continueAction, continueHint, defaultContinueTool } from './dist/continue.js';
+import { continueAction, continueDialogProblem, continueHint, defaultContinueTool } from './dist/continue.js';
 import { insertProblem } from './dist/composer.js';
 
 const tools = [
@@ -33,6 +33,16 @@ test('an unavailable managed worktree keeps Continue visible with a reason', () 
   assert.deepEqual(continueAction({ ...session, worktree: { state: 'creating' } }, false), {
     visible: true, problem: 'Worktree unavailable. A new terminal cannot start here.',
   });
+});
+
+test('an open Continue dialog gives a reason when its session changes', () => {
+  const session = { status: 'ended', run: { id: 'run-1' } };
+  const available = continueAction(session, false);
+  assert.equal(continueDialogProblem(available, 'run-1', 'run-1'), '');
+  assert.match(continueDialogProblem(continueAction({ ...session, status: 'idle' }, false), 'run-1', 'run-1'), /session changed/);
+  assert.match(continueDialogProblem(available, 'run-2', 'run-1'), /session changed/);
+  const removed = continueAction({ ...session, worktree: { state: 'removed' } }, false);
+  assert.match(continueDialogProblem(removed, 'run-1', 'run-1'), /Worktree removed/);
 });
 
 test('the form prefers the original tool, then the default tool, then Shell', () => {

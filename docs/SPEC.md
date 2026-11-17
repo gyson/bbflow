@@ -593,6 +593,10 @@ button. The default tool is the session's original tool if it still exists, then
 default tool, then Shell. For an `interrupted` run, the dialog warns that an agent from
 a crashed server can still run in the workspace.
 
+If the session changes while the dialog opens, the UI explains why continuation is unavailable.
+If the latest run changes or continuation becomes unavailable while the dialog is open,
+the UI closes the dialog and shows the reason.
+
 `session-continue` carries the latest run ID that the view saw. The server holds the
 launch lock and rejects the request in these conditions:
 

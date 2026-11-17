@@ -5,7 +5,7 @@ import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
 import { SideTerminal } from './side-terminal.js';
 import { WorkspacePane } from './workspace-pane.js';
-import { continueAction, continueHint, defaultContinueTool } from './continue.js';
+import { continueAction, continueDialogProblem, continueHint, defaultContinueTool } from './continue.js';
 import { endReasonText, exitReason, hasTerminal, listStatus, listStatusText, live, statusText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
 import { Watch } from './watch.js';
@@ -132,6 +132,7 @@ let renderedSidebar = '';
 const statusMarks: { session: SessionInfo; dot: HTMLElement; text: Text }[] = [];
 let selected: SessionView | null = null;
 let continueTools: Tool[] = [];
+let continueRun: string | undefined;
 // The handoff prompt of the selected session. It stays available after a new terminal
 // starts, so the user can copy or send it later.
 let handoff: { session: string; info: Handoff } | null = null;
@@ -256,10 +257,16 @@ function controls() {
   if (continuation.problem) {
     continueControl.dataset.tip = continuation.problem;
     continueControl.tabIndex = 0;
-    if ($('continue-dialog').open) $('continue-dialog').close();
   } else {
     delete continueControl.dataset.tip;
     continueControl.removeAttribute('tabindex');
+  }
+  if ($('continue-dialog').open) {
+    const problem = continueDialogProblem(continuation, selected?.run?.id, continueRun);
+    if (problem) {
+      $('continue-dialog').close();
+      notice(problem);
+    }
   }
   $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
   $('handoff-open').disabled = busy;
@@ -708,12 +715,10 @@ async function showContinue(): Promise<void> {
   if (selected?.id !== id) return;
   selected = withDetail(selected, detail);
   const continuation = continueAction(selected, !!connection?.peer?.active, terminalPicker.shownRun);
-  if (continuation.problem) {
+  const problem = continueDialogProblem(continuation, selected.run?.id);
+  if (problem) {
     showWorkspace(selected.workspace, selected.worktree);
-    return;
-  }
-  if (!continuation.visible) {
-    notice('This session cannot start a new terminal now. Another view may have started one. Reload the session.');
+    notice(problem);
     return;
   }
   continueTools = settings.tools;
@@ -725,6 +730,7 @@ async function showContinue(): Promise<void> {
   $('continue-warning').hidden = selected.run?.status !== 'interrupted';
   $('continue-error').hidden = true;
   $('continue-copy').textContent = 'Copy prompt';
+  continueRun = selected.run?.id;
   $('continue-dialog').showModal();
 }
 
@@ -931,9 +937,8 @@ async function initialize() {
   $('continue-form').onsubmit = event => {
     event.preventDefault();
     action(async () => {
-      if (!selected?.id) return;
-      const continuation = continueAction(selected, !!connection?.peer?.active, terminalPicker.shownRun);
-      if (!continuation.visible || continuation.problem) return;
+      // action checks the dialog against the latest session state before submit.
+      if (!$('continue-dialog').open || !selected?.id) return;
       const tool = $('continue-tool').value;
       $('continue-dialog').close();
       await openSession(selected, { kind: 'continue', tool });
