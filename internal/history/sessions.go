@@ -46,7 +46,8 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	if filter.Limit == 0 {
 		filter.Limit = 10
 	}
-	valid := filter.Limit >= 1 && filter.Limit*max(1, len(filter.Groups)) <= MaxSessionLimit && filter.Offset >= 0 &&
+	// Division keeps the check free of integer overflow.
+	valid := filter.Limit >= 1 && filter.Limit <= MaxSessionLimit/max(1, len(filter.Groups)) && filter.Offset >= 0 &&
 		(filter.Offset == 0 || (len(filter.Groups) == 1 && filter.Include == "")) &&
 		len(filter.Include) <= 200 && len(filter.Query) <= 800
 	for _, group := range filter.Groups {

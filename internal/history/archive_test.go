@@ -3,6 +3,7 @@ package history
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -142,7 +143,7 @@ func TestArchiveRejectsActiveRunsAndLaunchClaims(t *testing.T) {
 		t.Fatal("archived nonexistent session")
 	}
 	standalone := ""
-	for _, filter := range []SessionFilter{{Limit: -1}, {Limit: 101}, {Offset: -1, Groups: []string{standalone}}, {Offset: 1}, {Groups: []string{standalone}, Offset: 1, Include: draft.ID}, {Limit: 50, Groups: []string{"a", "b", "c"}}} {
+	for _, filter := range []SessionFilter{{Limit: -1}, {Limit: 101}, {Offset: -1, Groups: []string{standalone}}, {Offset: 1}, {Groups: []string{standalone}, Offset: 1, Include: draft.ID}, {Limit: 50, Groups: []string{"a", "b", "c"}}, {Limit: math.MaxInt/2 + 1, Groups: []string{"a", "b"}}} {
 		if _, err = s.ListSessions(filter); err == nil {
 			t.Fatal("accepted invalid filter", filter)
 		}
