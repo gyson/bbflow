@@ -102,10 +102,17 @@ export class SentHistory {
       less.hidden = shown <= foldLines;
       fold.hidden = more.hidden && less.hidden;
     };
-    more.onclick = () => { const count = shown + step; step *= 2; show(count); };
+    // When a click hides its button, the other button gets the keyboard focus.
+    more.onclick = () => {
+      const count = shown + step;
+      step *= 2;
+      show(count);
+      if (more.hidden) less.focus();
+    };
     less.onclick = () => {
       step = foldStep;
       show(foldLines);
+      if (less.hidden) more.focus({ preventScroll: true });
       item.scrollIntoView({ block: 'nearest' });
     };
     fold.append(more, less);

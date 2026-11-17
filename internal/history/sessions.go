@@ -30,8 +30,6 @@ type SessionPage struct {
 	More     []string
 }
 
-const maxSessionLimit = 1000
-
 // ListSessions orders sessions by terminal input, output, and run lifecycle activity.
 // This includes output while detached. View changes and unsent drafts do not count.
 // SQLite compares these times in whole milliseconds. For equal times, the event sequence
@@ -41,13 +39,14 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	if filter.Limit == 0 {
 		filter.Limit = 10
 	}
-	valid := filter.Limit >= 1 && filter.Limit <= maxSessionLimit && len(filter.Limits) <= maxSessionLimit &&
-		len(filter.Include) <= 200 && len(filter.Query) <= 800
+	// A group limit has no upper bound, so Show more can reach each session of a group.
+	// A result never has more rows than the matching sessions.
+	valid := filter.Limit >= 1 && len(filter.Include) <= 200 && len(filter.Query) <= 800
 	for key, limit := range filter.Limits {
-		valid = valid && len(key) <= 200 && limit >= 1 && limit <= maxSessionLimit
+		valid = valid && len(key) <= 200 && limit >= 1
 	}
 	if !valid {
-		return SessionPage{}, errors.New("invalid session filter: limits must be 1–1000, with at most 1000 groups, and query at most 800 bytes")
+		return SessionPage{}, errors.New("invalid session filter: limits must be at least 1, and query at most 800 bytes")
 	}
 	limits, err := json.Marshal(filter.Limits)
 	if err != nil {

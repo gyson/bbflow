@@ -84,7 +84,7 @@ operations.
 | `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
 | `project-remove` | `project` ID | `result`, containing `removed`. Sessions become standalone. |
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
-| `session-list` | `limit` for each group (default 10, 1–1000), optional `limits` object (group key to a limit of 1–1000, at most 1000 groups), optional `session` ID to include, `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status). |
+| `session-list` | `limit` for each group (default 10, at least 1), optional `limits` object (group key to a limit of at least 1), optional `session` ID to include, `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status). |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |

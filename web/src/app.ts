@@ -418,9 +418,10 @@ function renderSessions() {
   }
   showListStatuses();
   if (focused) {
-    for (const button of $('sessions').querySelectorAll<HTMLElement>('[data-focus]')) {
-      if (button.dataset.focus === focused) { button.focus({ preventScroll: true }); break; }
-    }
+    const target = [...$('sessions').querySelectorAll<HTMLElement>('[data-focus]')].find(button => button.dataset.focus === focused)
+      // Show more is not there after a group shows all of its sessions. Focus the last session of the group.
+      ?? (focused.startsWith('more:') ? [...document.getElementById(`project-sessions-${focused.slice(5) || 'standalone'}`)?.querySelectorAll<HTMLElement>('.session-item') ?? []].at(-1) : undefined);
+    target?.focus({ preventScroll: true });
   }
   controls();
 }

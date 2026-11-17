@@ -180,3 +180,27 @@ func TestSessionGroupLimits(t *testing.T) {
 		t.Fatal("included session outside the archive filter", got)
 	}
 }
+
+// A group limit has no upper bound. Show more can reach each session of a large group.
+func TestSessionGroupLimitAboveOneThousand(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	const count = 1005
+	for i := range count {
+		if _, err = store.CreateSession(fmt.Sprintf("Session %d", i), "/tmp", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, test := range []struct {
+		limit, rows int
+		more        bool
+	}{{1000, 1000, true}, {1004, 1004, true}, {1010, count, false}, {1 << 40, count, false}} {
+		page, err := store.ListSessions(SessionFilter{Limit: 10, Limits: map[string]int{"": test.limit}})
+		if err != nil || len(page.Sessions) != test.rows || (len(page.More) == 1) != test.more {
+			t.Fatalf("limit %d: %d sessions, more %v, %v", test.limit, len(page.Sessions), page.More, err)
+		}
+	}
+}

@@ -222,7 +222,9 @@ and caching rules.
 The sidebar lists saved projects and groups sessions, including drafts, through
 `project-list` and `session-list`. General appears first. Custom projects follow in name
 order. Groups can be collapsed in each view. Each group shows its 10 most recent
-sessions. **Show more** below a group shows 10 more of its sessions. The list and
+sessions. **Show more** below a group shows 10 more of its sessions. It has no upper
+limit. When the group then shows all of its sessions, the keyboard focus moves to its
+last session. The list and
 Archived keep separate group sizes until reload. The selected session stays in its
 group, also when it is older than the other sessions that the group shows.
 
@@ -901,6 +903,7 @@ A long message shows its first 8 lines, and the list is the only scroll area. **
 more** below the text shows 16 more lines. Each later click shows double the lines of the
 previous click. The button shows the number of hidden lines. When fewer than 4 lines
 would stay hidden, all of the text shows. **Show less** returns to the first 8 lines.
+When a click hides its button, the other button gets the keyboard focus.
 The line count follows the current text wrap.
 
 **Copy** puts the message text on the system clipboard. Users can then paste it into

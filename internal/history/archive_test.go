@@ -141,7 +141,7 @@ func TestArchiveRejectsActiveRunsAndLaunchClaims(t *testing.T) {
 	if err = s.SetSessionArchived("missing", true); err == nil {
 		t.Fatal("archived nonexistent session")
 	}
-	for _, filter := range []SessionFilter{{Limit: -1}, {Limit: 1001}, {Limits: map[string]int{"": 0}}, {Limits: map[string]int{"": 1001}}} {
+	for _, filter := range []SessionFilter{{Limit: -1}, {Limits: map[string]int{"": 0}}, {Limits: map[string]int{"": -1}}} {
 		if _, err = s.ListSessions(filter); err == nil {
 			t.Fatal("accepted invalid filter", filter)
 		}
