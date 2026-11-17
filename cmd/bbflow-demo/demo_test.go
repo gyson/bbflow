@@ -35,12 +35,46 @@ func TestDemo(t *testing.T) {
 	temporary := t.TempDir()
 	demo := filepath.Join(temporary, "demo")
 	other := filepath.Join(temporary, "other")
-	execute := func(name, dir string, args ...string) (string, error) {
+	executeWith := func(env []string, name, dir string, args ...string) (string, error) {
 		command := exec.Command(filepath.Join(bin, name), append([]string{"--dir", dir}, args...)...)
 		// /bin/sh keeps the test independent of the shell settings of the user.
-		command.Env = append(os.Environ(), "SHELL=/bin/sh", "BBFLOW_DIR=")
+		command.Env = append(append(os.Environ(), "SHELL=/bin/sh", "BBFLOW_DIR="), env...)
 		output, err := command.CombinedOutput()
 		return string(output), err
+	}
+	execute := func(name, dir string, args ...string) (string, error) {
+		return executeWith(nil, name, dir, args...)
+	}
+	refused := func(want, name, dir string, args ...string) {
+		t.Helper()
+		if output, err := execute(name, dir, args...); err == nil || !strings.Contains(output, want) {
+			t.Fatalf("%s %s: want a refusal with %q: %v\n%s", name, strings.Join(args, " "), want, err, output)
+		}
+	}
+	// git runs Git without the Git variables and configuration of the user.
+	git := func(folder string, args ...string) string {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", folder}, args...)...)
+		for _, variable := range os.Environ() {
+			if !strings.HasPrefix(variable, "GIT_") {
+				command.Env = append(command.Env, variable)
+			}
+		}
+		command.Env = append(command.Env, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	write := func(path, text string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	pass := func(name, dir string, args ...string) string {
 		t.Helper()
@@ -77,10 +111,20 @@ func TestDemo(t *testing.T) {
 		t.Fatalf("seed without a server: %v\n%s", err, output)
 	}
 
-	// seed adds the projects, tools, and sessions.
+	// seed adds the projects, tools, and sessions. GIT_DIR and GIT_WORK_TREE select an
+	// unrelated repository, which the seed must not change.
+	fixture := filepath.Join(temporary, "fixture")
+	write(filepath.Join(fixture, "README.md"), "fixture\n")
+	git(temporary, "init", "--quiet", fixture)
+	git(fixture, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--quiet", "--allow-empty", "--message", "fixture")
+	write(filepath.Join(fixture, "edit.txt"), "uncommitted\n")
 	pass("bbflow", demo, "server", "start", "--no-menubar")
-	if output := pass("bbflow-demo", demo, "seed"); !regexp.MustCompile(`Added the demo data to .*\nURL: http://127\.0\.0\.1:\d+/\n`).MatchString(output) {
-		t.Fatalf("seed output: %s", output)
+	output, err := executeWith([]string{"GIT_DIR=" + filepath.Join(fixture, ".git"), "GIT_WORK_TREE=" + fixture}, "bbflow-demo", demo, "seed")
+	if err != nil || !regexp.MustCompile(`Added the demo data to .*\nURL: http://127\.0\.0\.1:\d+/\n`).MatchString(output) {
+		t.Fatalf("seed: %v\n%s", err, output)
+	}
+	if count, config, status := git(fixture, "rev-list", "--count", "HEAD"), git(fixture, "config", "--local", "--list"), git(fixture, "status", "--porcelain"); count != "1" || strings.Contains(config, "user.") || !strings.Contains(status, "edit.txt") {
+		t.Fatalf("seed changed the repository of GIT_DIR: commits %s, status %q, config:\n%s", count, status, config)
 	}
 	expect("SELECT name FROM projects ORDER BY name", "[[General] [Orbit API] [Tide Web]]")
 	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 6] [1 1]]")
@@ -94,7 +138,7 @@ func TestDemo(t *testing.T) {
 		"[[Plan release notes 1]]")
 
 	// A second seed adds nothing and prints each session.
-	output := pass("bbflow-demo", demo, "seed")
+	output = pass("bbflow-demo", demo, "seed")
 	expect("SELECT count(*) FROM sessions", "[[7]]")
 	for _, state := range []string{"running", "ended", "draft", "archived"} {
 		if !strings.Contains(output, "\n  "+state+" ") {
@@ -107,44 +151,58 @@ func TestDemo(t *testing.T) {
 	expect("SELECT count(*) FROM sessions", "[[7]]")
 	expect("SELECT count(*) FROM runs WHERE status='running'", "[[0]]")
 
-	// seed and clean refuse an instance with other data.
+	// seed refuses an instance with other files or data, and writes no marker. clean
+	// refuses an instance without the marker.
 	pass("bbflow", other, "server", "start", "--no-menubar")
-	if _, err := (client.Target{Dir: other}).Call(protocol.Request{Operation: "project-draft", Project: "general"}); err != nil {
+	notes := filepath.Join(other, "notes.txt")
+	write(notes, "keep\n")
+	refused("files that a new server does not create: notes.txt", "bbflow-demo", other, "seed")
+	if err := os.Remove(notes); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := execute("bbflow-demo", other, "seed"); err == nil || !strings.Contains(output, "already has projects or sessions") {
-		t.Errorf("seed of an instance with a session: %v\n%s", err, output)
+	pass("bbflow", other, "tool", "add", "Saved", "saved-tool")
+	refused("saved settings", "bbflow-demo", other, "seed")
+	if exists(filepath.Join(other, "demo")) {
+		t.Fatal("a refused seed wrote demo files")
 	}
-	if output, err := execute("bbflow-demo", other, "clean", "--force"); err == nil || !strings.Contains(output, "is not a demo instance") {
-		t.Errorf("clean of an instance that was not seeded: %v\n%s", err, output)
+	if tools := pass("bbflow", other, "tool", "list"); !strings.Contains(tools, "saved-tool") || strings.Contains(tools, "Demo agent") {
+		t.Fatalf("a refused seed changed the tools: %s", tools)
 	}
+	refused("is not a demo instance", "bbflow-demo", other, "clean", "--force")
 	if !exists(filepath.Join(other, "history.sqlite")) {
 		t.Fatal("a refused clean removed files")
 	}
 
-	// clean keeps a worktree of a repository outside the demo instance, unless forced.
-	outside := filepath.Join(temporary, "outside")
-	worktree := filepath.Join(demo, "worktrees", "outside")
-	for _, folder := range []string{outside, worktree} {
-		if err := os.MkdirAll(folder, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: "+outside+"\n"), 0o644); err != nil {
+	// clean refuses a symbolic link to the demo instance.
+	link := filepath.Join(temporary, "link")
+	if err := os.Symlink(demo, link); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := execute("bbflow-demo", demo, "clean"); err == nil || !strings.Contains(output, "outside the demo instance") {
-		t.Fatalf("clean with an outside worktree: %v\n%s", err, output)
+	refused("is a symbolic link", "bbflow-demo", link, "clean")
+
+	// clean keeps a worktree of a repository outside the demo instance, unless forced.
+	// Git can write the repository path relative to the worktree folder.
+	outside := filepath.Join(temporary, "outside")
+	worktree := filepath.Join(demo, "worktrees", "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	write(filepath.Join(worktree, ".git"), "gitdir: ../../../outside\n")
+	refused("outside the demo instance", "bbflow-demo", demo, "clean")
+	// A repository path that does not resolve is not known, so clean keeps it too.
+	write(filepath.Join(worktree, ".git"), "gitdir: ../missing\n")
+	refused("unknown repositories", "bbflow-demo", demo, "clean")
 	server, err := instance.Read(demo)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// clean stops the server and its sessions, then removes the instance directory.
-	pass("bbflow-demo", demo, "clean", "--force")
+	// A relative path to a repository of the demo is not foreign. Then clean stops the
+	// server and its sessions, and removes the instance directory without --force.
+	write(filepath.Join(worktree, ".git"), "gitdir: ../../demo/projects/orbit-api/.git\n")
+	pass("bbflow-demo", demo, "clean")
 	if exists(demo) {
-		t.Fatal("clean --force kept the demo instance")
+		t.Fatal("clean kept the demo instance")
 	}
 	if err := syscall.Kill(server.PID, 0); !errors.Is(err, syscall.ESRCH) {
 		t.Fatalf("the demo server (PID %d) runs after clean: %v", server.PID, err)

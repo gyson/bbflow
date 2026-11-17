@@ -107,6 +107,11 @@ func locate(dir string) *demo {
 	}
 	dir, err = filepath.Abs(dir)
 	check(err)
+	// bbflow resolves a symbolic link to its target, but os.RemoveAll removes only the
+	// link. Refuse it, so that each step uses the same directory.
+	if info, err := os.Lstat(dir); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		fail("%s is a symbolic link; use the path of its target directory", dir)
+	}
 	files := filepath.Join(dir, "demo")
 	return &demo{
 		dir:      dir,
@@ -148,20 +153,53 @@ func (d *demo) seed() {
 	if exists(d.marker) {
 		fail("the seed of %s is not complete; run \"clean\", then start the server and seed again", d.dir)
 	}
-	// Refuse an instance with other data, so that the seed and clean cannot reach
-	// real history.
-	projects := call[[]history.Project](d.target, protocol.Request{Operation: "project-list"})
-	active := call[[]protocol.SessionInfo](d.target, protocol.Request{Operation: "session-list", Limit: 1})
-	archived := call[[]protocol.SessionInfo](d.target, protocol.Request{Operation: "session-list", Limit: 1, Archived: true})
-	if len(projects) > 1 || len(active)+len(archived) > 0 {
-		fail("%s already has projects or sessions; seed only a new instance", d.dir)
-	}
+	d.requireNew()
 	check(os.MkdirAll(filepath.Dir(d.marker), 0o755))
 	check(os.WriteFile(d.marker, []byte("bbflow demo instance. \"bbflow-demo clean\" removes this instance directory.\n"), 0o644))
 	d.addData()
 	check(os.WriteFile(d.seeded, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644))
 	fmt.Printf("Added the demo data to %s.\n", d.dir)
 	d.sessions(info.Port)
+}
+
+// newInstanceFiles are the entries of an instance directory after the first server
+// start. The General folder is empty.
+var newInstanceFiles = map[string]bool{
+	"history.sqlite": true, "history.sqlite-shm": true, "history.sqlite-wal": true,
+	"server.json": true, "server.log": true, "server.lock": true, "server-control.lock": true,
+	"workspaces": true,
+}
+
+// requireNew refuses an instance with data that a new server did not create. The
+// marker lets clean remove the directory, so it must go only on a new instance.
+func (d *demo) requireNew() {
+	const sql = "SELECT (SELECT count(*) FROM projects WHERE id<>'general'), (SELECT count(*) FROM sessions), (SELECT count(*) FROM events), (SELECT revision FROM settings WHERE id=1)"
+	if rows := call[history.QueryResult](d.target, protocol.Request{Operation: "query", SQL: sql}).Rows; fmt.Sprint(rows) != "[[0 0 0 0]]" {
+		fail("%s already has projects, sessions, events, or saved settings; seed only a new instance", d.dir)
+	}
+	entries, err := os.ReadDir(d.dir)
+	check(err)
+	var other []string
+	for _, entry := range entries {
+		if !newInstanceFiles[entry.Name()] {
+			other = append(other, entry.Name())
+		}
+	}
+	workspaces, err := os.ReadDir(filepath.Join(d.dir, "workspaces"))
+	check(err)
+	for _, entry := range workspaces {
+		if entry.Name() != "general" {
+			other = append(other, filepath.Join("workspaces", entry.Name()))
+		}
+	}
+	general, err := os.ReadDir(filepath.Join(d.dir, "workspaces", "general"))
+	check(err)
+	for _, entry := range general {
+		other = append(other, filepath.Join("workspaces", "general", entry.Name()))
+	}
+	if len(other) > 0 {
+		fail("%s has files that a new server does not create: %s; seed only a new instance", d.dir, strings.Join(other, ", "))
+	}
 }
 
 // sessions prints the URL of each session.
@@ -179,30 +217,51 @@ func (d *demo) sessions(port int) {
 	}
 }
 
-// outsideWorktrees returns the managed worktrees of repositories outside the instance
-// directory. A managed worktree is a folder with a .git file that points into its
-// repository.
-func (d *demo) outsideWorktrees() []string {
+// foreignWorktrees returns the managed worktrees whose repository is outside the
+// instance directory or is not known. A managed worktree is a folder with a .git file
+// that holds the path of its repository. Git can write this path relative to the
+// folder.
+func (d *demo) foreignWorktrees() []string {
 	folder := filepath.Join(d.dir, "worktrees")
 	entries, err := os.ReadDir(folder)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
+	check(err)
 	inside, err := filepath.EvalSymlinks(d.dir)
 	check(err)
-	var outside []string
+	var foreign []string
 	for _, entry := range entries {
+		// Removal of a symbolic link or a file does not change its target.
 		path := filepath.Join(folder, entry.Name())
-		pointer, err := os.ReadFile(filepath.Join(path, ".git"))
-		if err != nil {
-			continue
-		}
-		gitDir, err := filepath.EvalSymlinks(strings.TrimSpace(strings.TrimPrefix(string(pointer), "gitdir: ")))
-		if err == nil && !strings.HasPrefix(gitDir, inside+string(filepath.Separator)) {
-			outside = append(outside, path)
+		if entry.IsDir() && !ownedRepository(path, inside) {
+			foreign = append(foreign, path)
 		}
 	}
-	return outside
+	return foreign
+}
+
+// ownedRepository reports whether the files of a folder belong to a repository inside
+// the directory inside. A folder without a .git entry holds only demo files.
+func ownedRepository(path, inside string) bool {
+	info, err := os.Lstat(filepath.Join(path, ".git"))
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	if err != nil || info.IsDir() {
+		// A .git folder holds its own repository, inside the instance directory.
+		return err == nil
+	}
+	pointer, err := os.ReadFile(filepath.Join(path, ".git"))
+	if err != nil || !strings.HasPrefix(string(pointer), "gitdir: ") {
+		return false
+	}
+	gitDir := strings.TrimSpace(strings.TrimPrefix(string(pointer), "gitdir: "))
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(path, gitDir)
+	}
+	gitDir, err = filepath.EvalSymlinks(gitDir)
+	return err == nil && strings.HasPrefix(gitDir, inside+string(filepath.Separator))
 }
 
 func (d *demo) clean(force bool) {
@@ -213,11 +272,13 @@ func (d *demo) clean(force bool) {
 	if !exists(d.marker) {
 		fail("%s is not a demo instance; bbflow-demo removes only an instance that it seeded", d.dir)
 	}
-	outside := d.outsideWorktrees()
-	if len(outside) > 0 && !force {
-		fail("these worktrees belong to repositories outside the demo instance:\n  %s\nRemove each worktree in the UI, or run \"clean --force\" to discard their files",
-			strings.Join(outside, "\n  "))
+	refuse := func(foreign []string) {
+		if len(foreign) > 0 && !force {
+			fail("these worktrees belong to repositories outside the demo instance, or to unknown repositories:\n  %s\nRemove each worktree in the UI, or run \"clean --force\" to discard their files",
+				strings.Join(foreign, "\n  "))
+		}
 	}
+	refuse(d.foreignWorktrees())
 	if !exists(d.binary) {
 		fail("%s does not exist; run \"make build\" first, so that clean can stop the server", d.binary)
 	}
@@ -228,6 +289,9 @@ func (d *demo) clean(force bool) {
 	if err := stop.Run(); err != nil {
 		fail("stop the demo server: %w; stop it with Quit bbflow in the menu bar, then run \"clean\" again", err)
 	}
+	// The server can create a worktree before it stops. Examine the worktrees again.
+	outside := d.foreignWorktrees()
+	refuse(outside)
 	check(os.RemoveAll(d.dir))
 	fmt.Printf("Removed %s.\n", d.dir)
 	if len(outside) > 0 {

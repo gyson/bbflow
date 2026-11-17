@@ -178,8 +178,15 @@ func shellQuote(text string) string {
 
 func git(folder string, args ...string) {
 	command := exec.Command("git", append([]string{"-C", folder}, args...)...)
-	// Ignore the Git configuration of the user: signing, hooks, and templates.
-	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	// Remove inherited Git variables. GIT_DIR and GIT_WORK_TREE select a repository even
+	// with -C, and other variables add configuration. Ignore the Git configuration of the
+	// user too: signing, hooks, and templates.
+	for _, variable := range os.Environ() {
+		if !strings.HasPrefix(variable, "GIT_") {
+			command.Env = append(command.Env, variable)
+		}
+	}
+	command.Env = append(command.Env, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	command.Stderr = os.Stderr
 	if err := command.Run(); err != nil {
 		fail("git %s: %w", strings.Join(args, " "), err)
