@@ -8,7 +8,8 @@ for context. If the PR does not explain a decision, that is a finding.
 
 - Do not change the PR. Do not commit, push, edit the title or body, approve, or merge.
 - Review the commit that the wait script gives as `head`.
-- Give evidence for each finding: the file and line, the effect, and how you know.
+- Give evidence for each finding. Cite the relevant file and line or the relevant PR
+  text. Explain the effect and how you verified it.
 - Run code to confirm a finding when you can. Do not report a guess as a fact.
 - Post one round comment for each round. Put all findings in it.
 
@@ -31,38 +32,39 @@ for context. If the PR does not explain a decision, that is a finding.
    gh pr checkout PR --detach
    ```
 
-3. Read the PR title, body, and comments. Read the diff. Do not use
+3. Read the PR head, title, body, and comments. Read the diff. Do not use
    `gh pr view PR --comments` for this. Without a terminal, it prints only the comments.
 
    ```sh
-   gh pr view PR --json title,body,comments --jq '"# \(.title)\n\n\(.body)", (.comments[] | "\n--- \(.author.login), \(.createdAt)\n\(.body)")'
+   gh pr view PR --json headRefOid,title,body,comments --jq '.headRefOid, "# \(.title)\n\n\(.body)", (.comments[] | "\n--- \(.author.login), \(.createdAt)\n\(.body)")'
    gh pr diff PR
    ```
 
 4. Review the change.
    - **Round 1:** review the full diff. Read `AGENTS.md` first. Its rules and
      invariants are review criteria. Examine correctness, durable data and migrations,
-     tests, the owner documents, and the PR description.
+     tests, and the owner documents.
    - **Later rounds:** first examine each open finding. Read the reply of the
      implementer and confirm each fix in the code. Then review the new commits with
      `git diff PREVIOUS..HEAD`, where `PREVIOUS` comes from the script output. If
      `PREVIOUS` is not an ancestor of `HEAD`, review the full diff again.
+   - **Every round:** compare the title and body with the full PR diff for `head`.
+     Apply the rules for reviewable pull requests in `AGENTS.md`. Check that the
+     description covers important fixes from earlier rounds and states the validation
+     that was done.
 5. Run the checks that apply to the change. `AGENTS.md` and `docs/DEVELOPMENT.md` name
    them. For a runtime or UI change, use a temporary instance directory. Stop each
    server that you start.
 6. Classify each finding.
    - **Blocking:** incorrect behavior, a risk of data loss, a broken `AGENTS.md` rule or
      invariant, a missing necessary test or document update, or a security problem.
+     A stale title or description that misstates or omits an important change or
+     validation result is also blocking.
    - **Non-blocking:** an improvement that the PR can merge without.
-7. Read the head commit again. If it is not equal to `head`, do not post. Go to loop
-   step 1. The wait script then gives a new event with the new head.
-
-   ```sh
-   gh pr view PR --json headRefOid --jq .headRefOid
-   ```
-
-   Then read the comments again with the command of step 3. If the implementer posted
-   a new round comment, include its replies in your review.
+7. Read the head commit, title, body, and comments again with the first command in
+   step 3. If the head differs from `head`, return to loop step 1. If the title or body
+   changed, check the new text and update your findings. If the implementer posted a
+   new round comment, include its replies in your review.
 
 8. Post the round comment. Use LGTM when no blocking finding is open. If not, use
    CHANGES REQUESTED.
