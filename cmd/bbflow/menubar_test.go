@@ -175,3 +175,32 @@ func TestServerCanStartWithoutMenu(t *testing.T) {
 		t.Fatalf("headless server launched a menu: %q", events)
 	}
 }
+
+func TestMenuQuitLabelNamesInstance(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	standard := filepath.Join(home, instanceDirName)
+	if tag := instanceTag(standard); tag != "" {
+		t.Fatalf("default directory tag: %q", tag)
+	}
+	if label := menuQuitLabel("dev", ""); label != "Quit bbflow (dev)" {
+		t.Fatalf("default label: %q", label)
+	}
+	// The same folder name in two checkouts gets two tags.
+	first := instanceTag(filepath.Join(home, "one", ".bbflow-demo"))
+	second := instanceTag(filepath.Join(home, "two", ".bbflow-demo"))
+	for _, tag := range []string{first, second} {
+		if !strings.HasPrefix(tag, "demo-") || len(tag) != len("demo-")+5 {
+			t.Fatalf("demo tag: %q", tag)
+		}
+	}
+	if first == second || first != instanceTag(filepath.Join(home, "one", ".bbflow-demo")) {
+		t.Fatalf("tags are not stable and distinct: %q %q", first, second)
+	}
+	if tag := instanceTag(filepath.Join(home, "bbflow-experiment")); !strings.HasPrefix(tag, "experiment-") {
+		t.Fatalf("experiment tag: %q", tag)
+	}
+	if label := menuQuitLabel("0.0.10", first); label != "Quit bbflow ("+first+")" {
+		t.Fatalf("tagged label: %q", label)
+	}
+}

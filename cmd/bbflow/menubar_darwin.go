@@ -19,7 +19,9 @@ var menuVersion string
 
 // systray locks the initial OS thread during init. Only this child enters AppKit. The
 // CLI and server remain independent of the native event loop.
-func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
+// tag names an instance directory that is not the default directory of the build. It
+// is empty for the default directory.
+func runNativeMenu(ended <-chan struct{}, tag string, openUI, quit func() error) error {
 	select {
 	case <-ended:
 		return nil
@@ -31,7 +33,11 @@ func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
 	if menuVersion != "" {
 		displayVersion = menuVersion
 	}
-	quitLabel := "Quit bbflow (" + displayVersion + ")"
+	quitLabel := menuQuitLabel(displayVersion, tag)
+	tooltip := "bbflow"
+	if tag != "" {
+		tooltip += " " + tag
+	}
 	var busy atomic.Bool
 	var openItem, quitItem *systray.MenuItem
 	action := func(item *systray.MenuItem, label string, fn func() error, quitting bool) {
@@ -67,7 +73,7 @@ func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
 	openItem = menu.Add("Open UI", func() { action(openItem, "Open UI", openUI, false) })
 	menu.AddSeparator()
 	quitItem = menu.Add(quitLabel, func() { action(quitItem, quitLabel, quit, true) })
-	tray.SetTemplateIcon(webui.MenuBarIcon).SetTooltip("bbflow").SetMenu(menu).Show()
+	tray.SetTemplateIcon(webui.MenuBarIcon).SetTooltip(tooltip).SetMenu(menu).Show()
 	finished := make(chan struct{})
 	defer close(finished)
 	go func() {

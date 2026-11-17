@@ -39,6 +39,9 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 - Every new session starts an interactive shell with `-i`, using the server environment.
   The server resolves `$SHELL` from PATH or an absolute path, falling back to `/bin/sh`
   when unset. Workspaces accept absolute paths, `~`, and `~/path`.
+- `cmd/bbflow-demo` is a developer tool for the demo-instance project skill. It adds
+  simulated data to a new instance through the same Go client and protocol types as the
+  CLI, and removes that instance. Releases do not include it.
 - [DEVELOPMENT.md](DEVELOPMENT.md) gives the build, check, and release commands.
 
 The SQLite driver exposes query authorization and cancellation through supported APIs.
@@ -163,6 +166,12 @@ The menu contains **Open UI**, a separator, and **Quit bbflow**. The Quit bbflow
 shows the running version, such as **Quit bbflow (0.0.5)** or **Quit bbflow (dev)**.
 Preview builds can set a version label at build time, such as **Quit bbflow (0.0.5
 dev-1af9)**. Open UI calls the same verified home-page opener as the CLI.
+
+For an instance directory that is not the default of the build, the label shows an
+instance tag in place of the version, such as **Quit bbflow (demo-1a2b3)**. The tag is
+the folder name without a leading `.` and `bbflow-`, then the first 5 hexadecimal digits
+of the SHA-256 hash of the canonical path. Thus folders with the same name in different
+checkouts get different tags. The tooltip of the icon also shows the tag.
 
 The build renders the menu icon from `web/src/bbflow.svg` and embeds it in the
 executable. The icon shows the letters "bb" on a 16-unit pixel grid and uses macOS
@@ -1140,7 +1149,9 @@ as one transaction after column, index, and foreign-key checks. Any failure roll
 the entire upgrade and stops startup. A failed SQL step reports its migration number.
 WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4 through 8.
+- Empty databases run the format 3 baseline, then migrations 4 through 8. In the same
+  transaction, a new database sets `worktree` to true in the settings JSON. Thus new
+  installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
   Existing sessions remain standalone, with their original workspace and history.
 - Format 4 gains settings, preparations, and managed worktree tables. Defaults use

@@ -1,4 +1,5 @@
 .bbflow/
+.bbflow-demo/
 *.sqlite*
 *.log
 .DS_Store

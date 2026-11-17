@@ -1,16 +1,51 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"bbflow/internal/client"
 )
+
+// instanceTag names an instance directory that is not the default directory of the
+// build, for example "demo-1a2b3" for a .bbflow-demo folder. It is empty for the
+// default directory. The hash of the path tells apart folders with the same name in
+// different checkouts.
+func instanceTag(dataDir string) string {
+	if home, err := os.UserHomeDir(); err == nil {
+		standard := filepath.Join(home, instanceDirName)
+		if resolved, err := filepath.EvalSymlinks(standard); err == nil {
+			standard = resolved
+		}
+		if standard == dataDir {
+			return ""
+		}
+	}
+	name := strings.TrimPrefix(strings.TrimPrefix(filepath.Base(dataDir), "."), "bbflow-")
+	if name == "" {
+		name = "instance"
+	}
+	sum := sha256.Sum256([]byte(dataDir))
+	return name + "-" + hex.EncodeToString(sum[:])[:5]
+}
+
+// menuQuitLabel shows the instance tag when there is one, and the running version
+// otherwise.
+func menuQuitLabel(displayVersion, tag string) string {
+	if tag == "" {
+		return "Quit bbflow (" + displayVersion + ")"
+	}
+	return "Quit bbflow (" + tag + ")"
+}
 
 // The same executable runs the CLI, server, and menu in separate processes. Normal EOF
 // follows archive cleanup. A server crash also closes the pipe, but cleanup is not
@@ -103,7 +138,7 @@ func runMenuBarChild(target client.Target) error {
 			if err != nil || info.PID != parent {
 				continue
 			}
-			return runNativeMenu(ended, func() error {
+			return runNativeMenu(ended, instanceTag(info.DataDir), func() error {
 				return ui(target, nil)
 			}, func() error {
 				// This confirms receipt only. The lifetime pipe closes after server cleanup.

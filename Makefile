@@ -4,6 +4,7 @@ VERSION ?= dev
 
 build: web-build
 	CGO_ENABLED=0 go build -trimpath -o bin/bbflow ./cmd/bbflow
+	CGO_ENABLED=0 go build -trimpath -o bin/bbflow-demo ./cmd/bbflow-demo
 
 release: web-build
 	CGO_ENABLED=0 go build -trimpath -ldflags '-X main.instanceDirName=.bbflow -X main.version=$(VERSION)' -o bin/release/bbflow ./cmd/bbflow
@@ -16,7 +17,7 @@ test: web-build
 
 check: web-build
 	go vet ./...
-	for script in internal/install/install.sh scripts/package-release.sh scripts/smoke-release.sh .agents/skills/review-loop/scripts/wait-for-pr.sh .agents/skills/review-loop/scripts/wait-for-pr.test.sh; do sh -n "$$script" || exit 1; done
+	for script in internal/install/install.sh scripts/package-release.sh scripts/smoke-release.sh .agents/skills/review-loop/scripts/wait-for-pr.sh .agents/skills/review-loop/scripts/wait-for-pr.test.sh cmd/bbflow-demo/demo-agent.sh; do sh -n "$$script" || exit 1; done
 
 skill-check:
 	sh .agents/skills/review-loop/scripts/wait-for-pr.test.sh

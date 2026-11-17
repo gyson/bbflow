@@ -77,6 +77,13 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("record history migration %d: %w", next, err)
 		}
 	}
+	if version == 0 {
+		// A new database selects Use worktree for new drafts. The released migrations keep
+		// the earlier default, so an upgrade keeps the saved choice of the user.
+		if _, err = conn.ExecContext(ctx, "UPDATE settings SET data = json_set(data, '$.worktree', json('true')) WHERE id=1 AND revision=0"); err != nil {
+			return fmt.Errorf("set new history defaults: %w", err)
+		}
+	}
 	if err = checkSchema(ctx, conn); err != nil {
 		return fmt.Errorf("validate history schema (upgrade rolled back): %w", err)
 	}

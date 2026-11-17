@@ -185,6 +185,8 @@ inspect the printed log path.
 On macOS, a new server also launches a menu bar companion from this same executable.
 **Open UI** opens the verified server's home page. **Quit bbflow** stops that server and
 its active sessions, then closes the menu. Its label includes the running version.
+For an instance directory that is not the default of the build, the label shows a short
+instance tag in place of the version, such as **Quit bbflow (demo-1a2b3)**.
 Quit retains and verifies the original server connection, so missing or replaced
 `server.json` files do not prevent it. The menu has no separate Stop, Settings, or Logs
 action. There is no persistent Running label.
@@ -429,7 +431,7 @@ bbflow settings set base main
 | --- | --- |
 | `appearance` | `system`, `light`, or `dark` |
 | `default-tool` | The name of a tool. An empty value, `""`, selects the built-in Shell. |
-| `worktree` | `true` or `false`. `true` selects **Use worktree** for new drafts in Git folders. |
+| `worktree` | `true` or `false`. `true` selects **Use worktree** for new drafts in Git folders. A new installation starts with `true`. An upgrade keeps the saved value. |
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
 
 **Impact:** the same as `tool add`. A rejected value changes nothing.
