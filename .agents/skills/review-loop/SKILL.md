@@ -72,14 +72,14 @@ round, the commit, and the result.
   review only when it has the same round number and comes after that review.
 - `SHA` is the full 40-character commit ID. For the reviewer, it is the commit that the
   review examined. For the implementer, it is the head commit after the push.
-- Write the tool, full model name, and reasoning effort in the second line of each
-  round comment. Check the active session's model and effort before each post.
+- Check the active session's model and effort before each post. In Codex, use the
+  [local session lookup](#read-codex-session-metadata) for any missing value.
 - Use the model's full display name, including its version and variant when available.
   If only the exact model ID is available, use that ID. Use the effort label or value
   the tool reports for this session.
-- Get these values from the active session's status, metadata, or settings. If a field
-  is missing, use the value the user confirmed for this session. Write `unknown` for
-  each field you cannot verify.
+- If a field is still missing, use a value the user already gave for this session.
+  Write `unknown` for each field you cannot verify.
+- Write the tool, model, and reasoning effort in the second line of each round comment.
 
   ```markdown
   Tool: Codex. Model: GPT-6.1 Sol. Reasoning effort: Extra High.
@@ -95,6 +95,24 @@ round, the commit, and the result.
 - Do not start other comments with `**[review-loop`.
 
 LGTM is a comment. It is not a GitHub approval and it does not merge the PR.
+
+## Read Codex session metadata
+
+Use the latest `turn_context` record from the active Codex thread's local session log.
+The lookup prints only the `model` and `effort` fields.
+
+```sh
+if [ -n "${CODEX_THREAD_ID:-}" ]; then
+  log=$(rg --files --hidden --no-ignore "${CODEX_HOME:-$HOME/.codex}/sessions" \
+    -g "rollout-*-${CODEX_THREAD_ID}.jsonl" | head -n 1)
+  if [ -n "$log" ]; then
+    jq -Rrc 'fromjson? | select(.type == "turn_context") | .payload | {model, effort}' \
+      "$log" | tail -n 1
+  fi
+fi
+```
+
+If the local log is unavailable, use the fallback in [Round comments](#round-comments).
 
 ## Wait for the other role
 
