@@ -135,7 +135,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   It uses the same instance selection and server verification as other clients.
 - On macOS, server start also launches a menu companion from the same executable. The
   menu shows Open UI and Quit bbflow with a separator between them. The Quit bbflow
-  label includes the running version. Quit bbflow stops the server and its sessions.
+  label includes the running version. For a directory that is not the build default, it
+  shows a short instance tag in place of the version. Quit bbflow stops the server and
+  its sessions.
 - Use `server start --no-menubar` for headless checks. Automated runtime tests disable
   native menus. A separate helper uses a pipe to test the companion lifecycle. Keep menu
   code in macOS-specific Go files and retain `CGO_ENABLED=0` builds.
@@ -180,6 +182,13 @@ folder with a `SKILL.md` file.
   implementer role.
 - When you change the round comment format, update `SKILL.md`, the two role files,
   `scripts/wait-for-pr.sh`, and its fixture checks in `review-loop` together.
+- Use `demo-instance` to try a code change in the web UI. It adds simulated projects,
+  tools, and sessions to a new instance in `.bbflow-demo/`, separate from user data.
+  The regular `bbflow server` commands run its server. It also removes the demo.
+- The `demo-instance` skill runs the developer tool `bin/bbflow-demo` from
+  `cmd/bbflow-demo`. Its seed uses the Go types of `internal/protocol`. When a change
+  breaks the seed or `TestDemo`, update the seed in the same change. When you change the
+  simulated data, update `SKILL.md` and `TestDemo` together.
 - Add each skill script to the syntax check in `make check`. Run `make skill-check`
   after you change a skill script.
 
@@ -192,7 +201,8 @@ folder with a `SKILL.md` file.
   frames and acknowledge them. Keep the lossless recording separate from display
   updates.
 - Keep the web client thin and session operations in the server. Do not add a bbflow CLI
-  terminal client or session commands. Keep process ownership and durable history in the
+  terminal client or session commands. The `bbflow-demo` developer tool is not a bbflow
+  command and is not released. Keep process ownership and durable history in the
   server. Keep a future desktop shell separate.
 - Make daily work with existing CLI agents comfortable. Support conversation changes,
   reliable message composition, attachments, and persistent drafts.

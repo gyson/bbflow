@@ -21,7 +21,7 @@ Run the `npm` command after you clone the repository and after each lockfile cha
 
 | Command | Result |
 | --- | --- |
-| `make build` | The development binary `bin/bbflow`. It uses `~/.bbflow-dev`. |
+| `make build` | The development binary `bin/bbflow`. It uses `~/.bbflow-dev`. It also builds the [demo tool](#demo-instance) `bin/bbflow-demo`. |
 | `make release` | The production binary `bin/release/bbflow`. It uses `~/.bbflow`. |
 | `make web-build` | The frontend only, in `internal/webui/dist/`. |
 | `npm --prefix web run typecheck` | A TypeScript check that generates no files. |
@@ -39,6 +39,25 @@ A running server keeps its code and embedded UI. After a change, do these steps:
 Use global `--dir` with a temporary directory for checks that must not touch your data.
 See [instance directory](COMMANDS.md#instance-directory).
 
+## Demo instance
+
+A demo instance is an instance with simulated projects, tools, and sessions. Use it to
+try a code change in the web UI without your own data. It keeps all its files in
+`.bbflow-demo/` in the checkout, which Git ignores.
+
+```sh
+make build
+DISABLE_AUTO_UPDATE=true ./bin/bbflow --dir .bbflow-demo server start
+./bin/bbflow-demo seed
+./bin/bbflow-demo clean
+```
+
+The regular `server` commands start, restart, and stop the demo server. `seed` adds the
+data one time and prints the URL. `clean` stops the server and removes the folder. The
+[demo-instance skill](../.agents/skills/demo-instance/SKILL.md) gives the full
+procedure, the simulated data, and the limits. Agents load it as a project skill.
+`bbflow-demo` is a developer tool in `cmd/bbflow-demo`. Releases do not include it.
+
 ## Checks
 
 ```sh
@@ -51,7 +70,7 @@ go test -race ./...
 
 | Command | Check |
 | --- | --- |
-| `make test` | Go tests with `CGO_ENABLED=0`. |
+| `make test` | Go tests with `CGO_ENABLED=0`. `TestDemo` builds both executables, then seeds and cleans real servers. `go test -short` skips it. |
 | `make check` | `go vet` and a syntax check of the shell scripts. |
 | `make web-check` | Frontend fixtures. It compiles modules into the ignored `web/dist/`. |
 | `make skill-check` | Fixture checks of the project skill scripts. It needs `jq` and no network access. |
