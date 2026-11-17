@@ -15,13 +15,13 @@ type ListedSession struct {
 
 // SessionFilter selects sessions for the sidebar. Sessions form one group for each saved
 // project. Sessions without a saved project form the Standalone group, with the key "".
-// Without Group, the page lists the most recent sessions of each group. With Group, the
-// page lists one window of that group, after Offset sessions.
+// The page lists the most recent sessions of each selected group. With Offset, the page
+// lists one window of one group.
 type SessionFilter struct {
-	Limit    int     // The number of sessions in each group, from 1 to 100. Zero selects 10.
-	Group    *string // A group key. Nil selects all groups.
-	Offset   int     // The sessions of Group to skip. It needs Group.
-	Include  string  // A session ID to list outside its group limit. It needs no Group.
+	Limit    int      // The number of sessions in each group. Zero selects 10.
+	Groups   []string // The group keys to list. Nil selects all groups.
+	Offset   int      // The sessions to skip. It needs exactly one group.
+	Include  string   // A session ID to list outside its group limit. It needs no Offset.
 	Archived bool
 	Query    string
 }
@@ -33,7 +33,8 @@ type SessionPage struct {
 	More     []string
 }
 
-// MaxSessionLimit keeps each reply small. A group with more sessions needs more windows.
+// MaxSessionLimit keeps each reply small. Limit times the number of groups must not be
+// larger. More sessions need more pages.
 const MaxSessionLimit = 100
 
 // ListSessions orders sessions by terminal input, output, and run lifecycle activity.
@@ -45,14 +46,18 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	if filter.Limit == 0 {
 		filter.Limit = 10
 	}
-	grouped := filter.Group != nil
-	if filter.Limit < 1 || filter.Limit > MaxSessionLimit || filter.Offset < 0 || (filter.Offset > 0 && !grouped) ||
-		(grouped && (filter.Include != "" || len(*filter.Group) > 200)) || len(filter.Include) > 200 || len(filter.Query) > 800 {
-		return SessionPage{}, errors.New("invalid session filter: limit must be 1–100, offset needs a group, include needs no group, and query must be at most 800 bytes")
+	valid := filter.Limit >= 1 && filter.Limit*max(1, len(filter.Groups)) <= MaxSessionLimit && filter.Offset >= 0 &&
+		(filter.Offset == 0 || (len(filter.Groups) == 1 && filter.Include == "")) &&
+		len(filter.Include) <= 200 && len(filter.Query) <= 800
+	for _, group := range filter.Groups {
+		valid = valid && len(group) <= 200
 	}
-	group := ""
-	if grouped {
-		group = *filter.Group
+	if !valid {
+		return SessionPage{}, errors.New("invalid session filter: limit times groups must be 1–100, offset needs one group and no include, and query must be at most 800 bytes")
+	}
+	groups, err := json.Marshal(filter.Groups)
+	if err != nil {
+		return SessionPage{}, err
 	}
 	query := strings.TrimSpace(filter.Query)
 	// Each group reads one session more than its limit to report more sessions.
@@ -74,10 +79,10 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
             FROM listed
         )
         SELECT id,title,workspace,created,project,archived,updated,grp,position>?+? FROM ranked
-        WHERE (?=0 OR grp=?) AND position>? AND (position<=?+?+1 OR id=?)
+        WHERE (? OR grp IN (SELECT value FROM json_each(?))) AND position>? AND (position<=?+?+1 OR id=?)
         ORDER BY julianday(updated) DESC,activity DESC,creation DESC`,
 		filter.Archived, query, query, query, query, query, query,
-		filter.Offset, filter.Limit, grouped, group, filter.Offset, filter.Offset, filter.Limit, filter.Include)
+		filter.Offset, filter.Limit, filter.Groups == nil, string(groups), filter.Offset, filter.Offset, filter.Limit, filter.Include)
 	if err != nil {
 		return SessionPage{}, err
 	}

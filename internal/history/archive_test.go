@@ -59,7 +59,7 @@ func TestArchivePersistenceAndSearchAcrossPages(t *testing.T) {
 	if err != nil || len(page.Sessions) != 100 || !slices.Equal(page.More, []string{project.ID}) {
 		t.Fatal(page, err)
 	}
-	page, err = s.ListSessions(SessionFilter{Limit: 100, Group: &project.ID, Offset: 100, Archived: true})
+	page, err = s.ListSessions(SessionFilter{Limit: 100, Groups: []string{project.ID}, Offset: 100, Archived: true})
 	if err != nil || len(page.Sessions) != 6 || page.Sessions[5].ID != first.ID || len(page.More) != 0 {
 		t.Fatal("old drafts are not reachable", page, err)
 	}
@@ -70,7 +70,7 @@ func TestArchivePersistenceAndSearchAcrossPages(t *testing.T) {
 		}
 	}
 	for _, query := range []string{"saved WORK", "/workspace"} {
-		found, err := s.ListSessions(SessionFilter{Limit: 100, Group: &project.ID, Offset: 6, Archived: true, Query: query})
+		found, err := s.ListSessions(SessionFilter{Limit: 100, Groups: []string{project.ID}, Offset: 6, Archived: true, Query: query})
 		if err != nil || len(found.Sessions) != 100 || found.Sessions[99].ID != first.ID {
 			t.Fatal("project search failed", query, len(found.Sessions), err)
 		}
@@ -142,7 +142,7 @@ func TestArchiveRejectsActiveRunsAndLaunchClaims(t *testing.T) {
 		t.Fatal("archived nonexistent session")
 	}
 	standalone := ""
-	for _, filter := range []SessionFilter{{Limit: -1}, {Limit: 101}, {Offset: -1, Group: &standalone}, {Offset: 1}, {Group: &standalone, Include: draft.ID}} {
+	for _, filter := range []SessionFilter{{Limit: -1}, {Limit: 101}, {Offset: -1, Groups: []string{standalone}}, {Offset: 1}, {Groups: []string{standalone}, Offset: 1, Include: draft.ID}, {Limit: 50, Groups: []string{"a", "b", "c"}}} {
 		if _, err = s.ListSessions(filter); err == nil {
 			t.Fatal("accepted invalid filter", filter)
 		}

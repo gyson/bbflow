@@ -462,24 +462,31 @@ async function refreshSessions() {
   $('refresh').disabled = true;
   try {
     const filter = { archived: archivedList, query: $('filter').value };
-    // A group that shows more than one step reads its older sessions in windows. Each reply
-    // thus stays small, also for a group with many sessions.
-    const windows = [...limits()].flatMap(([group, limit]) => {
+    const [nextProjects, detail] = await Promise.all([
+      call(server, { operation: 'project-list' }),
+      selectedId ? call(server, { operation: 'session-config', session: selectedId }) : Promise.resolve(null),
+    ]);
+    if (generation !== refreshGeneration) return;
+    // One reply lists at most sessionWindow sessions. Thus the most recent sessions come in
+    // batches of groups, and a group that shows more than one step reads its older sessions
+    // in windows. The selected session stays in its group, also when it is older.
+    const groups = ['', ...nextProjects.map(project => project.id)];
+    const batch = sessionWindow / sessionStep;
+    const recentReads = [];
+    for (let i = 0; i < groups.length; i += batch) {
+      recentReads.push(call(server, { operation: 'session-list', limit: sessionStep, groups: groups.slice(i, i + batch), ...filter, ...(selectedId ? { session: selectedId } : {}) }));
+    }
+    const windowReads = [...limits()].flatMap(([group, limit]) => {
       const reads = [];
       for (let offset = sessionStep; offset < limit; offset += sessionWindow) {
-        reads.push(call(server!, { operation: 'session-list', group, offset, limit: Math.min(sessionWindow, limit - offset), ...filter })
+        reads.push(call(server!, { operation: 'session-list', groups: [group], offset, limit: Math.min(sessionWindow, limit - offset), ...filter })
           .then(page => ({ group, offset, page })));
       }
       return reads;
     });
-    const [nextProjects, recent, detail, nextWindows] = await Promise.all([
-      call(server, { operation: 'project-list' }),
-      // The selected session stays in the list, also when it is older than the group limit.
-      call(server, { operation: 'session-list', limit: sessionStep, ...filter, ...(selectedId ? { session: selectedId } : {}) }),
-      selectedId ? call(server, { operation: 'session-config', session: selectedId }) : Promise.resolve(null),
-      Promise.all(windows),
-    ]);
+    const [recentPages, nextWindows] = await Promise.all([Promise.all(recentReads), Promise.all(windowReads)]);
     if (generation !== refreshGeneration) return;
+    const recent = { sessions: recentPages.flatMap(page => page.sessions), more: recentPages.flatMap(page => page.more) };
     projects = nextProjects;
     const merged = mergeSessions(projects, recent, nextWindows, sessionStep);
     sessions = merged.sessions;

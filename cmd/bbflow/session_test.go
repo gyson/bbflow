@@ -519,9 +519,29 @@ func TestInterruptedHistoryDoesNotBlockNewSessionsOrReplayInput(t *testing.T) {
 	}
 }
 
+// sessionGroups returns the key of each session list group: each project and Standalone.
+func sessionGroups(t *testing.T, target client.Target) []string {
+	t.Helper()
+	output, err := target.Call(protocol.Request{Operation: "project-list"})
+	var projects []history.Project
+	if err != nil || json.Unmarshal(output, &projects) != nil {
+		t.Fatalf("projects: %s: %v", output, err)
+	}
+	groups := []string{""}
+	for _, project := range projects {
+		groups = append(groups, project.ID)
+	}
+	return groups
+}
+
+// sessionInfos lists the most recent sessions of all groups. A reply holds at most
+// history.MaxSessionLimit sessions, so limit is smaller for many groups.
 func sessionInfos(t *testing.T, limit int) []protocol.SessionInfo {
 	t.Helper()
-	output, err := (client.Target{Dir: os.Getenv("BBFLOW_DIR")}).Call(protocol.Request{Operation: "session-list", Limit: limit})
+	target := client.Target{Dir: os.Getenv("BBFLOW_DIR")}
+	groups := sessionGroups(t, target)
+	limit = min(limit, history.MaxSessionLimit/len(groups))
+	output, err := target.Call(protocol.Request{Operation: "session-list", Limit: limit, Groups: groups})
 	if err != nil {
 		t.Fatalf("list: %s: %v", output, err)
 	}
@@ -687,6 +707,9 @@ func TestRecentSessionList(t *testing.T) {
 	list := func(request protocol.Request) protocol.SessionPage {
 		t.Helper()
 		request.Operation = "session-list"
+		if request.Groups == nil {
+			request.Groups = sessionGroups(t, client.Target{Dir: dataDir})
+		}
 		output, err := (client.Target{Dir: dataDir}).Call(request)
 		var page protocol.SessionPage
 		if err != nil || json.Unmarshal(output, &page) != nil {
@@ -694,13 +717,17 @@ func TestRecentSessionList(t *testing.T) {
 		}
 		return page
 	}
+	// The groups bound the reply, so a request needs them.
+	if output, err := (client.Target{Dir: dataDir}).Call(protocol.Request{Operation: "session-list"}); err == nil {
+		t.Fatalf("list without groups: %s", output)
+	}
 	// Sessions without a saved project form the Standalone group, with the key "".
 	recent := list(protocol.Request{})
 	if len(recent.Sessions) != 10 || recent.Sessions[0].ID != first.ID || !slices.Equal(recent.More, []string{""}) {
 		t.Fatalf("recent list: %+v", recent)
 	}
 	standalone := ""
-	if page := list(protocol.Request{Group: &standalone, Offset: 10, Limit: 10}); len(page.Sessions) != 2 || page.Sessions[1].ID != oldest.ID || len(page.More) != 0 {
+	if page := list(protocol.Request{Groups: []string{standalone}, Offset: 10, Limit: 10}); len(page.Sessions) != 2 || page.Sessions[1].ID != oldest.ID || len(page.More) != 0 {
 		t.Fatalf("group window ignored: %+v", page)
 	}
 	// The selected session stays in the list outside the group limit.

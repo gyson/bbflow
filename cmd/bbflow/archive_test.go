@@ -53,7 +53,7 @@ func TestIndependentDraftsArchiveAndRestoreAcrossRestart(t *testing.T) {
 		t.Fatalf("restart: %s %v", output, err)
 	}
 	var page protocol.SessionPage
-	rpc(protocol.Request{Operation: "session-list", Archived: true, Query: "FIND ME"}, &page)
+	rpc(protocol.Request{Operation: "session-list", Archived: true, Query: "FIND ME", Groups: sessionGroups(t, client.Target{Dir: os.Getenv("BBFLOW_DIR")})}, &page)
 	if found := page.Sessions; len(found) != 1 || found[0].ID != first.ID || !found[0].Archived || found[0].Status != "draft" {
 		t.Fatal("archived draft missing after restart", page)
 	}

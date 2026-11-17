@@ -168,11 +168,11 @@ func TestSessionGroupLimits(t *testing.T) {
 		t.Fatal("group limit", got)
 	}
 	standalone := ""
-	got = listed(SessionFilter{Limit: 3, Group: &standalone, Offset: 2})
+	got = listed(SessionFilter{Limit: 3, Groups: []string{standalone}, Offset: 2})
 	if len(got[kept.ID]) != 0 || !slices.Equal(got[""], ids[""][2:5]) || !slices.Equal(got["more"], []string{""}) {
 		t.Fatal("standalone window", got)
 	}
-	got = listed(SessionFilter{Limit: 3, Group: &kept.ID, Offset: 1})
+	got = listed(SessionFilter{Limit: 3, Groups: []string{kept.ID}, Offset: 1})
 	if !slices.Equal(got[kept.ID], ids[kept.ID][1:]) || len(got[""]) != 0 || len(got["more"]) != 0 {
 		t.Fatal("last project window", got)
 	}
@@ -180,6 +180,13 @@ func TestSessionGroupLimits(t *testing.T) {
 	got = listed(SessionFilter{Limit: 1, Include: oldest})
 	if !slices.Equal(got[kept.ID], []string{ids[kept.ID][0], oldest}) || !slices.Equal(got["more"], []string{"", kept.ID}) {
 		t.Fatal("included session", got)
+	}
+	// A batch of groups includes the session only when its group is in the batch.
+	if got = listed(SessionFilter{Limit: 1, Groups: []string{kept.ID}, Include: oldest}); !slices.Equal(got[kept.ID], []string{ids[kept.ID][0], oldest}) || len(got[""]) != 0 {
+		t.Fatal("included session in its batch", got)
+	}
+	if got = listed(SessionFilter{Limit: 1, Groups: []string{""}, Include: oldest}); len(got[kept.ID]) != 0 || len(got[""]) != 1 {
+		t.Fatal("included session outside its batch", got)
 	}
 	if got = listed(SessionFilter{Limit: 1, Include: oldest, Archived: true}); len(got[kept.ID]) != 0 {
 		t.Fatal("included session outside the archive filter", got)
@@ -206,7 +213,7 @@ func TestSessionGroupWindows(t *testing.T) {
 	standalone := ""
 	var got []string
 	for offset := 0; ; offset += MaxSessionLimit {
-		page, err := store.ListSessions(SessionFilter{Limit: MaxSessionLimit, Group: &standalone, Offset: offset})
+		page, err := store.ListSessions(SessionFilter{Limit: MaxSessionLimit, Groups: []string{standalone}, Offset: offset})
 		if err != nil || len(page.Sessions) > MaxSessionLimit {
 			t.Fatal(offset, len(page.Sessions), err)
 		}

@@ -223,8 +223,9 @@ The sidebar lists saved projects and groups sessions, including drafts, through
 `project-list` and `session-list`. General appears first. Custom projects follow in name
 order. Groups can be collapsed in each view. Each group shows its 10 most recent
 sessions. **Show more** below a group shows 10 more of its sessions. It has no upper
-limit. The list reads the sessions after the first 10 in separate windows of at most 100
-sessions, so each reply stays small. When the group then shows all of its sessions, the
+limit. Each reply holds at most 100 sessions. Thus the list reads the 10 most recent
+sessions of 10 groups in each request. It reads the sessions after the first 10 of a
+group in separate windows of at most 100 sessions. When the group then shows all of its sessions, the
 keyboard focus moves from **Show more** to its last session. The list and
 Archived keep separate group sizes until reload. The selected session stays in its
 group, also when it is older than the other sessions that the group shows.

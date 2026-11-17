@@ -208,9 +208,14 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		result, err := s.stopSide(request.Session, request.Shell)
 		s.reply(conn, result, err)
 	case "session-list":
-		result, err := s.listSessions(history.SessionFilter{
-			Limit: request.Limit, Group: request.Group, Offset: request.Offset, Include: request.Session, Archived: request.Archived, Query: request.Query,
-		})
+		// The groups bound the reply. Without them, a reply could list each project.
+		var result protocol.SessionPage
+		err := errors.New("session-list needs groups")
+		if len(request.Groups) > 0 {
+			result, err = s.listSessions(history.SessionFilter{
+				Limit: request.Limit, Groups: request.Groups, Offset: request.Offset, Include: request.Session, Archived: request.Archived, Query: request.Query,
+			})
+		}
 		s.reply(conn, result, err)
 	case "status-watch":
 		s.watchStatus(ctx, conn)

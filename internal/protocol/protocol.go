@@ -57,7 +57,7 @@ type Request struct {
 	Shell       string             `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
 	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
 	Limit       int                `json:"limit,omitempty"`
-	Group       *string            `json:"group,omitempty"`  // A session list group key. "" is Standalone.
+	Groups      []string           `json:"groups,omitempty"` // Session list group keys. "" is Standalone.
 	Offset      int                `json:"offset,omitempty"` // The sessions of the group to skip.
 	Size        Size               `json:"size,omitempty"`
 	Draft       *Draft             `json:"draft,omitempty"`
@@ -244,8 +244,8 @@ type SessionDetail struct {
 	Status string `json:"status"`
 }
 
-// SessionPage lists the most recent sessions of each project group, or one window of one
-// group. More holds the keys of the groups that have more sessions. "" is Standalone.
+// SessionPage lists the most recent sessions of the requested project groups, or one
+// window of one group. More holds the keys of the groups that have more sessions.
 type SessionPage struct {
 	Sessions []SessionInfo `json:"sessions"`
 	More     []string      `json:"more"`
