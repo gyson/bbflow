@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	sessionColumns = "id,title,workspace,created,COALESCE(project_id,''),archived"
+	sessionColumns = "id,title,auto_title,workspace,created,COALESCE(project_id,''),archived"
 	runColumns     = "id,session_id,status,started,ended,pid,detail"
 	eventColumns   = "seq,session_id,run_id,kind,data,text,created"
 )
@@ -24,11 +24,15 @@ const (
 var ErrNotFound = errors.New("session not found")
 var ErrRunNotFound = errors.New("terminal not found in this session")
 
+// Title is the title that the user set, or empty. AutoTitle is derived: the tool name
+// and folder at launch, then a summary from the title tool. It is empty for a session
+// from before format 10. Use DisplayTitle to show.
 type Session struct {
 	Archived    bool         `json:"archived"`
 	ProjectID   string       `json:"projectId"`
 	ID          string       `json:"id"`
 	Title       string       `json:"title"`
+	AutoTitle   string       `json:"autoTitle"`
 	Workspace   string       `json:"workspace"`
 	Created     string       `json:"created"`
 	Run         *Run         `json:"run,omitempty"`
@@ -97,6 +101,14 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// DisplayTitle returns the user title. Without it, it returns the derived title.
+func (s Session) DisplayTitle() string {
+	if s.Title != "" {
+		return s.Title
+	}
+	return s.AutoTitle
+}
+
 func enableWAL(db *sql.DB) error {
 	// A journal mode change needs an exclusive lock. SQLite can return BUSY without its
 	// busy handler when concurrent openers upgrade locks. After the schema commits, retry
@@ -147,7 +159,7 @@ type scanner interface{ Scan(...any) error }
 
 func scanSession(row scanner) (Session, error) {
 	var s Session
-	err := row.Scan(&s.ID, &s.Title, &s.Workspace, &s.Created, &s.ProjectID, &s.Archived)
+	err := row.Scan(&s.ID, &s.Title, &s.AutoTitle, &s.Workspace, &s.Created, &s.ProjectID, &s.Archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}

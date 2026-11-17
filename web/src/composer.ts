@@ -332,7 +332,8 @@ export class Composer {
       await this.flush();
       if (generation !== this.generation) return;
       this.message('Submitting to terminal…');
-      await peer.writeInput(encodeBytes(encoder.encode(input)));
+      // The input ID names the pending revision. Its receipt can start the title job.
+      await peer.writeInput(encodeBytes(encoder.encode(input)), `draft-${this.state.draft.revision}`);
       if (generation !== this.generation) {
         this.message('Submitted to terminal. Another view changed the draft, so this view did not clear it.', true);
         return;

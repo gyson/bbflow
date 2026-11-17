@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -23,7 +25,14 @@ type Settings struct {
 	Worktree    bool   `json:"worktree"`
 	Base        string `json:"base"`
 	Tools       []Tool `json:"tools"`
+	// TitleTool selects the agent CLI that makes automatic session titles. It is one of
+	// TitleTools. "none" turns automatic titles off.
+	TitleTool string `json:"titleTool"`
 }
+
+// TitleTools lists the values of Settings.TitleTool. The server owns the command of each
+// agent CLI.
+var TitleTools = []string{"none", "claude", "codex", "code-puppy"}
 
 // Preparation stores a snapshot of the selected preset. Preset changes never rewrite a
 // prepared or launched session. The server owns this state.
@@ -64,6 +73,9 @@ func (s *Store) Settings() (Settings, error) {
 		err = json.Unmarshal([]byte(data), &settings)
 	}
 	settings.Revision = revision
+	if settings.TitleTool == "" {
+		settings.TitleTool = "none"
+	}
 	return settings, err
 }
 
@@ -96,6 +108,12 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 		if err = ValidateCommand(tool.Command); err != nil {
 			return settings, err
 		}
+	}
+	if settings.TitleTool == "" {
+		settings.TitleTool = "none"
+	}
+	if !slices.Contains(TitleTools, settings.TitleTool) {
+		return settings, fmt.Errorf("title tool must be one of %s", strings.Join(TitleTools, ", "))
 	}
 	if !seen[settings.DefaultTool] {
 		return settings, errors.New("default tool does not exist")
@@ -238,9 +256,16 @@ func (s *Store) SetPreparationState(id string, revision int64, from, to string) 
 	return revisionChanged(result, err)
 }
 
-func (s *Store) SetLaunchWorkspace(id, title, workspace string) error {
-	_, err := s.db.Exec("UPDATE sessions SET title=?,workspace=? WHERE id=?", title, workspace, id)
+// SetLaunchWorkspace records the launch workspace and the default derived title. Each
+// launch sets it, also under a user title.
+func (s *Store) SetLaunchWorkspace(id, autoTitle, workspace string) error {
+	_, err := s.db.Exec("UPDATE sessions SET auto_title=?,workspace=? WHERE id=?", autoTitle, workspace, id)
 	return err
+}
+
+// SetAutoTitle replaces the derived title. It never changes the user title.
+func (s *Store) SetAutoTitle(id, title string) error {
+	return changedRow(s.db.Exec("UPDATE sessions SET auto_title=? WHERE id=?", title, id))
 }
 
 func (s *Store) SaveWorktree(id string, w Worktree) error {

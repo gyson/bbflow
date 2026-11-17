@@ -1,4 +1,4 @@
-import { call, encodeBytes, errorMessage, VERSION } from './protocol.js';
+import { call, encodeBytes, errorMessage, sessionTitle, VERSION } from './protocol.js';
 import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
 import { HistorySearch } from './history-search.js';
@@ -103,6 +103,7 @@ interface SessionView {
   projectId?: string;
   id?: string;
   title: string;
+  autoTitle?: string;
   workspace: string;
   status: string;
 }
@@ -118,6 +119,8 @@ let fit: FitAddon | null = null;
 let sessions: SessionInfo[] = [];
 // The status of each session that has a live terminal, from the status watch.
 let liveStatuses: Record<string, string> = {};
+// The count of title changes from the status watch.
+let titleRevision = 0;
 let projects: Project[] = [];
 let editingProject: Project | null = null;
 const collapsedProjects = new Set<string>();
@@ -291,9 +294,9 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
   const button = document.createElement('button');
   button.className = 'session-item' + (selected?.id === session.id ? ' selected' : '');
   button.setAttribute('aria-current', selected?.id === session.id ? 'true' : 'false');
-  button.title = `${session.title}\n${session.workspace}\n${session.id}\n${session.updated}`;
+  button.title = `${sessionTitle(session)}\n${session.workspace}\n${session.id}\n${session.updated}`;
   const title = document.createElement('strong');
-  title.textContent = session.title || (session.status === 'draft' ? 'Untitled draft' : 'Untitled session');
+  title.textContent = sessionTitle(session) || (session.status === 'draft' ? 'Untitled draft' : 'Untitled session');
   const status = document.createElement('span');
   status.className = 'run-state';
   const dot = document.createElement('span'), text = document.createTextNode('');
@@ -444,8 +447,11 @@ function watchStatuses(info: ServerInfo) {
       const changed = terminalsChanged(liveStatuses, next);
       liveStatuses = next;
       renderSessions();
-      // A terminal started or ended. Read the stored session data again.
-      if (changed && !busy) void refreshSessions();
+      // A terminal started or ended, or a session title changed. Read the stored session
+      // data again.
+      const titles = message.revision ?? 0;
+      if ((changed || titles !== titleRevision) && !busy) void refreshSessions();
+      titleRevision = titles;
     },
     // Without the watch, the list refresh supplies each status.
     failed() {
@@ -499,7 +505,7 @@ async function refreshSessions() {
         selected = withDetail(selected, detail);
         if (connection?.ready) showStatus();
       }
-      heading(selected.title || 'Untitled session');
+      heading(sessionTitle(selected) || 'Untitled session');
       showWorkspace(selected.workspace, selected.worktree);
     }
     renderSessions();
@@ -619,7 +625,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   $('session-view').hidden = false;
   const preparing = session.status === 'draft' && !start;
   workspacePane.select(preparing ? '' : session.id ?? '');
-  heading(session.title || (preparing ? 'Untitled draft' : 'Untitled session'));
+  heading(sessionTitle(session) || (preparing ? 'Untitled draft' : 'Untitled session'));
   showWorkspace(session.workspace, session.worktree);
   $('status').hidden = false;
   $('status').textContent = 'Connecting';
@@ -902,7 +908,9 @@ async function initialize() {
     }
   });
   $('rename-session').onclick = () => {
+    // An empty title removes the user title. The session then shows its derived title.
     $('rename-name').value = selected?.title ?? '';
+    $('rename-name').placeholder = selected?.autoTitle || 'Untitled session';
     $('rename-error').hidden = true;
     $('rename-dialog').showModal();
   };
@@ -928,7 +936,7 @@ async function initialize() {
     });
   };
   $('history-open').onclick = () => historySearch.open({
-    ...(selected?.id ? { session: selected.id, title: selected.title } : {}),
+    ...(selected?.id ? { session: selected.id, title: sessionTitle(selected) } : {}),
     ...(selected?.projectId ? { project: selected.projectId, projectName: projects.find(project => project.id === selected?.projectId)?.name || 'This project' } : {}),
   });
   window.addEventListener('keydown', event => {

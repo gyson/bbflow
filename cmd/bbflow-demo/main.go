@@ -7,6 +7,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -251,7 +252,7 @@ func (d *demo) sessions(port int) {
 		if session.Archived {
 			state = "archived"
 		}
-		fmt.Printf("  %-9s%-32s%s/sessions/%s\n", state, session.Title, address, url.PathEscape(session.ID))
+		fmt.Printf("  %-9s%-36s%s/sessions/%s\n", state, cmp.Or(session.Title, session.AutoTitle), address, url.PathEscape(session.ID))
 	}
 }
 

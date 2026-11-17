@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeToolEdit, sameSettings } from './dist/settings-model.js';
+import { mergeToolEdit, sameSettings, titleControls } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -26,4 +26,17 @@ test('adding the same tool twice keeps one copy', () => {
   const tools = mergeToolEdit([other], agent);
   assert.deepEqual(tools, [other, agent]);
   assert.deepEqual(mergeToolEdit(tools, agent), tools);
+});
+
+test('a running title test keeps Test and the tool list disabled', () => {
+  const tools = [{ id: 'claude', name: 'Claude', command: 'claude -p' }];
+  assert.deepEqual(titleControls(tools, 'claude', false), { command: 'claude -p', test: true, select: true });
+  // A save of another setting renders again during the test. Test stays disabled.
+  assert.deepEqual(titleControls(tools, 'claude', true), { command: 'claude -p', test: false, select: false });
+  assert.deepEqual(titleControls(tools, 'none', false), { command: '', test: false, select: true });
+});
+
+test('a title tool change needs a save', () => {
+  const titled = { ...settings, titleTool: 'none' };
+  assert.ok(!sameSettings(titled, { ...titled, titleTool: 'codex' }));
 });

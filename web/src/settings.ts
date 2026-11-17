@@ -1,10 +1,13 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
-import type { ServerInfo, Settings, Tool } from './protocol.js';
-import { mergeToolEdit, sameSettings, sameTools } from './settings-model.js';
+import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
+import { mergeToolEdit, sameSettings, sameTools, titleControls } from './settings-model.js';
 
-type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base'>;
+type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool'>;
 type SettingsChange = (settings: Settings) => Settings;
+
+// Test sends this message to the title tool in place of a real first message.
+const titleSample = 'The login page redirects to a blank page after sign-in. Find the cause and fix it.';
 
 function toolEditor(prefix: string) {
   return {
@@ -32,10 +35,24 @@ export class SettingsView {
   private readonly addTool = toolEditor('add-tool');
   private readonly editTool = toolEditor('edit-tool');
   private readonly toolError = element('tool-error', HTMLElement);
+  private readonly titleTool = element('title-tool', HTMLSelectElement);
+  private readonly titleCommand = element('title-tool-command', HTMLElement);
+  private readonly titleTest = element('title-test', HTMLButtonElement);
+  private readonly testResult = element('title-test-result', HTMLElement);
+  private readonly testSample = element('title-test-sample', HTMLElement);
+  private readonly testOutcome = element('title-test-outcome', HTMLElement);
+  private readonly testDetail = element('title-test-detail', HTMLElement);
 
   private saved: Settings | null = null;
   private defaults: Partial<Defaults> = {};
   private renderedBase = '';
+  // The title tools and their commands come from the server.
+  private titleTools: TitleTool[] = [];
+  // The number of the latest title test. A result shows only for the latest test.
+  private titleRun = 0;
+  private testing = false;
+  // The tool of the shown test result. A result shows only under this tool.
+  private testedTool = '';
   private editing: Tool | null = null;
   private newToolId = '';
   private toolBusy = false;
@@ -56,6 +73,13 @@ export class SettingsView {
     this.addTool.cancel.onclick = () => this.resetAddTool();
     this.editTool.cancel.onclick = () => this.closeEditor();
     this.addTool.form.oninput = this.editTool.form.oninput = () => this.showStatus();
+    this.titleTool.onchange = () => {
+      // A test result applies only to the tool that it tested.
+      this.testResult.hidden = true;
+      this.showTitleTool();
+      this.saveDefault('titleTool', this.titleTool.value);
+    };
+    this.titleTest.onclick = () => void this.testTitleTool();
     this.addTool.form.onsubmit = event => { event.preventDefault(); this.saveTool(this.addTool, null); };
     this.editTool.form.onsubmit = event => {
       event.preventDefault();
@@ -67,6 +91,10 @@ export class SettingsView {
   async open(): Promise<void> {
     const server = this.server();
     if (!server) return;
+    if (!this.titleTools.length) {
+      this.titleTools = await call(server, { operation: 'title-tools' });
+      this.titleTool.replaceChildren(new Option('None', 'none'), ...this.titleTools.map(tool => new Option(tool.name, tool.id)));
+    }
     if (!this.pending() && !this.editing) {
       const settings = await call(server, { operation: 'settings-get' });
       if (!this.pending() && !this.editing) {
@@ -105,6 +133,8 @@ export class SettingsView {
       this.renderedBase = this.defaults.base ?? saved.base;
       this.base.value = this.renderedBase;
     }
+    this.titleTool.value = this.defaults.titleTool ?? saved.titleTool ?? 'none';
+    this.showTitleTool();
     if (!this.renderedTools || !sameTools(saved.tools, this.renderedTools)) {
       this.tool.replaceChildren(new Option('Shell', ''), ...saved.tools.map(tool => new Option(tool.name, tool.id)));
       this.renderTools();
@@ -272,6 +302,54 @@ export class SettingsView {
     const tool = tools.find(tool => tool.id === toolId) ?? tools[Math.min(index, tools.length - 1)];
     const edit = tool ? document.getElementById(`tool-edit-${tool.id}`) : null;
     (edit ?? this.addTool.name).focus();
+  }
+
+  // Show the command of the selected title tool. None has no command and no test. A
+  // running test keeps Test and the list disabled, also across a render.
+  private showTitleTool(): void {
+    // Another view or a reload can change the saved tool. Hide a result of another tool.
+    if (this.titleTool.value !== this.testedTool) this.testResult.hidden = true;
+    const controls = titleControls(this.titleTools, this.titleTool.value, this.testing);
+    this.titleCommand.textContent = controls.command;
+    this.titleCommand.parentElement!.hidden = !controls.command;
+    this.titleTest.disabled = !controls.test;
+    this.titleTool.disabled = !controls.select;
+  }
+
+  // Show the state of a test: the sample message, then the outcome, then a note. state is
+  // running, passed, or failed.
+  private showTest(state: 'running' | 'passed' | 'failed', outcome: string, detail = ''): void {
+    this.testResult.className = state;
+    this.testSample.textContent = `Sample message: ${titleSample}`;
+    this.testOutcome.textContent = outcome;
+    this.testDetail.textContent = detail;
+    this.testDetail.hidden = !detail;
+    this.testResult.hidden = false;
+  }
+
+  // Run the selected title tool once with a sample message. The test saves nothing.
+  private async testTitleTool(): Promise<void> {
+    const server = this.server();
+    const tool = this.titleTool.value;
+    if (!server || tool === 'none' || this.testing) return;
+    const run = ++this.titleRun;
+    this.testing = true;
+    this.testedTool = tool;
+    this.showTitleTool();
+    this.showTest('running', 'Testing the title tool…');
+    try {
+      const result = await call(server, { operation: 'title-test', settings: { titleTool: tool }, text: titleSample });
+      if (run === this.titleRun && tool === this.titleTool.value) this.showTest('passed', `✓ Test passed. The tool made the title “${result.title}” from the sample message.`);
+    } catch (error) {
+      if (run === this.titleRun && tool === this.titleTool.value) this.showTest('failed', `✕ Test failed: ${errorMessage(error)}`,
+        'Sessions keep their current title when the tool fails.');
+    } finally {
+      if (run === this.titleRun) {
+        this.testing = false;
+        this.showTitleTool();
+        this.titleTest.focus({ preventScroll: true });
+      }
+    }
   }
 
   private saveBase(): void {

@@ -59,8 +59,12 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	cli("settings", "set", "worktree", "true")
 	cli("settings", "set", "base", "main")
 	cli("settings", "set", "default-tool", "Other")
+	if saved().TitleTool != "none" {
+		t.Fatal("automatic titles are on by default")
+	}
+	cli("settings", "set", "title-tool", "code-puppy")
 	settings = saved()
-	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != settings.Tools[1].ID {
+	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != settings.Tools[1].ID || settings.TitleTool != "code-puppy" {
 		t.Fatalf("settings after set: %+v", settings)
 	}
 
@@ -69,6 +73,7 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	fails("tool command is required", "tool", "add", "Other", " ")
 	fails("worktree must be true or false", "settings", "set", "worktree", "maybe")
 	fails("unknown settings key", "settings", "set", "theme", "dark")
+	fails("title tool must be one of none, claude, codex, code-puppy", "settings", "set", "title-tool", "claude -p")
 	fails(`tool "Absent" does not exist`, "tool", "remove", "Absent")
 	fails(`tool "Absent" does not exist`, "settings", "set", "default-tool", "Absent")
 	if after := saved(); after.Revision != settings.Revision {

@@ -99,9 +99,13 @@ func (s *Store) RemoveProject(id string) error {
 	return changedRow(s.db.Exec("DELETE FROM projects WHERE id=?", id))
 }
 
+// RenameSession sets the user title. An empty title removes it, and the session shows
+// its derived title again.
 func (s *Store) RenameSession(id, title string) error {
-	title, err := validName(title)
-	if err != nil {
+	var err error
+	if strings.TrimSpace(title) == "" {
+		title = ""
+	} else if title, err = validName(title); err != nil {
 		return err
 	}
 	return changedRow(s.db.Exec("UPDATE sessions SET title=? WHERE id=?", title, id))

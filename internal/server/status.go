@@ -94,7 +94,7 @@ func (s *Server) liveStatuses(now time.Time) map[string]string {
 }
 
 // watchStatus sends the status of each live terminal, then all of them again after each
-// change. The statuses come from memory, not from the archive. A session whose terminal
+// change. It also sends them after a session title changes. The statuses come from memory, not from the archive. A session whose terminal
 // ended is absent. The view must send ping at least every 30 seconds. Closing the view
 // only removes the watch.
 func (s *Server) watchStatus(ctx context.Context, conn *protocol.Conn) {
@@ -113,13 +113,14 @@ func (s *Server) watchStatus(ctx context.Context, conn *protocol.Conn) {
 	ticker := time.NewTicker(watchInterval)
 	defer ticker.Stop()
 	var sent map[string]string
+	var titles int64
 	for {
-		next := s.liveStatuses(time.Now())
-		if sent == nil || !maps.Equal(sent, next) {
-			if conn.Send(protocol.Message{Type: "statuses", Statuses: next}) != nil {
+		next, revision := s.liveStatuses(time.Now()), s.titles.Load()
+		if sent == nil || !maps.Equal(sent, next) || revision != titles {
+			if conn.Send(protocol.Message{Type: "statuses", Statuses: next, Revision: revision}) != nil {
 				return
 			}
-			sent = next
+			sent, titles = next, revision
 		}
 		select {
 		case <-ctx.Done():

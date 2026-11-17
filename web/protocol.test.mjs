@@ -177,3 +177,35 @@ test('canceling a history RPC closes its socket and rejects the pending request'
     globalThis.location = originalLocation;
   }
 });
+
+test('a title test waits longer than the server limit, and other requests keep their limit', t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const errors = { title: [], list: [] };
+  const title = new Peer(server, { operation: 'title-test', settings: { titleTool: 'claude' }, text: 'Fix it' }, { error: e => errors.title.push(e) }, Socket, 'localhost:1234');
+  const list = new Peer(server, { operation: 'session-list', groups: [''] }, { error: e => errors.list.push(e) }, Socket, 'localhost:1234');
+  title.socket.receive({ type: 'server', server });
+  list.socket.receive({ type: 'server', server });
+  t.mock.timers.tick(13000);
+  assert.equal(errors.list.length, 1);
+  assert.match(errors.list[0].message, /timed out/);
+  // The server stops a title tool after 90 seconds and then replies.
+  t.mock.timers.tick(80000);
+  assert.equal(errors.title.length, 0);
+  let result;
+  title.handlers.message = message => { result = message.result; };
+  title.socket.receive({ type: 'result', result: { title: 'Fix it' } });
+  assert.deepEqual(result, { title: 'Fix it' });
+  assert.equal(errors.title.length, 0);
+});
+
+test('a title test without a reply times out after its limit', t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const errors = [];
+  const peer = new Peer(server, { operation: 'title-test', settings: { titleTool: 'codex' }, text: 'Fix it' }, { error: e => errors.push(e) }, Socket, 'localhost:1234');
+  peer.socket.receive({ type: 'server', server });
+  t.mock.timers.tick(99000);
+  assert.equal(errors.length, 0);
+  t.mock.timers.tick(2000);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /timed out/);
+});

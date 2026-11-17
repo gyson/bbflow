@@ -1,4 +1,4 @@
-import type { Settings, Tool } from './protocol.js';
+import type { Settings, TitleTool, Tool } from './protocol.js';
 
 // A tool edit applies only the fields that the user changed.
 export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Tool[] {
@@ -18,7 +18,8 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
 // The revision tracks saves. The other fields determine if a save is necessary.
 export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&
-    a.worktree === b.worktree && a.base === b.base && sameTools(a.tools, b.tools);
+    a.worktree === b.worktree && a.base === b.base && a.titleTool === b.titleTool &&
+    sameTools(a.tools, b.tools);
 }
 
 export function sameTools(a: Tool[], b: Tool[]): boolean {
@@ -26,4 +27,11 @@ export function sameTools(a: Tool[], b: Tool[]): boolean {
     const other = b[index]!;
     return tool.id === other.id && tool.name === other.name && tool.command === other.command;
   });
+}
+
+// The state of the title tool controls. Test needs a tool and no running test. A save of
+// another setting does not change this state.
+export function titleControls(tools: TitleTool[], selected: string, testing: boolean): { command: string; test: boolean; select: boolean } {
+  const tool = tools.find(tool => tool.id === selected);
+  return { command: tool?.command ?? '', test: !!tool && !testing, select: !testing };
 }

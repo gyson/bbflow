@@ -86,6 +86,11 @@ The simulated data has these parts:
 | Tool **Claude** | The real `claude` CLI of the user. |
 | Tool **Codex** | The real `codex --no-alt-screen` CLI of the user. |
 | Setting **Use worktree** | On. New drafts in Git folders select a managed worktree. The draft **Plan release notes** also has it. |
+| Setting **Title tool** | None. Each title tool runs a real agent CLI, which calls a model. |
+
+The seed never selects a title tool. To try automatic titles, select one in Settings of
+the demo. The tool then uses the installation, authentication, and account of the user.
+Do not select one unless the user asks.
 
 The seed never starts Claude or Codex. A Claude or Codex session uses the installation,
 authentication, and account of the user. It calls the model and uses the network. Do

@@ -168,9 +168,16 @@ func TestPreparedSessionDefaultsAndWorktreeLifecycle(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(source, "untracked.txt"), []byte("local file"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	// A user title does not stop the launch from recording the derived title.
+	if session, err = s.store.SavePreparation(session.ID, "Named by user", *session.Preparation); err != nil {
+		t.Fatal(err)
+	}
 	launched, run, err := s.launchPrepared(ctx, session.ID, session.Preparation.Revision, protocol.Size{Rows: 24, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if stored, err := s.store.Session(session.ID); err != nil || stored.Title != "Named by user" || stored.AutoTitle != "Fixture model · sub" || run.Title != "Named by user" {
+		t.Fatalf("launch titles: %+v, run title %q, %v", stored, run.Title, err)
 	}
 	w := launched.Worktree
 	if w == nil || !regexp.MustCompile(`/worktrees/\d{8}-\d{6}-[a-f0-9]{8}$`).MatchString(w.Path) || run.Workspace != filepath.Join(w.Path, "sub") || run.Command != "printf 'hello\\n'" {

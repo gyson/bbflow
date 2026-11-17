@@ -34,8 +34,11 @@ type runningSession struct {
 	ended     bool
 	exit      protocol.Message
 	activity  activity
-	side      bool   // A side terminal has no run, no recording, and no session status.
-	shell     string // Identifies the shell of a side terminal.
+	side      bool // A side terminal has no run, no recording, and no session status.
+	// received runs after the PTY accepts an input that has an ID. It gets the input
+	// bytes. It can be nil.
+	received func(id string, data []byte)
+	shell    string // Identifies the shell of a side terminal.
 }
 
 type attachment struct {
@@ -123,7 +126,13 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 	if message.Type != "resize" || r.sizeOwner == a {
 		control := agent.Control{Message: message}
 		if message.Type == "input" && message.ID != "" {
-			control.Ack = func(err error) { a.inputAck(message.ID, err) }
+			received := r.received
+			control.Ack = func(err error) {
+				a.inputAck(message.ID, err)
+				if err == nil && received != nil {
+					received(message.ID, message.Data)
+				}
+			}
 		}
 		controls = append(controls, control)
 	}
@@ -185,6 +194,7 @@ func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, ses
 	s.mu.Lock()
 	runContext, cancel := context.WithCancel(ctx)
 	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool, activity: activity{output: time.Now()}}
+	r.received = func(id string, data []byte) { s.titleAfterReceipt(session.ID, id, data) }
 	s.sessions[session.ID] = r
 	s.mu.Unlock()
 	launch := func() {
@@ -468,7 +478,7 @@ func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPag
 	result := protocol.SessionPage{Sessions: make([]protocol.SessionInfo, 0, len(page.Sessions)), More: page.More}
 	now := time.Now()
 	for _, session := range page.Sessions {
-		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Archived: session.Archived, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: s.sessionStatus(session.Session, now), Preparation: session.Preparation, Worktree: session.Worktree}
+		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Archived: session.Archived, Title: session.Title, AutoTitle: session.AutoTitle, Workspace: session.Workspace, Updated: session.Updated, Status: s.sessionStatus(session.Session, now), Preparation: session.Preparation, Worktree: session.Worktree}
 		if r := s.running(session.ID); r != nil {
 			r.mu.Lock()
 			info.Viewers = len(r.clients)

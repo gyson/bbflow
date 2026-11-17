@@ -129,6 +129,55 @@ func (s *Store) SentDrafts(sid string, before int64, limit int) (sent []SentDraf
 	return sent, false, rows.Err()
 }
 
+// EditorSend is the text and the attachment IDs of a pending draft revision. The message
+// editor saves a pending revision before it writes a send to the terminal.
+type EditorSend struct {
+	Text        string  `json:"text"`
+	Attachments []int64 `json:"attachments"`
+	Pending     bool    `json:"pending"`
+}
+
+// PendingSend returns the send that a pending draft revision of the session records. ok
+// is false when revision is not a pending draft revision of the session.
+func (s *Store) PendingSend(sid string, revision int64) (send EditorSend, ok bool, err error) {
+	var data []byte
+	err = s.db.QueryRow("SELECT data FROM events WHERE session_id=? AND seq=? AND kind='draft'", sid, revision).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return send, false, nil
+	}
+	if err != nil {
+		return send, false, err
+	}
+	if err = json.Unmarshal(data, &send); err != nil {
+		return send, false, err
+	}
+	return send, send.Pending, nil
+}
+
+// ClaimTitle records the first verified send with text of a session as a title event.
+// The data holds the draft revision of the send, the selected title tool, and
+// requested. requested is false when the send starts no title request, for example
+// when the tool is none or the session has a user title. The event has no run. claimed
+// is false when the session already has a title event, also from before a restart. The
+// check and the insert are one statement.
+func (s *Store) ClaimTitle(sid string, revision int64, tool string, requested bool) (claimed bool, err error) {
+	data, err := json.Marshal(struct {
+		Revision  int64  `json:"revision"`
+		Tool      string `json:"tool"`
+		Requested bool   `json:"requested"`
+	}{revision, tool, requested})
+	if err != nil {
+		return false, err
+	}
+	result, err := s.db.Exec(`INSERT INTO events(session_id,run_id,kind,data,text,created)
+        SELECT ?,'','title',?,'',? WHERE NOT EXISTS (SELECT 1 FROM events WHERE session_id=? AND kind='title')`, sid, data, Now(), sid)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
 // Verify attachment scope on every read, including draft references.
 func (s *Store) Attachment(sid string, seq int64) (Event, error) {
 	var event Event

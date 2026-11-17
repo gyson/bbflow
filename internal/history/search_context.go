@@ -37,7 +37,7 @@ func (r *searchReader) run(sid, rid string) (*searchRunInfo, error) {
 	if run := runs[rid]; run != nil {
 		return run, nil
 	}
-	stmt, err := searchStatement(r.conn, `SELECT s.title,s.workspace,COALESCE(p.data,'{}'),
+	stmt, err := searchStatement(r.conn, `SELECT COALESCE(NULLIF(s.title,''),s.auto_title),s.workspace,COALESCE(p.data,'{}'),
         (SELECT count(*) FROM runs prior WHERE prior.session_id=r.session_id AND prior.rowid<=r.rowid)
         FROM runs r JOIN sessions s ON s.id=r.session_id
         LEFT JOIN preparations p ON p.session_id=s.id WHERE r.id=? AND r.session_id=?`, rid, sid)

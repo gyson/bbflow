@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/26';
+export const VERSION = 'bbflow/27';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -16,7 +16,9 @@ export interface ServerInfo {
 export interface Project { id: string; name: string; workspace: string; created: string }
 
 export interface Tool { id: string; name: string; command: string }
-export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[] }
+export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[]; titleTool: string }
+// The server owns the command of each title tool. Settings.titleTool is none or a tool ID.
+export interface TitleTool { id: string; name: string; command: string }
 export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }
 export interface Worktree { path: string; repository: string; base: string; commit: string; branch: string; state: string }
 export interface Run { id: string; status: string }
@@ -25,7 +27,8 @@ export interface Run { id: string; status: string }
 export interface TerminalInfo { number: number; run: string; tool: string; status: string; started: string; ended: string }
 // status is the session status that the server derives. run.status is the stored status
 // of the latest run.
-export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; status: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
+// title is the title that the user set, or empty. autoTitle is derived by the server.
+export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; autoTitle?: string; workspace: string; status: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
 // bbflow writes the handoff folder before it starts a new terminal in an ended session.
 // available means that the folder has a README, so the prompt can be used now.
 export interface Handoff { folder: string; prompt: string; available: boolean }
@@ -41,6 +44,7 @@ export interface SessionInfo {
   projectId: string;
   id: string;
   title: string;
+  autoTitle: string;
   workspace: string;
   updated: string;
   status: string;
@@ -108,6 +112,8 @@ type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: st
 type RenameRequest = { operation: 'project-rename'; project: string; name: string } | { operation: 'session-rename'; session: string; name: string };
 type ProjectRemoveRequest = { operation: 'project-remove'; project: string };
 type SettingsRequest = { operation: 'settings-get' } | { operation: 'settings-save'; settings: Settings };
+type TitleTestRequest = { operation: 'title-test'; settings: Pick<Settings, 'titleTool'>; text: string };
+type TitleToolsRequest = { operation: 'title-tools' };
 type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
 type PrepareRequest = { operation: 'project-draft'; project: string };
 type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'worktree' | 'base' | 'branch'>; name?: string };
@@ -116,7 +122,7 @@ type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
 // shell stops only that shell. Without shell, the request stops the live shell.
 type StopSideRequest = { operation: 'side-terminal-stop'; session: string; shell?: string };
-type RPCRequest = DiffRPC | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = DiffRPC | TitleTestRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -147,7 +153,8 @@ export type ServerMessage =
   | { type: 'history-end' }
   | { type: 'draft'; session: string; composer: ComposerState }
   // A status watch gets running or idle for each session that has a live terminal.
-  | { type: 'statuses'; statuses?: Record<string, string> }
+  // revision counts session title changes since the server started.
+  | { type: 'statuses'; statuses?: Record<string, string>; revision?: number }
   | { type: 'result'; result: unknown }
   | { type: 'error'; error: string };
 
@@ -165,6 +172,11 @@ interface Handlers {
 
 type Socket = Pick<WebSocket, 'readyState' | 'bufferedAmount' | 'onmessage' | 'onerror' | 'onclose' | 'send' | 'close'>;
 type SocketConstructor = new (url: string) => Socket;
+
+// Show the title that the user set. Without it, show the derived title.
+export function sessionTitle(session: { title: string; autoTitle?: string }): string {
+  return session.title || session.autoTitle || '';
+}
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -189,6 +201,12 @@ export class ConnectionError extends Error {
   constructor(message: string, readonly retryable = false, readonly fromServer = false) { super(message); }
 }
 
+// A title test runs an agent CLI. The server stops it after 90 seconds, so the browser
+// waits a little longer for the reply. See titleTimeout in internal/server/titles.go.
+export const titleTestLimit = 100000;
+// The time that the browser waits for the reply of a request.
+const responseLimit = (request: Request) => request.operation === 'title-test' ? titleTestLimit : 12000;
+
 export class Peer {
   readonly socket: Socket;
   active = false;
@@ -196,6 +214,8 @@ export class Peer {
   private heartbeat: ReturnType<typeof setInterval>;
   private receivedAt = Date.now();
   private greeted = false;
+  // True after the first message that follows the greeting.
+  private replied = false;
   private timer: ReturnType<typeof setTimeout>;
   private input: { id: string; settle: (error?: string) => void } | undefined;
 
@@ -207,10 +227,12 @@ export class Peer {
     host = location.host,
   ) {
     this.socket = new Socket(`ws://${host}/ws`);
-    this.timer = setTimeout(() => this.fail('Server response timed out.', true), 12000);
+    const limit = responseLimit(request);
+    this.timer = setTimeout(() => this.fail('Server response timed out.', true), limit);
     this.heartbeat = setInterval(() => {
       if (this.finished) return;
-      if (Date.now() - this.receivedAt > 20000) this.fail('Connection timed out. Input was not resent.', true);
+      // The server sends nothing until the first reply. Do not end the wait for it early.
+      if (Date.now() - this.receivedAt > (this.replied ? 20000 : Math.max(20000, limit))) this.fail('Connection timed out. Input was not resent.', true);
       else if (this.greeted && this.active) this.send({ type: 'ping' });
     }, 5000);
     this.socket.onmessage = event => {
@@ -230,6 +252,7 @@ export class Peer {
           return;
         }
         clearTimeout(this.timer);
+        this.replied = true;
         if (message.type === 'error') {
           this.fail(message.error || 'Request failed.', false, true);
           return;
@@ -291,7 +314,7 @@ export class Peer {
 
   // This receipt confirms a PTY write. It does not confirm application acceptance or
   // completion. Never retry input. A successful write can have a lost receipt.
-  writeInput(data: string, id = crypto.randomUUID()): Promise<void> {
+  writeInput(data: string, id: string = crypto.randomUUID()): Promise<void> {
     if (this.input) return Promise.reject(new Error('A submission is already in progress.'));
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => this.input?.settle('Input delivery was not confirmed. Check the terminal before submitting again.'), 8000);
@@ -317,6 +340,8 @@ export class Peer {
 }
 
 export function call(server: ServerInfo, request: SettingsRequest): Promise<Settings>;
+export function call(server: ServerInfo, request: TitleTestRequest, signal?: AbortSignal): Promise<{ title: string }>;
+export function call(server: ServerInfo, request: TitleToolsRequest): Promise<TitleTool[]>;
 export function call(server: ServerInfo, request: InspectRequest): Promise<RepositoryInfo>;
 export function call(server: ServerInfo, request: PrepareRequest | ConfigRequest): Promise<PreparedSession>;
 export function call(server: ServerInfo, request: RemoveWorktreeRequest): Promise<{ removed: boolean }>;

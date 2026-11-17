@@ -121,6 +121,9 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 			if _, exists := original["appearance"]; !exists {
 				original["appearance"] = "system"
 			}
+			if _, exists := original["titleTool"]; !exists {
+				original["titleTool"] = "none"
+			}
 			for _, tool := range original["tools"].([]any) {
 				delete(tool.(map[string]any), "continueCommand")
 			}
@@ -136,7 +139,7 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -152,15 +155,18 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			}
 			settings, err := store.Settings()
 			appearance := "system"
-			if version == 8 {
+			if version >= 8 {
 				appearance = "dark"
 			}
-			if err != nil || settings.Appearance != appearance || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}})) {
+			if err != nil || settings.Appearance != appearance || settings.TitleTool != "none" || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}, TitleTool: "none"})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
 			if err != nil || session.Workspace != "/missing/workspace" || session.Run.Status != "exited" {
 				t.Fatal("cannot read old session", session, err)
+			}
+			if session.Title != "Saved café" || session.AutoTitle != "" {
+				t.Fatal("changed the title of an old session", session)
 			}
 			if version == 3 && session.ProjectID != "" {
 				t.Fatal("assigned an invented project", session)
@@ -255,6 +261,26 @@ func TestToolSettingsUpgradeRollsBack(t *testing.T) {
 	assertSnapshot(t, rawDatabase(t, path), before, true)
 }
 
+// Migration 10 adds a column and changes the settings. A failed settings update must
+// also remove the column and keep format 9.
+func TestTitleUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 9)
+	execSQL(t, db, "CREATE TRIGGER reject_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted blocked title settings update")
+	} else if !strings.Contains(err.Error(), "apply history migration 10") {
+		t.Fatal(err)
+	}
+	db = rawDatabase(t, path)
+	assertSnapshot(t, db, before, true)
+	if got := sqlRows(t, db, "SELECT count(*) FROM pragma_table_info('sessions') WHERE name='auto_title'"); got[0][0] != int64(0) {
+		t.Fatal("the auto_title column survived the rollback")
+	}
+}
+
 func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 	for _, test := range []struct {
 		name, schema, message string
@@ -284,7 +310,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6, 7, 8} {
+	for _, version := range []int{3, 6, 7, 8, 9} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }
