@@ -861,13 +861,16 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   opens the diff of that file in the Changes view. **Copy path** copies the path
   relative to the workspace in both views.
 - For a Markdown file (`.md` or `.markdown`), **Preview** shows to the right of the
-  path in both views. It opens a dialog with the file path, a close button (✕), and the
-  rendered current text. The button is not shown for a deleted file, a binary file, a
-  file above 1 MiB, or a symlink. The dialog keeps its text while it is open. Use
-  **Refresh**, then **Preview** again, to see a later change.
+  path in both views. **Preview** opens a dialog with the file path, a close button
+  (✕), and the rendered current text. The button is not shown for a deleted file, a
+  binary file, a file above 1 MiB, or a symlink. The dialog keeps its text while it is
+  open. Use **Refresh**, then **Preview** again, to see a later change.
+- In a narrow pane, the line counts, **View file**, and **Copy path** go to a second
+  row of the file header. The path and **Preview** keep at least 200 pixels.
 - Preview uses markdown-it with CommonMark, GitHub tables, strikethrough, and task
   lists. Raw HTML shows as text. Images do not load. The dialog shows "Image not
   loaded" with the alternative text and the source. Task list checkboxes are disabled.
+  An escaped marker, such as `\[x]` or `&#91;x]`, stays text.
   Only `http:`, `https:`, and `mailto:` links open, in a new tab. Other links, such as
   relative paths, show as text with the target in their tooltip. `javascript:`,
   `vbscript:`, `file:`, and most `data:` links stay Markdown source text.
@@ -1381,8 +1384,8 @@ the layout width rule, and late replies. They also cover replies for a folder th
 closed or opened again, a refresh at the shared entry limit, a folder that is gone, a
 failed request for one folder, the unread folders of a failed refresh, and a failed
 first read of the workspace folder. Markdown fixtures cover raw HTML, script links,
-relative and allowed links, images, tables, task lists, and the files that Preview
-accepts.
+relative and allowed links, images, tables, task lists, escaped task markers, and the
+files that Preview accepts.
 
 A browser check used a temporary instance, a fixture repository, and a shell session in
 a managed worktree. It checked Split, Unified, folded regions, View file, deleted files,

@@ -52,9 +52,11 @@ function taskLists(state: StateCore): void {
     const inline = tokens[index];
     const item = tokens[index - 2];
     if (inline?.type !== 'inline' || item?.type !== 'list_item_open' || tokens[index - 1]?.type !== 'paragraph_open') continue;
+    // Read the marker in the source text. The text token has resolved escapes and
+    // entities, so "\[x]" and "&#91;x]" must stay text.
+    const match = /^\[([ xX])\] /.exec(inline.content);
     const first = inline.children?.[0];
-    const match = first?.type === 'text' ? /^\[([ xX])\] /.exec(first.content) : null;
-    if (!first || !match) continue;
+    if (!match || first?.type !== 'text' || !first.content.startsWith(match[0])) continue;
     first.content = first.content.slice(match[0].length);
     const box = new state.Token('html_inline', '', 0);
     box.content = `<input type="checkbox" disabled${match[1] === ' ' ? '' : ' checked'}> `;

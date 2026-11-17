@@ -45,6 +45,14 @@ test('GitHub tables, strikethrough, and task lists render', () => {
   assert.match(html, /<li>\[y\] plain<\/li>/);
 });
 
+test('an escaped or entity checkbox marker stays text', () => {
+  const html = renderMarkdown('- \\[x] Escaped\n- &#91;x] Entity\n- [x\\] Late escape\n');
+  assert.doesNotMatch(html, /<input|task-item/);
+  assert.match(html, /<li>\[x\] Escaped<\/li>/);
+  assert.match(html, /<li>\[x\] Entity<\/li>/);
+  assert.match(html, /<li>\[x\] Late escape<\/li>/);
+});
+
 test('a checkbox prefix outside a list item stays text', () => {
   assert.equal(renderMarkdown('[ ] not a task\n'), '<p>[ ] not a task</p>\n');
 });
