@@ -54,7 +54,7 @@ func TestSessionStatusHasFourValues(t *testing.T) {
 			t.Fatalf("%s: status is %s, expected %s", reason, got, want)
 		}
 		listed, err := s.listSessions(history.SessionFilter{Query: session.ID})
-		if err != nil || len(listed) != 1 || listed[0].Status != want {
+		if err != nil || len(listed.Sessions) != 1 || listed.Sessions[0].Status != want {
 			t.Fatalf("%s: list is %+v, %v, expected %s", reason, listed, err, want)
 		}
 		data, _ := json.Marshal(s.sessionDetail(current))

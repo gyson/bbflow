@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/25';
+export const VERSION = 'bbflow/26';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -32,6 +32,8 @@ export interface Handoff { folder: string; prompt: string; available: boolean }
 export interface RepositoryInfo { available: boolean; root: string; head: string; branch: string; reason: string }
 
 // status is draft, running, idle, or ended.
+// more holds the keys of the groups that have more sessions.
+export interface SessionPage { sessions: SessionInfo[]; more: string[] }
 export interface SessionInfo {
   archived: boolean;
   preparation?: Preparation;
@@ -95,7 +97,9 @@ type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draf
 type SentRequest = { operation: 'composer-sent'; session: string; revision?: number };
 type UploadRequest = { operation: 'composer-attach'; session: string; upload: { name: string; mediaType: string; data: string } };
 
-type ListRequest = { operation: 'session-list'; limit?: number; offset?: number; archived?: boolean; query?: string };
+// limit applies to each project group. limits replaces it for specified groups. The group
+// key is a project ID, or '' for Standalone. The list includes session outside its limit.
+type ListRequest = { operation: 'session-list'; limit?: number; limits?: Record<string, number>; session?: string; archived?: boolean; query?: string };
 type ArchiveRequest = { operation: 'session-archive'; session: string; archived: boolean };
 type StopSessionRequest = { operation: 'session-stop'; session: string };
 type ProjectListRequest = { operation: 'project-list' };
@@ -322,7 +326,7 @@ export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Pr
 export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;
 export function call(server: ServerInfo, request: ProjectRemoveRequest): Promise<{ removed: boolean }>;
 export function call(server: ServerInfo, request: ArchiveRequest): Promise<{ archived: boolean }>;
-export function call(server: ServerInfo, request: ListRequest): Promise<SessionInfo[]>;
+export function call(server: ServerInfo, request: ListRequest): Promise<SessionPage>;
 export function call(server: ServerInfo, request: StopSessionRequest | StopSideRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;
 export function call(server: ServerInfo, request: SentRequest): Promise<SentPage>;

@@ -52,10 +52,10 @@ func TestIndependentDraftsArchiveAndRestoreAcrossRestart(t *testing.T) {
 	if output, err := testCommand("server", "restart").CombinedOutput(); err != nil {
 		t.Fatalf("restart: %s %v", output, err)
 	}
-	var found []protocol.SessionInfo
-	rpc(protocol.Request{Operation: "session-list", Archived: true, Query: "FIND ME"}, &found)
-	if len(found) != 1 || found[0].ID != first.ID || !found[0].Archived || found[0].Status != "draft" {
-		t.Fatal("archived draft missing after restart", found)
+	var page protocol.SessionPage
+	rpc(protocol.Request{Operation: "session-list", Archived: true, Query: "FIND ME"}, &page)
+	if found := page.Sessions; len(found) != 1 || found[0].ID != first.ID || !found[0].Archived || found[0].Status != "draft" {
+		t.Fatal("archived draft missing after restart", page)
 	}
 	var restored history.Session
 	rpc(protocol.Request{Operation: "session-config", Session: first.ID}, &restored)

@@ -234,8 +234,8 @@ func (d *demo) requireNew() {
 func (d *demo) sessions(port int) {
 	address := fmt.Sprintf("http://127.0.0.1:%d", port)
 	fmt.Printf("URL: %s/\n", address)
-	sessions := call[[]protocol.SessionInfo](d.target, protocol.Request{Operation: "session-list", Limit: 100})
-	sessions = append(sessions, call[[]protocol.SessionInfo](d.target, protocol.Request{Operation: "session-list", Limit: 100, Archived: true})...)
+	sessions := call[protocol.SessionPage](d.target, protocol.Request{Operation: "session-list", Limit: 100}).Sessions
+	sessions = append(sessions, call[protocol.SessionPage](d.target, protocol.Request{Operation: "session-list", Limit: 100, Archived: true}).Sessions...)
 	for _, session := range sessions {
 		state := session.Status
 		if session.Archived {

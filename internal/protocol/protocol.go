@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/25"
+const Version = "bbflow/26"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -38,7 +38,6 @@ type PreparationConfig struct {
 
 type Request struct {
 	Archived    bool               `json:"archived,omitempty"`
-	Offset      int                `json:"offset,omitempty"`
 	Query       string             `json:"query,omitempty"`
 	Settings    *history.Settings  `json:"settings,omitempty"`
 	Preparation *PreparationConfig `json:"preparation,omitempty"`
@@ -56,6 +55,7 @@ type Request struct {
 	Shell       string             `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
 	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
 	Limit       int                `json:"limit,omitempty"`
+	Limits      map[string]int     `json:"limits,omitempty"` // Session list limits by group. "" is Standalone.
 	Size        Size               `json:"size,omitempty"`
 	Draft       *Draft             `json:"draft,omitempty"`
 	Upload      *Upload            `json:"upload,omitempty"`
@@ -239,6 +239,13 @@ type Terminal struct {
 type SessionDetail struct {
 	history.Session
 	Status string `json:"status"`
+}
+
+// SessionPage lists the most recent sessions of each project group. More holds the keys
+// of the groups that have more sessions. The key "" is Standalone.
+type SessionPage struct {
+	Sessions []SessionInfo `json:"sessions"`
+	More     []string      `json:"more"`
 }
 
 // SessionInfo is a session summary. Status is draft, running, idle, or ended. The

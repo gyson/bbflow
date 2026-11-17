@@ -224,13 +224,16 @@ body.resizing-session, body.resizing-session * { cursor: row-resize !important; 
 .sent-dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 40px); }
 .sent-dialog .dialog-heading { margin-bottom: 4px; }
 .sent-dialog .form-help { margin: 0 0 14px; }
-.sent-list { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0 8px 0 0; }
+.sent-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; list-style: none; margin: 0; padding: 0 8px 0 0; }
 .sent-item { border-top: 1px solid var(--divider); padding: 14px 0; }
 .sent-meta { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted); }
 .sent-meta time { flex: 1; }
 .sent-meta button { font-size: 12px; padding: 6px 10px; }
 .badge.unconfirmed { color: var(--warning); background: var(--warning-surface); }
-.sent-text { margin-top: 10px; max-height: 170px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.sent-text { margin-top: 10px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.sent-text.folded { overflow: hidden; mask-image: linear-gradient(to bottom, #000 calc(100% - 3.2em), transparent); }
+.sent-fold { display: flex; gap: 8px; margin-top: 6px; }
+.sent-fold button { font-size: 12px; padding: 6px 10px; }
 .sent-text.empty { color: var(--text-muted); font-style: italic; }
 .sent-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .sent-files .composer-file { padding: 3px 9px; }
@@ -264,13 +267,13 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .session-scopes { display: flex; gap: 6px; }
 .session-scopes button { flex: 1; font-size: 12px; background: transparent; }
 .session-scopes button[aria-pressed="true"] { background: var(--surface); border-color: var(--selected-border); }
-.session-pages { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 11px; }
-.session-pages button { padding: 6px 8px; font-size: 11px; }
 .project-action { font-size: 18px; line-height: 1; }
 .project-sessions { padding-left: 10px; border-left: 1px solid var(--border); margin: 5px 0 0 9px; }
 .project-empty { font-size: 11px; color: var(--text-muted); line-height: 1.6; margin: 9px 6px; }
 .project-sessions .session-item { padding: 10px 9px; }
 .project-sessions .run-state { margin-top: 6px; }
+.project-more { margin: 2px 0 6px; padding: 6px 9px; background: transparent; border-color: transparent; font-size: 11px; color: var(--text-muted); }
+.project-more:hover { color: inherit; }
 .dialog-actions { display: flex; justify-content: space-between; gap: 12px; }
 
 #preparation { flex: 1; overflow: auto; min-height: 260px; padding: 24px 28px; margin-bottom: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }

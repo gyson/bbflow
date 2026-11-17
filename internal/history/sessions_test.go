@@ -3,6 +3,7 @@ package history
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -46,7 +47,8 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 	}
 	assertRecent := func(id, updated string) {
 		t.Helper()
-		items, err := store.ListSessions(SessionFilter{Limit: 1})
+		listed, err := store.ListSessions(SessionFilter{Limit: 1})
+		items := listed.Sessions
 		if err != nil || len(items) != 1 || items[0].ID != id || items[0].Updated != updated {
 			t.Fatalf("recent = %+v, %v; want %s at %s", items, err, id, updated)
 		}
@@ -103,7 +105,8 @@ func TestEqualSessionTimesUseCreationOrder(t *testing.T) {
 	if _, err = store.db.Exec("UPDATE sessions SET created='2026-01-01T00:00:00Z'"); err != nil {
 		t.Fatal(err)
 	}
-	items, err := store.ListSessions(SessionFilter{Limit: 100})
+	listed, err := store.ListSessions(SessionFilter{Limit: 100})
+	items := listed.Sessions
 	if err != nil || len(items) != len(ids) {
 		t.Fatal(items, err)
 	}
@@ -111,5 +114,69 @@ func TestEqualSessionTimesUseCreationOrder(t *testing.T) {
 		if want := ids[len(ids)-1-i]; item.ID != want {
 			t.Fatalf("position %d = %s; want %s", i, item.ID, want)
 		}
+	}
+}
+
+// Each saved project is one group. Sessions without a saved project, also after their
+// project is removed, form the Standalone group "".
+func TestSessionGroupLimits(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	kept, err := store.CreateProject("Kept", "/kept")
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed, err := store.CreateProject("Removed", "/removed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string][]string{} // Session IDs by group, newest first.
+	for i := range 3 {
+		for _, project := range []string{kept.ID, removed.ID, ""} {
+			session, err := store.CreateSession(fmt.Sprintf("Session %d", i), "/tmp", project)
+			if err != nil {
+				t.Fatal(err)
+			}
+			group := project
+			if group == removed.ID {
+				group = ""
+			}
+			ids[group] = append([]string{session.ID}, ids[group]...)
+		}
+	}
+	if err = store.RemoveProject(removed.ID); err != nil {
+		t.Fatal(err)
+	}
+	listed := func(filter SessionFilter) map[string][]string {
+		t.Helper()
+		page, err := store.ListSessions(filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		groups := map[string][]string{}
+		for _, session := range page.Sessions {
+			groups[session.ProjectID] = append(groups[session.ProjectID], session.ID)
+		}
+		groups["more"] = page.More
+		return groups
+	}
+	got := listed(SessionFilter{Limit: 2})
+	if !slices.Equal(got[kept.ID], ids[kept.ID][:2]) || len(got[""]) != 2 || !slices.Equal(got["more"], []string{"", kept.ID}) {
+		t.Fatal("group limit", got)
+	}
+	got = listed(SessionFilter{Limit: 2, Limits: map[string]int{"": 6}})
+	if len(got[kept.ID]) != 2 || len(got[""]) != 6 || !slices.Equal(got["more"], []string{kept.ID}) {
+		t.Fatal("standalone limit", got)
+	}
+	oldest := ids[kept.ID][2]
+	got = listed(SessionFilter{Limit: 1, Include: oldest})
+	if !slices.Equal(got[kept.ID], []string{ids[kept.ID][0], oldest}) || !slices.Equal(got["more"], []string{"", kept.ID}) {
+		t.Fatal("included session", got)
+	}
+	if got = listed(SessionFilter{Limit: 1, Include: oldest, Archived: true}); len(got[kept.ID]) != 0 {
+		t.Fatal("included session outside the archive filter", got)
 	}
 }

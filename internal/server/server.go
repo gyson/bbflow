@@ -208,7 +208,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		result, err := s.stopSide(request.Session, request.Shell)
 		s.reply(conn, result, err)
 	case "session-list":
-		result, err := s.listSessions(history.SessionFilter{Limit: request.Limit, Offset: request.Offset, Archived: request.Archived, Query: request.Query})
+		result, err := s.listSessions(history.SessionFilter{
+			Limit: request.Limit, Limits: request.Limits, Include: request.Session, Archived: request.Archived, Query: request.Query,
+		})
 		s.reply(conn, result, err)
 	case "status-watch":
 		s.watchStatus(ctx, conn)

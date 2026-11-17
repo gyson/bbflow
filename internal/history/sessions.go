@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -12,65 +13,113 @@ type ListedSession struct {
 	Updated string
 }
 
+// SessionFilter selects sessions for the sidebar. Sessions form one group for each saved
+// project. Sessions without a saved project form the Standalone group, with the key "".
 type SessionFilter struct {
-	Limit    int
-	Offset   int
+	Limit    int            // The number of sessions in each group. Zero selects 10.
+	Limits   map[string]int // Limits for specified groups, by group key. They replace Limit.
+	Include  string         // A session ID to list outside its group limit, if it matches.
 	Archived bool
 	Query    string
 }
+
+// SessionPage lists the most recent matching sessions of each group, most recent first.
+// More holds the keys of the groups that have more matching sessions.
+type SessionPage struct {
+	Sessions []ListedSession
+	More     []string
+}
+
+const maxSessionLimit = 1000
 
 // ListSessions orders sessions by terminal input, output, and run lifecycle activity.
 // This includes output while detached. View changes and unsent drafts do not count.
 // SQLite compares these times in whole milliseconds. For equal times, the event sequence
 // and then the creation order decide. The rowid keeps the creation order.
-// Search and archive filters apply before pagination, including to old sessions.
-func (s *Store) ListSessions(filter SessionFilter) ([]ListedSession, error) {
+// Search and archive filters apply before the group limits, including to old sessions.
+func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	if filter.Limit == 0 {
 		filter.Limit = 10
 	}
-	if filter.Limit < 1 || filter.Limit > 1000 || filter.Offset < 0 || len(filter.Query) > 800 {
-		return nil, errors.New("invalid session filter: limit must be 1–1000, offset nonnegative, and query at most 800 bytes")
+	valid := filter.Limit >= 1 && filter.Limit <= maxSessionLimit && len(filter.Limits) <= maxSessionLimit &&
+		len(filter.Include) <= 200 && len(filter.Query) <= 800
+	for key, limit := range filter.Limits {
+		valid = valid && len(key) <= 200 && limit >= 1 && limit <= maxSessionLimit
+	}
+	if !valid {
+		return SessionPage{}, errors.New("invalid session filter: limits must be 1–1000, with at most 1000 groups, and query at most 800 bytes")
+	}
+	limits, err := json.Marshal(filter.Limits)
+	if err != nil {
+		return SessionPage{}, err
+	}
+	if filter.Limits == nil {
+		limits = []byte("{}")
 	}
 	query := strings.TrimSpace(filter.Query)
-	rows, err := s.db.Query(`SELECT sessions.id,title,workspace,sessions.created,COALESCE(project_id,''),archived,
-        COALESCE(activity.created,sessions.created) AS updated
-        FROM sessions LEFT JOIN events AS activity ON activity.seq=(
-            SELECT seq FROM events WHERE session_id=sessions.id
-            AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
+	// Each group reads one session more than its limit to report more sessions.
+	rows, err := s.db.Query(`WITH listed AS (
+            SELECT sessions.id,title,workspace,sessions.created,COALESCE(project_id,'') AS project,archived,
+                COALESCE(activity.created,sessions.created) AS updated,COALESCE(activity.seq,0) AS activity,
+                sessions.rowid AS creation,
+                CASE WHEN EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id) THEN project_id ELSE '' END AS grp
+            FROM sessions LEFT JOIN events AS activity ON activity.seq=(
+                SELECT seq FROM events WHERE session_id=sessions.id
+                AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
+            )
+            WHERE archived=? AND (?='' OR instr(lower(title),lower(?))>0
+                OR instr(lower(workspace),lower(?))>0 OR instr(lower(sessions.id),lower(?))>0
+                OR EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id
+                    AND (instr(lower(projects.name),lower(?))>0 OR instr(lower(projects.workspace),lower(?))>0)))
+        ), ranked AS (
+            SELECT *,ROW_NUMBER() OVER (PARTITION BY grp ORDER BY julianday(updated) DESC,activity DESC,creation DESC) AS position,
+                COALESCE((SELECT value FROM json_each(?) WHERE key=grp),?) AS group_limit
+            FROM listed
         )
-        WHERE archived=? AND (?='' OR instr(lower(title),lower(?))>0
-            OR instr(lower(workspace),lower(?))>0 OR instr(lower(sessions.id),lower(?))>0
-            OR EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id
-                AND (instr(lower(projects.name),lower(?))>0 OR instr(lower(projects.workspace),lower(?))>0)))
-        ORDER BY julianday(updated) DESC,COALESCE(activity.seq,0) DESC,sessions.rowid DESC
-        LIMIT ? OFFSET ?`, filter.Archived, query, query, query, query, query, query, filter.Limit, filter.Offset)
+        SELECT id,title,workspace,created,project,archived,updated,grp,position>group_limit FROM ranked
+        WHERE position<=group_limit+1 OR id=?
+        ORDER BY julianday(updated) DESC,activity DESC,creation DESC`,
+		filter.Archived, query, query, query, query, query, query, string(limits), filter.Limit, filter.Include)
 	if err != nil {
-		return nil, err
+		return SessionPage{}, err
 	}
-	result := []ListedSession{}
+	page := SessionPage{Sessions: []ListedSession{}, More: []string{}}
+	more := map[string]bool{}
 	for rows.Next() {
 		var item ListedSession
-		if err = rows.Scan(&item.ID, &item.Title, &item.Workspace, &item.Created, &item.ProjectID, &item.Archived, &item.Updated); err != nil {
+		var group string
+		var beyond bool
+		if err = rows.Scan(&item.ID, &item.Title, &item.Workspace, &item.Created, &item.ProjectID, &item.Archived, &item.Updated, &group, &beyond); err != nil {
 			rows.Close()
-			return nil, err
+			return SessionPage{}, err
 		}
-		result = append(result, item)
+		if beyond {
+			more[group] = true
+			if item.ID != filter.Include {
+				continue
+			}
+		}
+		page.Sessions = append(page.Sessions, item)
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
-		return nil, err
+		return SessionPage{}, err
 	}
-	for i := range result {
-		if err = s.launchMetadata(&result[i].Session); err != nil {
-			return nil, err
+	for group := range more {
+		page.More = append(page.More, group)
+	}
+	slices.Sort(page.More)
+	for i := range page.Sessions {
+		if err = s.launchMetadata(&page.Sessions[i].Session); err != nil {
+			return SessionPage{}, err
 		}
-		result[i].Run, err = s.LatestRun(result[i].ID)
+		page.Sessions[i].Run, err = s.LatestRun(page.Sessions[i].ID)
 		if err != nil {
-			return nil, err
+			return SessionPage{}, err
 		}
 	}
-	return result, nil
+	return page, nil
 }
 
 // Archive changes affect visibility only. The transaction also prevents archive changes

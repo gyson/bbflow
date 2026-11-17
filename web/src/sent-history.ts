@@ -2,6 +2,10 @@ import { element } from './dom.js';
 import { call, errorMessage } from './protocol.js';
 import type { SentMessage, ServerInfo } from './protocol.js';
 
+// A long message first shows foldLines lines. The first Show more adds foldStep lines.
+// A message is not folded when fewer than foldMinimum lines would stay hidden.
+const foldLines = 8, foldStep = 16, foldMinimum = 4;
+
 // The dialog lists the messages that Send sent in one session. The newest message is at
 // the bottom, next to the editor. The dialog only reads history. Copy puts the message
 // text on the clipboard, for use in any session.
@@ -53,7 +57,9 @@ export class SentHistory {
       const page = await call(server, { operation: 'composer-sent', session: this.session, ...(older ? { revision: this.oldest } : {}) });
       if (request !== this.request) return;
       const below = this.list.scrollHeight - this.list.scrollTop;
-      this.list.prepend(...page.messages.map(message => this.item(message)).reverse());
+      const items = page.messages.map(message => this.item(message)).reverse();
+      this.list.prepend(...items);
+      for (const item of items) this.fold(item);
       this.oldest = page.messages.at(-1)?.revision ?? this.oldest;
       this.more.hidden = !page.more;
       this.list.scrollTop = this.list.scrollHeight - (older ? below : 0);
@@ -66,6 +72,45 @@ export class SentHistory {
         this.more.textContent = 'Show older messages';
       }
     }
+  }
+
+  // A long message shows its first lines. Show more shows a step of lines, and each step
+  // is double the previous one. Show less returns to the first lines. Call fold after the
+  // item is in the list, because it measures the rendered text.
+  private fold(item: HTMLLIElement): void {
+    const text = item.querySelector<HTMLElement>('.sent-text');
+    const fold = item.querySelector<HTMLElement>('.sent-fold');
+    if (!text || !fold) return;
+    const line = parseFloat(getComputedStyle(text).lineHeight) || 20;
+    const lines = () => Math.round(text.scrollHeight / line);
+    let shown = 0, step = 0;
+    const more = document.createElement('button');
+    const less = document.createElement('button');
+    less.textContent = 'Show less';
+    const show = (count: number) => {
+      // Measure after the height change, because a new list scroll bar can change the wrap.
+      text.style.maxHeight = `${count * line}px`;
+      const total = lines();
+      // Show all of the text when only a few lines stay hidden.
+      shown = total - count < foldMinimum ? total : count;
+      const hidden = total - shown;
+      text.classList.toggle('folded', hidden > 0);
+      text.style.maxHeight = hidden > 0 ? `${shown * line}px` : '';
+      const next = hidden - step < foldMinimum ? hidden : step;
+      more.hidden = hidden === 0;
+      more.textContent = next === hidden ? `Show ${hidden} more lines` : `Show ${next} more lines (${hidden} hidden)`;
+      less.hidden = shown <= foldLines;
+      fold.hidden = more.hidden && less.hidden;
+    };
+    more.onclick = () => { const count = shown + step; step *= 2; show(count); };
+    less.onclick = () => {
+      step = foldStep;
+      show(foldLines);
+      item.scrollIntoView({ block: 'nearest' });
+    };
+    fold.append(more, less);
+    step = foldStep;
+    show(foldLines);
   }
 
   private item(message: SentMessage): HTMLLIElement {
@@ -100,7 +145,10 @@ export class SentHistory {
     text.className = 'sent-text';
     text.textContent = message.text || 'No text';
     text.classList.toggle('empty', !message.text);
-    item.append(meta, text);
+    const fold = document.createElement('div');
+    fold.className = 'sent-fold';
+    fold.hidden = true;
+    item.append(meta, text, fold);
     if (message.attachments.length) {
       const files = document.createElement('div');
       files.className = 'sent-files';
