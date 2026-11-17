@@ -74,6 +74,8 @@ round, the commit, and the result.
   review examined. For the implementer, it is the head commit after the push.
 - Check the active session's model and effort before each post. In Codex, use the
   [local session lookup](#read-codex-session-metadata) for any missing value.
+- In Claude Code, run `printenv CLAUDE_EFFORT` in the active session's Bash tool.
+  If the command returns a level, use it for the reasoning effort field.
 - Use the model's full display name, including its version and variant when available.
   If only the exact model ID is available, use that ID. Use the effort label or value
   the tool reports for this session.
