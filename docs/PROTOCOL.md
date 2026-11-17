@@ -84,7 +84,7 @@ operations.
 | `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
 | `project-remove` | `project` ID | `result`, containing `removed`. Sessions become standalone. |
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
-| `session-list` | `limit` for each group (default 10, at least 1), optional `limits` object (group key to a limit of at least 1), optional `session` ID to include, `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status). |
+| `session-list` | `limit` for each group (default 10, 1–100), optional `group` key, optional `offset` (default 0, needs `group`), optional `session` ID to include (not with `group`), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status). |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
@@ -191,10 +191,14 @@ Standalone. Their `workspace` remains the saved canonical path.
 `session-list` selects only the requested archive collection, then applies query,
 ordering, and group limits. A group holds the sessions of one saved project. Its key is
 the project ID. Sessions without a saved project form the Standalone group, with the key
-`""`. Each group gives its most recent sessions, up to its entry in `limits`, or up to
-`limit` without an entry. `more` lists the keys of the groups that have more matching
-sessions. `sessions` keeps the order of all groups together. If the `session` ID matches
-the collection and query, the list includes it outside its group limit. Search matches session titles, IDs, workspace paths, and
+`""`. Without `group`, each group gives its `limit` most recent sessions. With `group`,
+the reply gives one window of that group: the `limit` sessions after the first `offset`
+sessions. A reply thus holds at most 100 sessions of each group. `more` lists the keys
+of the groups that have more matching sessions after the listed ones. `sessions` keeps
+the order of all groups together. If the `session` ID matches the collection and query,
+a reply without `group` includes it outside its group limit. Separate replies can see
+different activity, so a client that joins windows must drop repeated sessions. If a
+result exceeds the 16 MiB message limit, the reply is an `error`. Search matches session titles, IDs, workspace paths, and
 project names/paths using SQLite's ASCII case-insensitive matching. The query is a
 literal substring. It does not accept SQL or wildcard expressions and does not search
 event text.

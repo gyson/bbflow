@@ -167,9 +167,14 @@ func TestSessionGroupLimits(t *testing.T) {
 	if !slices.Equal(got[kept.ID], ids[kept.ID][:2]) || len(got[""]) != 2 || !slices.Equal(got["more"], []string{"", kept.ID}) {
 		t.Fatal("group limit", got)
 	}
-	got = listed(SessionFilter{Limit: 2, Limits: map[string]int{"": 6}})
-	if len(got[kept.ID]) != 2 || len(got[""]) != 6 || !slices.Equal(got["more"], []string{kept.ID}) {
-		t.Fatal("standalone limit", got)
+	standalone := ""
+	got = listed(SessionFilter{Limit: 3, Group: &standalone, Offset: 2})
+	if len(got[kept.ID]) != 0 || !slices.Equal(got[""], ids[""][2:5]) || !slices.Equal(got["more"], []string{""}) {
+		t.Fatal("standalone window", got)
+	}
+	got = listed(SessionFilter{Limit: 3, Group: &kept.ID, Offset: 1})
+	if !slices.Equal(got[kept.ID], ids[kept.ID][1:]) || len(got[""]) != 0 || len(got["more"]) != 0 {
+		t.Fatal("last project window", got)
 	}
 	oldest := ids[kept.ID][2]
 	got = listed(SessionFilter{Limit: 1, Include: oldest})
@@ -181,26 +186,38 @@ func TestSessionGroupLimits(t *testing.T) {
 	}
 }
 
-// A group limit has no upper bound. Show more can reach each session of a large group.
-func TestSessionGroupLimitAboveOneThousand(t *testing.T) {
+// Each reply holds at most MaxSessionLimit sessions. Windows of one group reach each of
+// its sessions once.
+func TestSessionGroupWindows(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 	const count = 1005
+	var want []string
 	for i := range count {
-		if _, err = store.CreateSession(fmt.Sprintf("Session %d", i), "/tmp", ""); err != nil {
+		session, err := store.CreateSession(fmt.Sprintf("Session %d", i), "/tmp", "")
+		if err != nil {
 			t.Fatal(err)
 		}
+		want = append([]string{session.ID}, want...)
 	}
-	for _, test := range []struct {
-		limit, rows int
-		more        bool
-	}{{1000, 1000, true}, {1004, 1004, true}, {1010, count, false}, {1 << 40, count, false}} {
-		page, err := store.ListSessions(SessionFilter{Limit: 10, Limits: map[string]int{"": test.limit}})
-		if err != nil || len(page.Sessions) != test.rows || (len(page.More) == 1) != test.more {
-			t.Fatalf("limit %d: %d sessions, more %v, %v", test.limit, len(page.Sessions), page.More, err)
+	standalone := ""
+	var got []string
+	for offset := 0; ; offset += MaxSessionLimit {
+		page, err := store.ListSessions(SessionFilter{Limit: MaxSessionLimit, Group: &standalone, Offset: offset})
+		if err != nil || len(page.Sessions) > MaxSessionLimit {
+			t.Fatal(offset, len(page.Sessions), err)
 		}
+		for _, session := range page.Sessions {
+			got = append(got, session.ID)
+		}
+		if len(page.More) == 0 {
+			break
+		}
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("windows listed %d sessions; want %d in order", len(got), len(want))
 	}
 }

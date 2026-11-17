@@ -15,6 +15,8 @@ const Version = "bbflow/26"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
+var ErrMessageTooLarge = errors.New("protocol message exceeds 16 MiB")
+
 type Size struct {
 	Rows uint16 `json:"rows"`
 	Cols uint16 `json:"cols"`
@@ -55,7 +57,8 @@ type Request struct {
 	Shell       string             `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
 	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
 	Limit       int                `json:"limit,omitempty"`
-	Limits      map[string]int     `json:"limits,omitempty"` // Session list limits by group. "" is Standalone.
+	Group       *string            `json:"group,omitempty"`  // A session list group key. "" is Standalone.
+	Offset      int                `json:"offset,omitempty"` // The sessions of the group to skip.
 	Size        Size               `json:"size,omitempty"`
 	Draft       *Draft             `json:"draft,omitempty"`
 	Upload      *Upload            `json:"upload,omitempty"`
@@ -241,8 +244,8 @@ type SessionDetail struct {
 	Status string `json:"status"`
 }
 
-// SessionPage lists the most recent sessions of each project group. More holds the keys
-// of the groups that have more sessions. The key "" is Standalone.
+// SessionPage lists the most recent sessions of each project group, or one window of one
+// group. More holds the keys of the groups that have more sessions. "" is Standalone.
 type SessionPage struct {
 	Sessions []SessionInfo `json:"sessions"`
 	More     []string      `json:"more"`
@@ -331,7 +334,7 @@ func (c *Conn) Send(message Message) error {
 		return err
 	}
 	if len(data) > maxMessage {
-		return errors.New("protocol message exceeds 16 MiB")
+		return ErrMessageTooLarge
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

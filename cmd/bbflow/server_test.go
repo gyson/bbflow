@@ -125,7 +125,7 @@ func TestServerLifecycleAndRestartStopsActiveRun(t *testing.T) {
 	c := launchAgent(t, t.TempDir(), "wait")
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, directory)
-	listed, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, _ := store.ListSessions(history.SessionFilter{Limit: 100})
 	sessions := listed.Sessions
 	pid := sessions[0].Run.PID
 	output, err := testCommand("--dir", directory, "server", "restart").CombinedOutput()
@@ -269,7 +269,7 @@ func TestViewDisconnectLeavesSessionAndServerRunning(t *testing.T) {
 	c := launchAgent(t, t.TempDir(), "wait")
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, directory)
-	listed, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, _ := store.ListSessions(history.SessionFilter{Limit: 100})
 	sessions := listed.Sessions
 	pid := sessions[0].Run.PID
 	c.Close()
@@ -297,7 +297,7 @@ func TestServerStopWaitsForDetachedSession(t *testing.T) {
 	c := launchAgent(t, t.TempDir(), "wait")
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, directory)
-	listed, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, _ := store.ListSessions(history.SessionFilter{Limit: 100})
 	sessions := listed.Sessions
 	c.Close()
 	if output, err := testCommand("--dir", directory, "server", "stop").CombinedOutput(); err != nil {

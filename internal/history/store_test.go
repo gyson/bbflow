@@ -195,7 +195,7 @@ func TestConcurrentFirstOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	listed, err := store.ListSessions(SessionFilter{Limit: 1000})
+	listed, err := store.ListSessions(SessionFilter{Limit: 100})
 	sessions := listed.Sessions
 	if err != nil || len(sessions) != cap(results) {
 		t.Fatal("concurrent initialization lost sessions", sessions, err)

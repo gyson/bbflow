@@ -97,9 +97,10 @@ type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draf
 type SentRequest = { operation: 'composer-sent'; session: string; revision?: number };
 type UploadRequest = { operation: 'composer-attach'; session: string; upload: { name: string; mediaType: string; data: string } };
 
-// limit applies to each project group. limits replaces it for specified groups. The group
-// key is a project ID, or '' for Standalone. The list includes session outside its limit.
-type ListRequest = { operation: 'session-list'; limit?: number; limits?: Record<string, number>; session?: string; archived?: boolean; query?: string };
+// limit (1–100) applies to each project group. group selects one group, and offset skips
+// its first sessions. The group key is a project ID, or '' for Standalone. Without group,
+// the list includes session outside its group limit.
+type ListRequest = { operation: 'session-list'; limit?: number; group?: string; offset?: number; session?: string; archived?: boolean; query?: string };
 type ArchiveRequest = { operation: 'session-archive'; session: string; archived: boolean };
 type StopSessionRequest = { operation: 'session-stop'; session: string };
 type ProjectListRequest = { operation: 'project-list' };

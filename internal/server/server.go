@@ -209,7 +209,7 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.reply(conn, result, err)
 	case "session-list":
 		result, err := s.listSessions(history.SessionFilter{
-			Limit: request.Limit, Limits: request.Limits, Include: request.Session, Archived: request.Archived, Query: request.Query,
+			Limit: request.Limit, Group: request.Group, Offset: request.Offset, Include: request.Session, Archived: request.Archived, Query: request.Query,
 		})
 		s.reply(conn, result, err)
 	case "status-watch":
@@ -269,7 +269,10 @@ func (s *Server) reply(conn *protocol.Conn, result any, err error) {
 		conn.Send(protocol.Message{Type: "error", Error: err.Error()})
 		return
 	}
-	conn.Send(protocol.Message{Type: "result", Result: data})
+	// The client must get an answer, also when the result is too large to send.
+	if errors.Is(conn.Send(protocol.Message{Type: "result", Result: data}), protocol.ErrMessageTooLarge) {
+		conn.Send(protocol.Message{Type: "error", Error: "the result exceeds 16 MiB"})
+	}
 }
 
 // A read connection carries one request. Disconnecting cancels its SQLite or Git work.

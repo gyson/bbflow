@@ -15,20 +15,26 @@ type ListedSession struct {
 
 // SessionFilter selects sessions for the sidebar. Sessions form one group for each saved
 // project. Sessions without a saved project form the Standalone group, with the key "".
+// Without Group, the page lists the most recent sessions of each group. With Group, the
+// page lists one window of that group, after Offset sessions.
 type SessionFilter struct {
-	Limit    int            // The number of sessions in each group. Zero selects 10.
-	Limits   map[string]int // Limits for specified groups, by group key. They replace Limit.
-	Include  string         // A session ID to list outside its group limit, if it matches.
+	Limit    int     // The number of sessions in each group, from 1 to 100. Zero selects 10.
+	Group    *string // A group key. Nil selects all groups.
+	Offset   int     // The sessions of Group to skip. It needs Group.
+	Include  string  // A session ID to list outside its group limit. It needs no Group.
 	Archived bool
 	Query    string
 }
 
-// SessionPage lists the most recent matching sessions of each group, most recent first.
-// More holds the keys of the groups that have more matching sessions.
+// SessionPage lists matching sessions, most recent first. More holds the keys of the
+// groups that have more matching sessions after the listed ones.
 type SessionPage struct {
 	Sessions []ListedSession
 	More     []string
 }
+
+// MaxSessionLimit keeps each reply small. A group with more sessions needs more windows.
+const MaxSessionLimit = 100
 
 // ListSessions orders sessions by terminal input, output, and run lifecycle activity.
 // This includes output while detached. View changes and unsent drafts do not count.
@@ -39,21 +45,14 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	if filter.Limit == 0 {
 		filter.Limit = 10
 	}
-	// A group limit has no upper bound, so Show more can reach each session of a group.
-	// A result never has more rows than the matching sessions.
-	valid := filter.Limit >= 1 && len(filter.Include) <= 200 && len(filter.Query) <= 800
-	for key, limit := range filter.Limits {
-		valid = valid && len(key) <= 200 && limit >= 1
+	grouped := filter.Group != nil
+	if filter.Limit < 1 || filter.Limit > MaxSessionLimit || filter.Offset < 0 || (filter.Offset > 0 && !grouped) ||
+		(grouped && (filter.Include != "" || len(*filter.Group) > 200)) || len(filter.Include) > 200 || len(filter.Query) > 800 {
+		return SessionPage{}, errors.New("invalid session filter: limit must be 1–100, offset needs a group, include needs no group, and query must be at most 800 bytes")
 	}
-	if !valid {
-		return SessionPage{}, errors.New("invalid session filter: limits must be at least 1, and query at most 800 bytes")
-	}
-	limits, err := json.Marshal(filter.Limits)
-	if err != nil {
-		return SessionPage{}, err
-	}
-	if filter.Limits == nil {
-		limits = []byte("{}")
+	group := ""
+	if grouped {
+		group = *filter.Group
 	}
 	query := strings.TrimSpace(filter.Query)
 	// Each group reads one session more than its limit to report more sessions.
@@ -71,14 +70,14 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
                 OR EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id
                     AND (instr(lower(projects.name),lower(?))>0 OR instr(lower(projects.workspace),lower(?))>0)))
         ), ranked AS (
-            SELECT *,ROW_NUMBER() OVER (PARTITION BY grp ORDER BY julianday(updated) DESC,activity DESC,creation DESC) AS position,
-                COALESCE((SELECT value FROM json_each(?) WHERE key=grp),?) AS group_limit
+            SELECT *,ROW_NUMBER() OVER (PARTITION BY grp ORDER BY julianday(updated) DESC,activity DESC,creation DESC) AS position
             FROM listed
         )
-        SELECT id,title,workspace,created,project,archived,updated,grp,position>group_limit FROM ranked
-        WHERE position<=group_limit+1 OR id=?
+        SELECT id,title,workspace,created,project,archived,updated,grp,position>?+? FROM ranked
+        WHERE (?=0 OR grp=?) AND position>? AND (position<=?+?+1 OR id=?)
         ORDER BY julianday(updated) DESC,activity DESC,creation DESC`,
-		filter.Archived, query, query, query, query, query, query, string(limits), filter.Limit, filter.Include)
+		filter.Archived, query, query, query, query, query, query,
+		filter.Offset, filter.Limit, grouped, group, filter.Offset, filter.Offset, filter.Limit, filter.Include)
 	if err != nil {
 		return SessionPage{}, err
 	}

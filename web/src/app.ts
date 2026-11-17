@@ -18,7 +18,7 @@ import { Composer } from './composer.js';
 import { SessionMenu } from './session-menu.js';
 import { SessionSplit } from './session-split.js';
 import { Sidebar } from './sidebar.js';
-import { sessionGroups } from './projects.js';
+import { mergeSessions, sessionGroups, sessionWindow } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
@@ -395,10 +395,16 @@ function renderSessions() {
       more.textContent = 'Show more';
       more.title = `Show ${sessionStep} more sessions of ${name}`;
       more.dataset.focus = `more:${id}`;
-      more.onclick = () => action(async () => {
-        limits().set(id, (limits().get(id) ?? sessionStep) + sessionStep);
-        await refreshSessions();
-      });
+      more.onclick = async () => {
+        // A busy action disables the sidebar buttons, and a disabled button loses the focus.
+        // Thus give the focus back after the action.
+        const keyboard = document.activeElement === more;
+        await action(async () => {
+          limits().set(id, (limits().get(id) ?? sessionStep) + sessionStep);
+          await refreshSessions();
+        });
+        if (keyboard && (document.activeElement === document.body || !document.activeElement)) focusSidebar(more.dataset.focus!);
+      };
       list.append(more);
     }
     if (!group.sessions.length) {
@@ -417,13 +423,16 @@ function renderSessions() {
     $('sessions').append(empty);
   }
   showListStatuses();
-  if (focused) {
-    const target = [...$('sessions').querySelectorAll<HTMLElement>('[data-focus]')].find(button => button.dataset.focus === focused)
-      // Show more is not there after a group shows all of its sessions. Focus the last session of the group.
-      ?? (focused.startsWith('more:') ? [...document.getElementById(`project-sessions-${focused.slice(5) || 'standalone'}`)?.querySelectorAll<HTMLElement>('.session-item') ?? []].at(-1) : undefined);
-    target?.focus({ preventScroll: true });
-  }
+  if (focused) focusSidebar(focused);
   controls();
+}
+
+// Give the keyboard focus to the sidebar button with this focus key. Show more is not there
+// after a group shows all of its sessions. Then its key selects the last session of the group.
+function focusSidebar(key: string): void {
+  const target = [...$('sessions').querySelectorAll<HTMLElement>('[data-focus]')].find(button => button.dataset.focus === key)
+    ?? (key.startsWith('more:') ? [...document.getElementById(`project-sessions-${key.slice(5) || 'standalone'}`)?.querySelectorAll<HTMLElement>('.session-item') ?? []].at(-1) : undefined);
+  target?.focus({ preventScroll: true });
 }
 
 // Show brief activity of each session in the list. The list refresh is too slow for it.
@@ -452,16 +461,29 @@ async function refreshSessions() {
   const selectedId = selected?.id;
   $('refresh').disabled = true;
   try {
-    const [nextProjects, nextSessions, detail] = await Promise.all([
+    const filter = { archived: archivedList, query: $('filter').value };
+    // A group that shows more than one step reads its older sessions in windows. Each reply
+    // thus stays small, also for a group with many sessions.
+    const windows = [...limits()].flatMap(([group, limit]) => {
+      const reads = [];
+      for (let offset = sessionStep; offset < limit; offset += sessionWindow) {
+        reads.push(call(server!, { operation: 'session-list', group, offset, limit: Math.min(sessionWindow, limit - offset), ...filter })
+          .then(page => ({ group, offset, page })));
+      }
+      return reads;
+    });
+    const [nextProjects, recent, detail, nextWindows] = await Promise.all([
       call(server, { operation: 'project-list' }),
       // The selected session stays in the list, also when it is older than the group limit.
-      call(server, { operation: 'session-list', limit: sessionStep, limits: Object.fromEntries(limits()), archived: archivedList, query: $('filter').value, ...(selectedId ? { session: selectedId } : {}) }),
+      call(server, { operation: 'session-list', limit: sessionStep, ...filter, ...(selectedId ? { session: selectedId } : {}) }),
       selectedId ? call(server, { operation: 'session-config', session: selectedId }) : Promise.resolve(null),
+      Promise.all(windows),
     ]);
     if (generation !== refreshGeneration) return;
     projects = nextProjects;
-    sessions = nextSessions.sessions;
-    moreGroups = new Set(nextSessions.more);
+    const merged = mergeSessions(projects, recent, nextWindows, sessionStep);
+    sessions = merged.sessions;
+    moreGroups = new Set(merged.more);
     if (detail && selected && selected.id === selectedId) selected.archived = detail.archived;
     $('connection').textContent = '● Local server connected';
     clearNotice('list');

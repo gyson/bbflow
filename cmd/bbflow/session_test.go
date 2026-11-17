@@ -275,7 +275,7 @@ func TestShellRunsCommandWithArgumentsBytesAndResize(t *testing.T) {
 	c := launchAgent(t, workspace, args...)
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, dataDir)
-	listed, err := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, err := store.ListSessions(history.SessionFilter{Limit: 100})
 	sessions := listed.Sessions
 	if err != nil || len(sessions) != 1 {
 		t.Fatal(sessions, err)
@@ -350,7 +350,7 @@ func TestViewClosureKeepsProcessAndHistory(t *testing.T) {
 	c := launchAgent(t, t.TempDir(), "wait")
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, dataDir)
-	listed, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, _ := store.ListSessions(history.SessionFilter{Limit: 100})
 	sessions := listed.Sessions
 	pid := sessions[0].Run.PID
 	c.Close()
@@ -426,7 +426,7 @@ func TestConcurrentShellsShareSameAndOverlappingWorkspaces(t *testing.T) {
 		}
 	}
 	store := archive(t, dataDir)
-	listed, err := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, err := store.ListSessions(history.SessionFilter{Limit: 100})
 	sessions := listed.Sessions
 	if err != nil || len(sessions) != len(paths) {
 		t.Fatal(sessions, err)
@@ -495,7 +495,7 @@ func TestInterruptedHistoryDoesNotBlockNewSessionsOrReplayInput(t *testing.T) {
 	}
 	c := launchAgent(t, workspace, "scope")
 	c.wait(t, 0)
-	listed, err := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, err := store.ListSessions(history.SessionFilter{Limit: 100})
 	sessions := listed.Sessions
 	if err != nil || len(sessions) != 2 {
 		t.Fatal("wrong session count", sessions, err)
@@ -545,7 +545,7 @@ func TestViewReconnectKeepsProcessAndBackgroundRecording(t *testing.T) {
 	first := launchAgent(t, t.TempDir(), "stream")
 	waitFor(t, func() bool { return strings.Contains(first.text(), "READY") })
 	store := archive(t, dataDir)
-	listed, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, _ := store.ListSessions(history.SessionFilter{Limit: 100})
 	sessions := listed.Sessions
 	id, pid := sessions[0].ID, sessions[0].Run.PID
 	first.Close()
@@ -588,7 +588,7 @@ func TestViewReconnectKeepsProcessAndBackgroundRecording(t *testing.T) {
 	if !reflect.DeepEqual(events, after) {
 		t.Fatal("ended view changed history")
 	}
-	listed, _ = store.ListSessions(history.SessionFilter{Limit: 1000})
+	listed, _ = store.ListSessions(history.SessionFilter{Limit: 100})
 	sessions = listed.Sessions
 	if len(sessions) != 1 || sessions[0].Run.PID != pid {
 		t.Fatal("ended view created a run", sessions)
@@ -699,8 +699,9 @@ func TestRecentSessionList(t *testing.T) {
 	if len(recent.Sessions) != 10 || recent.Sessions[0].ID != first.ID || !slices.Equal(recent.More, []string{""}) {
 		t.Fatalf("recent list: %+v", recent)
 	}
-	if page := list(protocol.Request{Limits: map[string]int{"": 12}}); len(page.Sessions) != 12 || len(page.More) != 0 {
-		t.Fatalf("group limit ignored: %+v", page)
+	standalone := ""
+	if page := list(protocol.Request{Group: &standalone, Offset: 10, Limit: 10}); len(page.Sessions) != 2 || page.Sessions[1].ID != oldest.ID || len(page.More) != 0 {
+		t.Fatalf("group window ignored: %+v", page)
 	}
 	// The selected session stays in the list outside the group limit.
 	included := list(protocol.Request{Session: oldest.ID})

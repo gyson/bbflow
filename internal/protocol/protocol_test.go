@@ -83,7 +83,7 @@ func TestWebSocketRejectsInvalidMessages(t *testing.T) {
 
 func TestWebSocketBoundsMessages(t *testing.T) {
 	conn, peer := socketPair(t)
-	if err := conn.Send(Message{Type: "error", Error: strings.Repeat("x", maxMessage)}); err == nil {
+	if err := conn.Send(Message{Type: "error", Error: strings.Repeat("x", maxMessage)}); !errors.Is(err, ErrMessageTooLarge) {
 		t.Fatal("sent oversized JSON message")
 	}
 	// The message limit must include all WebSocket fragments.
