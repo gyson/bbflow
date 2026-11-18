@@ -92,11 +92,11 @@ sessions, starts the new version in the same directory, and opens the UI.
 	// Another update can change the executable while the question waits. The lock
 	// serializes updates that share the executable, also for other instances. Check the
 	// version again under the lock. The pinned install does not compare versions.
-	unlock, err := install.Lock(destination, os.Stderr)
+	lock, err := install.Lock(destination, os.Stderr)
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	defer lock.Close()
 	if current, err := install.Version(destination); err != nil {
 		return err
 	} else if current != release.Installed {
@@ -122,7 +122,7 @@ sessions, starts the new version in the same directory, and opens the UI.
 		fmt.Printf("Updated bbflow %s to %s.\nNo bbflow server runs in %s.\nStart with: %s\nThen open:  %s\n", release.Installed, installed, target.Dir, command(target, "server", "start"), command(target, "ui"))
 		return nil
 	}
-	if err = startUpdater(target, destination, *server); err != nil {
+	if err = startUpdater(target, destination, *server, lock); err != nil {
 		return err
 	}
 	fmt.Printf("Updated bbflow %s to %s. The server in %s runs the new version.\n", release.Installed, installed, target.Dir)
@@ -186,7 +186,9 @@ func runningServer(target *client.Target) (*protocol.ServerInfo, error) {
 // startUpdater starts the new executable in a separate session. The updater stops the
 // server, so it must not depend on this process or its terminal. This process shows the
 // updater log until the updater ends.
-func startUpdater(target client.Target, executable string, server protocol.ServerInfo) error {
+// The updater receives lock as file 3 and holds it until it ends. Thus the lock
+// continues when this process ends early, for example after Ctrl+C.
+func startUpdater(target client.Target, executable string, server protocol.ServerInfo, lock *os.File) error {
 	logPath := filepath.Join(target.Dir, "update.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -208,6 +210,7 @@ func startUpdater(target client.Target, executable string, server protocol.Serve
 	cmd.Env = append(cmd.Env, updaterEnv+"=1", updaterInstanceEnv+"="+server.Instance)
 	cmd.Dir = target.Dir
 	cmd.Stdout, cmd.Stderr = logFile, logFile
+	cmd.ExtraFiles = []*os.File{lock}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	// Stop following on an interrupt. The updater continues in its own session.
 	interrupt := make(chan os.Signal, 1)
@@ -266,6 +269,14 @@ func runUpdater(target client.Target) error {
 	}
 	// The terminal that started the update can close when its server stops.
 	signal.Ignore(syscall.SIGHUP, syscall.SIGINT)
+	// The command passes its installation lock as file 3. Hold it until the restart
+	// ends. The server and its sessions must not inherit it, so close it on exec.
+	lock := os.NewFile(3, "installation-lock")
+	if stat, err := lock.Stat(); err != nil || !stat.IsDir() {
+		return errors.New("the updater needs the installation lock of its command as file 3")
+	}
+	syscall.CloseOnExec(3)
+	defer lock.Close()
 	fmt.Printf("%s: update the server in %s to bbflow %s.\n", time.Now().Format(time.RFC3339), target.Dir, version)
 	if expected == "" {
 		return errors.New("the updater needs the instance of the confirmed server")

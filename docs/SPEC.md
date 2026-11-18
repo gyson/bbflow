@@ -150,7 +150,14 @@ lock creates no file. Updates that share the executable run one at a time, also 
 different instance directories. A second update waits and says so. Under the lock, the
 command runs the executable with `--version` again. If the version is no longer the
 version from the check, another command changed the executable. Then the command stops
-with an error and changes nothing. It keeps the lock until the updater ends.
+with an error and changes nothing.
+
+The command passes its open directory to the updater as file 3. The lock belongs to that
+open directory, so it continues until both processes close it. The updater holds it
+until it ends, also when the command ends early, for example after Ctrl+C or when its
+terminal closes. The updater marks file 3 close-on-exec at once, so the new server, its
+menu companion, and its sessions never inherit the lock. An updater without that file
+stops with an error.
 
 Hints and recovery commands always name the selected instance, for example
 `bbflow --dir '/path/to/instance' server start`. The directory is quoted for a POSIX
@@ -187,8 +194,9 @@ Then `bbflow server start` is the recovery. Other instances that use the same
 executable continue on the previous version until they restart.
 
 The updater is a newer version than the command that starts it. The environment
-variables `BBFLOW_UPDATE_CHILD` and `BBFLOW_UPDATE_INSTANCE` are the interface between
-the two versions. Keep their names and meaning stable.
+variables `BBFLOW_UPDATE_CHILD` and `BBFLOW_UPDATE_INSTANCE`, and the locked directory
+as file 3, are the interface between the two versions. Keep their names and meaning
+stable.
 
 There is no UI update action, background check, or automatic update.
 

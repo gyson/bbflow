@@ -86,9 +86,9 @@ func Version(destination string) (string, error) {
 
 // Lock serializes updates of the executables in the directory of destination. It
 // waits for an update that another command runs, and tells waiting about the wait. It
-// locks the directory itself, so it creates no file. Call the returned function to
-// release the lock.
-func Lock(destination string, waiting io.Writer) (func(), error) {
+// locks the directory itself, so it creates no file. The lock belongs to the open
+// directory. It ends when every process closes its copy of the returned file.
+func Lock(destination string, waiting io.Writer) (*os.File, error) {
 	directory, err := os.Open(filepath.Dir(destination))
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func Lock(destination string, waiting io.Writer) (func(), error) {
 		directory.Close()
 		return nil, err
 	}
-	return func() { directory.Close() }, nil
+	return directory, nil
 }
 
 // Install downloads and verifies one release, then renames it over destination.

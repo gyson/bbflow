@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"bbflow/internal/client"
@@ -289,8 +291,14 @@ func TestUpdaterStopsOnlyConfirmedServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	lock, err := install.Lock(filepath.Join(t.TempDir(), "bbflow"), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
 	command := testCommand("--dir", directory, "update")
 	command.Env = append(command.Env, updaterEnv+"=1", updaterInstanceEnv+"=another-instance")
+	command.ExtraFiles = []*os.File{lock}
 	output, err := command.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "was not stopped") || !strings.Contains(string(output), "run bbflow --dir '"+directory+"' server restart") {
 		t.Fatalf("updater accepted another server: %s %v", output, err)
@@ -399,7 +407,7 @@ func TestUpdateKeepsNewerVersionInstalledDuringPrompt(t *testing.T) {
 // Updates that share the executable run one at a time, also for other instances.
 func TestUpdateWaitsForAnotherUpdate(t *testing.T) {
 	f := newUpdateFixture(t)
-	unlock, err := install.Lock(f.destination, io.Discard)
+	lock, err := install.Lock(f.destination, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,15 +415,81 @@ func TestUpdateWaitsForAnotherUpdate(t *testing.T) {
 	var output lockedBuffer
 	command.Stdout, command.Stderr = &output, &output
 	if err = command.Start(); err != nil {
-		unlock()
+		lock.Close()
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return strings.Contains(output.String(), "Waiting for another bbflow update") })
 	if f.downloads() {
 		t.Fatal("update downloaded before the other update finished")
 	}
-	unlock()
+	lock.Close()
 	if err = command.Wait(); err != nil || f.installed() != "bbflow 0.0.2" {
 		t.Fatalf("update after the wait: %s %v", output.String(), err)
+	}
+}
+
+// installLocked reports whether a process holds the installation lock of directory.
+func installLocked(t *testing.T, directory string) bool {
+	t.Helper()
+	file, err := os.Open(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if err != nil && !errors.Is(err, syscall.EWOULDBLOCK) {
+		t.Fatal(err)
+	}
+	return err != nil
+}
+
+// The updater keeps the installation lock after the command ends, for example after
+// Ctrl+C. The new server must not inherit the lock.
+func TestUpdaterKeepsLockAfterCommandEnds(t *testing.T) {
+	f := newUpdateFixture(t)
+	directory := filepath.Join(f.root, "instance")
+	target := f.startServer(directory)
+	before, err := target.Health()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hold the lifecycle lock, so that the updater waits before it stops the server.
+	control, err := lockServerFile(directory, "server-control.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			control()
+		}
+	}
+	defer release()
+	command := f.command("--dir", directory, "update", "--yes")
+	var output lockedBuffer
+	command.Stdout, command.Stderr = &output, &output
+	if err = command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(output.String(), "Restarting the server") })
+	if err = command.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	if err = command.Wait(); err == nil || !strings.Contains(output.String(), "the update continues") {
+		t.Fatalf("interrupted command: %s %v", output.String(), err)
+	}
+	installDir := filepath.Dir(f.destination)
+	if !installLocked(t, installDir) {
+		t.Fatal("the installation lock ended with the command, before the restart")
+	}
+	release()
+	waitFor(t, func() bool {
+		after, err := target.Identify()
+		return err == nil && after.Instance != before.Instance
+	})
+	waitFor(t, func() bool { return !installLocked(t, installDir) })
+	if after, err := target.Health(); err != nil || after.Instance == before.Instance {
+		t.Fatalf("server not replaced: %+v %v", after, err)
 	}
 }
