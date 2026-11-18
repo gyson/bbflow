@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/creack/pty v1.1.24
-	github.com/gitpod-io/xterm-go v0.0.0-20260907130418-dae5128cb6b3
+	github.com/eugenioenko/xterm-go v0.1.1
 	github.com/gogpu/systray v0.3.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/ncruces/go-sqlite3 v0.35.6

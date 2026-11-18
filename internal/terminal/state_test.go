@@ -12,7 +12,7 @@ import (
 
 	"bbflow/internal/history"
 	"bbflow/internal/protocol"
-	xterm "github.com/gitpod-io/xterm-go"
+	xterm "github.com/eugenioenko/xterm-go"
 )
 
 func TestRenderTracksScreenAcrossRedrawResizeAndScroll(t *testing.T) {
