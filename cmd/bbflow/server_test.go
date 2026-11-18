@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,10 +12,12 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"bbflow/internal/client"
 	"bbflow/internal/history"
 	"bbflow/internal/instance"
+	"bbflow/internal/protocol"
 )
 
 func TestServerMigratesArchiveBeforeServingAndRecovery(t *testing.T) {
@@ -69,15 +72,6 @@ func TestServerMigratesArchiveBeforeServingAndRecovery(t *testing.T) {
 }
 
 func testCommand(args ...string) *exec.Cmd {
-	// Runtime fixtures do not need a desktop or a native menu for each instance.
-	if os.Getenv("BBFLOW_TEST_MENU_HELPER") == "" {
-		for i, arg := range args {
-			if arg == "server" && i+1 < len(args) && (args[i+1] == "start" || args[i+1] == "restart") {
-				args = append(append([]string(nil), args...), "--no-menubar")
-				break
-			}
-		}
-	}
 	executable, _ := os.Executable()
 	cmd := exec.Command(executable, args...)
 	cmd.Env = append(os.Environ(), "BBFLOW_TEST_CLI=1")
@@ -309,5 +303,49 @@ func TestServerStopWaitsForDetachedSession(t *testing.T) {
 	}
 	if err := syscall.Kill(run.PID, 0); !errors.Is(err, syscall.ESRCH) {
 		t.Fatalf("detached child survived server stop: %v", err)
+	}
+}
+
+// A server holds its archive lock until it exits, but it closes its listener first.
+// Start and stop must wait for that release. They must not report an unverified server.
+func TestLifecycleWaitsForShuttingDownServer(t *testing.T) {
+	for _, action := range []string{"start", "stop", "restart"} {
+		t.Run(action, func(t *testing.T) {
+			directory, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { testCommand("--dir", directory, "server", "stop").Run() })
+			listener, err := net.Listen("tcp4", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			port := listener.Addr().(*net.TCPAddr).Port
+			listener.Close()
+			unlock, err := lockServerFile(directory, "server.lock")
+			if err != nil {
+				t.Fatal(err)
+			}
+			closing := protocol.ServerInfo{Protocol: protocol.Version, Instance: "closing", PID: os.Getpid(), DataDir: directory, Port: port}
+			if err = instance.Publish(closing); err != nil {
+				t.Fatal(err)
+			}
+			released := time.Now().Add(500 * time.Millisecond)
+			time.AfterFunc(time.Until(released), unlock)
+			output, err := testCommand("--dir", directory, "server", action).CombinedOutput()
+			if err != nil || time.Now().Before(released) {
+				t.Fatalf("%s during shutdown: %s %v", action, output, err)
+			}
+			info, err := (client.Target{Dir: directory}).Health()
+			if action == "stop" {
+				if !strings.Contains(string(output), "Stopped bbflow") {
+					t.Fatalf("stop output: %s", output)
+				}
+				return
+			}
+			if err != nil || info.Instance == closing.Instance {
+				t.Fatalf("%s did not start a new server: %+v %v", action, info, err)
+			}
+		})
 	}
 }

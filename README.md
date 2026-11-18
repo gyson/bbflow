@@ -43,12 +43,11 @@ from a shell that has the new values.
 
 ```sh
 bbflow update
-bbflow server restart
 ```
 
-`bbflow update` replaces only the executable. Active sessions continue on the previous
-version. `bbflow server restart` starts the new version. Restart ends active sessions
-and applies pending database migrations.
+When a server runs, `bbflow update` asks for confirmation first. It then replaces the
+executable and restarts the server with the new version. The restart ends active
+sessions. See [Update bbflow](docs/COMMANDS.md#update-bbflow).
 
 ## Use the web UI
 

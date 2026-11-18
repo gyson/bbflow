@@ -15,10 +15,10 @@ lines identify an optional argument. Do not type the brackets.
 | --- | --- | --- |
 | `bbflow`, `bbflow help`, `bbflow --help`, `bbflow -h` | Show available commands. | Displays help only. |
 | `bbflow --version` | Show the executable version. | Prints a release version or `dev`. Does not contact a server. |
-| `bbflow update` | Install the latest release. | Replaces the invoked executable. Active sessions continue. |
-| `bbflow server start [--no-menubar]` | Start the local server in the background. | Creates the data directory and log. Adds the macOS menu unless disabled. The server continues after the terminal closes. |
+| `bbflow [--dir DIR] update [--yes]` | Install the latest release and restart the server with it. | Asks first when a server runs. Replaces the invoked executable, then stops the server, which ends its sessions, and starts the new version. |
+| `bbflow server start` | Start the local server in the background. | Creates the data directory and log. Adds the macOS menu. The server continues after the terminal closes. |
 | `bbflow server stop` | Stop the local server. | Stops its active agents and saves their partial history. |
-| `bbflow server restart [--no-menubar]` | Replace the server with the invoked executable. | Stops active agents, finishes shutdown, then starts a new server and its optional macOS menu. |
+| `bbflow server restart` | Replace the server with the invoked executable. | Stops active agents, finishes shutdown, then starts a new server and its macOS menu. |
 | `bbflow ui` | Open the web UI home page in the default browser. | Verifies the selected running server, then launches its home URL. Starts no server or agent. |
 | `bbflow query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
 | `bbflow tool list\|add\|remove` | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
@@ -131,31 +131,73 @@ install or update bbflow.
 
 ## Update bbflow
 
-```sh
-bbflow update
+```text
+bbflow [--dir DIR] update [--yes]
 ```
 
-The command verifies the checksum and version of the latest macOS release. Then it
-replaces the executable that received the command. It takes no options or positional
-arguments. If that executable is already current or newer, it downloads no binaries and
-changes nothing. Development builds cannot update.
+The command reads the latest macOS release. If the executable that received the
+command is already current or newer, it downloads no binaries and changes nothing.
+Development builds cannot update.
+
+When a server runs in the selected instance directory, the command shows the two
+versions. It also tells you that the server stops and its running sessions end. Then it
+asks `Continue? [y/N]`. Any answer other than `y` or `yes` changes nothing. Without a
+terminal on standard input, the command refuses unless you give `--yes`.
+
+After confirmation, the command does these steps in order:
+
+1. Download the release while the current server continues.
+2. Verify its checksum and its executable version.
+3. Replace the executable through an atomic rename.
+4. Start the new executable as an updater in its own session. The updater does not
+   depend on the terminal, so it continues when the server stop closes that terminal.
+5. Stop the confirmed server and wait until it releases its archive.
+6. Start the new version in the same instance directory, with the macOS menu.
+7. Open the UI of the new server in the default browser.
+
+The command shows the updater output until the updater ends. Then it confirms that a new
+server answers. The last line names both versions, for example
+`Updated bbflow 0.0.12 to 0.0.13. The server in ~/.bbflow runs the new version.` When no
+server runs, the command prints `Updated bbflow 0.0.12 to 0.0.13.`, then the hint to
+start the server. The updater also appends its output to `update.log` in the instance
+directory. Ctrl+C stops only that display. The update continues.
+
+When no server runs, the command only replaces the executable. It does not create the
+instance directory.
+
+Hints and recovery commands name the selected instance with `--dir`, for example
+`bbflow --dir '/Users/you/my instance' server start`.
+
+Updates that share an executable run one at a time. A second update waits for the
+first and says so. If another command changed the executable while the question waited,
+the update stops and changes nothing.
+
+The new server and its sessions do not receive `GITHUB_TOKEN` from the update command.
+They receive all other variables of its environment.
+
+`--yes` continues without the confirmation prompt.
 
 The executable must have the name `bbflow`. The command supports a symlink to it. You
 need write access to its installation directory.
 
-`--dir` and `BBFLOW_DIR` select instance data, not the executable to update, and have no
-effect on this command. `BBFLOW_INSTALL_DIR` also does not redirect an update.
+`--dir` and `BBFLOW_DIR` select the instance to restart. They do not select the
+executable to update. `BBFLOW_INSTALL_DIR` also does not redirect an update.
 
-**Impact:** contacts GitHub and replaces the executable through an atomic rename. It
-does not open an instance, change history, or restart a server. Existing sessions
-continue on the running version. When ready to use the new version, run
-`bbflow server restart`. Restart ends active sessions. The new server applies pending
-embedded database migrations at startup, before accepting requests.
+**Impact:** contacts GitHub and replaces the executable through an atomic rename. When
+a server runs, it stops that server after confirmation, which ends its sessions and
+saves their partial history. The new server applies pending embedded database
+migrations at startup, before accepting requests. A failure before the rename leaves the
+executable and the server unchanged. A failure after the rename leaves the new
+executable in place. Then run `bbflow --dir DIR server start`. Other instances that use
+the same executable continue on the previous version until you restart them.
+
+Do not run the command inside a bbflow session if you want to see its result there. The
+server stop ends that terminal. The update continues, and `update.log` has its output.
 
 ## Start the server
 
 ```text
-bbflow [--dir DIR] server start [--no-menubar]
+bbflow [--dir DIR] server start
 ```
 
 ```sh
@@ -191,10 +233,9 @@ Quit retains and verifies the original server connection, so missing or replaced
 `server.json` files do not prevent it. The menu has no separate Stop, Settings, or Logs
 action. There is no persistent Running label.
 
-Pass `--no-menubar` to start without the menu, for example on a headless Mac or in
-automated checks. The flag also applies to restart. Linux never launches the menu. A
-repeated start leaves the existing server's menu choice unchanged and does not create
-another icon.
+Each server start on macOS launches the menu. There is no option to turn it off. Linux
+never launches the menu. A repeated start leaves the existing server and its menu
+unchanged and does not create another icon.
 
 If the menu fails, the server continues and writes details to `server.log`. To restore
 the menu, restart the server. This stops active sessions. The menu needs no `.app`
@@ -254,7 +295,7 @@ On macOS, the server also closes its menu companion before completing shutdown.
 ## Restart the server
 
 ```text
-bbflow [--dir DIR] server restart [--no-menubar]
+bbflow [--dir DIR] server restart
 ```
 
 ```sh
@@ -277,9 +318,7 @@ discover the new endpoint on their next command. It does not resume agents or re
 input. Restart can fail to start the new process after the previous server stops. Check
 the reported error and log path.
 
-Restart closes the previous menu companion and launches a new one on macOS unless
-`--no-menubar` is supplied. The flag applies to this start. bbflow does not save it as a
-setting.
+Restart closes the previous menu companion and launches a new one on macOS.
 
 ## Query SQLite
 

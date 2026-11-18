@@ -16,6 +16,7 @@ import (
 	"bbflow/internal/client"
 	"bbflow/internal/history"
 	"bbflow/internal/instance"
+	"bbflow/internal/protocol"
 	"bbflow/internal/server"
 )
 
@@ -29,10 +30,6 @@ func serverCommand(target client.Target, args []string) error {
 		return errors.New("use bbflow server start|stop|restart")
 	}
 	flags := flag.NewFlagSet("server "+action, flag.ContinueOnError)
-	var noMenu bool
-	if action != "stop" {
-		flags.BoolVar(&noMenu, "no-menubar", false, "start without the macOS menu bar")
-	}
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -45,7 +42,7 @@ func serverCommand(target client.Target, args []string) error {
 	}
 	if os.Getenv("BBFLOW_SERVER_CHILD") == "1" {
 		os.Unsetenv("BBFLOW_SERVER_CHILD")
-		return serve(target, noMenu)
+		return serve(target)
 	}
 	if err := os.MkdirAll(target.Dir, 0700); err != nil {
 		return err
@@ -69,7 +66,7 @@ func serverCommand(target client.Target, args []string) error {
 		}
 	}
 	if action == "start" || action == "restart" {
-		return startServer(target, noMenu)
+		return startServer(target)
 	}
 	return nil
 }
@@ -86,12 +83,16 @@ func lockServerFile(directory, name string) (func(), error) {
 	return func() { file.Close() }, nil
 }
 
-func serve(target client.Target, noMenu bool) error {
+func serve(target client.Target) error {
 	unlock, err := lockServerFile(target.Dir, "server.lock")
 	if err != nil {
 		return fmt.Errorf("a server already owns %s: %w", target.Dir, err)
 	}
 	defer unlock()
+	// Remove the descriptor last, immediately before the lock release. Until then,
+	// clients find a server that refuses connections and wait for its shutdown.
+	var owned protocol.ServerInfo
+	defer func() { instance.RemoveOwned(owned) }()
 	// After SQLite closes, close the companion before release of the archive lock. Quit
 	// waits for this pipe to close. It does not wait for the lock.
 	var menu *menuBarProcess
@@ -111,19 +112,32 @@ func serve(target client.Target, noMenu bool) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 	defer cancel()
-	if !noMenu {
+	if menuBar != "off" {
 		menu, err = launchMenuBar(target)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "bbflow menu bar unavailable:", err)
 		}
 	}
-	return server.Serve(ctx, listener, store)
+	owned, err = server.Serve(ctx, listener, store)
+	return err
 }
 
-func startServer(target client.Target, noMenu bool) error {
+// shuttingDown reports a server that holds the archive lock but refuses connections. At
+// shutdown, a server closes its listener first and releases the lock last.
+func shuttingDown(err error) bool {
+	return errors.Is(err, syscall.ECONNREFUSED)
+}
+
+func startServer(target client.Target) error {
 	check, err := lockServerFile(target.Dir, "server.lock")
 	if errors.Is(err, syscall.EWOULDBLOCK) {
 		info, err := target.Health()
+		if shuttingDown(err) {
+			if err = waitServerRelease(target); err != nil {
+				return err
+			}
+			return startServer(target)
+		}
 		if err != nil {
 			return fmt.Errorf("a server owns %s but cannot be verified: %w", target.Dir, err)
 		}
@@ -149,9 +163,6 @@ func startServer(target client.Target, noMenu bool) error {
 	}
 	defer logFile.Close()
 	cmd := exec.Command(executable, "--dir", target.Dir, "server", "start")
-	if noMenu {
-		cmd.Args = append(cmd.Args, "--no-menubar")
-	}
 	cmd.Env = append(os.Environ(), "BBFLOW_SERVER_CHILD=1")
 	cmd.Dir = target.Dir
 	cmd.Stdout, cmd.Stderr = logFile, logFile
@@ -198,7 +209,8 @@ func stopServer(target client.Target) error {
 	if !errors.Is(err, syscall.EWOULDBLOCK) {
 		return err
 	}
-	if err = target.Stop(); err != nil {
+	// A server that refuses connections is already shutting down. Wait for it.
+	if err = target.Stop(); err != nil && !shuttingDown(err) {
 		return fmt.Errorf("stop server in %s: %w", target.Dir, err)
 	}
 	if err = waitServerRelease(target); err != nil {

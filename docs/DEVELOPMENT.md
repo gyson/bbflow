@@ -134,9 +134,9 @@ output directory must not already exist. Git ignores it. Each archive includes t
 executable, `LICENSE`, and `THIRD_PARTY_NOTICES.txt`. Use the patched Go version that
 `go.mod` requires.
 
-The smoke check uses a temporary instance with the menu bar disabled. It verifies the
-embedded UI and a read-only query. It stops the server before it removes temporary
-files.
+The smoke check uses a temporary instance. Its server adds a menu bar icon until the
+check stops it. It verifies the embedded UI and a read-only query. It stops the server
+before it removes temporary files.
 
 To publish with the Release workflow, do these steps:
 

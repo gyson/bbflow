@@ -106,6 +106,17 @@ func TestMain(m *testing.M) {
 	}
 	// Test the management CLI in a subprocess.
 	if os.Getenv("BBFLOW_TEST_CLI") == "1" {
+		// Update fixtures act as release builds.
+		if v := os.Getenv("BBFLOW_TEST_VERSION"); v != "" {
+			version = v
+		}
+		// Runtime tests do not add native menus. The menu tests use a fixture companion.
+		if os.Getenv("BBFLOW_TEST_MENU_HELPER") == "" {
+			menuBar = "off"
+		}
+		if path := os.Getenv("BBFLOW_TEST_EXECUTABLE"); path != "" {
+			executablePath = func() (string, error) { return path, nil }
+		}
 		main()
 		return
 	}

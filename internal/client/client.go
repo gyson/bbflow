@@ -94,6 +94,16 @@ func (t Target) Health() (protocol.ServerInfo, error) {
 	return info, err
 }
 
+// Identify verifies the server of the instance for any protocol version. Use it only
+// for lifecycle decisions, such as which server an update stops.
+func (t Target) Identify() (protocol.ServerInfo, error) {
+	conn, info, err := t.open()
+	if err == nil {
+		conn.Close()
+	}
+	return info, err
+}
+
 func (t Target) openCurrent() (*protocol.Conn, protocol.ServerInfo, error) {
 	conn, info, err := t.open()
 	if err == nil && info.Protocol != protocol.Version {

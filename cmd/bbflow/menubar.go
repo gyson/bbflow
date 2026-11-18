@@ -47,6 +47,10 @@ func menuQuitLabel(displayVersion, tag string) string {
 	return "Quit bbflow (" + tag + ")"
 }
 
+// menuBar is "off" when the server must not launch the macOS menu companion. Test
+// builds set it at link time. Releases leave it unset.
+var menuBar string
+
 // The same executable runs the CLI, server, and menu in separate processes. Normal EOF
 // follows archive cleanup. A server crash also closes the pipe, but cleanup is not
 // guaranteed. The menu lifetime does not depend on a saved PID or status polling.

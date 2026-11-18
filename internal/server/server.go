@@ -41,8 +41,11 @@ type Server struct {
 }
 
 // On cancellation, Serve stops new requests and waits for agent cleanup. The caller
-// owns the archive and the exclusive server lock for its directory.
-func Serve(ctx context.Context, listener net.Listener, store *history.Store) error {
+// owns the archive and the exclusive server lock for its directory. Serve publishes
+// server.json and returns the published identity. The caller removes that descriptor
+// after its own cleanup, immediately before it releases the lock. Until then, clients
+// can identify a server that is shutting down.
+func Serve(ctx context.Context, listener net.Listener, store *history.Store) (protocol.ServerInfo, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	executable, _ := os.Executable()
@@ -52,12 +55,11 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 		Executable: executable,
 	}}
 	if err := s.ensureGeneral(); err != nil {
-		return err
+		return protocol.ServerInfo{}, err
 	}
 	if err := instance.Publish(s.info); err != nil {
-		return err
+		return protocol.ServerInfo{}, err
 	}
-	defer instance.RemoveOwned(s.info)
 	upgrader := websocket.Upgrader{HandshakeTimeout: 5 * time.Second}
 	mux := http.NewServeMux()
 	webui.Register(mux, func() (string, error) {
@@ -111,9 +113,9 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 	s.wg.Wait()
 	s.jobs.Wait()
 	if errors.Is(err, http.ErrServerClosed) || errors.Is(err, net.ErrClosed) {
-		return nil
+		return s.info, nil
 	}
-	return err
+	return s.info, err
 }
 
 func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {

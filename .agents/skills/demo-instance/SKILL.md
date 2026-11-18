@@ -58,8 +58,8 @@ If `seed` stops with a timeout, another startup file of the shell can be the cau
 `DISABLE_AUTO_UPDATE=true`, and run `seed` again. Tell the user that the demo shells are
 `/bin/sh`, without colors.
 
-The server adds a menu bar icon on macOS, as a regular start does. For a check without
-a desktop, add `--no-menubar`. Then run `clean` before you complete the task.
+The server adds a menu bar icon on macOS, as a regular start does. Run `clean` before
+you complete the task. That stops the server and removes the icon.
 
 A second `seed` adds nothing. It prints the URLs again.
 
@@ -162,8 +162,8 @@ server. The server and its sessions then continue with no folder, and `bbflow se
 stop` cannot find them.
 
 To stop such a server, click **Quit bbflow** in its menu bar icon. The menu keeps the
-server identity from the start, so Quit works after the removal. A server that started
-with `--no-menubar` has no such icon. Thus run `clean` before the worktree is removed.
+server identity from the start, so Quit works after the removal. Without a desktop,
+there is no icon to click. Thus run `clean` before the worktree is removed.
 
 The label of a demo server has a tag, such as **Quit bbflow (demo-1a2b3)**. The
 tag comes from the path of the instance directory, so each checkout gets a different
