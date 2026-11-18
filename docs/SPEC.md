@@ -30,8 +30,11 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
   Go FFI to load the built-in AppKit frameworks, without CGO. The server launches the
   same executable as a separate menu process. It needs no `.app` bundle or additional
   executable. Other platforms do not load native menu code.
-- The server uses the pinned pure-Go `github.com/gitpod-io/xterm-go` headless emulator.
-  It owns terminal screens independently of client connections.
+- The server uses the pinned pure-Go `github.com/eugenioenko/xterm-go` headless
+  emulator. It owns terminal screens independently of client connections. This fork of
+  `github.com/gitpod-io/xterm-go` fixes a panic when a narrower size reflows more rows
+  than the scrollback holds (gitpod-io/xterm-go issue 61). The reflow drops the oldest
+  rows.
 - A detached Go server owns pseudo-terminals (PTYs) and SQLite. Clients use JSON text
   messages over WebSocket at `/ws`, on an HTTP server bound to IPv4 loopback. The Go
   transport uses `github.com/gorilla/websocket`. Byte blobs use base64 encoding. The CLI
@@ -1126,6 +1129,12 @@ Committed output and size events update the emulator in order. Terminal query re
 are recorded as `terminal-response` before PTY delivery. One notification combines
 render requests. There is no per-client queue of raw output. Each attachment has its own
 immutable render baseline and one outstanding frame.
+
+An emulator panic does not stop the server. Live updates and the replay of a stored run
+recover the panic for that terminal only. The server writes the session, the event
+sequence, the event kind, and the stack to `server.log`. It then starts a blank emulator
+at the size of the event, and views get a full frame. The process and the archive do not
+change. The rendered screen and history before the panic are lost from that view.
 
 After its acknowledgment, the server computes changes from the latest state, at most 20
 times per second. Final output is acknowledged before exit. Input receipts use a

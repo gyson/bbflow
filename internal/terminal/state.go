@@ -5,13 +5,15 @@ package terminal
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"unicode"
 
 	"bbflow/internal/history"
 	"bbflow/internal/protocol"
-	xterm "github.com/gitpod-io/xterm-go"
+	xterm "github.com/eugenioenko/xterm-go"
 )
 
 // Scrollback is the maximum number of normal-buffer history rows in a view.
@@ -76,13 +78,20 @@ func (c *Cache) add(row string) {
 func rowCost(row string) int { return len(row) + 2 }
 
 func New(size protocol.Size) *State {
-	s := &State{term: xterm.New(xterm.WithCols(int(size.Cols)), xterm.WithRows(int(size.Rows)), xterm.WithScrollback(Scrollback))}
+	s := &State{}
+	s.reset(size)
+	return s
+}
+
+// reset starts a blank emulator. The OnData handler holds s, so reset a State in place.
+// Do not copy a State.
+func (s *State) reset(size protocol.Size) {
+	s.term = xterm.New(xterm.WithCols(int(size.Cols)), xterm.WithRows(int(size.Rows)), xterm.WithScrollback(Scrollback))
 	// The display clients do not encode Kitty extended keyboard events. Do not advertise
 	// that optional protocol to applications in this terminal.
 	s.term.RegisterCsiHandler(xterm.FunctionIdentifier{Prefix: '?', Final: 'u'}, func(*xterm.Params) bool { return true })
 	s.term.OnData(func(data string) { s.responses = append(s.responses, data...) })
 	s.trackBuffer()
-	return s
 }
 
 // Size returns the current size of the terminal.
@@ -99,14 +108,27 @@ func (s *State) trackBuffer() {
 	lines.OnTrimEmitter.Event(func(n int) { s.trim += int64(n) })
 }
 
-func (s *State) Apply(event history.Event) ([]byte, error) {
+// Apply feeds one event to the emulator. Live output and the replay of a stored run both
+// use it. An emulator panic must not stop the server and every session with it. Apply
+// logs the panic and starts a blank emulator for this terminal. The archive keeps the
+// original bytes, so the reset loses only the rendered screen and history.
+func (s *State) Apply(event history.Event) (responses []byte, err error) {
 	s.responses = nil
+	target := s.Size()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("session %s: terminal emulator panic at event %d (%s); the view starts again blank: %v\n%s", event.SessionID, event.Seq, event.Kind, r, debug.Stack())
+			s.reset(target) // The new buffer starts a new epoch, so views get a full frame.
+			responses, err = nil, nil
+		}
+	}()
 	switch event.Kind {
 	case "start", "resize":
 		var size protocol.Size
 		if err := json.Unmarshal(event.Data, &size); err != nil || !ValidSize(size) {
 			return nil, fmt.Errorf("unsupported terminal size at event %d (2–512 columns, 1–256 rows)", event.Seq)
 		}
+		target = size // After a reset, keep the size that the PTY and the views now use.
 		if int(size.Cols) != s.term.Cols() || int(size.Rows) != s.term.Rows() {
 			s.term.Resize(int(size.Cols), int(size.Rows))
 			s.epoch++ // A resize can reflow history. Send a fresh view.
