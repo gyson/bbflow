@@ -236,4 +236,4 @@ bbflow query "SELECT id,title,created,archived FROM sessions WHERE workspace='PA
 | `bbflow --version` | Print the executable version. |
 | `bbflow ui` | Open the web UI in the default browser of the user. |
 | `bbflow server start`, `stop`, `restart` | Manage the server. `stop` and `restart` end all live sessions, also your own terminal. Do not run them without a request from the user. |
-| `bbflow update` | Install the latest release. Do not run it without a request from the user. |
+| `bbflow update` | Install the latest release and restart the server. The restart ends all live sessions, also your own terminal. Do not run it without a request from the user. |

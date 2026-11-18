@@ -100,27 +100,81 @@ archive. It checks the version before replacement through a rename in the same
 directory. Failures before replacement preserve an existing executable.
 
 Existing destination symlinks are rejected. Downloads and staging directories are
-removed on exit. It does not edit PATH, require sudo, alter history, or restart a
-server.
+removed on exit. The installer does not edit PATH, require sudo, alter history, or
+restart a server. `bbflow update` restarts a server, as described below.
 
 Installer `--check` compares the installed executable at the selected installation path
 with the requested or latest version, including numeric version ordering. It changes no
 installed files and downloads no binaries. Development versions cannot be compared.
-
-`bbflow update` runs the embedded copy of `internal/install/install.sh` with the invoked
-executable's directory. It uses the same curl download, verification, and atomic
-replacement as initial installation. It never downloads or executes a remote installer
-script. Unsupported platforms are rejected. Failed downloads or verification preserve
-the installed executable. See [COMMANDS.md](COMMANDS.md#update-bbflow) for its usage,
-requirements, and effects.
-
-There is no UI update action, background check, or automatic update.
 
 The tag-triggered Release workflow tests Apple Silicon and Intel macOS runners before
 publishing assets. Release notes are stored in `docs/releases/`. Linux and Windows
 packages, Homebrew packaging, and Apple Developer ID signing/notarization are absent.
 The installer and release smoke checks use temporary directories. Installer fixtures use
 synthetic binaries and GitHub API responses. They do not access real credentials.
+
+### Update
+
+`bbflow update` runs the embedded copy of `internal/install/install.sh` with the invoked
+executable's directory. It uses the same curl download, verification, and atomic
+replacement as initial installation. It never downloads or executes a remote installer
+script. Unsupported platforms and development builds are rejected. Failed downloads or
+verification preserve the installed executable. See
+[COMMANDS.md](COMMANDS.md#update-bbflow) for its usage, prompt, and options.
+
+The command first runs the installer with `--check` and reads the installed and
+available versions. If the installed executable is current or newer, the command stops.
+It does not contact the server, ask a question, or change files.
+
+Then the command looks for a live server in the selected instance directory. A live
+server holds the archive lock and passes identity verification for any protocol
+version. The server does not report its release version. The command does not compare
+it with the new version.
+
+The command behaves differently in these cases:
+
+| State of the instance | Question | Executable | Server |
+| --- | --- | --- | --- |
+| A live server runs. | It asks once. The question says that the server restarts and that all live sessions stop. | Replaced after `y` or `yes`. Unchanged after any other answer. | Stopped and started with the new version after `y` or `yes`. Unchanged after any other answer. |
+| No server runs. | None. | Replaced. | None started. The command prints the new version, that no server runs, and the hint `bbflow server start`. |
+| A server is shutting down. | None. The command waits up to 15 seconds for the shutdown to finish. If it does not finish, the command stops with an error. | Replaced after the shutdown finishes. | Handled as "no server runs". |
+| A server holds the lock but fails verification. | None. | Unchanged. | Unchanged. The command stops with an error. |
+
+`--yes` answers the question in advance. Without a terminal on standard input and
+without `--yes`, the command stops with an error before the download. When no server
+runs, the command does not create the instance directory.
+
+The question comes before the download. After `y` or `yes`, the command does these steps
+in order:
+
+1. Download and verify the release while the server continues.
+2. Rename the new executable over the old one. Installation uses exactly the version
+   from the check, with `--no-next-steps`. Then the command runs the installed
+   executable with `--version`. If it reports a different version, the command stops
+   with an error.
+3. Start the new executable as an updater. The updater runs in a new session (`Setsid`)
+   and ignores SIGHUP and SIGINT. Its output goes to `update.log` in the instance
+   directory. The command copies that log to the terminal until the updater exits.
+4. The updater takes the lifecycle lock of the instance. It stops the server only if
+   its verified instance ID matches the ID that the command recorded before the
+   question. It uses the same identity check on the shutdown connection as the menu
+   Quit action.
+5. The updater waits for the archive lock release, starts the server with the new
+   version and its macOS menu, and opens the UI.
+6. The command requires a new verified server instance. It does not trust the updater
+   exit status alone. Then it prints the old version and the version that the installed
+   executable reported.
+
+If another server runs at step 4, the updater does not stop it and reports an error.
+If the start fails at step 5, the new executable stays in place and no server runs.
+Then `bbflow server start` is the recovery. Other instances that use the same
+executable continue on the previous version until they restart.
+
+The updater is a newer version than the command that starts it. The environment
+variables `BBFLOW_UPDATE_CHILD` and `BBFLOW_UPDATE_INSTANCE` are the interface between
+the two versions. Keep their names and meaning stable.
+
+There is no UI update action, background check, or automatic update.
 
 ## Server lifecycle
 
@@ -135,6 +189,11 @@ successful protocol handshake, including database upgrades. A second start leave
 matching server unchanged. `stop` requests shutdown through the protocol and waits for
 the archive lock to be released. `restart` completes stop before launching the invoked
 executable again.
+
+A server closes its listener before it releases the archive lock. When the lock is held
+and the published port refuses connections, the server is shutting down. Then `start`,
+`stop`, and `restart` wait up to 15 seconds for the lock release. They do not report an
+unverified server.
 
 Lifecycle commands serialize within an instance directory. An archive lock prevents
 multiple servers from owning it. When the lock is free, lifecycle commands can discard
@@ -161,9 +220,10 @@ until its five-second request timeout.
 
 ### macOS menu bar
 
-New servers launch a menu companion by default on macOS. `server start --no-menubar` and
-`server restart --no-menubar` disable it for that server process. A repeated start keeps
-the existing server and its menu choice. Restart replaces both processes.
+Each new server launches a menu companion on macOS. No command option turns it off.
+Builds that set the link-time variable `main.menuBar` to `off` launch no companion.
+Only automated tests use that setting. A repeated start keeps the existing server and
+its menu. Restart replaces both processes.
 
 The menu contains **Open UI**, a separator, and **Quit bbflow**. The Quit bbflow label
 shows the running version, such as **Quit bbflow (0.0.5)** or **Quit bbflow (dev)**.
@@ -1577,7 +1637,7 @@ draft. Go tests check embedded assets and browser origin
 restrictions. CLI fixtures check the home-page opener, instance selection, invalid
 arguments, removed session commands, and opener failures.
 
-Menu fixtures cover repeated start, restart, headless mode, server crashes, shutdown
+Menu fixtures cover repeated start, restart, server crashes, shutdown
 with an active session, and protection against stopping a replacement instance. A manual
 macOS check confirmed Open UI and Quit bbflow from the standalone executable. The shared
 logo was checked in light and dark browser themes. The generated menu bar PNG was

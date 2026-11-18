@@ -27,7 +27,8 @@ func TestDemo(t *testing.T) {
 	}
 	bin := t.TempDir()
 	for name, pkg := range map[string]string{"bbflow": "bbflow/cmd/bbflow", "bbflow-demo": "."} {
-		build := exec.Command("go", "build", "-o", filepath.Join(bin, name), pkg)
+		// The servers of this test do not add native menus.
+		build := exec.Command("go", "build", "-ldflags=-X main.menuBar=off", "-o", filepath.Join(bin, name), pkg)
 		build.Env = append(os.Environ(), "CGO_ENABLED=0")
 		if output, err := build.CombinedOutput(); err != nil {
 			t.Fatalf("build %s: %v\n%s", pkg, err, output)
@@ -122,7 +123,7 @@ func TestDemo(t *testing.T) {
 	git(temporary, "init", "--quiet", fixture)
 	git(fixture, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--quiet", "--allow-empty", "--message", "fixture")
 	write(filepath.Join(fixture, "edit.txt"), "uncommitted\n")
-	pass("bbflow", demo, "server", "start", "--no-menubar")
+	pass("bbflow", demo, "server", "start")
 	if err := os.Mkdir(filepath.Join(demo, "demo"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -177,13 +178,13 @@ func TestDemo(t *testing.T) {
 	}
 
 	// The regular restart keeps the demo data.
-	pass("bbflow", demo, "server", "restart", "--no-menubar")
+	pass("bbflow", demo, "server", "restart")
 	expect("SELECT count(*) FROM sessions", "[[7]]")
 	expect("SELECT count(*) FROM runs WHERE status='running'", "[[0]]")
 
 	// seed refuses an instance with other files or data, and writes no marker. clean
 	// refuses an instance without the marker.
-	pass("bbflow", other, "server", "start", "--no-menubar")
+	pass("bbflow", other, "server", "start")
 	notes := filepath.Join(other, "notes.txt")
 	write(notes, "keep\n")
 	refused("files that a new server does not create: notes.txt", "bbflow-demo", other, "seed")
@@ -205,7 +206,7 @@ func TestDemo(t *testing.T) {
 
 	// A marker without the seed record comes from a seed that stopped. seed refuses to
 	// continue it, and clean removes it.
-	pass("bbflow", crashed, "server", "start", "--no-menubar")
+	pass("bbflow", crashed, "server", "start")
 	write(filepath.Join(crashed, "demo", "DEMO"), "")
 	refused("an earlier seed", "bbflow-demo", crashed, "seed")
 	pass("bbflow-demo", crashed, "clean")

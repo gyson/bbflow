@@ -137,9 +137,11 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   label includes the running version. For a directory that is not the build default, it
   shows a short instance tag in place of the version. Quit bbflow stops the server and
   its sessions.
-- Use `server start --no-menubar` for headless checks. Automated runtime tests disable
-  native menus. A separate helper uses a pipe to test the companion lifecycle. Keep menu
-  code in macOS-specific Go files and retain `CGO_ENABLED=0` builds.
+- Every server start launches the menu companion on macOS. There is no command option to
+  turn it off. Automated runtime tests disable native menus with the link-time variable
+  `main.menuBar=off`, or in `TestMain`. A separate helper uses a pipe to test the
+  companion lifecycle. Keep menu code in macOS-specific Go files and retain
+  `CGO_ENABLED=0` builds.
 - Local builds use `~/.bbflow-dev`. `make release` produces `bin/release/bbflow`, which
   uses `~/.bbflow`. Each instance gets an automatically allocated loopback port. Keep
   development and production data separate by default. Tests must use temporary data
@@ -151,7 +153,8 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 - The installer uses curl and built-in macOS tools, with optional GitHub API
   authentication. Never require GitHub CLI. Keep initial installation and
   `bbflow update` on the same embedded installer under `internal/install`. Updates
-  replace the invoked executable and never restart sessions.
+  replace the invoked executable. After confirmation, an update restarts the server of
+  the selected instance. That ends its sessions.
 - Use synthetic releases for installer tests. Use temporary installation and instance
   directories for live install checks. See `docs/DEVELOPMENT.md` for release publishing
   and validation commands.

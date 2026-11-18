@@ -6,7 +6,7 @@ fail() { printf 'bbflow installer: %s\n' "$*" >&2; exit 1; }
 
 usage() {
     cat <<'HELP'
-Usage: sh install.sh [--version VERSION] [--dir DIRECTORY] [--check]
+Usage: sh install.sh [--version VERSION] [--dir DIRECTORY] [--check] [--no-next-steps]
 
 Install bbflow for macOS using curl and the tools included with macOS.
 Optional: GITHUB_TOKEN authenticates GitHub API requests.
@@ -17,10 +17,12 @@ Optional: GITHUB_TOKEN authenticates GitHub API requests.
                      BBFLOW_INSTALL_DIR when set. Must be an absolute path.
   --check            Compare the executable in that directory with the selected
                      release without installing or changing files.
+  --no-next-steps    Do not print the next steps after installation.
+                     bbflow update uses this option.
   --help             Show this help.
 
 Run bbflow update to upgrade. The installer never starts or stops a server, changes shell
-profiles, or deletes history. Restart the server yourself when ready.
+profiles, or deletes history. bbflow update restarts the server after you confirm.
 HELP
 }
 
@@ -57,6 +59,7 @@ main() {
     requested=latest
     install_dir=${BBFLOW_INSTALL_DIR:-"${HOME:?HOME must be set}/.local/bin"}
     check=false
+    next_steps=true
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --version|--dir)
@@ -67,6 +70,7 @@ main() {
                 esac
                 shift 2 ;;
             --check) check=true; shift ;;
+            --no-next-steps) next_steps=false; shift ;;
             --help|-h) usage; return ;;
             *) fail "unknown argument: $1 (use --help)" ;;
         esac
@@ -163,6 +167,7 @@ main() {
     # Rename on the same filesystem. Do not truncate an executable used by a server.
     mv -f "$staging/bbflow" "$destination"
     printf 'Installed bbflow %s at %s\n' "$selected" "$destination"
+    "$next_steps" || return 0
     case ":$PATH:" in
         *":$install_dir:"*) ;;
         *) printf 'Add this directory to PATH in your shell configuration: %s\n' "$install_dir" ;;

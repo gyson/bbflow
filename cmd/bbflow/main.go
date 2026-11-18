@@ -12,7 +12,7 @@ import (
 
 const usage = `Usage:
   bbflow --version
-  bbflow update
+  bbflow [--dir DIR] update [--yes]
   bbflow [--dir DIR] server start|stop|restart
   bbflow [--dir DIR] ui
   bbflow [--dir DIR] query SQL
@@ -61,8 +61,6 @@ func run(args []string) error {
 		return nil
 	}
 	switch args[0] {
-	case "update":
-		return update(args[1:])
 	case "skill":
 		return skill(args[1:])
 	}
@@ -76,6 +74,8 @@ func run(args []string) error {
 		return serverCommand(target, args[1:])
 	case "ui":
 		return ui(target, args[1:])
+	case "update":
+		return update(target, args[1:])
 	case "query":
 		return query(target, args[1:])
 	case "tool":

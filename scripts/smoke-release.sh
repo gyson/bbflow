@@ -1,5 +1,6 @@
 #!/bin/sh
-# Test a release executable with an isolated instance and no desktop menu.
+# Test a release executable with an isolated instance. On a desktop, its menu bar icon
+# shows until the cleanup stops the server.
 set -eu
 binary=${1:?Usage: sh scripts/smoke-release.sh BINARY VERSION}
 version=${2:?Expected release version is required}
@@ -11,7 +12,7 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
-output=$("$binary" --dir "$instance" server start --no-menubar)
+output=$("$binary" --dir "$instance" server start)
 printf '%s\n' "$output"
 url=$(printf '%s\n' "$output" | grep -Eo 'http://127\.0\.0\.1:[0-9]+' | head -1)
 [ -n "$url" ]

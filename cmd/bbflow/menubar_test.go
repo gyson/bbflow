@@ -157,26 +157,6 @@ func TestMenuQuitLeavesReplacementConnectionFile(t *testing.T) {
 	}
 }
 
-func TestServerCanStartWithoutMenu(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "menu-events")
-	t.Setenv("BBFLOW_TEST_MENU_HELPER", path)
-	directory := t.TempDir()
-	t.Cleanup(func() { testCommand("--dir", directory, "server", "stop").Run() })
-	if output, err := testCommand("--dir", directory, "server", "start", "--no-menubar").CombinedOutput(); err != nil {
-		t.Fatalf("headless start: %v %s", err, output)
-	}
-	info, err := (client.Target{Dir: directory}).Health()
-	if err != nil || info.PID == 0 {
-		t.Fatalf("headless server unavailable: PID %d, %v", info.PID, err)
-	}
-	if output, err := testCommand("--dir", directory, "server", "stop").CombinedOutput(); err != nil {
-		t.Fatalf("headless stop: %v %s", err, output)
-	}
-	if events := menuEvents(t, path); events != "" {
-		t.Fatalf("headless server launched a menu: %q", events)
-	}
-}
-
 func TestMenuQuitLabelNamesInstance(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
