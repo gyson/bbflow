@@ -446,6 +446,8 @@ func installLocked(t *testing.T, directory string) bool {
 // The updater keeps the installation lock after the command ends, for example after
 // Ctrl+C. The new server must not inherit the lock.
 func TestUpdaterKeepsLockAfterCommandEnds(t *testing.T) {
+	// The updater opens the UI. A recording opener keeps the test away from the browser.
+	argsPath := browserFixture(t)
 	f := newUpdateFixture(t)
 	directory := filepath.Join(f.root, "instance")
 	target := f.startServer(directory)
@@ -489,7 +491,11 @@ func TestUpdaterKeepsLockAfterCommandEnds(t *testing.T) {
 		return err == nil && after.Instance != before.Instance
 	})
 	waitFor(t, func() bool { return !installLocked(t, installDir) })
-	if after, err := target.Health(); err != nil || after.Instance == before.Instance {
+	after, err := target.Health()
+	if err != nil || after.Instance == before.Instance {
 		t.Fatalf("server not replaced: %+v %v", after, err)
+	}
+	if args, err := os.ReadFile(argsPath); err != nil || string(args) != fmt.Sprintf("http://127.0.0.1:%d/\n", after.Port) {
+		t.Fatalf("the updater did not use the recording opener: %q %v", args, err)
 	}
 }
