@@ -7,8 +7,9 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 
 ## Architecture and build
 
-- Go 1.27.3+ core with `github.com/creack/pty` and `golang.org/x/sys`. Only synthetic
-  test agents use `golang.org/x/term`.
+- Go 1.27.3+ core with `github.com/creack/pty`, `golang.org/x/sys`, and
+  `golang.org/x/term`. `bbflow update` uses `golang.org/x/term` to find out if standard
+  input is a terminal for its question. Synthetic test agents also use it.
 - SQLite through the pure Go `github.com/ncruces/go-sqlite3` driver. No CGO in
   deployment builds.
 - Frontend sources are under `web/`, with strict TypeScript and CSS under `web/src`.
@@ -144,6 +145,21 @@ The command behaves differently in these cases:
 without `--yes`, the command stops with an error before the download. When no server
 runs, the command does not create the instance directory.
 
+After the question, the command locks the directory of the executable with `flock`. The
+lock creates no file. Updates that share the executable run one at a time, also for
+different instance directories. A second update waits and says so. Under the lock, the
+command runs the executable with `--version` again. If the version is no longer the
+version from the check, another command changed the executable. Then the command stops
+with an error and changes nothing. It keeps the lock until the updater ends.
+
+Hints and recovery commands always name the selected instance, for example
+`bbflow --dir '/path/to/instance' server start`. The directory is quoted for a POSIX
+shell. A hint without `--dir` could select the default instance and stop its sessions.
+
+The updater environment does not contain `GITHUB_TOKEN`. The new server passes its
+environment to each session, and the token is only for release requests. All other
+variables of the update command reach the new server, as with `server restart`.
+
 The question comes before the download. After `y` or `yes`, the command does these steps
 in order:
 
@@ -206,8 +222,11 @@ duplicate or stopping an unrelated server. A failed stop does not start a replac
 
 The server binds `127.0.0.1:0` and atomically publishes its connection information in
 `server.json`, with private permissions. The file is disposable. The server removes it
-after handlers and agents stop, before releasing the archive lock. Shutdown leaves the
-file intact if it belongs to another server instance.
+as the last shutdown step, after handlers, agents, SQLite, and the menu companion stop,
+immediately before it releases the archive lock. Until then, a lifecycle command finds a
+server that refuses connections and waits for it. A held lock with a missing
+`server.json` occurs only while a server starts. Shutdown leaves the file intact if it
+belongs to another server instance.
 
 HTTP serves the WebSocket upgrade, the embedded UI, its static files, and the browser
 connection information. All session operations and history reads use WebSocket. There

@@ -165,6 +165,16 @@ directory. Ctrl+C stops only that display. The update continues.
 When no server runs, the command only replaces the executable. It does not create the
 instance directory.
 
+Hints and recovery commands name the selected instance with `--dir`, for example
+`bbflow --dir '/Users/you/my instance' server start`.
+
+Updates that share an executable run one at a time. A second update waits for the
+first and says so. If another command changed the executable while the question waited,
+the update stops and changes nothing.
+
+The new server and its sessions do not receive `GITHUB_TOKEN` from the update command.
+They receive all other variables of its environment.
+
 `--yes` continues without the confirmation prompt.
 
 The executable must have the name `bbflow`. The command supports a symlink to it. You
@@ -178,8 +188,8 @@ a server runs, it stops that server after confirmation, which ends its sessions 
 saves their partial history. The new server applies pending embedded database
 migrations at startup, before accepting requests. A failure before the rename leaves the
 executable and the server unchanged. A failure after the rename leaves the new
-executable in place. Then run `bbflow server start`. Other instances that use the same
-executable continue on the previous version until you restart them.
+executable in place. Then run `bbflow --dir DIR server start`. Other instances that use
+the same executable continue on the previous version until you restart them.
 
 Do not run the command inside a bbflow session if you want to see its result there. The
 server stop ends that terminal. The update continues, and `update.log` has its output.

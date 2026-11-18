@@ -89,6 +89,23 @@ sessions, starts the new version in the same directory, and opens the UI.
 			}
 		}
 	}
+	// Another update can change the executable while the question waits. The lock
+	// serializes updates that share the executable, also for other instances. Check the
+	// version again under the lock. The pinned install does not compare versions.
+	unlock, err := install.Lock(destination, os.Stderr)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if current, err := install.Version(destination); err != nil {
+		return err
+	} else if current != release.Installed {
+		message := fmt.Sprintf("another command changed %s to bbflow %s; this update changed nothing", destination, current)
+		if server != nil {
+			message += "; to use that version, run " + command(target, "server", "restart")
+		}
+		return errors.New(message)
+	}
 	// The current server continues while the release downloads and installs.
 	if err = install.Install(destination, release.Available, os.Stdout, os.Stderr); err != nil {
 		return err
@@ -102,7 +119,7 @@ sessions, starts the new version in the same directory, and opens the UI.
 		return fmt.Errorf("the installed executable reports bbflow %s, not %s", installed, release.Available)
 	}
 	if server == nil {
-		fmt.Printf("Updated bbflow %s to %s.\nNo bbflow server runs in %s.\nStart with: bbflow server start\nThen open:  bbflow ui\n", release.Installed, installed, target.Dir)
+		fmt.Printf("Updated bbflow %s to %s.\nNo bbflow server runs in %s.\nStart with: %s\nThen open:  %s\n", release.Installed, installed, target.Dir, command(target, "server", "start"), command(target, "ui"))
 		return nil
 	}
 	if err = startUpdater(target, destination, *server); err != nil {
@@ -110,6 +127,16 @@ sessions, starts the new version in the same directory, and opens the UI.
 	}
 	fmt.Printf("Updated bbflow %s to %s. The server in %s runs the new version.\n", release.Installed, installed, target.Dir)
 	return nil
+}
+
+// command returns a bbflow command line for the instance of target. It always names the
+// directory, so that the command does not select the default instance.
+func command(target client.Target, args ...string) string {
+	return strings.Join(append([]string{"bbflow", "--dir", shellQuote(target.Dir)}, args...), " ")
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 func confirm() error {
@@ -171,7 +198,14 @@ func startUpdater(target client.Target, executable string, server protocol.Serve
 		return err
 	}
 	cmd := exec.Command(executable, "--dir", target.Dir, "update")
-	cmd.Env = append(os.Environ(), updaterEnv+"=1", updaterInstanceEnv+"="+server.Instance)
+	// The updater starts the server, and the server passes its environment to each
+	// session. GITHUB_TOKEN is only for release requests, so it must not reach them.
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "GITHUB_TOKEN=") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	cmd.Env = append(cmd.Env, updaterEnv+"=1", updaterInstanceEnv+"="+server.Instance)
 	cmd.Dir = target.Dir
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -191,7 +225,7 @@ func startUpdater(target client.Target, executable string, server protocol.Serve
 	// Do not trust the exit status alone. Confirm that a different server now runs. The
 	// new server can use a newer protocol than this executable.
 	if info, err := target.Identify(); err != nil || info.Instance == server.Instance {
-		return fmt.Errorf("the new version is installed, but no new server answers in %s; see %s", target.Dir, logPath)
+		return fmt.Errorf("the new version is installed, but no new server answers in %s; see %s; then run %s", target.Dir, logPath, command(target, "server", "start"))
 	}
 	return nil
 }
@@ -213,7 +247,7 @@ func followUpdater(logPath string, offset int64, done <-chan error, interrupt <-
 		case err := <-done:
 			io.Copy(os.Stdout, file)
 			if err != nil {
-				return fmt.Errorf("the new version is installed, but the server restart failed; see %s", logPath)
+				return fmt.Errorf("the new version is installed, but the server restart failed; see %s; then run %s", logPath, command(client.Target{Dir: filepath.Dir(logPath)}, "server", "start"))
 			}
 			return nil
 		case <-interrupt:
@@ -272,7 +306,7 @@ func stopConfirmedServer(target client.Target, expected string) error {
 	}
 	info, err := target.Identify()
 	if err == nil && info.Instance != expected {
-		return fmt.Errorf("another server now runs in %s and was not stopped; run bbflow server restart to use the new version", target.Dir)
+		return fmt.Errorf("another server now runs in %s and was not stopped; to use the new version, run %s", target.Dir, command(target, "server", "restart"))
 	}
 	if err != nil && !shuttingDown(err) {
 		return fmt.Errorf("a server owns %s but cannot be verified: %w", target.Dir, err)

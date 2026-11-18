@@ -16,6 +16,7 @@ import (
 	"bbflow/internal/client"
 	"bbflow/internal/history"
 	"bbflow/internal/instance"
+	"bbflow/internal/protocol"
 	"bbflow/internal/server"
 )
 
@@ -88,6 +89,10 @@ func serve(target client.Target) error {
 		return fmt.Errorf("a server already owns %s: %w", target.Dir, err)
 	}
 	defer unlock()
+	// Remove the descriptor last, immediately before the lock release. Until then,
+	// clients find a server that refuses connections and wait for its shutdown.
+	var owned protocol.ServerInfo
+	defer func() { instance.RemoveOwned(owned) }()
 	// After SQLite closes, close the companion before release of the archive lock. Quit
 	// waits for this pipe to close. It does not wait for the lock.
 	var menu *menuBarProcess
@@ -113,7 +118,8 @@ func serve(target client.Target) error {
 			fmt.Fprintln(os.Stderr, "bbflow menu bar unavailable:", err)
 		}
 	}
-	return server.Serve(ctx, listener, store)
+	owned, err = server.Serve(ctx, listener, store)
+	return err
 }
 
 // shuttingDown reports a server that holds the archive lock but refuses connections. At

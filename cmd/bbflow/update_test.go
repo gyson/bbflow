@@ -16,6 +16,8 @@ import (
 	"testing"
 
 	"bbflow/internal/client"
+	"bbflow/internal/install"
+	"bbflow/internal/protocol"
 	"github.com/creack/pty"
 )
 
@@ -182,7 +184,11 @@ func TestUpdateRestartsConfirmedServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err := f.command("--dir", directory, "update", "--yes").CombinedOutput()
+	// The token is only for release requests. Its synthetic value must not reach the
+	// sessions of the new server.
+	update := f.command("--dir", directory, "update", "--yes")
+	update.Env = append(update.Env, "GITHUB_TOKEN=synthetic_update_token")
+	output, err := update.CombinedOutput()
 	if err != nil {
 		t.Fatalf("update: %s %v", output, err)
 	}
@@ -211,6 +217,21 @@ func TestUpdateRestartsConfirmedServer(t *testing.T) {
 	if err != nil || !strings.Contains(string(log), "to bbflow 0.0.2") {
 		t.Fatalf("update log: %s %v", log, err)
 	}
+	t.Setenv("BBFLOW_DIR", directory)
+	// The fixture wrapper is a script, so the shell has its default prompt. The shell can
+	// discard input that comes before its prompt.
+	shell := openSessionView(t, shellStartRequest(t, t.TempDir(), "", protocol.Size{Rows: 24, Cols: 80}))
+	waitFor(t, func() bool { return strings.Contains(shell.text(), "$ ") })
+	if _, err = shell.Write([]byte("printf 'token=[%s]\\n' \"${GITHUB_TOKEN-unset}\"\r")); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		return strings.Contains(shell.text(), "token=[unset]") || strings.Contains(shell.text(), "token=[synthetic")
+	})
+	if !strings.Contains(shell.text(), "token=[unset]") {
+		t.Fatalf("the new server passed the download token to a session:\n%s", shell.text())
+	}
+	shell.Close()
 	// A current executable changes nothing and restarts nothing.
 	output, err = f.command("--dir", directory, "update", "--yes").CombinedOutput()
 	if err != nil || !strings.Contains(string(output), "up to date") {
@@ -244,10 +265,17 @@ func TestUpdateNeedsConfirmationBeforeDownload(t *testing.T) {
 
 func TestUpdateWithoutServerOnlyInstalls(t *testing.T) {
 	f := newUpdateFixture(t)
-	directory := filepath.Join(f.root, "absent")
+	// The hints must name this instance, not the default instance of the environment.
+	directory := filepath.Join(f.root, "absent instance")
+	f.env = append(f.env, "BBFLOW_DIR="+filepath.Join(f.root, "default"))
 	output, err := f.command("--dir", directory, "update").CombinedOutput()
 	if err != nil || !strings.Contains(string(output), "Updated bbflow 0.0.1 to 0.0.2.\nNo bbflow server runs") || f.installed() != "bbflow 0.0.2" {
 		t.Fatalf("update without server: %s %v", output, err)
+	}
+	for _, want := range []string{"Start with: bbflow --dir '" + directory + "' server start", "Then open:  bbflow --dir '" + directory + "' ui"} {
+		if !strings.Contains(string(output), want) {
+			t.Fatalf("missing %q in hints:\n%s", want, output)
+		}
 	}
 	if _, err = os.Stat(directory); !os.IsNotExist(err) {
 		t.Fatal("update created the instance directory", err)
@@ -264,7 +292,7 @@ func TestUpdaterStopsOnlyConfirmedServer(t *testing.T) {
 	command := testCommand("--dir", directory, "update")
 	command.Env = append(command.Env, updaterEnv+"=1", updaterInstanceEnv+"=another-instance")
 	output, err := command.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "was not stopped") {
+	if err == nil || !strings.Contains(string(output), "was not stopped") || !strings.Contains(string(output), "run bbflow --dir '"+directory+"' server restart") {
 		t.Fatalf("updater accepted another server: %s %v", output, err)
 	}
 	if same, err := (client.Target{Dir: directory}).Health(); err != nil || same.Instance != before.Instance {
@@ -323,4 +351,71 @@ func (b *lockedBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.data.String()
+}
+
+// Another update can install a newer version while the question waits. This update must
+// keep that version and leave the server unchanged.
+func TestUpdateKeepsNewerVersionInstalledDuringPrompt(t *testing.T) {
+	f := newUpdateFixture(t)
+	directory := filepath.Join(f.root, "instance")
+	target := f.startServer(directory)
+	before, err := target.Health()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := f.command("--dir", directory, "update")
+	tty, err := pty.Start(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tty.Close()
+	var output lockedBuffer
+	read := make(chan struct{})
+	go func() { io.Copy(&output, tty); close(read) }()
+	waitFor(t, func() bool { return strings.Contains(output.String(), "Continue? [y/N]") })
+	newer := f.destination + ".newer"
+	f.write(newer, f.binary("0.0.3"))
+	if err = os.Rename(newer, f.destination); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tty.Write([]byte("y\r")); err != nil {
+		t.Fatal(err)
+	}
+	if err = command.Wait(); err == nil {
+		t.Fatal("update replaced a version that another command installed")
+	}
+	<-read
+	if !strings.Contains(output.String(), "changed "+f.destination+" to bbflow 0.0.3") || !strings.Contains(output.String(), "run bbflow --dir '"+directory+"' server restart") {
+		t.Fatalf("output: %s", output.String())
+	}
+	if f.downloads() || f.installed() != "bbflow 0.0.3" {
+		t.Fatal("update downloaded or replaced the newer version:", f.installed())
+	}
+	if same, err := target.Health(); err != nil || same.Instance != before.Instance {
+		t.Fatalf("update changed the server: %+v %v", same, err)
+	}
+}
+
+// Updates that share the executable run one at a time, also for other instances.
+func TestUpdateWaitsForAnotherUpdate(t *testing.T) {
+	f := newUpdateFixture(t)
+	unlock, err := install.Lock(f.destination, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := f.command("--dir", filepath.Join(f.root, "absent"), "update")
+	var output lockedBuffer
+	command.Stdout, command.Stderr = &output, &output
+	if err = command.Start(); err != nil {
+		unlock()
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(output.String(), "Waiting for another bbflow update") })
+	if f.downloads() {
+		t.Fatal("update downloaded before the other update finished")
+	}
+	unlock()
+	if err = command.Wait(); err != nil || f.installed() != "bbflow 0.0.2" {
+		t.Fatalf("update after the wait: %s %v", output.String(), err)
+	}
 }

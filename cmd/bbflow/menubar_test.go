@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"bbflow/internal/client"
 	"bbflow/internal/history"
@@ -26,6 +27,10 @@ func menuBarFixture() {
 	control := os.NewFile(3, "lifetime")
 	io.Copy(io.Discard, control)
 	control.Close()
+	// A slow companion keeps its server in the last shutdown step.
+	if delay, err := time.ParseDuration(os.Getenv("BBFLOW_TEST_MENU_EXIT_DELAY")); err == nil {
+		time.Sleep(delay)
+	}
 	fmt.Fprintf(log, "exit %d\n", os.Getpid())
 }
 
@@ -183,5 +188,48 @@ func TestMenuQuitLabelNamesInstance(t *testing.T) {
 	}
 	if label := menuQuitLabel("0.0.10", first); label != "Quit bbflow ("+first+")" {
 		t.Fatalf("tagged label: %q", label)
+	}
+}
+
+// The server keeps server.json until the last shutdown step. Lifecycle commands must
+// wait for that server. They must not fail on a missing descriptor.
+func TestLifecycleWaitsForSlowMenuShutdown(t *testing.T) {
+	if !menuBarSupported {
+		t.Skip("automatic menu is macOS only")
+	}
+	for _, action := range []string{"stop", "start"} {
+		t.Run(action, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "menu-events")
+			t.Setenv("BBFLOW_TEST_MENU_HELPER", path)
+			t.Setenv("BBFLOW_TEST_MENU_EXIT_DELAY", "2s")
+			directory, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			startTestServer(t, directory)
+			waitFor(t, func() bool { return strings.HasPrefix(menuEvents(t, path), "start ") })
+			target := client.Target{Dir: directory}
+			info, err := target.Health()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Request shutdown without a wait, as an earlier stop that ended early does.
+			if err = client.StopInstance(info); err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, func() bool { _, err := target.Identify(); return shuttingDown(err) })
+			output, err := testCommand("--dir", directory, "server", action).CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s during the menu shutdown: %s %v", action, output, err)
+			}
+			if !strings.Contains(menuEvents(t, path), "exit ") {
+				t.Fatal("the command did not wait for the menu shutdown")
+			}
+			if action == "start" {
+				if after, err := target.Health(); err != nil || after.Instance == info.Instance {
+					t.Fatalf("start did not replace the server: %+v %v", after, err)
+				}
+			}
+		})
 	}
 }

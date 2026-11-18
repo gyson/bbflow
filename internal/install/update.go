@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 //go:embed install.sh
@@ -81,6 +82,30 @@ func Version(destination string) (string, error) {
 		return "", fmt.Errorf("%s reports an unsupported version: %q", destination, strings.TrimSpace(string(output)))
 	}
 	return version, nil
+}
+
+// Lock serializes updates of the executables in the directory of destination. It
+// waits for an update that another command runs, and tells waiting about the wait. It
+// locks the directory itself, so it creates no file. Call the returned function to
+// release the lock.
+func Lock(destination string, waiting io.Writer) (func(), error) {
+	directory, err := os.Open(filepath.Dir(destination))
+	if err != nil {
+		return nil, err
+	}
+	fd := int(directory.Fd())
+	err = syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
+	if errors.Is(err, syscall.EWOULDBLOCK) {
+		fmt.Fprintf(waiting, "Waiting for another bbflow update in %s to finish.\n", filepath.Dir(destination))
+		for err = syscall.Flock(fd, syscall.LOCK_EX); errors.Is(err, syscall.EINTR); {
+			err = syscall.Flock(fd, syscall.LOCK_EX)
+		}
+	}
+	if err != nil {
+		directory.Close()
+		return nil, err
+	}
+	return func() { directory.Close() }, nil
 }
 
 // Install downloads and verifies one release, then renames it over destination.
