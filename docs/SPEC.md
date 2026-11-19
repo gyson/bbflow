@@ -1527,7 +1527,15 @@ silicon laptop.
 The reply lists only the sessions that the report shows: the 10 largest sessions with
 events, and the 5 largest sessions with events in each of the 3 largest projects. Counts
 of all sessions, archived sessions, sessions with no events, and terminals are separate
-fields. Thus the reply size does not grow with the number of sessions or events.
+fields. Thus the session lists have a fixed limit for any number of sessions or events.
+
+Three lists have no limit. `projects` has one entry for each project with sessions,
+`days` has one entry for each UTC day with events, and `kinds` has one entry for each
+event kind. A project entry uses about 120 to 300 bytes of JSON, and a day entry about
+100 bytes. If the reply is larger than the 16 MiB protocol limit, the server sends the
+error `the result exceeds 16 MiB` in its place. `bbflow storage` then prints that error
+and no report, and exits with code `1`. This needs tens of thousands of projects with
+sessions, or more than 100 years of days with events.
 
 A start event from bbflow 0.0.4 or earlier has no tool. As in the terminal list, the
 first terminal of a session then uses the tool of the session preparation.

@@ -446,7 +446,9 @@ The report escapes Markdown characters in names, so each name shows as saved.
 
 The server reads every event once. A large archive can take some seconds. The command
 prints a progress note to standard error and the report to standard output. The read
-stops after 10 minutes.
+stops after 10 minutes. With tens of thousands of projects that have sessions, the
+reply can exceed the 16 MiB protocol limit. The command then prints `the result exceeds
+16 MiB` and no report. See [storage report](SPEC.md#storage-report).
 
 **Impact:** opens a separate read-only connection. It does not change history or block
 capture. A missing server is an error.

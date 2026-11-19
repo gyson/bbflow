@@ -124,27 +124,43 @@ func TestStorageReportCountsAttachmentsLargerThanTheReadValueLimit(t *testing.T)
 	}
 }
 
-// Start events from bbflow 0.0.4 and earlier have no tool. The first terminal then uses
-// the tool of the preparation, as the terminal list does. Later terminals do not.
-func TestStorageReportUsesThePreparationToolForTheFirstOlderTerminal(t *testing.T) {
+// The first terminal uses the tool of the preparation, as the terminal list does, when
+// its start event has no tool (bbflow 0.0.4 and earlier) or when it has no start event
+// (an interruption before the process started). Later terminals do not.
+func TestStorageReportUsesThePreparationToolForTheFirstTerminal(t *testing.T) {
 	s := testStore(t)
 	project, err := s.CreateProject("Orbit", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := s.CreatePreparation("", t.TempDir(), project.ID, Preparation{ToolName: "Fixture Tool"})
-	if err != nil {
-		t.Fatal(err)
+	prepared := func(title string) Session {
+		t.Helper()
+		session, err := s.CreatePreparation(title, t.TempDir(), project.ID, Preparation{ToolName: "Fixture Tool"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return session
 	}
+	older := prepared("Older")
 	for range 2 {
-		storageEvent(t, s, session.ID, storageRun(t, s, session.ID), "start", []byte(`{"cols":80}`), "")
+		storageEvent(t, s, older.ID, storageRun(t, s, older.ID), "start", []byte(`{"cols":80}`), "")
+	}
+	interrupted := prepared("Interrupted")
+	storageRun(t, s, interrupted.ID)
+	if err = s.MarkInterrupted(); err != nil {
+		t.Fatal(err)
 	}
 	report, err := s.StorageReport(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Sessions) != 1 || !reflect.DeepEqual(report.Sessions[0].Tools, []string{"Fixture Tool", ""}) {
-		t.Fatalf("tools: %+v", report.Sessions)
+	tools := map[string][]string{}
+	for _, item := range report.Sessions {
+		tools[item.Title] = item.Tools
+	}
+	want := map[string][]string{"Older": {"Fixture Tool", ""}, "Interrupted": {"Fixture Tool"}}
+	if !reflect.DeepEqual(tools, want) {
+		t.Fatalf("tools %v, want %v", tools, want)
 	}
 }
 

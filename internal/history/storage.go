@@ -100,6 +100,8 @@ type StorageReport struct {
 	EmptySessions    int `json:"emptySessions"` // Sessions with no events.
 	Terminals        int `json:"terminals"`
 
+	// These lists have one entry for each event kind, UTC day with events, and project
+	// with sessions. They have no limit. A reply above the protocol limit is an error.
 	Kinds    []StorageKind    `json:"kinds"`    // Largest first.
 	Days     []StorageDay     `json:"days"`     // Oldest first.
 	Projects []StorageProject `json:"projects"` // Largest first.
@@ -116,9 +118,43 @@ func (r StorageReport) Used() int64 { return (r.Pages - r.FreePages) * r.PageSiz
 
 type storageSession struct {
 	StorageSession
-	firstRun    string // The first run in run order. Its tool can come from the preparation.
-	preparation *Preparation
+	runs        []string       // Run IDs in run order.
+	starts      []storageStart // The first start event of each run, in sequence order.
+	preparation *Preparation   // The tool of the first run can come from here.
 	kinds       []*StorageKind
+}
+
+type storageStart struct {
+	run  string
+	data []byte
+}
+
+// tools names the tool of each terminal in run order, as the terminal list does. A run
+// with no start event, for example one interrupted before its process started, uses the
+// preparation only when it is the first run. A start event of a run with no run row
+// comes last.
+func (item *storageSession) tools() []string {
+	var tools []string
+	add := func(tool string) {
+		if !slices.Contains(tools, tool) {
+			tools = append(tools, tool)
+		}
+	}
+	started := map[string][]byte{}
+	for _, start := range item.starts {
+		started[start.run] = start.data
+	}
+	for i, run := range item.runs {
+		add(RunTool(started[run], i == 0, item.preparation))
+		delete(started, run)
+	}
+	for _, start := range item.starts {
+		if data, ok := started[start.run]; ok {
+			add(RunTool(data, false, nil))
+			delete(started, start.run)
+		}
+	}
+	return tools
 }
 
 type storageDay struct {
@@ -181,9 +217,7 @@ func (s *Store) StorageReport(ctx context.Context) (report StorageReport, err er
 	}
 	err = each(conn, "SELECT session_id, id FROM runs ORDER BY rowid", func(stmt *sqlite3.Stmt) {
 		item := session(stmt.ColumnRawText(0))
-		if item.Terminals == 0 {
-			item.firstRun = stmt.ColumnText(1)
-		}
+		item.runs = append(item.runs, stmt.ColumnText(1))
 		item.Terminals++
 	})
 	if err != nil {
@@ -244,9 +278,9 @@ func (s *Store) StorageReport(ctx context.Context) (report StorageReport, err er
 		}
 
 		if bytes.Equal(kind, []byte("start")) {
-			first := stmt.ColumnText(6) == item.firstRun
-			if tool := RunTool(stmt.ColumnRawBlob(7), first, item.preparation); !slices.Contains(item.Tools, tool) {
-				item.Tools = append(item.Tools, tool)
+			run := stmt.ColumnText(6)
+			if !slices.ContainsFunc(item.starts, func(start storageStart) bool { return start.run == run }) {
+				item.starts = append(item.starts, storageStart{run, slices.Clone(stmt.ColumnRawBlob(7))})
 			}
 		}
 	})
@@ -316,6 +350,7 @@ func (s *Store) StorageReport(ctx context.Context) (report StorageReport, err er
 		if top[item.ProjectID] > 0 {
 			top[item.ProjectID]--
 		}
+		item.Tools = item.tools()
 		for _, kind := range item.kinds {
 			estimate(&kind.StorageUsage)
 			item.Kinds = append(item.Kinds, *kind)
