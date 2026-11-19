@@ -194,7 +194,7 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		err := s.removeWorktree(ctx, request.Session)
 		s.reply(conn, map[string]bool{"removed": err == nil}, err)
 	case "update-start":
-		err := s.startUpdate(request.Version)
+		err := s.startUpdate(request.Version, request.Revision)
 		s.reply(conn, map[string]bool{"updating": err == nil}, err)
 	case "stop":
 		if request.Instance != s.info.Instance {

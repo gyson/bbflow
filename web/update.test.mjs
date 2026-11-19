@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { UpdateNotice, restartWarning, updateDialog, updateLabel } from './dist/update.js';
 
-const offer = { version: '0.0.14', available: '0.0.15', state: 'available' };
+const offer = { revision: 1, version: '0.0.14', available: '0.0.15', state: 'available' };
 
 test('the sidebar tells a download from a restart and shows progress', () => {
   assert.deepEqual(updateLabel(offer), { text: 'Update available: 0.0.15', enabled: true });
@@ -54,23 +54,59 @@ function setup() {
   nodes['update-dialog'] = new Dialog();
   globalThis.HTMLElement = globalThis.HTMLButtonElement = globalThis.HTMLDialogElement = globalThis.HTMLFormElement = globalThis.HTMLAnchorElement = Node;
   globalThis.document = { getElementById: id => nodes[id] };
-  const notice = new UpdateNotice({ start: async () => {} });
-  return { nodes, notice, dialog: nodes['update-dialog'], open: () => nodes['update-open'].onclick() };
+  // The titles of the session list. A session outside the list has no title.
+  const titles = new Map([['a', 'A'], ['b', 'B']]);
+  const starts = [];
+  const notice = new UpdateNotice({ title: id => titles.get(id), start: async update => { starts.push(update); } });
+  return {
+    nodes, notice, titles, starts, dialog: nodes['update-dialog'],
+    open: () => nodes['update-open'].onclick(),
+    confirm: () => nodes['update-form'].onsubmit({ preventDefault() {} }),
+  };
 }
 
 test('the open dialog counts the live sessions of the latest status message', () => {
   const { nodes, notice, dialog, open } = setup();
-  notice.show(offer, { names: ['A'], count: 1 });
+  notice.show(offer, ['a']);
   open();
   assert.ok(dialog.open);
   assert.match(nodes['update-sessions'].textContent, /stops 1 live session: A\./);
-  notice.show(offer, { names: ['A', 'B'], count: 2 });
-  assert.match(nodes['update-sessions'].textContent, /stops 2 live sessions: A and B\./);
+  notice.show(offer, ['a', 'b', 'c']);
+  assert.match(nodes['update-sessions'].textContent, /stops 3 live sessions: A, B, and 1 more\./);
+});
+
+test('the open dialog shows the titles of the current session list', () => {
+  const { nodes, notice, titles, open } = setup();
+  notice.show(offer, ['a']);
+  open();
+  // A rename reaches the list after the status message of its title change.
+  titles.set('a', 'Renamed');
+  notice.sessionsChanged();
+  assert.match(nodes['update-sessions'].textContent, /stops 1 live session: Renamed\./);
+});
+
+test('a confirmation applies only to the offer that the dialog shows', async () => {
+  const { notice, starts, dialog, open, confirm } = setup();
+  notice.show({ ...offer, installed: true }, []);
+  open();
+  // A new check offers a download. The dialog of the restart closes.
+  notice.show({ ...offer, revision: 2 }, []);
+  assert.ok(!dialog.open);
+  open();
+  confirm();
+  // Let the start finish. It closes the dialog.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(!dialog.open);
+  assert.deepEqual(starts.map(update => [update.revision, !!update.installed]), [[2, false]]);
+  // A failed attempt keeps the revision, so the open dialog stays.
+  open();
+  notice.show({ ...offer, revision: 2, state: 'failed', error: 'download failed' }, []);
+  assert.ok(dialog.open);
 });
 
 test('a lost status watch hides the offer until the watch sends it again', () => {
   const { nodes, notice, dialog, open } = setup();
-  notice.show(offer, { names: ['A'], count: 1 });
+  notice.show(offer, ['a']);
   open();
   notice.lost();
   // Without the watch, the dialog cannot tell which sessions the restart stops.
@@ -78,10 +114,10 @@ test('a lost status watch hides the offer until the watch sends it again', () =>
   assert.ok(!dialog.open);
   open();
   assert.ok(!dialog.open);
-  notice.show(offer, { names: ['A'], count: 1 });
+  notice.show(offer, ['a']);
   assert.ok(!nodes['update-open'].hidden);
   // An update in progress stays, because the server goes away during its restart.
-  notice.show({ ...offer, state: 'updating' }, { names: [], count: 0 });
+  notice.show({ ...offer, state: 'updating' }, []);
   notice.lost();
   assert.ok(!nodes['update-open'].hidden);
   assert.equal(nodes['update-open'].textContent, 'Updating to 0.0.15…');

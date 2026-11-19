@@ -130,8 +130,8 @@ func (u *updateServer) next(reason string, match func(*protocol.Update) bool) *p
 	}
 }
 
-func (u *updateServer) start(version string) error {
-	_, err := u.target.Call(protocol.Request{Operation: "update-start", Version: version})
+func (u *updateServer) start(version string, revision int64) error {
+	_, err := u.target.Call(protocol.Request{Operation: "update-start", Version: version, Revision: revision})
 	return err
 }
 
@@ -157,15 +157,15 @@ func TestServerOffersAndStartsUpdates(t *testing.T) {
 	releases := &fakeReleases{offers: []protocol.Update{offer002}}
 	u := serveReleases(t, releases)
 	offer := u.next("offer after start", func(o *protocol.Update) bool { return o != nil })
-	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", State: "available"}) {
+	if *offer != (protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", State: "available"}) {
 		t.Fatalf("offer: %+v", offer)
 	}
 	// A view can start only the offered release.
-	if err := u.start("0.0.3"); err == nil || !strings.Contains(err.Error(), "not available now") {
+	if err := u.start("0.0.3", 1); err == nil || !strings.Contains(err.Error(), "not available now") {
 		t.Fatal("started another release:", err)
 	}
 	releases.set(errors.New("download failed"), nil)
-	if err := u.start("0.0.2"); err != nil {
+	if err := u.start("0.0.2", 1); err != nil {
 		t.Fatal(err)
 	}
 	if failed := u.next("failed download", func(o *protocol.Update) bool { return o != nil && o.State == "failed" }); failed.Error != "download failed" {
@@ -175,11 +175,11 @@ func TestServerOffersAndStartsUpdates(t *testing.T) {
 	// ends while this server still runs.
 	ended := make(chan error, 1)
 	releases.set(nil, ended)
-	if err := u.start("0.0.2"); err != nil {
+	if err := u.start("0.0.2", 1); err != nil {
 		t.Fatal(err)
 	}
 	u.next("update in progress", func(o *protocol.Update) bool { return o != nil && o.State == "updating" })
-	if err := u.start("0.0.2"); err == nil || !strings.Contains(err.Error(), "already in progress") {
+	if err := u.start("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "already in progress") {
 		t.Fatal("started a second update:", err)
 	}
 	// An update in progress stays visible when the setting changes to off.
@@ -189,7 +189,7 @@ func TestServerOffersAndStartsUpdates(t *testing.T) {
 		t.Fatalf("the off setting shows a failed update: %+v", failed)
 	}
 	// The off setting hides the offer, so a view cannot start it.
-	if err := u.start("0.0.2"); err == nil || !strings.Contains(err.Error(), "release check is off") {
+	if err := u.start("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "release check is off") {
 		t.Fatal("started a hidden offer:", err)
 	}
 	// The setting shows the earlier result again. The server checks only once a day.
@@ -216,7 +216,7 @@ func TestOffSettingAppliesDuringCheck(t *testing.T) {
 	<-releases.checking
 	u.setCheck(false)
 	close(releases.gate)
-	if err := u.start("0.0.2"); err == nil || !strings.Contains(err.Error(), "release check is off") {
+	if err := u.start("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "release check is off") {
 		t.Fatal("started the offer of a check that the setting turned off:", err)
 	}
 	// When the setting changes to on, the view shows the result of that check. The
@@ -238,12 +238,54 @@ func TestStaleOfferChecksAgain(t *testing.T) {
 	u := serveReleases(t, releases)
 	u.next("restart offer", func(o *protocol.Update) bool { return o != nil && o.Installed })
 	releases.set(fmt.Errorf("%w: it has bbflow 0.0.1 now", ErrStaleOffer), nil)
-	if err := u.start("0.0.2"); err != nil {
+	if err := u.start("0.0.2", 1); err != nil {
 		t.Fatal(err)
 	}
 	offer := u.next("new offer", func(o *protocol.Update) bool { return o != nil && o.State == "available" && !o.Installed })
-	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", State: "available"}) || releases.count() != 2 {
+	if *offer != (protocol.Update{Revision: 2, Version: "0.0.1", Available: "0.0.2", State: "available"}) || releases.count() != 2 {
 		t.Fatalf("offer after a stale restart: %+v after %d checks", offer, releases.count())
+	}
+	// Another view confirmed the restart before the new check. Its confirmation does
+	// not start the download of the new offer.
+	if err := u.start("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "changed after you opened it") {
+		t.Fatal("an earlier confirmation started the new offer:", err)
+	}
+	releases.set(nil, make(chan error))
+	if err := u.start("0.0.2", 2); err != nil {
+		t.Fatal(err)
+	}
+	u.next("update in progress", func(o *protocol.Update) bool { return o != nil && o.State == "updating" })
+	releases.mu.Lock()
+	defer releases.mu.Unlock()
+	if len(releases.updates) != 2 {
+		t.Fatalf("updates: %q", releases.updates)
+	}
+}
+
+// A check with the same release and action keeps the revision, so an open dialog stays
+// valid. Another release or another action gets a new revision.
+func TestCheckKeepsTheRevisionOfTheSameOffer(t *testing.T) {
+	u := updates{}
+	revision := func(offer *protocol.Update) int64 {
+		if offer != nil {
+			fresh := *offer
+			offer = &fresh
+		}
+		u.checked(offer)
+		if u.offer == nil {
+			return 0
+		}
+		return u.offer.Revision
+	}
+	restart := protocol.Update{Version: "0.0.1", Available: "0.0.2", Installed: true}
+	newer := protocol.Update{Version: "0.0.1", Available: "0.0.3"}
+	for i, want := range []struct {
+		offer    *protocol.Update
+		revision int64
+	}{{&offer002, 1}, {&offer002, 1}, {&restart, 2}, {&newer, 3}, {nil, 0}, {&newer, 4}} {
+		if got := revision(want.offer); got != want.revision {
+			t.Fatalf("check %d: revision %d, want %d", i, got, want.revision)
+		}
 	}
 }
 
@@ -258,7 +300,7 @@ func TestUpdateSettingKeepsTheNewestSave(t *testing.T) {
 }
 
 func TestDevelopmentBuildCannotStartUpdate(t *testing.T) {
-	if err := (&Server{}).startUpdate("0.0.2"); err == nil || !strings.Contains(err.Error(), "cannot update") {
+	if err := (&Server{}).startUpdate("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "cannot update") {
 		t.Fatal("started an update without releases:", err)
 	}
 }

@@ -5,10 +5,6 @@ import type { Update } from './protocol.js';
 // The dialog names at most this number of live sessions.
 const namedSessions = 5;
 
-// The live sessions of one status message. names has the titles of the live sessions in
-// the list. count also includes live sessions that the list does not show.
-export interface LiveSessions { names: string[]; count: number }
-
 // The sidebar text of an offer. An update in progress cannot start again.
 export function updateLabel(update: Update): { text: string; enabled: boolean } {
   switch (update.state) {
@@ -30,7 +26,8 @@ export function updateDialog(update: Update): { title: string; help: string; sub
   };
 }
 
-// Tell which sessions the restart stops.
+// Tell which sessions the restart stops. names has the titles of the live sessions in
+// the list. count also includes live sessions that the list does not show.
 export function restartWarning(names: readonly string[], count: number): string {
   if (count === 0) return 'No session is live now. The restart also stops the terminals of the workspace pane.';
   const shown = names.slice(0, namedSessions);
@@ -42,7 +39,8 @@ export function restartWarning(names: readonly string[], count: number): string 
 }
 
 // The sidebar shows the release offer of the server. The dialog asks before the server
-// stops its sessions for the update.
+// stops its sessions for the update. A confirmation applies only to the offer that the
+// dialog shows, so the view sends its revision.
 export class UpdateNotice {
   private readonly button = element('update-open', HTMLButtonElement);
   private readonly dialog = element('update-dialog', HTMLDialogElement);
@@ -55,37 +53,49 @@ export class UpdateNotice {
   private readonly error = element('update-error', HTMLElement);
   private readonly submit = element('update-submit', HTMLButtonElement);
   private update: Update | undefined;
-  private live: LiveSessions = { names: [], count: 0 };
+  // The offer that the open dialog shows.
+  private shown: Update | undefined;
+  // The IDs of the live sessions, from the same status message as the offer.
+  private live: readonly string[] = [];
   private busy = false;
   private starting = false;
   // The error of a start from this dialog. It stays until the dialog opens again.
   private startError = '';
 
-  constructor(private readonly host: { start(version: string): Promise<void> }) {
+  constructor(private readonly host: {
+    // The title of a session in the list, or undefined when the list does not show it.
+    title(id: string): string | undefined;
+    start(offer: Update): Promise<void>;
+  }) {
     this.button.onclick = () => this.open();
     element('update-cancel', HTMLButtonElement).onclick = element('update-close', HTMLButtonElement).onclick = () => this.dialog.close();
     this.form.onsubmit = event => { event.preventDefault(); void this.start(); };
   }
 
   // The status watch sends the offer and the live sessions together, after each change.
-  // Without an offer, the notice and the dialog close.
-  show(update: Update | undefined, live: LiveSessions): void {
+  // Without an offer, the notice and the dialog close. A new offer also closes the
+  // dialog, because the user confirmed only the earlier offer.
+  show(update: Update | undefined, live: readonly string[]): void {
     this.update = update;
     this.live = live;
     this.renderButton();
-    if (!update) this.dialog.close();
-    else if (this.dialog.open && !this.starting) {
-      // Another view started the update. The sidebar shows its progress.
-      if (update.state === 'updating') this.dialog.close();
-      else this.fill(update);
-    }
+    if (!this.dialog.open || this.starting) return;
+    // Another view started the update. The sidebar shows its progress.
+    if (!update || update.state === 'updating' || update.revision !== this.shown?.revision) this.dialog.close();
+    else this.fill(update);
+  }
+
+  // The session list changed, for example after a rename. An open dialog reads the
+  // titles again.
+  sessionsChanged(): void {
+    if (this.dialog.open && this.shown) this.fill(this.shown);
   }
 
   // Without the status watch, the offer and the live sessions are unknown. Then the
   // notice and the dialog close until the watch sends them again. An update in progress
   // stays, because it cannot start again.
   lost(): void {
-    if (this.update?.state !== 'updating') this.show(undefined, { names: [], count: 0 });
+    if (this.update?.state !== 'updating') this.show(undefined, []);
   }
 
   // A page action in progress disables the notice.
@@ -106,11 +116,16 @@ export class UpdateNotice {
   }
 
   private fill(update: Update): void {
+    this.shown = update;
     const text = updateDialog(update);
     this.title.textContent = text.title;
     this.versions.textContent = `bbflow ${update.version} → ${update.available}`;
     this.help.textContent = text.help;
-    this.sessions.textContent = restartWarning(this.live.names, this.live.count);
+    const names = this.live.flatMap(id => {
+      const title = this.host.title(id);
+      return title === undefined ? [] : [title];
+    });
+    this.sessions.textContent = restartWarning(names, this.live.length);
     this.notes.href = text.notes;
     this.submit.textContent = text.submit;
     this.error.textContent = this.startError || (update.state === 'failed' ? `The last attempt failed: ${update.error || 'unknown error'}` : '');
@@ -127,13 +142,13 @@ export class UpdateNotice {
   }
 
   private async start(): Promise<void> {
-    const update = this.update;
-    if (!update || this.starting) return;
+    const offer = this.shown;
+    if (!offer || this.starting) return;
     this.starting = true;
     this.startError = '';
     this.submit.disabled = true;
     try {
-      await this.host.start(update.available);
+      await this.host.start(offer);
       this.dialog.close();
     } catch (error) {
       this.startError = this.error.textContent = errorMessage(error);

@@ -63,7 +63,7 @@ type Request struct {
 	Draft       *Draft             `json:"draft,omitempty"`
 	Upload      *Upload            `json:"upload,omitempty"`
 	Text        string             `json:"text,omitempty"`    // A sample message for title-test.
-	Version     string             `json:"version,omitempty"` // The release that update-start installs.
+	Version     string             `json:"version,omitempty"` // The release of the offer that update-start confirms.
 
 	Search  *history.SearchFilter   `json:"search,omitempty"`
 	Context *history.ContextRequest `json:"context,omitempty"`
@@ -293,11 +293,13 @@ type TitleTool struct {
 	Command string `json:"command"`
 }
 
-// Update offers a newer bbflow release to the server. Version is the version of the
-// running server. Available is the newer release. Installed reports that the executable
-// already has that release, so the update only restarts the server. State is
-// "available", "updating", or "failed". Error tells why the last update failed.
+// Update offers a newer bbflow release to the server. Revision identifies the offer.
+// It changes when a check finds another release or another action. Version is the
+// version of the running server. Available is the newer release. Installed reports that
+// the executable already has that release, so the update only restarts the server.
+// State is "available", "updating", or "failed". Error tells why the last update failed.
 type Update struct {
+	Revision  int64  `json:"revision"`
 	Version   string `json:"version"`
 	Available string `json:"available"`
 	Installed bool   `json:"installed,omitempty"`

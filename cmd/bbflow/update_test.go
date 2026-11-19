@@ -537,13 +537,13 @@ func TestServerUpdateInstallsAndRestarts(t *testing.T) {
 		t.Fatal(err)
 	}
 	offer := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil })
-	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", State: "available"}) {
+	if *offer != (protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", State: "available"}) {
 		t.Fatalf("offer: %+v", offer)
 	}
 	if f.downloads() {
 		t.Fatal("the release check downloaded the release")
 	}
-	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2"}); err != nil {
+	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2", Revision: 1}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
@@ -582,7 +582,7 @@ func TestServerUpdateReportsFailedDownload(t *testing.T) {
 		t.Fatal(err)
 	}
 	watchOffer(t, target, func(u *protocol.Update) bool { return u != nil })
-	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2"}); err != nil {
+	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2", Revision: 1}); err != nil {
 		t.Fatal(err)
 	}
 	failed := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil && u.State == "failed" })
@@ -603,7 +603,7 @@ func TestServerUpdateRestartsForInstalledRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2"}); err != nil {
+	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2", Revision: 1}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
@@ -632,7 +632,7 @@ func startBehindExecutable(t *testing.T, f *updateFixture) client.Target {
 	}
 	target := client.Target{Dir: directory}
 	offer := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil })
-	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", Installed: true, State: "available"}) {
+	if *offer != (protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", Installed: true, State: "available"}) {
 		t.Fatalf("offer: %+v", offer)
 	}
 	return target
@@ -640,7 +640,8 @@ func startBehindExecutable(t *testing.T, f *updateFixture) client.Target {
 
 // The user confirms a restart, but the executable changed back to 0.0.1 after the
 // check. The update downloads nothing and changes nothing. The server checks again at
-// once and offers the download, which the user must confirm.
+// once and offers the download, which the user must confirm. A second tab that also
+// confirmed the restart cannot start that download.
 func TestServerRestartOfferNeverDownloads(t *testing.T) {
 	f := newUpdateFixture(t)
 	target := startBehindExecutable(t, f)
@@ -649,12 +650,16 @@ func TestServerRestartOfferNeverDownloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.write(f.destination, f.binary("0.0.1"))
-	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2"}); err != nil {
+	restart := protocol.Request{Operation: "update-start", Version: "0.0.2", Revision: 1}
+	if _, err = target.Call(restart); err != nil {
 		t.Fatal(err)
 	}
 	offer := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil && u.State == "available" && !u.Installed })
-	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", State: "available"}) {
+	if *offer != (protocol.Update{Revision: 2, Version: "0.0.1", Available: "0.0.2", State: "available"}) {
 		t.Fatalf("new offer: %+v", offer)
+	}
+	if _, err = target.Call(restart); err == nil || !strings.Contains(err.Error(), "changed after you opened it") {
+		t.Fatal("a late restart confirmation started the download:", err)
 	}
 	requests, _ := os.ReadFile(filepath.Join(f.assets, "requests"))
 	if f.downloads() || strings.Count(string(requests), "releases/latest") != 2 {

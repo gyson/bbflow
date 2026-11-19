@@ -19,10 +19,11 @@ export interface ServerInfo {
   executable: string;
 }
 
-// A newer bbflow release for the server. version is the version of the running server.
-// installed means that the executable already has the release, so the update only
-// restarts the server. error tells why the last update failed.
-export interface Update { version: string; available: string; installed?: boolean; state: 'available' | 'updating' | 'failed'; error?: string }
+// A newer bbflow release for the server. revision identifies the offer. It changes when
+// a check finds another release or another action. version is the version of the
+// running server. installed means that the executable already has the release, so the
+// update only restarts the server. error tells why the last update failed.
+export interface Update { revision: number; version: string; available: string; installed?: boolean; state: 'available' | 'updating' | 'failed'; error?: string }
 
 export interface Project { id: string; name: string; workspace: string; created: string }
 
@@ -130,8 +131,9 @@ type SettingsRequest = { operation: 'settings-get' } | { operation: 'settings-sa
 type TitleTestRequest = { operation: 'title-test'; settings: Pick<Settings, 'titleTool'>; text: string };
 type TitleToolsRequest = { operation: 'title-tools' };
 type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
-// The server installs the offered release and restarts. The restart ends all sessions.
-type UpdateRequest = { operation: 'update-start'; version: string };
+// The server does what the offer with this version and revision says, then restarts.
+// The restart ends all sessions.
+type UpdateRequest = { operation: 'update-start'; version: string; revision: number };
 type PrepareRequest = { operation: 'project-draft'; project: string };
 type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'worktree' | 'base' | 'branch'>; name?: string };
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };

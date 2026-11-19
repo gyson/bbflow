@@ -24,7 +24,6 @@ import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
 import { UpdateNotice } from './update.js';
-import type { LiveSessions } from './update.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
 import { DialogEdits, lastReload, onServerReplaced, recordReload, reloadPlan, restartedMessage } from './restart.js';
@@ -194,12 +193,16 @@ const preparation = new PreparationEditor({
 // The status watch sends the release offer of the server. An update restarts the server,
 // so save the drafts of this view first. The reload after the restart shows the new UI.
 const updateNotice = new UpdateNotice({
-  async start(version) {
+  title(id) {
+    const session = sessions.find(item => item.id === id);
+    return session ? sessionTitle(session) || 'Untitled session' : undefined;
+  },
+  async start(offer) {
     if (!server) throw new Error('The server is not connected.');
     await preparation.flush();
     await composer.flush();
-    await call(server, { operation: 'update-start', version });
-    notice(`bbflow updates to ${version}. This page reloads when the new server starts.`);
+    await call(server, { operation: 'update-start', version: offer.available, revision: offer.revision });
+    notice(`bbflow updates to ${offer.available}. This page reloads when the new server starts.`);
   },
 });
 
@@ -495,16 +498,6 @@ function focusSidebar(key: string): void {
   target?.focus({ preventScroll: true });
 }
 
-// The live sessions from the status watch, with the titles that the list shows.
-function liveSessions(): LiveSessions {
-  const ids = Object.keys(liveStatuses);
-  const names = ids.flatMap(id => {
-    const session = sessions.find(item => item.id === id);
-    return session ? [sessionTitle(session) || 'Untitled session'] : [];
-  });
-  return { names, count: ids.length };
-}
-
 // Show brief activity of each session in the list. The list refresh is too slow for it.
 function watchStatuses(info: ServerInfo) {
   new Watch(info, { operation: 'status-watch' }, {
@@ -513,8 +506,8 @@ function watchStatuses(info: ServerInfo) {
       const next = message.statuses ?? {};
       const changed = terminalsChanged(liveStatuses, next);
       liveStatuses = next;
-      // The update dialog names the live sessions of the same message as the offer.
-      updateNotice.show(message.update, liveSessions());
+      // The update dialog counts the live sessions of the same message as the offer.
+      updateNotice.show(message.update, Object.keys(next));
       renderSessions();
       // A terminal started or ended, or a session title changed. Read the stored session
       // data again.
@@ -567,6 +560,7 @@ async function refreshSessions() {
     const merged = mergeSessions(projects, recent, nextWindows, sessionStep);
     sessions = merged.sessions;
     moreGroups = new Set(merged.more);
+    updateNotice.sessionsChanged();
     if (detail && selected && selected.id === selectedId) selected.archived = detail.archived;
     $('connection').textContent = '● Local server connected';
     clearNotice('list');

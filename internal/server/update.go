@@ -39,6 +39,7 @@ type Releases interface {
 type updates struct {
 	mu       sync.Mutex
 	offer    *protocol.Update
+	offers   int64 // The revision of the latest new offer.
 	enabled  bool  // The update check setting.
 	revision int64 // The settings revision of enabled.
 	recheck  bool  // The offer is stale, so check before the next due time.
@@ -98,6 +99,8 @@ func (u *updates) due() (enabled, recheck bool) {
 }
 
 // checked replaces the offer with the result of a check. It keeps an update in progress.
+// The same release and action keep their revision, so an open dialog stays valid.
+// Another release or another action gets a new revision.
 func (u *updates) checked(offer *protocol.Update) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -105,14 +108,21 @@ func (u *updates) checked(offer *protocol.Update) {
 		return
 	}
 	if offer != nil {
+		if u.offer != nil && u.offer.Version == offer.Version && u.offer.Available == offer.Available && u.offer.Installed == offer.Installed {
+			offer.Revision = u.offer.Revision
+		} else {
+			u.offers++
+			offer.Revision = u.offers
+		}
 		offer.State, offer.Error = "available", ""
 	}
 	u.offer = offer
 }
 
-// start marks the offer of version as in progress and returns a copy of it. Only one
-// update runs at a time. A view cannot start an offer that the off setting hides.
-func (u *updates) start(version string) (protocol.Update, error) {
+// start marks the offer with this version and revision as in progress and returns a
+// copy of it. Only one update runs at a time. A view cannot start an offer that the off
+// setting hides, or an earlier offer that it confirmed before a new check.
+func (u *updates) start(version string, revision int64) (protocol.Update, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	switch {
@@ -122,6 +132,8 @@ func (u *updates) start(version string) (protocol.Update, error) {
 		return protocol.Update{}, errors.New("the release check is off; turn on Check for a new version every day in Settings to update")
 	case u.offer == nil || u.offer.Available != version:
 		return protocol.Update{}, fmt.Errorf("bbflow %s is not available now; reload the page to see the current offer", version)
+	case u.offer.Revision != revision:
+		return protocol.Update{}, fmt.Errorf("the offer for bbflow %s changed after you opened it; open the update again and confirm the new offer", version)
 	}
 	u.offer.State, u.offer.Error = "updating", ""
 	return *u.offer, nil
@@ -178,11 +190,11 @@ func (s *Server) checkReleases(ctx context.Context) {
 
 // startUpdate installs the offered release in the background and restarts the server
 // with it. The status watch shows the progress. A restart ends all live sessions.
-func (s *Server) startUpdate(version string) error {
+func (s *Server) startUpdate(version string, revision int64) error {
 	if s.releases == nil {
 		return errors.New("this bbflow build cannot update; install a release")
 	}
-	offer, err := s.updates.start(version)
+	offer, err := s.updates.start(version, revision)
 	if err != nil {
 		return err
 	}

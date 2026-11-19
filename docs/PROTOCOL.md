@@ -102,7 +102,7 @@ storage-report operations.
 | `composer-sent` | `session` ID, optional `revision` (list sends older than this revision) | `result`, containing `messages` (at most 20, newest first) and `more` |
 | `composer-attach` | `session` ID, `upload` with `name`, `mediaType`, base64 `data` | `result`, containing attachment metadata and its local file path |
 | `stop` | `instance`, from the verified greeting | `result`, containing `stopping`. The server then shuts down. |
-| `update-start` | `version`, the `available` version of the current [release offer](#release-offers) | `result`, containing `updating`. The server installs the release in the background and then restarts, which ends all live sessions. It rejects another version, a second update, and an offer that the off setting hides. |
+| `update-start` | `version` and `revision`, the `available` version and the `revision` of the [release offer](#release-offers) that the user confirmed | `result`, containing `updating`. The server installs the release in the background and then restarts, which ends all live sessions. It rejects another version, an earlier revision, a second update, and an offer that the off setting hides. |
 | `settings-get` | none | `result`, saved settings and revision |
 | `settings-save` | `settings`, including current revision | `result`, updated settings and revision |
 | `title-tools` | None | `result`, containing the title tools with `id`, `name`, and `command` |
@@ -615,6 +615,7 @@ server sends the message again when the offer changes.
 
 | Field | Meaning |
 | --- | --- |
+| `revision` | Identifies the offer. A check that finds another release or another action gives a new revision. Send it with `update-start`. |
 | `version` | The version of the running server. |
 | `available` | The newer release. Send it as `version` with `update-start`. |
 | `installed` | True when the executable already has the release. The update then only restarts the server. |
@@ -626,8 +627,9 @@ restart, open views reload with the UI of the new server.
 
 The executable can change after the check, so that it no longer agrees with the
 confirmed offer. Then `update-start` changes nothing, and the offer shows `failed`. The
-server checks again at once and sends the new offer. Ask the user again before you send
-`update-start` for it.
+server checks again at once and sends the new offer with a new revision. Ask the user
+again before you send `update-start` for it. A confirmation of the earlier revision,
+for example from another view, fails.
 
 ## Terminal streams
 
