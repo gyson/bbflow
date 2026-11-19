@@ -163,7 +163,8 @@ server answers. Then it prints a line that names both versions, for example
 `Updated bbflow 0.0.12 to 0.0.13. The server in ~/.bbflow runs the new version.` The
 last line gives the `bbflow ui` command for the instance. When no server runs, the
 command prints `Updated bbflow 0.0.12 to 0.0.13.`, then the hint to start the server.
-The updater also appends its output to `update.log` in the instance directory. Ctrl+C stops only that display. The update continues.
+The updater also appends its output to `update.log` in the instance directory. Ctrl+C
+stops only that display. The update continues.
 
 When no server runs, the command only replaces the executable. It does not create the
 instance directory.
