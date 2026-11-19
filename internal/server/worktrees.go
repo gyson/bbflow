@@ -189,7 +189,12 @@ func remoteBase(ctx context.Context, dir, base string) (string, bool) {
 	if strings.HasPrefix(base, "-") {
 		return "", false
 	}
-	return "refs/remotes/" + strings.TrimPrefix(strings.TrimPrefix(base, "refs/"), "remotes/"), false
+	// An invalid ref name, such as a commit expression, cannot name a remote branch.
+	tracking := "refs/remotes/" + strings.TrimPrefix(strings.TrimPrefix(base, "refs/"), "remotes/")
+	if _, err = git(ctx, dir, "check-ref-format", tracking); err != nil {
+		return "", false
+	}
+	return tracking, false
 }
 
 // remoteName returns the remote whose name starts the tracking ref name. Branch names
@@ -228,10 +233,10 @@ func refreshBase(ctx context.Context, workspace, base string) (problem string, e
 			return fmt.Sprintf("No fetch setting of a remote maps to %s, so bbflow did not fetch %s.", tracking, base), nil
 		}
 		// bbflow does not add a tracking ref that the repository does not map. For
-		// example, a single-branch clone maps only its branch.
+		// example, a single-branch clone maps only its branch. The error gives no
+		// command: a negative refspec or an unusual name can make a command wrong.
 		if remote := remoteName(ctx, dir, tracking); remote != "" {
-			branch := strings.TrimPrefix(tracking, "refs/remotes/"+remote+"/")
-			return "", fmt.Errorf("cannot fetch %s: no fetch refspec of the repository maps one remote branch to %s; to add one, run git remote set-branches --add %s %s", base, tracking, remote, branch)
+			return "", fmt.Errorf("cannot fetch %s: the fetch refspecs of the repository do not map one branch of remote %s to %s", base, remote, tracking)
 		}
 		// The name is not a remote branch. Worktree creation reports it.
 		return "", nil

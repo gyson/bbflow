@@ -444,9 +444,11 @@ The chosen base (default HEAD) resolves to a commit at Start. If the base names 
 remote-tracking branch, such as `origin/main`, Start first fetches only that branch from
 its remote. Thus the checkout starts from the current remote commit, not from the last
 fetch. A branch that is on the remote but was not fetched before also works if a fetch
-refspec maps it. A single-branch clone maps only its branch, so Start fails for other
-branches. The error names the `git remote set-branches --add` command that adds the
-missing refspec. bbflow does not add tracking refs that the repository does not map.
+refspec maps it. A single-branch clone maps only its branch, so Start fails early for
+other branches, and the error names the tracking ref. bbflow does not add tracking refs
+that the repository does not map. To map a branch, add a fetch refspec, for example with
+`git remote set-branches --add origin feature`. A negative refspec still excludes the
+branch.
 HEAD, local branches, tags, commit IDs, and expressions such as `origin/main~1` resolve
 locally without a fetch.
 
