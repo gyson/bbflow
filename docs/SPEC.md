@@ -445,14 +445,30 @@ remote-tracking branch, such as `origin/main`, Start first fetches only that bra
 its remote. Thus the checkout starts from the current remote commit, not from the last
 fetch. A branch that is on the remote but was not fetched before also works. HEAD, local
 branches, tags, commit IDs, and expressions such as `origin/main~1` resolve locally
-without a fetch. The fetch does not change local branches, tags, or `FETCH_HEAD`.
+without a fetch.
+
+The configured `remote.<name>.fetch` refspecs of the repository select the remote branch
+that a tracking ref copies. For example, with the refspec
+`+refs/heads/main:refs/remotes/origin/stable`, the base `origin/stable` fetches the
+remote `main`. The most specific destination wins.
+Negative refspecs exclude a branch. The fetch updates only the selected tracking ref.
+Other matching refspecs, local branches, tags, and `FETCH_HEAD` do not change. If no
+refspec maps to an existing tracking ref, or two remotes map it equally, bbflow does not
+fetch. The launch then uses the local ref and shows a notice.
 
 The fetch runs before the launch lock, so a slow remote does not delay other launches.
-It stops after 15 seconds. Git shows no credential prompts. Credential helpers and SSH
-agents still work. A remote that needs a typed password or passphrase fails or reaches
-the time limit. If the fetch fails and a local copy of the branch exists, the launch
-uses that copy. The view that started the session then shows a notice with the commit
-and the Git error. bbflow does not record this notice. If no local copy exists, Start
+It stops after 15 seconds. The server then stops Git and its transport helpers, such as
+`ssh`. Server stop does the same. Until the session message, the starting view gets a
+`running` status every 5 seconds, so that the browser does not end the wait.
+
+Git runs without a terminal and without askpass programs, so it shows no credential
+prompts. bbflow sets `GIT_ASKPASS=false` and `SSH_ASKPASS_REQUIRE=never`. Credential
+helpers and SSH agents still work. A remote that needs a typed password or passphrase
+fails.
+
+If the fetch fails and a local copy of the branch exists, the launch uses that copy. The
+view that started the session then shows a notice with the Git error and the commit of
+the worktree record. bbflow does not record this notice. If no local copy exists, Start
 fails and the preparation stays editable.
 
 bbflow creates a fresh branch (user-named or generated as bbflow/TIMESTAMP-SUFFIX) and

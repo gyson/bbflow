@@ -108,7 +108,7 @@ operations.
 | `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
 | `project-draft` | `project` ID | `result`, a new independent draft with saved defaults and `status`. Starts no process. |
 | `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
-| `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. |
+| `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. Before `session`, a `status` of `running` comes every 5 seconds while the server fetches the base and creates the worktree. |
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
 | `session-resume` | `session` ID, `size`, and optional `run` (an earlier run of the session) | `session`, then a terminal stream or recorded history. With `run`, the recorded history of that run. |
 | `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, `status`, `started`, and `ended`. |
@@ -497,8 +497,9 @@ the new run records `tool`, `continues` (the previous run ID), and `handoff` (th
 Managed worktree metadata includes path, repository, requested base, resolved commit,
 creation branch, and state (creating, ready, failed, or removed). Creation uses the
 server's Git and never copies uncommitted files. It fetches a remote-tracking base
-before it resolves the commit. If that fetch fails and the server uses the local copy,
-the `session` message has a `notice` with the reason. Removal rejects active
+before it resolves the commit. If the server uses the local tracking ref because the
+fetch failed or no fetch refspec maps to it, the `session` message has a `notice`. The
+notice gives the reason and the commit of the worktree record. Removal rejects active
 bbflow workspaces and modified, untracked, or ignored files. It keeps the branch. See
 [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees) for supported
 repositories.

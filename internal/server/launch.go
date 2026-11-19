@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"time"
 
 	"bbflow/internal/history"
 	"bbflow/internal/protocol"
@@ -134,6 +135,7 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 // refreshPreparedBase fetches the remote-tracking base of a worktree draft. It runs
 // before launchMu, so that a slow remote does not delay other launches. A fetch changes
 // only the remote-tracking ref. launchPrepared still checks the draft and its revision.
+// See refreshBase for the problem and the error.
 func (s *Server) refreshPreparedBase(ctx context.Context, id string, revision int64) (string, error) {
 	session, err := s.store.Session(id)
 	if err != nil {
@@ -146,20 +148,51 @@ func (s *Server) refreshPreparedBase(ctx context.Context, id string, revision in
 	return refreshBase(ctx, session.Workspace, p.Base)
 }
 
+// startKeepalive is the interval of running statuses before the session message. The
+// browser closes a request with no reply after 12 seconds. A base fetch and a checkout
+// can take longer. Tests make it shorter.
+var startKeepalive = 5 * time.Second
+
+// keepStarting sends a running status to the starting view at each interval until the
+// returned function stops it. The function returns after the last send.
+func keepStarting(conn *protocol.Conn) func() {
+	done, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		ticker := time.NewTicker(startKeepalive)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				conn.Send(protocol.Message{Type: "status", Status: "running"})
+			}
+		}
+	}()
+	return func() { close(done); <-finished }
+}
+
 func (s *Server) startPrepared(ctx context.Context, conn *protocol.Conn, request *protocol.Request) {
-	notice, err := s.refreshPreparedBase(ctx, request.Session, request.Revision)
+	stop := keepStarting(conn)
+	problem, err := s.refreshPreparedBase(ctx, request.Session, request.Revision)
 	if err != nil {
+		stop()
 		s.reply(conn, nil, err)
 		return
 	}
 	s.launchMu.Lock()
 	session, run, err := s.launchPrepared(ctx, request.Session, request.Revision, request.Size)
+	var attach func()
+	if err == nil {
+		attach = s.sessionAttachment(ctx, conn, session, run, baseNotice(problem, session.Worktree))
+	}
+	s.launchMu.Unlock()
+	// Stop the statuses outside launchMu. A slow view must not delay other launches.
+	stop()
 	if err != nil {
-		s.launchMu.Unlock()
 		s.reply(conn, nil, err)
 		return
 	}
-	attach := s.sessionAttachment(ctx, conn, session, run, notice)
-	s.launchMu.Unlock()
 	attach()
 }
