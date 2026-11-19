@@ -50,7 +50,7 @@ test('an exit shows its code, and other ends show the recorded run status', () =
 
 test('the status line of a listed session shows its status, archive state, and views', () => {
   assert.equal(listStatusText('running', {}), 'running');
-  assert.equal(listStatusText('draft', { archived: true }), 'Draft · Archived');
+  assert.equal(listStatusText('draft', { archived: true }), 'draft · Archived');
   assert.equal(listStatusText('idle', { viewers: 1 }), 'idle · 1 view');
   assert.equal(listStatusText('ended', { archived: true, viewers: 2 }), 'ended · Archived · 2 views');
 });
