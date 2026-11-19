@@ -3,9 +3,11 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"bbflow/internal/history"
@@ -57,9 +59,10 @@ func (d *demo) addData() {
 	t.wait()
 	t.close()
 	stopped := call[protocol.SessionDetail](d.target, protocol.Request{Operation: "session-config", Session: refactor})
-	if stopped.Run == nil {
-		fail("session %s has no run after stop", refactor)
+	if stopped.Run == nil || stopped.Worktree == nil {
+		fail("session %s has no run or worktree after stop", refactor)
 	}
+	refactorCommits(stopped.Worktree.Path)
 	t = open(d.target, protocol.Request{Operation: "session-continue", Session: refactor, LatestRun: stopped.Run.ID, Tool: demoAgent})
 	d.output(t, prompt, 4)
 	t.close()
@@ -206,9 +209,11 @@ func write(folder string, files map[string]string) {
 	}
 }
 
+// commit writes files and commits only these files. Other changes stay uncommitted.
 func commit(folder, message string, files map[string]string) {
 	write(folder, files)
-	git(folder, "add", "--all")
+	paths := slices.Sorted(maps.Keys(files))
+	git(folder, append([]string{"add", "--"}, paths...)...)
 	git(folder, "commit", "--quiet", "--message", message)
 }
 
@@ -280,6 +285,43 @@ func (d *demo) orbitProject() string {
 	check(os.Remove(filepath.Join(folder, "docs", "design.md")))
 	git(folder, "mv", "docs/api.md", "docs/http-api.md")
 	return folder
+}
+
+var kepler = lines(
+	"package orbit",
+	"",
+	`import "math"`,
+	"",
+	"// keplerPeriod applies Kepler's third law.",
+	"func keplerPeriod(axis, mu float64) float64 {",
+	"\treturn 2 * math.Pi * math.Sqrt(math.Pow(axis, 3)/mu)",
+	"}",
+)
+
+// refactorCommits adds three commits to the worktree of the refactor session, as an
+// agent can do. The file from /edit stays uncommitted. Thus Compare with offers each
+// baseline: the uncommitted changes, the changes from a commit, and the worktree base.
+func refactorCommits(worktree string) {
+	periodCall := lines(
+		"package orbit",
+		"",
+		"// Period returns the orbit period in seconds for a semi-major axis in meters.",
+		"func Period(axis, mu float64) float64 {",
+		"\treturn keplerPeriod(axis, mu)",
+		"}",
+	)
+	commit(worktree, "Move the period math to kepler.go", map[string]string{
+		"internal/orbit/kepler.go": kepler,
+		"internal/orbit/period.go": periodCall,
+	})
+	commit(worktree, "Add a Minutes helper", map[string]string{
+		"internal/orbit/period.go": periodCall + lines("", "// Minutes returns the orbit period in minutes.",
+			"func Minutes(axis, mu float64) float64 {", "\treturn Period(axis, mu) / 60", "}"),
+	})
+	commit(worktree, "Explain kepler.go in the design note", map[string]string{
+		"docs/design.md": lines("# Design", "", "The service calculates orbit periods from the semi-major axis.",
+			"", "`kepler.go` holds the math. `period.go` holds the exported functions."),
+	})
 }
 
 // tideProject has clean working files and a second branch for the base selection.

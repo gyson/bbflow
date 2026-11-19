@@ -914,12 +914,21 @@ They never change files, the Git index, or SQLite. Each view has its own selecte
 and its own filter text. **Compare with**, **Split**, **Unified**, and the file count
 are only in the Changes header. The Files header has **Refresh** and **×** only.
 
-- **Compare with** selects the baseline. **Since worktree base** compares the recorded
-  commit of a ready managed worktree with the current files. It includes commits that
-  the agent made, and it is the default for a managed worktree. **Uncommitted changes**
-  compares `HEAD` with the current files. A repository without commits uses the empty
-  tree. The labels do not claim that one session made the changes, because other
-  sessions and tools can share a workspace.
+- **Compare with** selects the baseline. The options go from the smallest to the
+  largest set of changes. **Uncommitted changes** compares `HEAD` with the current
+  files. A repository without commits uses the empty tree. **Changes from a commit**
+  lists the commits, newest first. **From** a commit compares the first parent of that
+  commit with the current files. Thus it includes that commit, the later commits, and
+  the uncommitted changes. **Since worktree base** compares the recorded commit of a
+  ready managed worktree with the current files. It includes commits that the agent
+  made, and it is the default for a managed worktree. The labels do not claim that one
+  session made the changes, because other sessions and tools can share a workspace.
+- The commit list follows the first parent from `HEAD`, up to 30 commits. In a managed
+  worktree, it stops at the worktree base. It omits the first commit after the base,
+  because **Since worktree base** shows the same changes. Without a managed worktree, it
+  lists the latest commits of `HEAD`. A long subject is shortened in the menu. The
+  tooltip has the full subject. When a rebase or a reset removes the selected commit,
+  the next refresh uses the default baseline.
 - **Split** shows the old and new file side by side. **Unified** shows one column with
   removed and added lines. When the editor area is narrower than 520 pixels, the pane
   shows Unified and marks it as pressed. Split keeps a dashed border until the pane is
@@ -1482,8 +1491,10 @@ deleted, renamed, binary, and untracked files, and names with spaces, Unicode, a
 newlines. They also cover files above 1 MiB, invalid UTF-8, symlinks inside and outside
 the workspace, `..` and absolute paths, and folders. Other fixtures cover subfolder
 sessions, repositories without commits, folders outside Git, missing workspaces, and
-both baselines of a managed worktree after an agent commit. Folder list fixtures cover
-the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
+both baselines of a managed worktree after an agent commit. Commit baseline fixtures
+cover the commit list, the omitted first commit, a subject with a tab, the changes
+from a commit, a root commit, the list limit, unknown commits, and a rebase. Folder
+list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
 the workspace, missing folders, the entry limit, a folder outside Git, a missing Git
 executable, and a failed ignore check. A WebSocket fixture sends `workspace-file` and
 `workspace-folders` through the server. Web fixtures cover the file list, the filter,

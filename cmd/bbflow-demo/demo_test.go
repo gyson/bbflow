@@ -160,6 +160,18 @@ func TestDemo(t *testing.T) {
 	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 6] [1 1]]")
 	expect("SELECT status, count(*) FROM runs GROUP BY status ORDER BY status", "[[exited 3] [running 3] [stopped 1]]")
 	expect("SELECT branch, state FROM worktrees", "[[demo/refactor-orbit ready]]")
+	// The worktree has three commits after its base and an uncommitted file, for each
+	// option of Compare with.
+	worktrees, err := filepath.Glob(filepath.Join(demo, "worktrees", "*"))
+	if err != nil || len(worktrees) != 1 {
+		t.Fatalf("worktrees: %v, %v", worktrees, err)
+	}
+	if log := git(worktrees[0], "log", "--format=%s", "main..HEAD"); log != "Explain kepler.go in the design note\nAdd a Minutes helper\nMove the period math to kepler.go" {
+		t.Fatalf("worktree commits:\n%s", log)
+	}
+	if status := git(worktrees[0], "status", "--porcelain"); status != "?? demo-agent-notes.md" {
+		t.Fatalf("worktree status: %q", status)
+	}
 	expect("SELECT count(*) FROM events WHERE kind='draft' AND CAST(data AS TEXT)->>'pending'=1", "[[4]]")
 	expect("SELECT count(*) FROM events WHERE kind='draft' AND CAST(data AS TEXT)->>'text'='List the changes since the last release.'", "[[1]]")
 	expect("SELECT group_concat(value->>'name', ','), data->>'$.defaultTool'=data->>'$.tools[0].id', data->>'$.worktree' FROM settings, json_each(data, '$.tools')",

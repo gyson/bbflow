@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countText, effectiveLayout, fileEntries, FolderTree, Generation, languageName, openFolders, sideNote, statusTitle, treeRows } from './dist/diff-model.js';
+import { baselineChoice, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, FolderTree, Generation, languageName, openFolders, sideNote, statusTitle, treeRows } from './dist/diff-model.js';
 
 const change = (path, status = 'M', extra = {}) => ({ path, status, added: 1, removed: 2, ...extra });
 
@@ -253,4 +253,21 @@ test('a late reply is not current', () => {
   const second = generation.next();
   assert.equal(generation.current(first), false);
   assert.equal(generation.current(second), true);
+});
+
+test('a baseline maps to one menu value and back to its request', () => {
+  const id = '0123456789abcdef0123456789abcdef01234567';
+  const commit = { kind: 'commit', label: 'Changes from commit 0123456', commit: 'parent', from: id };
+  assert.equal(baselineValue(commit), `commit:${id}`);
+  assert.deepEqual(baselineRequest(commit), { baseline: 'commit', from: id });
+  assert.deepEqual(baselineRequest({ kind: 'base', label: '', commit: 'base' }), { baseline: 'base' });
+  assert.deepEqual(baselineChoice('head'), { baseline: 'head' });
+  assert.deepEqual(baselineChoice('unknown'), { baseline: 'head' });
+});
+
+test('a commit label has the short ID and a shortened subject', () => {
+  const id = '0123456789abcdef0123456789abcdef01234567';
+  assert.equal(commitLabel(id, 'Fix resize crash'), 'From 0123456 Fix resize crash');
+  const label = commitLabel(id, 'x'.repeat(80));
+  assert.equal(label, `From 0123456 ${'x'.repeat(59)}…`);
 });

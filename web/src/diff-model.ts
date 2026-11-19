@@ -1,10 +1,34 @@
-import type { ChangedFile, FileSide, FolderEntry, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
+import type { Baseline, ChangedFile, DiffRequest, FileSide, FolderEntry, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
 
 export type DiffLayout = 'split' | 'unified';
 export type FileScope = 'changed' | 'files';
 
 // One row of the file list. An unchanged file has no change.
 export interface FileEntry { path: string; change?: ChangedFile }
+
+// The value of a baseline in the Compare with menu. A commit baseline names its first
+// commit.
+export function baselineValue(baseline: Baseline): string {
+  return baseline.kind === 'commit' ? `commit:${baseline.from ?? ''}` : baseline.kind;
+}
+
+// The request for a value of the Compare with menu.
+export function baselineChoice(value: string): DiffRequest {
+  if (value.startsWith('commit:')) return { baseline: 'commit', from: value.slice('commit:'.length) };
+  return { baseline: value === 'base' ? 'base' : 'head' };
+}
+
+// The request for the baseline of a reply.
+export function baselineRequest(baseline: Baseline): DiffRequest {
+  return baselineChoice(baselineValue(baseline));
+}
+
+// The menu text of a commit. A long subject is shortened. The option title has the
+// full subject.
+export function commitLabel(id: string, subject: string): string {
+  const short = subject.length > 60 ? `${subject.slice(0, 59)}…` : subject;
+  return `From ${id.slice(0, 7)} ${short}`;
+}
 
 // Below this width of the editor area, the split layout is too narrow to read.
 export const splitMinWidth = 520;
