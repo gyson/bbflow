@@ -1127,6 +1127,7 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
 - Preview uses markdown-it with CommonMark, GitHub tables, strikethrough, and task
   lists. Raw HTML shows as text. Images do not load. The dialog shows "Image not
   loaded" with the alternative text and the source. Task list checkboxes are disabled.
+  In forced colors mode, they use the checkbox of the browser.
   An escaped marker, such as `\[x]` or `&#91;x]`, stays text. A fenced code block gets
   the syntax colors of the file view when the first word of its info string names a
   language that the pane supports. Other code blocks show as plain text.
@@ -1722,7 +1723,9 @@ and a Go file show no Preview button. It checked Esc, ✕, light and dark Appear
 phone width without horizontal scroll, and an empty browser console.
 A later check of Preview covered fenced code with Go, shell, and no language, in light
 and dark Appearance. It also checked the syntax colors of a Go diff and a Markdown file
-view, a phone width without horizontal scroll, and an empty browser console.
+view, a phone width without horizontal scroll, and an empty browser console. A headless
+Chrome check with emulated forced colors showed separate checked and open task boxes.
+Code in a level 4 heading kept its case.
 
 A browser check of the Files tree used a temporary instance, a fixture repository, and
 a folder outside Git, each with a shell session. It checked open and closed folders,

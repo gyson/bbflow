@@ -521,6 +521,8 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .markdown-body h2 { font-size: 21px; padding-bottom: 7px; border-bottom: 1px solid var(--border); }
 .markdown-body h3 { font-size: 17px; }
 .markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 12.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+/* Commands and identifiers can be case-sensitive. Code in these headings keeps its case. */
+.markdown-body h4 code, .markdown-body h5 code, .markdown-body h6 code { text-transform: none; letter-spacing: 0; }
 .markdown-body p, .markdown-body ul, .markdown-body ol, .markdown-body blockquote, .markdown-body pre, .markdown-body table { margin: 0 0 16px; }
 .markdown-body ul, .markdown-body ol { padding-left: 26px; }
 .markdown-body li + li { margin-top: 4px; }
@@ -536,6 +538,11 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .markdown-body li.task-item input { appearance: none; display: inline-grid; place-content: center; width: 15px; height: 15px; margin: 0 8px 0 -23px; padding: 0; vertical-align: -2px; border: 1.5px solid var(--selected-border); border-radius: 4px; background: var(--surface); }
 .markdown-body li.task-item input:checked { border-color: var(--accent); background: var(--accent); }
 .markdown-body li.task-item input:checked::before { content: ""; width: 9px; height: 9px; background: var(--primary-text); clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%); }
+/* Forced colors replace the fills that draw the box and the mark. Use the checkbox of the browser in that mode. */
+@media (forced-colors: active) {
+  .markdown-body li.task-item input { appearance: auto; }
+  .markdown-body li.task-item input:checked::before { content: none; }
+}
 .markdown-body code { padding: 2px 6px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 13%, transparent); font-family: ui-monospace, Menlo, Monaco, monospace; font-size: .86em; }
 .markdown-body pre { padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--inset); overflow-x: auto; overflow-wrap: normal; font-size: 13px; line-height: 1.55; tab-size: 4; }
 .markdown-body pre code { padding: 0; background: none; font-size: inherit; }
