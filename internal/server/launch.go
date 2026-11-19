@@ -131,7 +131,27 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 	return session, run, nil
 }
 
+// refreshPreparedBase fetches the remote-tracking base of a worktree draft. It runs
+// before launchMu, so that a slow remote does not delay other launches. A fetch changes
+// only the remote-tracking ref. launchPrepared still checks the draft and its revision.
+func (s *Server) refreshPreparedBase(ctx context.Context, id string, revision int64) (string, error) {
+	session, err := s.store.Session(id)
+	if err != nil {
+		return "", nil
+	}
+	p := session.Preparation
+	if p == nil || !p.Worktree || p.State != "draft" || p.Revision != revision || session.Archived {
+		return "", nil
+	}
+	return refreshBase(ctx, session.Workspace, p.Base)
+}
+
 func (s *Server) startPrepared(ctx context.Context, conn *protocol.Conn, request *protocol.Request) {
+	notice, err := s.refreshPreparedBase(ctx, request.Session, request.Revision)
+	if err != nil {
+		s.reply(conn, nil, err)
+		return
+	}
 	s.launchMu.Lock()
 	session, run, err := s.launchPrepared(ctx, request.Session, request.Revision, request.Size)
 	if err != nil {
@@ -139,7 +159,7 @@ func (s *Server) startPrepared(ctx context.Context, conn *protocol.Conn, request
 		s.reply(conn, nil, err)
 		return
 	}
-	attach := s.sessionAttachment(ctx, conn, session, run)
+	attach := s.sessionAttachment(ctx, conn, session, run, notice)
 	s.launchMu.Unlock()
 	attach()
 }

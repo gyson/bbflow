@@ -25,7 +25,7 @@ func openTestView(t *testing.T, s *Server, r *runningSession, size protocol.Size
 	t.Helper()
 	conn, peer := attachmentPair(t)
 	done := make(chan struct{})
-	go func() { defer close(done); s.attach(conn, r, size, nil) }()
+	go func() { defer close(done); s.attach(conn, r, size, nil, "") }()
 	v := &testView{t, peer, done}
 	t.Cleanup(func() { peer.Close(); <-done })
 	v.read("session")

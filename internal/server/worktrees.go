@@ -82,6 +82,76 @@ func within(parent, path string) bool {
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
+// fetchTimeout limits the base fetch. A remote that does not answer must not hold the
+// launch for the full Git timeout.
+const fetchTimeout = 15 * time.Second
+
+// remoteBranch returns the remote and branch when base names a remote-tracking branch.
+// It also accepts a branch that is on the remote but was not fetched yet. Other bases,
+// such as HEAD, local branches, tags, and commit expressions, return empty strings.
+func remoteBranch(ctx context.Context, dir, base string) (string, string) {
+	list, err := git(ctx, dir, "remote")
+	if err != nil || list == "" {
+		return "", ""
+	}
+	name := strings.TrimPrefix(strings.TrimPrefix(base, "refs/"), "remotes/")
+	full, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", base)
+	if err == nil {
+		// The base names a ref or a commit. Fetch only for a remote-tracking branch.
+		var tracking bool
+		if name, tracking = strings.CutPrefix(full, "refs/remotes/"); !tracking {
+			return "", ""
+		}
+	}
+	// Branch names can contain slashes. Use the longest remote name that matches.
+	remote := ""
+	for _, candidate := range strings.Split(list, "\n") {
+		if len(candidate) > len(remote) && strings.HasPrefix(name, candidate+"/") {
+			remote = candidate
+		}
+	}
+	if remote == "" {
+		return "", ""
+	}
+	branch := strings.TrimPrefix(name, remote+"/")
+	// A valid ref name cannot change the meaning of the refspec.
+	if branch == "HEAD" || strings.HasPrefix(branch, "-") {
+		return "", ""
+	}
+	if _, err = git(ctx, dir, "check-ref-format", "refs/heads/"+branch); err != nil {
+		return "", ""
+	}
+	return remote, branch
+}
+
+// refreshBase fetches a remote-tracking base before worktree creation. Thus the new
+// checkout starts from the current remote commit, not from the last fetch. If the fetch
+// fails and a local copy exists, refreshBase returns a notice, and the launch uses that
+// copy. If no local copy exists, it returns the fetch error. Other bases need no fetch.
+func refreshBase(ctx context.Context, workspace, base string) (string, error) {
+	dir, err := expandWorkspace(workspace)
+	if err != nil {
+		// Worktree creation reports workspace and repository problems.
+		return "", nil
+	}
+	remote, branch := remoteBranch(ctx, dir, base)
+	if remote == "" {
+		return "", nil
+	}
+	tracking := "refs/remotes/" + remote + "/" + branch
+	fetchCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	defer cancel()
+	_, fetchErr := git(fetchCtx, dir, "fetch", "--no-tags", "--no-write-fetch-head", "--", remote, "+refs/heads/"+branch+":"+tracking)
+	if fetchErr == nil {
+		return "", nil
+	}
+	commit, err := git(ctx, dir, "rev-parse", "--verify", "--short", "--end-of-options", tracking+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("could not fetch %s: %w", base, fetchErr)
+	}
+	return fmt.Sprintf("Could not fetch %s. The worktree uses the local copy at commit %s. %v", base, commit, fetchErr), nil
+}
+
 func (s *Server) createWorktree(ctx context.Context, id, source, base, branch string) (string, history.Worktree, error) {
 	var w history.Worktree
 	repo := inspectRepository(ctx, source)

@@ -309,6 +309,7 @@ type Message struct {
 	Run      string            `json:"run,omitempty"`
 	Shell    string            `json:"shell,omitempty"` // Identifies a side terminal shell.
 	Error    string            `json:"error,omitempty"`
+	Notice   string            `json:"notice,omitempty"` // A warning for the view that started a session.
 	Composer *Composer         `json:"composer,omitempty"`
 	Result   json.RawMessage   `json:"result,omitempty"`
 }

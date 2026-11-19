@@ -140,8 +140,9 @@ export type Request = RPCRequest | StreamRequest | WatchRequest;
 
 export type ServerMessage =
   | { type: 'server'; server: ServerInfo }
-  // shell identifies a side terminal shell.
-  | { type: 'session'; session: string; active?: boolean; status?: string; shell?: string }
+  // shell identifies a side terminal shell. notice is a warning for the view that
+  // started the session, such as a base fetch that failed.
+  | { type: 'session'; session: string; active?: boolean; status?: string; shell?: string; notice?: string }
   // A live view gets running or idle after it joins and after each change.
   | { type: 'status'; status: string }
   | { type: 'frame'; data?: string; size: Size; revision: number; full?: boolean }

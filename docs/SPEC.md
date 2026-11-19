@@ -440,9 +440,24 @@ The server uses the installed Git executable to detect repositories, including l
 worktrees and repository subfolders. Creating a worktree requires an existing commit.
 Repositories and bases containing submodules are rejected.
 
-The chosen base (default HEAD) resolves to a commit at Start, without fetching. bbflow
-creates a fresh branch (user-named or generated as bbflow/TIMESTAMP-SUFFIX) and checkout
-under `<instance>/worktrees/YYYYMMDD-HHMMSS-XXXXXXXX`, using UTC and a random suffix.
+The chosen base (default HEAD) resolves to a commit at Start. If the base names a
+remote-tracking branch, such as `origin/main`, Start first fetches only that branch from
+its remote. Thus the checkout starts from the current remote commit, not from the last
+fetch. A branch that is on the remote but was not fetched before also works. HEAD, local
+branches, tags, commit IDs, and expressions such as `origin/main~1` resolve locally
+without a fetch. The fetch does not change local branches, tags, or `FETCH_HEAD`.
+
+The fetch runs before the launch lock, so a slow remote does not delay other launches.
+It stops after 15 seconds. Git shows no credential prompts. Credential helpers and SSH
+agents still work. A remote that needs a typed password or passphrase fails or reaches
+the time limit. If the fetch fails and a local copy of the branch exists, the launch
+uses that copy. The view that started the session then shows a notice with the commit
+and the Git error. bbflow does not record this notice. If no local copy exists, Start
+fails and the preparation stays editable.
+
+bbflow creates a fresh branch (user-named or generated as bbflow/TIMESTAMP-SUFFIX) and
+checkout under `<instance>/worktrees/YYYYMMDD-HHMMSS-XXXXXXXX`, using UTC and a random
+suffix.
 Repository subfolder projects launch in the corresponding subfolder. Missing or escaping
 subfolders fail the launch and preserve the checkout for inspection and explicit
 cleanup.

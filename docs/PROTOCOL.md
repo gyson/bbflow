@@ -496,7 +496,9 @@ the new run records `tool`, `continues` (the previous run ID), and `handoff` (th
 
 Managed worktree metadata includes path, repository, requested base, resolved commit,
 creation branch, and state (creating, ready, failed, or removed). Creation uses the
-server's Git and never fetches or copies uncommitted files. Removal rejects active
+server's Git and never copies uncommitted files. It fetches a remote-tracking base
+before it resolves the commit. If that fetch fails and the server uses the local copy,
+the `session` message has a `notice` with the reason. Removal rejects active
 bbflow workspaces and modified, untracked, or ignored files. It keeps the branch. See
 [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees) for supported
 repositories.

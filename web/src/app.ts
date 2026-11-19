@@ -678,6 +678,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           void loadTerminals(message.session);
           view.options.disableStdin = true;
           history.replaceState(null, '', sessionURL(message.session));
+          if (message.notice) notice(message.notice);
           refreshSessions();
           view.focus();
           break;
