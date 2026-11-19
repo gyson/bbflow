@@ -133,11 +133,12 @@ export class DiffPane {
 
   // Select the session of this view. An empty session, for a draft, Settings, or the
   // home page, has no changes. The state stays until the view selects another session.
+  // The workspace pane hides this view before it selects a session. When the pane shows
+  // the view again, the view reads the changes or files of the session.
   select(session: string): void {
     this.visible = !!session;
     if (!session || session === this.session) {
       this.show();
-      if (session && this.isOpen) void this.refresh();
       return;
     }
     this.session = session;
@@ -159,7 +160,6 @@ export class DiffPane {
     this.summary.textContent = '';
     this.setStatus('');
     this.show();
-    if (this.isOpen) void this.refresh();
   }
 
   // The workspace pane sets these. close closes the pane. openChanges shows Changes.

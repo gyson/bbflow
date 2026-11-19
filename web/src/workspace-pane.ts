@@ -12,9 +12,10 @@ const minSessionWidth = 360;
 // WorkspacePane is the pane to the right of the session. It shows one view at a time.
 // Changes shows the changed files and their diffs. Files shows the folders of the
 // workspace and the current files. Terminal shows the side terminal. Each view has an
-// icon in the session toolbar. The icon of the shown view closes the pane. The open
-// state, the view, and the width belong to this view of the page. Other browser tabs
-// keep their own state.
+// icon in the session toolbar. The icon of the shown view closes the pane. Each session
+// has its own open state and view. A session that this view of the page has not shown
+// yet starts with a closed pane. All sessions use the same width. This view of the page
+// keeps the state. Other browser tabs keep their own state.
 export class WorkspacePane {
   private readonly row = element('session-row', HTMLElement);
   private readonly pane = element('workspace-pane', HTMLElement);
@@ -27,14 +28,14 @@ export class WorkspacePane {
     terminal: element('pane-terminal', HTMLButtonElement),
   };
 
-  private visible = false;
-  private isOpen = false;
-  private view: PaneView = 'changes';
+  private session = '';
+  // The shown view of each session with an open pane. A closed pane has no entry.
+  private readonly views = new Map<string, PaneView>();
   private width = 0;
 
   constructor(private readonly changes: DiffPane, private readonly terminal: SideTerminal) {
     for (const view of views) {
-      this.icons[view].onclick = () => this.open(this.isOpen && this.view === view ? null : view);
+      this.icons[view].onclick = () => this.open(this.views.get(this.session) === view ? null : view);
     }
     changes.close = () => this.open(null);
     changes.openChanges = () => this.open('changes');
@@ -55,10 +56,14 @@ export class WorkspacePane {
   }
 
   // Select the session of this view. An empty session, for a draft, Settings, or the
-  // home page, hides the pane and its icons. An open pane stays open for the next
+  // home page, hides the pane and its icons. The pane shows the state of the selected
   // session.
   select(session: string): void {
-    this.visible = !!session;
+    this.session = session;
+    // Hide the views first. Then they do not load or join anything with the state of
+    // the previous session. apply shows the view of the selected session.
+    this.changes.setShown(false);
+    this.terminal.setShown(false, false);
     this.changes.select(session);
     this.terminal.select(session);
     this.apply(false);
@@ -67,29 +72,33 @@ export class WorkspacePane {
   // Show a view, or close the pane with null. A click starts a shell in Terminal when
   // the session has none.
   private open(view: PaneView | null): void {
-    this.isOpen = !!view;
-    if (view) this.view = view;
+    if (!this.session) return;
+    if (view) this.views.set(this.session, view);
+    else this.views.delete(this.session);
     this.apply(!!view);
   }
 
   private apply(click: boolean): void {
-    const shown = this.isOpen && this.visible;
-    this.pane.hidden = this.divider.hidden = !shown;
-    for (const view of views) {
-      const icon = this.icons[view];
-      const current = shown && this.view === view;
-      const label = `${current ? 'Hide' : 'Show'} ${view}`;
-      icon.hidden = !this.visible;
+    const view = this.views.get(this.session);
+    this.pane.hidden = this.divider.hidden = !view;
+    for (const name of views) {
+      const icon = this.icons[name];
+      const current = view === name;
+      const label = `${current ? 'Hide' : 'Show'} ${name}`;
+      icon.hidden = !this.session;
       icon.setAttribute('aria-pressed', String(current));
       icon.setAttribute('aria-label', label);
       icon.dataset.tip = label;
     }
-    this.diffPanel.hidden = this.view === 'terminal';
-    this.terminalPanel.hidden = this.view !== 'terminal';
+    // A closed pane keeps its panel and its scope until it shows a view again.
+    if (view) {
+      this.diffPanel.hidden = view === 'terminal';
+      this.terminalPanel.hidden = view !== 'terminal';
+    }
     // Show the panel before its content measures its size.
-    const scope = this.view === 'files' ? 'files' : this.view === 'changes' ? 'changed' : undefined;
-    this.changes.setShown(shown && this.view !== 'terminal', scope);
-    this.terminal.setShown(shown && this.view === 'terminal', click);
+    const scope = view === 'files' ? 'files' : view === 'changes' ? 'changed' : undefined;
+    this.changes.setShown(!!view && view !== 'terminal', scope);
+    this.terminal.setShown(view === 'terminal', click);
   }
 
   private resize(width: number): void {

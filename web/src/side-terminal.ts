@@ -39,15 +39,15 @@ export class SideTerminal {
   }
 
   // Select the session of this view. An empty session, for a draft, Settings, or the
-  // home page, has no terminal. A shown view joins the shell of the new session. It does
-  // not start a shell.
+  // home page, has no terminal. The workspace pane hides this view before it selects a
+  // session. When the pane shows the view again, the view joins the shell of the
+  // session. It does not start a shell.
   select(session: string): void {
     if (session === this.session) return;
     this.session = session;
     this.disconnect();
     this.setStatus(session ? 'No shell runs in this session.' : '');
     this.show();
-    if (this.isOpen && session) this.connect(false);
   }
 
   // The workspace pane shows or hides this view. With start, a click of the user showed
