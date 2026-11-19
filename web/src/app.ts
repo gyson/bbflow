@@ -18,6 +18,7 @@ import { Composer } from './composer.js';
 import { SessionMenu } from './session-menu.js';
 import { SessionSplit } from './session-split.js';
 import { Sidebar } from './sidebar.js';
+import { FileListWidth } from './file-list-width.js';
 import { mergeSessions, sessionGroups, sessionWindow } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
@@ -167,6 +168,7 @@ const diffPane = new DiffPane(() => server);
 const sideTerminal = new SideTerminal(() => server, terminalTheme);
 const workspacePane = new WorkspacePane(diffPane, sideTerminal);
 new Sidebar();
+new FileListWidth();
 
 let showingSettings = false;
 const settingsView = new SettingsView(() => server, updateTerminalTheme);

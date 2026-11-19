@@ -234,7 +234,24 @@ var period = lines(
 	"}",
 )
 
-// orbitProject has three commits and one change of each kind in its working files.
+// controller is a file in a deep folder with a long name. Its path is wider than the
+// default file list, for a check of the file list divider.
+const controller = "internal/orbit/propagation/numerical/integrators/runge_kutta/adaptive_step_size_controller.go"
+
+var step = lines(
+	"package runge_kutta",
+	"",
+	"// NextStep returns the next step size in seconds for an error estimate.",
+	"func NextStep(step, estimate, tolerance float64) float64 {",
+	"\tif estimate == 0 {",
+	"\t\treturn step * 2",
+	"\t}",
+	"\treturn step * 0.9 * tolerance / estimate",
+	"}",
+)
+
+// orbitProject has three commits and one change of each kind in its working files. A
+// file in a deep folder has a long path.
 func (d *demo) orbitProject() string {
 	folder := d.repository("orbit-api")
 	commit(folder, "Add the orbit service skeleton", map[string]string{
@@ -247,6 +264,7 @@ func (d *demo) orbitProject() string {
 		"internal/orbit/period_test.go": lines("package orbit", "", `import "testing"`, "", "func TestPeriod(t *testing.T) {",
 			"\tif Period(7e6, 3.986e14) < 5000 {", "\t\tt.Fatal(\"period is too short\")", "\t}", "}"),
 		"docs/design.md": lines("# Design", "", "The service calculates orbit periods from the semi-major axis."),
+		controller:       step,
 	})
 	commit(folder, "Document the HTTP API", map[string]string{
 		"docs/api.md": lines("# HTTP API", "", "`GET /period?axis=METERS` returns the orbit period in seconds."),
@@ -257,6 +275,7 @@ func (d *demo) orbitProject() string {
 			"func Minutes(axis, mu float64) float64 {", "\treturn Period(axis, mu) / 60", "}"),
 		"internal/orbit/transfer.go": lines("package orbit", "", "// Transfer is not implemented.",
 			"func Transfer(from, to float64) float64 {", "\treturn 0", "}"),
+		controller: step + lines("", "// MinStep is the smallest step size in seconds.", "const MinStep = 1e-3"),
 	})
 	check(os.Remove(filepath.Join(folder, "docs", "design.md")))
 	git(folder, "mv", "docs/api.md", "docs/http-api.md")

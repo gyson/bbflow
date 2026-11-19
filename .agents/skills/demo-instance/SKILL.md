@@ -79,7 +79,7 @@ The simulated data has these parts:
 
 | Part | Contents |
 | --- | --- |
-| Project **Orbit API** | A repository with three commits. Its working files have one modified, one deleted, one renamed, and two untracked files for the Changes pane. |
+| Project **Orbit API** | A repository with three commits. Its working files have two modified, one deleted, one renamed, and two untracked files for the Changes pane. One modified file is six folders deep and has a long name, for the width of the file list. |
 | Project **Tide Web** | A repository with clean working files and a second branch, `feature/tide-chart`. |
 | Tool **Demo agent** | The default tool. It prints a fixed reply to each message. |
 | Tool **Busy agent** | It prints one line each second until it stops. |

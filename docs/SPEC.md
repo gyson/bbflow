@@ -945,6 +945,13 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   deleted files.
 - A file that you select in **Files** shows its current text. A file that you select in
   **Changes** opens as a diff. A symlink opens as a file with its target text.
+- A vertical divider between the file list and the file view changes the list width.
+  Drag it with a mouse or touch. Or focus it and use Left/Right to resize. Use
+  Home/End to reach the limits. A double-click restores the default width, 24% of the
+  pane but at least 140 pixels. The list stays at least 140 pixels wide, and the file
+  view keeps at least 280 pixels. Changes and Files use the same width. In a narrower
+  pane, the list gets narrower and keeps the selected width for a wider pane. Below 620
+  pixels, the list is above the file view and the divider is not available.
 - In Changes, the file header shows the path and the line counts. **View file** and
   **View diff** change between the current text and the diff.
 - In Files, the file header shows the path only. For a changed file, **View diff**
@@ -977,8 +984,8 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   there. The Files view shows the tree and the current files. When the server has no
   Git executable, Files works in the same way, and Changes shows the error.
 
-The layout, the baseline, the open folders, and the selected file of each view belong
-to the browser tab.
+The layout, the list width, the baseline, the open folders, and the selected file of
+each view belong to the browser tab.
 Other browser tabs keep their own state. A visit to Settings or the home page keeps the
 state. A different session or a reload resets it.
 
