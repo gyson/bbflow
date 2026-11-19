@@ -49,7 +49,7 @@ func (s *Server) openSide(ctx context.Context, conn *protocol.Conn, id, shell st
 		}
 		return
 	}
-	s.attach(conn, r, size, nil)
+	s.attach(conn, r, size, nil, "")
 }
 
 // startSide starts the shell of a side terminal. The caller holds launchMu.

@@ -190,7 +190,7 @@ func (r *runningSession) finish(code int, status string, err error) {
 	}
 }
 
-func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, session history.Session, run *agent.Launch) func() {
+func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, session history.Session, run *agent.Launch, notice string) func() {
 	s.mu.Lock()
 	runContext, cancel := context.WithCancel(ctx)
 	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool, activity: activity{output: time.Now()}}
@@ -216,7 +216,7 @@ func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, ses
 			close(r.done)
 		}()
 	}
-	return func() { s.attach(conn, r, run.Size, launch) }
+	return func() { s.attach(conn, r, run.Size, launch, notice) }
 }
 
 // Session launches always use the server environment and interactive shell.
@@ -283,7 +283,7 @@ func (s *Server) resumeSession(conn *protocol.Conn, id, runID string, size proto
 		return
 	}
 	if r := s.running(id); r != nil && (runID == "" || runID == r.run()) {
-		s.attach(conn, r, size, nil)
+		s.attach(conn, r, size, nil, "")
 		return
 	}
 	session, err := s.store.Session(id)
@@ -337,15 +337,15 @@ func (s *Server) resumeSession(conn *protocol.Conn, id, runID string, size proto
 
 // Only one frame can be outstanding. Capture continues to update the emulator while the
 // client renders. After acknowledgment, compare the latest state with the accepted
-// baseline.
-func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Size, launch func()) {
+// baseline. A non-empty notice goes to this view in its session message.
+func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Size, launch func(), notice string) {
 	a := r.subscribe(conn, size)
 	if launch != nil {
 		launch()
 	}
 	defer a.close()
 	defer r.leave(a)
-	if err := conn.Send(protocol.Message{Type: "session", Session: r.id, Active: true, Shell: r.shell}); err != nil {
+	if err := conn.Send(protocol.Message{Type: "session", Session: r.id, Active: true, Shell: r.shell, Notice: notice}); err != nil {
 		return
 	}
 	// Each live view gets the session status now and after each change.

@@ -63,7 +63,7 @@ func (s *Server) continueSession(ctx context.Context, conn *protocol.Conn, reque
 		s.reply(conn, nil, err)
 		return
 	}
-	attach := s.sessionAttachment(ctx, conn, session, run)
+	attach := s.sessionAttachment(ctx, conn, session, run, "")
 	s.launchMu.Unlock()
 	attach()
 }

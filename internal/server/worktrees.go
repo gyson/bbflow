@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"bbflow/internal/history"
@@ -27,6 +29,11 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	cmd.Env = gitEnv()
+	// A new session has no terminal for prompts. At the deadline or at server stop,
+	// stop the whole group. A transport helper, such as ssh, can keep the output open.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 2 * time.Second
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(string(out)))
@@ -80,6 +87,179 @@ func inspectRepository(ctx context.Context, workspace string) RepositoryInfo {
 func within(parent, path string) bool {
 	relative, err := filepath.Rel(parent, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+// fetchTimeout limits the base fetch. A remote that does not answer must not hold the
+// launch for the full Git timeout. Tests make it shorter.
+var fetchTimeout = 15 * time.Second
+
+// remoteRef is a remote-tracking ref and the remote ref that a fetch copies into it.
+type remoteRef struct {
+	remote, source, tracking string
+}
+
+// matchRef matches ref against a refspec side. A side has no star or one star, and the
+// star matches any text. It returns the text of the star.
+func matchRef(pattern, ref string) (string, bool) {
+	prefix, suffix, glob := strings.Cut(pattern, "*")
+	if !glob {
+		return "", pattern == ref
+	}
+	if len(ref) < len(prefix)+len(suffix) || !strings.HasPrefix(ref, prefix) || !strings.HasSuffix(ref, suffix) {
+		return "", false
+	}
+	return ref[len(prefix) : len(ref)-len(suffix)], true
+}
+
+// fetchSource finds the remote ref that the configured fetch refspecs copy into
+// tracking. The most specific destination wins. Equal matches with different sources
+// and refs that a negative refspec excludes return false.
+func fetchSource(ctx context.Context, dir, tracking string) (remoteRef, bool) {
+	var found remoteRef
+	// An exact destination is more specific than a pattern with the same prefix.
+	best, ambiguous := -1, false
+	lines, _ := git(ctx, dir, "config", "--get-regexp", `^remote\..*\.fetch$`)
+	excluded := map[string][]string{}
+	type mapping struct{ remote, source, destination string }
+	var mappings []mapping
+	for _, line := range strings.Split(lines, "\n") {
+		key, spec, ok := strings.Cut(line, " ")
+		remote := strings.TrimSuffix(strings.TrimPrefix(key, "remote."), ".fetch")
+		if !ok || remote == "" {
+			continue
+		}
+		if negative, ok := strings.CutPrefix(spec, "^"); ok {
+			excluded[remote] = append(excluded[remote], negative)
+			continue
+		}
+		source, destination, ok := strings.Cut(strings.TrimPrefix(spec, "+"), ":")
+		if ok && strings.Count(source, "*") == strings.Count(destination, "*") && strings.Count(source, "*") <= 1 {
+			mappings = append(mappings, mapping{remote, source, destination})
+		}
+	}
+	for _, m := range mappings {
+		star, ok := matchRef(m.destination, tracking)
+		if !ok {
+			continue
+		}
+		source := strings.Replace(m.source, "*", star, 1)
+		if !strings.HasPrefix(source, "refs/") || slices.ContainsFunc(excluded[m.remote], func(pattern string) bool {
+			_, ok := matchRef(pattern, source)
+			return ok
+		}) {
+			continue
+		}
+		score, _, glob := strings.Cut(m.destination, "*")
+		rank := 2 * len(score)
+		if !glob {
+			rank++
+		}
+		candidate := remoteRef{m.remote, source, tracking}
+		switch {
+		case rank > best:
+			found, best, ambiguous = candidate, rank, false
+		case rank == best && candidate != found:
+			ambiguous = true
+		}
+	}
+	if best < 0 || ambiguous {
+		return remoteRef{}, false
+	}
+	// A valid ref name cannot change the meaning of the refspec.
+	for _, ref := range []string{found.source, found.tracking} {
+		if _, err := git(ctx, dir, "check-ref-format", ref); err != nil {
+			return remoteRef{}, false
+		}
+	}
+	return found, true
+}
+
+// remoteBase returns the remote-tracking ref that base names. A name that does not
+// resolve can name a remote branch that was not fetched yet. Other bases, such as HEAD,
+// local branches, tags, and commit expressions, return an empty tracking ref.
+func remoteBase(ctx context.Context, dir, base string) (string, bool) {
+	full, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", base)
+	if err == nil {
+		// The base names a ref or a commit. Only a remote-tracking branch can be fetched.
+		if !strings.HasPrefix(full, "refs/remotes/") {
+			return "", false
+		}
+		return full, true
+	}
+	if strings.HasPrefix(base, "-") {
+		return "", false
+	}
+	// An invalid ref name, such as a commit expression, cannot name a remote branch.
+	tracking := "refs/remotes/" + strings.TrimPrefix(strings.TrimPrefix(base, "refs/"), "remotes/")
+	if _, err = git(ctx, dir, "check-ref-format", tracking); err != nil {
+		return "", false
+	}
+	return tracking, false
+}
+
+// remoteName returns the remote whose name starts the tracking ref name. Branch names
+// can contain slashes, so the longest remote name wins.
+func remoteName(ctx context.Context, dir, tracking string) string {
+	list, _ := git(ctx, dir, "remote")
+	remote := ""
+	for _, candidate := range strings.Split(list, "\n") {
+		if candidate != "" && len(candidate) > len(remote) && strings.HasPrefix(tracking, "refs/remotes/"+candidate+"/") {
+			remote = candidate
+		}
+	}
+	return remote
+}
+
+// refreshBase fetches a remote-tracking base before worktree creation. Thus the new
+// checkout starts from the current remote commit, not from the last fetch. The fetch
+// updates only the selected tracking ref, also when other fetch refspecs match.
+//
+// The problem is not empty when the launch must use the local tracking ref: the fetch
+// failed, or no fetch refspec maps to the ref. If the fetch fails and no local copy
+// exists, refreshBase returns the fetch error. Other bases need no fetch.
+func refreshBase(ctx context.Context, workspace, base string) (problem string, err error) {
+	dir, err := expandWorkspace(workspace)
+	if err != nil {
+		// Worktree creation reports workspace and repository problems.
+		return "", nil
+	}
+	tracking, exists := remoteBase(ctx, dir, base)
+	if tracking == "" {
+		return "", nil
+	}
+	ref, ok := fetchSource(ctx, dir, tracking)
+	if !ok {
+		if exists {
+			return fmt.Sprintf("No fetch setting of a remote maps to %s, so bbflow did not fetch %s.", tracking, base), nil
+		}
+		// bbflow does not add a tracking ref that the repository does not map. For
+		// example, a single-branch clone maps only its branch. The error gives no
+		// command: a negative refspec or an unusual name can make a command wrong.
+		if remote := remoteName(ctx, dir, tracking); remote != "" {
+			return "", fmt.Errorf("cannot fetch %s: the fetch refspecs of the repository do not map one branch of remote %s to %s", base, remote, tracking)
+		}
+		// The name is not a remote branch. Worktree creation reports it.
+		return "", nil
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	defer cancel()
+	_, fetchErr := git(fetchCtx, dir, "fetch", "--no-tags", "--no-write-fetch-head", "--refmap=", "--", ref.remote, "+"+ref.source+":"+ref.tracking)
+	if fetchErr == nil {
+		return "", nil
+	}
+	if _, err = git(ctx, dir, "rev-parse", "--verify", "--quiet", "--end-of-options", ref.tracking+"^{commit}"); err != nil {
+		return "", fmt.Errorf("could not fetch %s: %w", base, fetchErr)
+	}
+	return fmt.Sprintf("Could not fetch %s (%v).", base, fetchErr), nil
+}
+
+// baseNotice tells the starting view that the worktree did not use a fetched base. It
+// names the commit of the worktree record, so that the notice and the record agree.
+func baseNotice(problem string, w *history.Worktree) string {
+	if problem == "" || w == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s The worktree uses the local commit %.12s.", problem, w.Commit)
 }
 
 func (s *Server) createWorktree(ctx context.Context, id, source, base, branch string) (string, history.Worktree, error) {

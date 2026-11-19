@@ -37,15 +37,18 @@ const (
 )
 
 // gitEnv removes Git variables of the server's launcher. Git state belongs to the
-// selected repository.
+// selected repository. The server has no user at a terminal, so Git and SSH must not
+// prompt. GIT_ASKPASS overrides core.askPass and SSH_ASKPASS. A failed askpass program
+// with no terminal prompt stops the command. Credential helpers and SSH agents still
+// work.
 func gitEnv() []string {
 	var env []string
 	for _, item := range os.Environ() {
-		if !strings.HasPrefix(item, "GIT_") {
+		if !strings.HasPrefix(item, "GIT_") && !strings.HasPrefix(item, "SSH_ASKPASS") {
 			env = append(env, item)
 		}
 	}
-	return append(env, "GIT_TERMINAL_PROMPT=0")
+	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=false", "SSH_ASKPASS_REQUIRE=never")
 }
 
 // gitCommand prepares a read-only Git command in dir. The command does not take

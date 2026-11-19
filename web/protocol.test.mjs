@@ -209,3 +209,27 @@ test('a title test without a reply times out after its limit', t => {
   assert.equal(errors.length, 1);
   assert.match(errors[0].message, /timed out/);
 });
+
+test('running statuses keep a slow session start open until its session message', t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const errors = [];
+  const messages = [];
+  const start = { operation: 'session-start', session: 'one', revision: 1, size: { rows: 24, cols: 80 } };
+  const peer = new Peer(server, start, { error: e => errors.push(e), message: m => messages.push(m.type) }, Socket, 'localhost:1234');
+  peer.socket.receive({ type: 'server', server });
+  // The server fetches the base and creates the worktree for 30 seconds.
+  for (let elapsed = 0; elapsed < 30000; elapsed += 5000) {
+    t.mock.timers.tick(5000);
+    peer.socket.receive({ type: 'status', status: 'running' });
+  }
+  assert.equal(errors.length, 0);
+  peer.socket.receive({ type: 'session', session: 'one', active: true, notice: 'Could not fetch origin/main.' });
+  assert.equal(peer.active, true);
+  assert.deepEqual(messages.at(-1), 'session');
+  // Without statuses, the same start times out.
+  const silent = new Peer(server, start, { error: e => errors.push(e) }, Socket, 'localhost:1234');
+  silent.socket.receive({ type: 'server', server });
+  t.mock.timers.tick(13000);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /timed out/);
+});
