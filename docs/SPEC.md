@@ -956,9 +956,14 @@ click on it closes the pane. **×** in the header of each view also closes the p
 Each view has a header with its name and only its own controls.
 
 Drafts have no workspace pane. Ended sessions keep it while their workspace exists. A
-drag on the divider or the Left and Right arrow keys change the pane width. The open
-state, the view, and the width belong to the browser tab. A different session keeps
-them. A reload resets them.
+drag on the divider or the Left and Right arrow keys change the pane width.
+
+Each session has its own open state and view in the browser tab. A session that the
+browser tab has not shown yet starts with a closed pane. A session that you start from a
+draft also starts with a closed pane. When you select a session again, its pane shows
+the view that it showed before. The width belongs to the browser tab, and all sessions
+use it. Other browser tabs keep their own state. A reload resets the open states, the
+views, and the width.
 
 ### Changes pane
 
@@ -1143,9 +1148,9 @@ workspace exists.
 - Stop session ends only the session terminal. Archive stops the side terminal. Server
   stop ends it as well. A managed worktree cannot be removed while a side terminal uses
   it.
-- A shown Terminal view stays shown when you select another session. It joins the
-  shell of that session, but it does not start one. Click **Start shell** to start a
-  shell there.
+- When you select a session that showed its Terminal view, the view shows again. It
+  joins the shell of that session, but it does not start one. Click **Start shell** to
+  start a shell there.
 
 After a lost connection, the view rejoins the same shell. It never starts a new shell on
 reconnection. When the shell ended during the disconnection, the view shows
