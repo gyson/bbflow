@@ -928,8 +928,11 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   because **Since worktree base** shows the same changes. Without a managed worktree, it
   lists the latest commits of `HEAD`. A shallow clone does not have the parent of its
   last commit. The list omits that commit. A long subject is shortened in the menu. The
-  tooltip has the full subject. When a rebase or a reset removes the selected commit,
-  the next refresh uses the default baseline.
+  tooltip has the full subject. The menu shows "Older commits are not listed." when
+  the list omits commits, also when the list is empty. When a rebase or a reset
+  removes the selected commit, the next refresh uses the default baseline. When a file
+  read finds this first, the pane reads the list again. If that read fails, the pane
+  shows no file until a later refresh succeeds.
 - **Split** shows the old and new file side by side. **Unified** shows one column with
   removed and added lines. When the editor area is narrower than 520 pixels, the pane
   shows Unified and marks it as pressed. Split keeps a dashed border until the pane is
@@ -1503,7 +1506,9 @@ the tree rows and their notes and marks, the folders of a refresh, the language 
 the layout width rule, and late replies. They also cover replies for a folder that
 closed or opened again, a refresh at the shared entry limit, a folder that is gone, a
 failed request for one folder, the unread folders of a failed refresh, and a failed
-first read of the workspace folder. Markdown fixtures cover raw HTML, script links,
+first read of the workspace folder. Pane fixtures cover the requests after a file
+reply without the selected commit, a failed list read after it, and the notice of
+omitted commits with an empty list. Markdown fixtures cover raw HTML, script links,
 relative and allowed links, images, tables, task lists, escaped task markers, and the
 files that Preview accepts.
 
