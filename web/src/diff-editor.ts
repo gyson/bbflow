@@ -1,20 +1,20 @@
 import { EditorState, type Extension } from '@codemirror/state';
 import { EditorView, highlightSpecialChars, lineNumbers } from '@codemirror/view';
-import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
+import { HighlightStyle, StreamLanguage, syntaxHighlighting, type Language } from '@codemirror/language';
 import { MergeView, unifiedMergeView } from '@codemirror/merge';
-import { css } from '@codemirror/lang-css';
-import { go } from '@codemirror/lang-go';
-import { html } from '@codemirror/lang-html';
-import { javascript } from '@codemirror/lang-javascript';
-import { json } from '@codemirror/lang-json';
-import { markdown } from '@codemirror/lang-markdown';
-import { python } from '@codemirror/lang-python';
-import { rust } from '@codemirror/lang-rust';
-import { yaml } from '@codemirror/lang-yaml';
+import { cssLanguage } from '@codemirror/lang-css';
+import { goLanguage } from '@codemirror/lang-go';
+import { htmlLanguage } from '@codemirror/lang-html';
+import { javascriptLanguage, jsxLanguage, tsxLanguage, typescriptLanguage } from '@codemirror/lang-javascript';
+import { jsonLanguage } from '@codemirror/lang-json';
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { pythonLanguage } from '@codemirror/lang-python';
+import { rustLanguage } from '@codemirror/lang-rust';
+import { yamlLanguage } from '@codemirror/lang-yaml';
 import { scala } from '@codemirror/legacy-modes/mode/clike';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { tags } from '@lezer/highlight';
-import { languageName, type DiffLayout } from './diff-model.js';
+import { fenceLanguage, languageName, type DiffLayout, type Language as FileLanguage } from './diff-model.js';
 
 // The diff and file views are read-only. CodeMirror renders file text as DOM text, never
 // as HTML.
@@ -51,8 +51,6 @@ const theme = EditorView.theme({
 
 const codeHighlight = HighlightStyle.define([
   { tag: [tags.meta, tags.labelName, tags.contentSeparator], color: 'var(--code-meta)' },
-  { tag: [tags.link, tags.url], textDecoration: 'underline' },
-  { tag: tags.heading, textDecoration: 'underline', fontWeight: 'bold' },
   { tag: tags.emphasis, fontStyle: 'italic' },
   { tag: tags.strong, fontWeight: 'bold' },
   { tag: tags.strikethrough, textDecoration: 'line-through' },
@@ -66,26 +64,46 @@ const codeHighlight = HighlightStyle.define([
   },
   { tag: tags.comment, color: 'var(--code-comment)' },
   { tag: tags.invalid, color: 'var(--danger)' },
+  // Markdown. The marker rule comes last. Its color then replaces the color of the
+  // heading, link, or code that contains the marker.
+  { tag: tags.heading, color: 'var(--code-keyword)', fontWeight: 'bold' },
+  { tag: tags.link, color: 'var(--code-name)', textDecoration: 'underline' },
+  { tag: tags.url, color: 'var(--text-muted)', textDecoration: 'underline' },
+  { tag: tags.monospace, color: 'var(--code-string)' },
+  { tag: tags.quote, color: 'var(--code-comment)', fontStyle: 'italic' },
+  { tag: tags.processingInstruction, color: 'var(--text-muted)' },
 ]);
 
-function language(path: string): Extension {
-  switch (languageName(path)) {
-    case 'javascript': return javascript();
-    case 'jsx': return javascript({ jsx: true });
-    case 'typescript': return javascript({ typescript: true });
-    case 'tsx': return javascript({ typescript: true, jsx: true });
-    case 'go': return go();
-    case 'python': return python();
-    case 'json': return json();
-    case 'markdown': return markdown();
-    case 'css': return css();
-    case 'html': return html();
-    case 'yaml': return yaml();
-    case 'rust': return rust();
-    case 'scala': return StreamLanguage.define(scala);
-    case 'shell': return StreamLanguage.define(shell);
-    default: return [];
+const scalaLanguage = StreamLanguage.define(scala);
+const shellLanguage = StreamLanguage.define(shell);
+
+function parser(name: FileLanguage): Language | null {
+  switch (name) {
+    case 'javascript': return javascriptLanguage;
+    case 'jsx': return jsxLanguage;
+    case 'typescript': return typescriptLanguage;
+    case 'tsx': return tsxLanguage;
+    case 'go': return goLanguage;
+    case 'python': return pythonLanguage;
+    case 'json': return jsonLanguage;
+    case 'markdown': return markdownLanguage;
+    case 'css': return cssLanguage;
+    case 'html': return htmlLanguage;
+    case 'yaml': return yamlLanguage;
+    case 'rust': return rustLanguage;
+    case 'scala': return scalaLanguage;
+    case 'shell': return shellLanguage;
+    default: return null;
   }
+}
+
+// GitHub Flavored Markdown. A fenced code block with a known language gets the colors of
+// that language. A nested Markdown block does not color its own fenced code blocks.
+const markdownSupport = markdown({ base: markdownLanguage, codeLanguages: info => parser(fenceLanguage(info)) });
+
+function language(path: string): Extension {
+  const name = languageName(path);
+  return name === 'markdown' ? markdownSupport : parser(name) ?? [];
 }
 
 function extensions(path: string): Extension[] {
