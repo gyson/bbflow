@@ -950,12 +950,26 @@ They never change files, the Git index, or SQLite. Each view has its own selecte
 and its own filter text. **Compare with**, **Split**, **Unified**, and the file count
 are only in the Changes header. The Files header has **Refresh** and **×** only.
 
-- **Compare with** selects the baseline. **Since worktree base** compares the recorded
-  commit of a ready managed worktree with the current files. It includes commits that
-  the agent made, and it is the default for a managed worktree. **Uncommitted changes**
-  compares `HEAD` with the current files. A repository without commits uses the empty
-  tree. The labels do not claim that one session made the changes, because other
-  sessions and tools can share a workspace.
+- **Compare with** selects the baseline. The options go from the smallest to the
+  largest set of changes. **Uncommitted changes** compares `HEAD` with the current
+  files. A repository without commits uses the empty tree. **Changes from a commit**
+  lists the commits, newest first. **From** a commit compares the first parent of that
+  commit with the current files. Thus it includes that commit, the later commits, and
+  the uncommitted changes. **Since worktree base** compares the recorded commit of a
+  ready managed worktree with the current files. It includes commits that the agent
+  made, and it is the default for a managed worktree. The labels do not claim that one
+  session made the changes, because other sessions and tools can share a workspace.
+- The commit list follows the first parent from `HEAD`, up to 30 commits. In a managed
+  worktree, it stops at the worktree base. It omits the first commit after the base,
+  because **Since worktree base** shows the same changes. Without a managed worktree, it
+  lists the latest commits of `HEAD`. A shallow clone does not have the parent of its
+  last commit. The list omits that commit. A long subject is shortened in the menu. The
+  tooltip has the full subject. The menu shows "Older commits are not listed." when
+  the list omits commits, also when the list is empty. When a rebase or a reset
+  removes the selected commit, the next refresh uses the default baseline. When a file
+  read finds this first, the pane reads the list again. If that read fails, the pane
+  shows no file until a later refresh succeeds. A refresh cancels the file request of
+  the earlier list, so a late file reply cannot change a newer choice.
 - **Split** shows the old and new file side by side. **Unified** shows one column with
   removed and added lines. When the editor area is narrower than 520 pixels, the pane
   shows Unified and marks it as pressed. Split keeps a dashed border until the pane is
@@ -1518,8 +1532,10 @@ deleted, renamed, binary, and untracked files, and names with spaces, Unicode, a
 newlines. They also cover files above 1 MiB, invalid UTF-8, symlinks inside and outside
 the workspace, `..` and absolute paths, and folders. Other fixtures cover subfolder
 sessions, repositories without commits, folders outside Git, missing workspaces, and
-both baselines of a managed worktree after an agent commit. Folder list fixtures cover
-the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
+both baselines of a managed worktree after an agent commit. Commit baseline fixtures
+cover the commit list, the omitted first commit, a subject with a tab, the changes
+from a commit, a root commit, the list and output limits, a shallow clone, unknown
+commits, and a rebase. Folder list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
 the workspace, missing folders, the entry limit, a folder outside Git, a missing Git
 executable, and a failed ignore check. A WebSocket fixture sends `workspace-file` and
 `workspace-folders` through the server. Web fixtures cover the file list, the filter,
@@ -1527,7 +1543,9 @@ the tree rows and their notes and marks, the folders of a refresh, the language 
 the layout width rule, and late replies. They also cover replies for a folder that
 closed or opened again, a refresh at the shared entry limit, a folder that is gone, a
 failed request for one folder, the unread folders of a failed refresh, and a failed
-first read of the workspace folder. Markdown fixtures cover raw HTML, script links,
+first read of the workspace folder. Pane fixtures cover the requests after a file
+reply without the selected commit, a failed list read after it, a late file reply
+after a new choice, and the notice of omitted commits with an empty list. Markdown fixtures cover raw HTML, script links,
 relative and allowed links, images, tables, task lists, escaped task markers, and the
 files that Preview accepts.
 
@@ -1919,10 +1937,12 @@ another tool. The prompt gives the new agent a record of earlier work. It does n
 restore the internal state of the earlier agent.
 
 The Changes pane reads files only when it opens, on Refresh, and on window focus. It
-shows one file at a time and has no commit list. It shows images as binary files. It
-cannot show changes in a folder that is not a Git repository. The filter of **Files**
-needs a Git repository, and it does not find ignored files. The tree has no arrow key
-navigation. Use Tab and Enter. Git detects a rename only
+shows one file at a time. It cannot show one earlier commit alone or a range of
+commits: the new side is always the current files. Its commit list has at most 30
+commits, and it omits the last commit of a shallow clone, whose parent is not
+available. It shows images as binary files. It cannot show changes in a folder that is
+not a Git repository. The filter of **Files** needs a Git repository, and it does not
+find ignored files. The tree has no arrow key navigation. Use Tab and Enter. Git detects a rename only
 between tracked files with similar content. An untracked new file and its deleted
 original show as two changes.
 

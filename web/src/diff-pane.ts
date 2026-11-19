@@ -1,7 +1,7 @@
 import { call, errorMessage } from './protocol.js';
-import type { BaselineKind, ChangedFile, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles } from './protocol.js';
+import type { ChangedFile, DiffRequest, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles } from './protocol.js';
 import { element } from './dom.js';
-import { countText, effectiveLayout, fileEntries, FolderTree, Generation, sideNote, statusTitle } from './diff-model.js';
+import { baselineChoice, baselineMoved, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, FolderTree, Generation, sideNote, statusTitle } from './diff-model.js';
 import type { DiffLayout, FileEntry, FileScope, TreeRow } from './diff-model.js';
 import { showDiff, showFile } from './diff-editor.js';
 import type { CodeView } from './diff-editor.js';
@@ -50,11 +50,16 @@ export class DiffPane {
   private shownLayout: DiffLayout | null = null;
   private shownMode: 'file' | 'diff' | null = null; // What the editor shows now.
   private scope: FileScope = 'changed';
-  private baseline: BaselineKind | undefined;
+  // The selected baseline. Without a choice, the server uses its default.
+  private choice: DiffRequest | undefined;
   // The worktree base commit from the latest reply that had it. The label keeps it when
   // the user selects Uncommitted changes, so the menu text stays the same.
   private baseCommit = '';
   private changes: WorkspaceChanges | null = null;
+  // A file reply showed that the commit of the list is not in the history of HEAD now.
+  // The pane reads no file until a list read succeeds. Thus a failed list read does not
+  // start an automatic retry.
+  private staleList = false;
   private changesError = '';
   // The paths that the filter searches in Files. They are present only during a search.
   private paths: WorkspaceFiles | null = null;
@@ -88,7 +93,7 @@ export class DiffPane {
       this.renderStatus();
     };
     this.baselineSelect.onchange = () => {
-      this.baseline = this.baselineSelect.value === 'base' ? 'base' : 'head';
+      this.choice = baselineChoice(this.baselineSelect.value);
       void this.refresh();
     };
     this.toggleButton.onclick = () => {
@@ -140,9 +145,10 @@ export class DiffPane {
     this.fileAbort?.abort();
     this.listGeneration.next();
     this.fileGeneration.next();
-    this.baseline = undefined;
+    this.choice = undefined;
     this.baseCommit = '';
     this.changes = this.paths = this.file = null;
+    this.staleList = false;
     this.changesError = this.filesError = this.ignoreError = '';
     this.tree.clear();
     this.picks = { changed: { path: '', preview: false }, files: { path: '', preview: true } };
@@ -189,6 +195,10 @@ export class DiffPane {
     const generation = this.listGeneration.next();
     this.listAbort?.abort();
     const abort = this.listAbort = new AbortController();
+    // A file request uses the baseline of the earlier list. Its reply must not change
+    // the newer choice. This refresh reads the file again when its list arrives.
+    this.fileAbort?.abort();
+    this.fileGeneration.next();
     const session = this.session;
     if (!this.changes && !this.changesError) this.setStatus('Reading changes…');
     const files = this.scope === 'files';
@@ -198,7 +208,7 @@ export class DiffPane {
     // A folder whose read failed shows "Reading…" again during this request.
     if (files) this.renderList();
     const results = await Promise.allSettled([
-      this.send(server, { operation: 'workspace-changes', session, diff: this.baseline ? { baseline: this.baseline } : {} }, abort.signal),
+      this.send(server, { operation: 'workspace-changes', session, diff: this.choice ?? {} }, abort.signal),
       files ? this.send(server, { operation: 'workspace-folders', session, diff: { folders: folderPaths } }, abort.signal) : null,
       this.searching() ? this.send(server, { operation: 'workspace-files', session }, abort.signal) : null,
     ]);
@@ -206,7 +216,13 @@ export class DiffPane {
     const [changes, folders, paths] = results;
     const failure = (result: PromiseSettledResult<unknown>): string => result.status === 'rejected' ? errorMessage(result.reason) : '';
     this.changesError = failure(changes);
-    if (changes.status === 'fulfilled') this.changes = changes.value;
+    if (changes.status === 'fulfilled') {
+      this.changes = changes.value;
+      this.staleList = false;
+      // The server uses its default baseline when the selected commit left the history
+      // of HEAD, for example after a rebase. Keep that default after the next commit.
+      if (this.choice?.baseline === 'commit' && this.changes.baseline.from !== this.choice.from) this.choice = undefined;
+    }
     if (files) {
       this.filesError = failure(folders) || failure(paths);
       this.paths = paths.status === 'fulfilled' ? paths.value : null;
@@ -344,16 +360,42 @@ export class DiffPane {
     if (this.shownLayout && this.shownLayout !== effectiveLayout(this.layout, this.editorParent.clientWidth)) this.renderFile();
   }
 
+  // The options go from the smallest to the largest set of changes: the uncommitted
+  // changes, the changes from each commit, newest first, and the worktree base.
   private renderBaseline(): void {
     const changes = this.changes;
-    const options: HTMLOptionElement[] = [];
+    const options: HTMLElement[] = [new Option('Uncommitted changes', 'head')];
+    let choices = 1;
     if (changes?.baseline.kind === 'base') this.baseCommit = changes.baseline.commit.slice(0, 7);
-    if (changes?.base) options.push(new Option(this.baseCommit ? `Since worktree base (${this.baseCommit})` : 'Since worktree base', 'base'));
-    options.push(new Option('Uncommitted changes', 'head'));
+    const commits = changes?.repository ? changes.commits : [];
+    // A shallow clone or a long subject can leave an empty list with more commits.
+    const more = !!changes?.repository && !!changes.moreCommits;
+    if (commits.length > 0 || more) {
+      const group = document.createElement('optgroup');
+      group.label = 'Changes from a commit';
+      for (const commit of commits) {
+        const option = new Option(commitLabel(commit.id, commit.subject), `commit:${commit.id}`);
+        option.title = `From ${commit.id.slice(0, 7)} ${commit.subject}`;
+        group.append(option);
+      }
+      if (more) {
+        const more = new Option('Older commits are not listed.');
+        more.disabled = true;
+        group.append(more);
+      }
+      options.push(group);
+      choices += commits.length;
+    }
+    if (changes?.base) {
+      options.push(new Option(this.baseCommit ? `Since worktree base (${this.baseCommit})` : 'Since worktree base', 'base'));
+      choices++;
+    }
     this.baselineSelect.replaceChildren(...options);
     // A folder outside Git has an empty baseline.
-    this.baselineSelect.value = changes?.baseline.kind || 'head';
-    this.baselineSelect.disabled = !changes?.repository || options.length < 2;
+    this.baselineSelect.value = changes?.repository ? baselineValue(changes.baseline) : 'head';
+    this.baselineSelect.title = this.baselineSelect.selectedOptions[0]?.title ?? '';
+    // Keep the menu open to its notice of omitted commits.
+    this.baselineSelect.disabled = !changes?.repository || (choices < 2 && !more);
     const files = changes?.files ?? [];
     this.summary.textContent = changes?.repository ? `${files.length} ${files.length === 1 ? 'file' : 'files'}` : '';
   }
@@ -462,6 +504,11 @@ export class DiffPane {
       this.clearFile();
       return;
     }
+    if (this.staleList) {
+      this.clearFile();
+      this.showNote('The selected commit is not in the history of HEAD now. Click Refresh to read the changes again.');
+      return;
+    }
     const path = this.selected;
     const change = this.change(path);
     // Remove the previous file at once. A refresh of the same file keeps it in view.
@@ -474,10 +521,18 @@ export class DiffPane {
     const abort = this.fileAbort = new AbortController();
     try {
       // The server reads a file outside Git without a baseline.
-      const baseline = this.changes?.repository ? { baseline: this.changes.baseline.kind } : {};
+      const baseline = this.changes?.repository ? baselineRequest(this.changes.baseline) : {};
       const diff = { ...baseline, path, ...(change?.oldPath ? { oldPath: change.oldPath } : {}) };
       const file = await this.send(server, { operation: 'workspace-file', session: this.session, diff }, abort.signal);
       if (!this.fileGeneration.current(generation)) return;
+      // The selected commit left the history of HEAD after the list was read. The server
+      // then used the default baseline. Read the list again, so that the menu, the
+      // counts, and the diff use the same baseline.
+      if (baselineMoved(diff, file.baseline)) {
+        this.staleList = true;
+        this.choice = undefined;
+        return void this.refresh();
+      }
       // Keep the scroll position when a refresh finds the same content in the same mode.
       // Changes and Files can show the same file as a diff and as plain text.
       if (this.view && this.shownMode === this.mode(file) && JSON.stringify(file) === JSON.stringify(this.file)) return;

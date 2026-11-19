@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/27`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/28`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/27",
+    "protocol": "bbflow/28",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -66,7 +66,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/27",
+    "protocol": "bbflow/28",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -89,10 +89,10 @@ operations.
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
-| `workspace-changes` | `session` ID, `diff` object with optional `baseline` | `result`, containing `repository`, `base`, `baseline`, `files`, and `truncated` |
+| `workspace-changes` | `session` ID, `diff` object with optional `baseline` and `from` | `result`, containing `repository`, `base`, `baseline`, `commits`, an optional `moreCommits`, `files`, and `truncated` |
 | `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
 | `workspace-folders` | `session` ID, `diff` object with `folders` | `result`, containing `folders` and an optional `ignoreError` |
-| `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath` and `baseline` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
+| `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath`, `baseline`, and `from` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
 | `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal first, then all of them again after each change |
@@ -183,6 +183,9 @@ Protocol 27 adds automatic session titles. Session records and summaries add
 `autoTitle`, and `title` holds only the user title. Settings add `titleTool`. The
 operations `title-tools` and `title-test` are new. A `statuses` message adds
 `revision`. SQLite format 10 adds the `auto_title` column and `titleTool: "none"`.
+
+Protocol 28 adds the `commit` baseline of the
+[workspace change operations](#workspace-changes). The SQLite format does not change.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -345,9 +348,16 @@ path. A client disconnect cancels the Git work.
 
 The `diff` object has these fields:
 
-- `baseline`: `base` for the commit of a ready managed worktree, or `head` for `HEAD`.
-  An empty value selects `base` when it is available, and `head` otherwise. `base`
-  fails for a session without a managed worktree.
+- `baseline`: `base` for the commit of a ready managed worktree, `head` for `HEAD`, or
+  `commit` for the changes from the `from` commit. An empty value selects `base` when
+  it is available, and `head` otherwise. `base` fails for a session without a managed
+  worktree.
+- `from`: the full ID of a commit from the `commits` list of `workspace-changes`. The
+  `commit` baseline compares the first parent of this commit with the current files.
+  Thus the diff includes this commit, the later commits, and the uncommitted changes.
+  A root commit compares with the empty tree. When `from` is not in the list now, for
+  example after a rebase, the server uses the default baseline. The reply names the
+  baseline that it used.
 - `path`: a clean path relative to the session workspace. `.`, `..`, absolute paths,
   and empty paths fail.
 - `oldPath`: the old path of a rename. The old side uses it instead of `path`.
@@ -362,6 +372,10 @@ The `diff` object has these fields:
   "repository": true,
   "base": true,
   "baseline": { "kind": "base", "label": "Since worktree base", "commit": "98a11f8…" },
+  "commits": [
+    { "id": "4b7e0d2…", "subject": "Add the period tests" },
+    { "id": "1a2b3c4…", "subject": "Move the period code" }
+  ],
   "files": [
     { "path": "src/main.go", "status": "M", "added": 6, "removed": 2 },
     { "path": "new.txt", "status": "A", "added": 1, "removed": 0, "untracked": true },
@@ -377,6 +391,18 @@ the path, for example after `git rm --cached`. An untracked nested repository is
 path without a final slash. `added` and
 `removed` are -1 when they are unknown. For a folder that Git does not manage,
 `repository` is false, `reason` explains it, and `files` is empty.
+
+`commits` lists the commits that a `commit` baseline can start from, newest first, at
+most 30. The list follows the first parent from `HEAD`. With a managed worktree, it stops
+at the worktree base and omits the commit whose first parent is the base, because
+`base` shows the same changes. Without one, it has the latest commits of `HEAD`. The
+list also omits the last commit of a shallow clone, because its parent is not
+available. A root commit stays in the list.
+`moreCommits` is true when older commits are not in the list. A repository without
+commits has an empty list. For a `commit` baseline, `baseline` also has `from`, and
+`commit` is the first parent of `from`. A `workspace-file` reply can name the default
+baseline when `from` left the list after the `workspace-changes` reply. Read the
+changes again before you show such a file.
 
 `workspace-files` returns the sorted paths that Git tracks or does not ignore, at most
 20,000. `workspace-file` returns both sides of one file:
@@ -742,13 +768,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/27") {
+    if (message.server.protocol !== "bbflow/28") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/27", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/28", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);

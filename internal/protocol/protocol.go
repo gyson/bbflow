@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/27"
+const Version = "bbflow/28"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -70,35 +70,49 @@ type Request struct {
 }
 
 // DiffRequest selects a baseline and a file in the workspace of the request session.
-// Baseline is "base" for the managed worktree commit or "head" for HEAD. An empty
-// baseline selects "base" when it is available. Path and OldPath are relative to the
-// session workspace. OldPath names the old side of a rename. Folders names the folders
-// of a folder list. An empty folder path names the workspace folder.
+// Baseline is "base" for the managed worktree commit, "head" for HEAD, or "commit"
+// for the changes from the From commit. An empty baseline selects "base" when it is
+// available. Path and OldPath are relative to the session workspace. OldPath names the
+// old side of a rename. Folders names the folders of a folder list. An empty folder
+// path names the workspace folder.
 type DiffRequest struct {
 	Baseline string   `json:"baseline,omitempty"`
+	From     string   `json:"from,omitempty"`
 	Path     string   `json:"path,omitempty"`
 	OldPath  string   `json:"oldPath,omitempty"`
 	Folders  []string `json:"folders,omitempty"`
 }
 
 // Baseline identifies the commit that a diff compares with the current files. Commit
-// is the empty tree in a repository without commits.
+// is the empty tree in a repository without commits. For the "commit" kind, From is
+// the first commit that the diff includes, and Commit is its first parent.
 type Baseline struct {
 	Kind   string `json:"kind"`
 	Label  string `json:"label"`
 	Commit string `json:"commit"`
+	From   string `json:"from,omitempty"`
+}
+
+// Commit is one commit that a "commit" baseline can start from.
+type Commit struct {
+	ID      string `json:"id"`
+	Subject string `json:"subject"`
 }
 
 // WorkspaceChanges lists the changed files of a session workspace. Repository is
 // false, with a reason, for a folder that Git does not manage. Base reports that the
-// "base" baseline is available. Added and Removed are -1 when they are unknown.
+// "base" baseline is available. Commits lists the commits for a "commit" baseline,
+// newest first. MoreCommits reports that older commits are not in the list. Added and
+// Removed are -1 when they are unknown.
 type WorkspaceChanges struct {
-	Repository bool          `json:"repository"`
-	Reason     string        `json:"reason,omitempty"`
-	Base       bool          `json:"base"`
-	Baseline   Baseline      `json:"baseline"`
-	Files      []ChangedFile `json:"files"`
-	Truncated  bool          `json:"truncated"`
+	Repository  bool          `json:"repository"`
+	Reason      string        `json:"reason,omitempty"`
+	Base        bool          `json:"base"`
+	Baseline    Baseline      `json:"baseline"`
+	Commits     []Commit      `json:"commits"`
+	MoreCommits bool          `json:"moreCommits,omitempty"`
+	Files       []ChangedFile `json:"files"`
+	Truncated   bool          `json:"truncated"`
 }
 
 // ChangedFile is one changed path. Status is the Git status letter: A, M, D, R, or T.

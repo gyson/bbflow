@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/27';
+export const VERSION = 'bbflow/28';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -75,13 +75,17 @@ export interface HistoryHit { anchor: HistoryAnchor; title: string; workspace: s
 export interface HistoryCursor { seq: number; offset: number }
 export interface HistoryPage { matches: HistoryHit[]; more: boolean; incomplete: boolean; through: number; cursor?: HistoryCursor }
 // Read-only diff and file views. The server resolves the workspace from the session.
-// baseline "base" uses the managed worktree commit. "head" uses HEAD.
-export type BaselineKind = 'base' | 'head';
-export interface DiffRequest { baseline?: BaselineKind; path?: string; oldPath?: string; folders?: string[] }
-export interface Baseline { kind: BaselineKind; label: string; commit: string }
+// baseline "base" uses the managed worktree commit. "head" uses HEAD. "commit" shows the
+// changes from the `from` commit: it uses the first parent of that commit.
+export type BaselineKind = 'base' | 'head' | 'commit';
+export interface DiffRequest { baseline?: BaselineKind; from?: string; path?: string; oldPath?: string; folders?: string[] }
+export interface Baseline { kind: BaselineKind; label: string; commit: string; from?: string }
+// A commit that a "commit" baseline can start from.
+export interface Commit { id: string; subject: string }
 // added and removed are -1 when they are unknown. An untracked file has status A.
 export interface ChangedFile { path: string; oldPath?: string; status: string; added: number; removed: number; binary?: boolean; untracked?: boolean }
-export interface WorkspaceChanges { repository: boolean; reason?: string; base: boolean; baseline: Baseline; files: ChangedFile[]; truncated: boolean }
+// commits lists the commits of a "commit" baseline, newest first.
+export interface WorkspaceChanges { repository: boolean; reason?: string; base: boolean; baseline: Baseline; commits: Commit[]; moreCommits?: boolean; files: ChangedFile[]; truncated: boolean }
 export interface WorkspaceFiles { repository: boolean; reason?: string; paths: string[]; truncated: boolean }
 // A folder list. An empty path names the workspace folder. `missing` reports that the
 // path is not a folder now.
