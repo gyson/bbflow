@@ -20,7 +20,7 @@ export function listStatus(session: { id: string; status: string }, pushed: Reco
 // Return the status line of a session in the list.
 export function listStatusText(status: string, session: { archived?: boolean; viewers?: number }): string {
   const views = session.viewers ? ` · ${session.viewers} view${session.viewers === 1 ? '' : 's'}` : '';
-  return (status === 'draft' ? 'Draft' : status) + (session.archived ? ' · Archived' : '') + views;
+  return status + (session.archived ? ' · Archived' : '') + views;
 }
 
 // Report whether a pushed set of statuses has a different set of live terminals.
