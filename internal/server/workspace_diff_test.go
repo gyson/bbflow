@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -529,6 +530,59 @@ func TestWorkspaceChangesListLatestCommits(t *testing.T) {
 	changes, err = s.workspaceChanges(context.Background(), empty, nil)
 	if err != nil || changes.Commits == nil || len(changes.Commits) != 0 {
 		t.Fatalf("empty repository: %+v, %v", changes, err)
+	}
+}
+
+func TestWorkspaceChangesCommitListLimits(t *testing.T) {
+	defer func(limit, bytes int) { maxCommits, maxCommitList = limit, bytes }(maxCommits, maxCommitList)
+	maxCommits = 2
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"a.txt": "0\n"})
+	base := fixtureGit(t, repo, "rev-parse", "HEAD")
+	next := func(text, subject string) {
+		writeFiles(t, repo, map[string]string{"a.txt": text})
+		fixtureGit(t, repo, "commit", "-q", "-am", subject)
+	}
+	list := func(base string) ([]listedCommit, bool) {
+		t.Helper()
+		commits, more, err := listCommits(context.Background(), repo, fixtureGit(t, repo, "rev-parse", "HEAD"), base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return commits, more
+	}
+	// Three commits after the base give two commits for the list. The first commit
+	// after the base does not count.
+	for i, text := range []string{"1\n", "2\n", "3\n"} {
+		next(text, "Commit "+strconv.Itoa(i+1))
+	}
+	if commits, more := list(base); len(commits) != 2 || more || commits[1].Subject != "Commit 2" {
+		t.Fatalf("three commits after the base: %+v, %v", commits, more)
+	}
+	next("4\n", "Commit 4")
+	if commits, more := list(base); len(commits) != 2 || !more || commits[0].Subject != "Commit 4" {
+		t.Fatalf("four commits after the base: %+v, %v", commits, more)
+	}
+	// A row after the output limit is not in the list, and the list reports it.
+	maxCommits, maxCommitList = 30, 100
+	next("5\n", strings.Repeat("long ", 20))
+	next("6\n", "Short")
+	if commits, more := list(""); len(commits) != 1 || !more || commits[0].Subject != "Short" {
+		t.Fatalf("output limit: %+v, %v", commits, more)
+	}
+	// A shallow clone hides the parent of its last commit. The list omits that commit.
+	maxCommitList = 1 << 20
+	clone := filepath.Join(t.TempDir(), "shallow")
+	fixtureGit(t, repo, "clone", "-q", "--depth", "2", "file://"+repo, clone)
+	id := diffSession(t, s, clone)
+	changes, err := s.workspaceChanges(context.Background(), id, nil)
+	if err != nil || len(changes.Commits) != 1 || changes.Commits[0].Subject != "Short" || !changes.MoreCommits {
+		t.Fatalf("shallow clone: %+v, %v", changes, err)
+	}
+	boundary := fixtureGit(t, clone, "rev-parse", "HEAD~1")
+	changes, err = s.workspaceChanges(context.Background(), id, &protocol.DiffRequest{Baseline: "commit", From: boundary})
+	if err != nil || changes.Baseline.Kind != "head" {
+		t.Fatalf("shallow boundary commit: %+v, %v", changes.Baseline, err)
 	}
 }
 

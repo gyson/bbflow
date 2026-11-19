@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { baselineChoice, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, FolderTree, Generation, languageName, openFolders, sideNote, statusTitle, treeRows } from './dist/diff-model.js';
+import { baselineChoice, baselineMoved, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, FolderTree, Generation, languageName, openFolders, sideNote, statusTitle, treeRows } from './dist/diff-model.js';
 
 const change = (path, status = 'M', extra = {}) => ({ path, status, added: 1, removed: 2, ...extra });
 
@@ -270,4 +270,14 @@ test('a commit label has the short ID and a shortened subject', () => {
   assert.equal(commitLabel(id, 'Fix resize crash'), 'From 0123456 Fix resize crash');
   const label = commitLabel(id, 'x'.repeat(80));
   assert.equal(label, `From 0123456 ${'x'.repeat(59)}…`);
+});
+
+test('a file reply moved when the server did not use the requested commit', () => {
+  const request = { baseline: 'commit', from: 'abc' };
+  assert.equal(baselineMoved(request, { kind: 'commit', label: '', commit: 'p', from: 'abc' }), false);
+  assert.equal(baselineMoved(request, { kind: 'base', label: '', commit: 'b' }), true);
+  assert.equal(baselineMoved(request, { kind: 'commit', label: '', commit: 'p', from: 'def' }), true);
+  // Other baselines and a file outside Git never move.
+  assert.equal(baselineMoved({ baseline: 'head' }, { kind: 'head', label: '', commit: 'h' }), false);
+  assert.equal(baselineMoved({}, { kind: '', label: '', commit: '' }), false);
 });

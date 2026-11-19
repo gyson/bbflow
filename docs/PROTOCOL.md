@@ -89,10 +89,10 @@ operations.
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
-| `workspace-changes` | `session` ID, `diff` object with optional `baseline` | `result`, containing `repository`, `base`, `baseline`, `files`, and `truncated` |
+| `workspace-changes` | `session` ID, `diff` object with optional `baseline` and `from` | `result`, containing `repository`, `base`, `baseline`, `commits`, an optional `moreCommits`, `files`, and `truncated` |
 | `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
 | `workspace-folders` | `session` ID, `diff` object with `folders` | `result`, containing `folders` and an optional `ignoreError` |
-| `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath` and `baseline` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
+| `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath`, `baseline`, and `from` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
 | `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal first, then all of them again after each change |
@@ -395,10 +395,14 @@ path without a final slash. `added` and
 `commits` lists the commits that a `commit` baseline can start from, newest first, at
 most 30. The list follows the first parent from `HEAD`. With a managed worktree, it stops
 at the worktree base and omits the commit whose first parent is the base, because
-`base` shows the same changes. Without one, it has the latest commits of `HEAD`.
+`base` shows the same changes. Without one, it has the latest commits of `HEAD`. The
+list also omits the last commit of a shallow clone, because its parent is not
+available. A root commit stays in the list.
 `moreCommits` is true when older commits are not in the list. A repository without
 commits has an empty list. For a `commit` baseline, `baseline` also has `from`, and
-`commit` is the first parent of `from`.
+`commit` is the first parent of `from`. A `workspace-file` reply can name the default
+baseline when `from` left the list after the `workspace-changes` reply. Read the
+changes again before you show such a file.
 
 `workspace-files` returns the sorted paths that Git tracks or does not ignore, at most
 20,000. `workspace-file` returns both sides of one file:

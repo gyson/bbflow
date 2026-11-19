@@ -926,7 +926,8 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
 - The commit list follows the first parent from `HEAD`, up to 30 commits. In a managed
   worktree, it stops at the worktree base. It omits the first commit after the base,
   because **Since worktree base** shows the same changes. Without a managed worktree, it
-  lists the latest commits of `HEAD`. A long subject is shortened in the menu. The
+  lists the latest commits of `HEAD`. A shallow clone does not have the parent of its
+  last commit. The list omits that commit. A long subject is shortened in the menu. The
   tooltip has the full subject. When a rebase or a reset removes the selected commit,
   the next refresh uses the default baseline.
 - **Split** shows the old and new file side by side. **Unified** shows one column with
@@ -1493,8 +1494,8 @@ the workspace, `..` and absolute paths, and folders. Other fixtures cover subfol
 sessions, repositories without commits, folders outside Git, missing workspaces, and
 both baselines of a managed worktree after an agent commit. Commit baseline fixtures
 cover the commit list, the omitted first commit, a subject with a tab, the changes
-from a commit, a root commit, the list limit, unknown commits, and a rebase. Folder
-list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
+from a commit, a root commit, the list and output limits, a shallow clone, unknown
+commits, and a rebase. Folder list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
 the workspace, missing folders, the entry limit, a folder outside Git, a missing Git
 executable, and a failed ignore check. A WebSocket fixture sends `workspace-file` and
 `workspace-folders` through the server. Web fixtures cover the file list, the filter,
@@ -1894,10 +1895,12 @@ another tool. The prompt gives the new agent a record of earlier work. It does n
 restore the internal state of the earlier agent.
 
 The Changes pane reads files only when it opens, on Refresh, and on window focus. It
-shows one file at a time and has no commit list. It shows images as binary files. It
-cannot show changes in a folder that is not a Git repository. The filter of **Files**
-needs a Git repository, and it does not find ignored files. The tree has no arrow key
-navigation. Use Tab and Enter. Git detects a rename only
+shows one file at a time. It cannot show one earlier commit alone or a range of
+commits: the new side is always the current files. Its commit list has at most 30
+commits, and it omits the last commit of a shallow clone, whose parent is not
+available. It shows images as binary files. It cannot show changes in a folder that is
+not a Git repository. The filter of **Files** needs a Git repository, and it does not
+find ignored files. The tree has no arrow key navigation. Use Tab and Enter. Git detects a rename only
 between tracked files with similar content. An untracked new file and its deleted
 original show as two changes.
 

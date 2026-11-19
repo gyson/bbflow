@@ -242,23 +242,32 @@ func (s *Server) resolveDiff(ctx context.Context, id string, request *protocol.D
 // maxCommits limits the commit list of the "commit" baseline. Tests make it smaller.
 var maxCommits = 30
 
+// maxCommitList limits the bytes of the Git output of the commit list. Tests make it
+// smaller.
+var maxCommitList = 1 << 20
+
 // listCommits lists the commits that a "commit" baseline can start from, newest first.
 // It follows the first parent from HEAD. With a worktree base, it stops at the base and
 // omits the commit whose first parent is the base, because "base" shows the same
-// changes. Without a base, it lists the latest commits of HEAD.
-func listCommits(ctx context.Context, dir, head, base string) ([]listedCommit, bool, error) {
-	args := []string{"log", "--first-parent", "--no-show-signature", "--no-color", "--format=%H %P%x09%s", "-n", strconv.Itoa(maxCommits + 1), head}
+// changes. Without a base, it lists the latest commits of HEAD. More reports that older
+// commits are not in the list.
+func listCommits(ctx context.Context, dir, head, base string) (commits []listedCommit, more bool, err error) {
+	// One more row than the limit detects more commits. A second extra row replaces
+	// the row that the list can omit for the base.
+	args := []string{"log", "--first-parent", "--no-show-signature", "--no-color", "--format=%H %P%x09%s", "-n", strconv.Itoa(maxCommits + 2), head}
 	if base != "" {
 		args = append(args, "^"+base)
 	}
-	out, _, err := gitRead(ctx, dir, 1<<20, append(args, "--")...)
+	out, truncated, err := gitRead(ctx, dir, maxCommitList, append(args, "--")...)
 	if err != nil {
 		return nil, false, err
 	}
-	commits := []listedCommit{}
-	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
-	more := len(lines) > maxCommits
-	for _, line := range lines[:min(len(lines), maxCommits)] {
+	commits = []listedCommit{}
+	lines := strings.Split(string(out), "\n")
+	// The text after the last newline is empty, or a partial row of truncated output.
+	lines = lines[:len(lines)-1]
+	more = truncated
+	for _, line := range lines {
 		ids, subject, found := strings.Cut(line, "\t")
 		fields := strings.Fields(ids)
 		if !found || len(fields) == 0 {
@@ -271,9 +280,41 @@ func listCommits(ctx context.Context, dir, head, base string) ([]listedCommit, b
 		if base != "" && commit.parent == base {
 			continue
 		}
+		if commit.parent == "" {
+			// Git shows no parent for the last commit of a shallow clone. Only a true
+			// root commit compares with the empty tree.
+			root, err := rootCommit(ctx, dir, commit.ID)
+			if err != nil {
+				return nil, false, err
+			}
+			if !root {
+				more = true
+				continue
+			}
+		}
+		if len(commits) == maxCommits {
+			more = true
+			break
+		}
 		commits = append(commits, commit)
 	}
 	return commits, more, nil
+}
+
+// rootCommit reports that a commit object has no parent. It reads the object itself,
+// because Git hides the parents of a shallow clone boundary.
+func rootCommit(ctx context.Context, dir, id string) (bool, error) {
+	out, _, err := gitRead(ctx, dir, 64<<10, "cat-file", "commit", id)
+	if err != nil {
+		return false, err
+	}
+	header, _, _ := strings.Cut(string(out), "\n\n")
+	for _, line := range strings.Split(header, "\n") {
+		if strings.HasPrefix(line, "parent ") {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // emptyTree returns the ID of the empty tree. A diff with it shows every file as added.

@@ -1,7 +1,7 @@
 import { call, errorMessage } from './protocol.js';
 import type { ChangedFile, DiffRequest, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles } from './protocol.js';
 import { element } from './dom.js';
-import { baselineChoice, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, FolderTree, Generation, sideNote, statusTitle } from './diff-model.js';
+import { baselineChoice, baselineMoved, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, FolderTree, Generation, sideNote, statusTitle } from './diff-model.js';
 import type { DiffLayout, FileEntry, FileScope, TreeRow } from './diff-model.js';
 import { showDiff, showFile } from './diff-editor.js';
 import type { CodeView } from './diff-editor.js';
@@ -507,6 +507,10 @@ export class DiffPane {
       const diff = { ...baseline, path, ...(change?.oldPath ? { oldPath: change.oldPath } : {}) };
       const file = await this.send(server, { operation: 'workspace-file', session: this.session, diff }, abort.signal);
       if (!this.fileGeneration.current(generation)) return;
+      // The selected commit left the history of HEAD after the list was read. The server
+      // then used the default baseline. Read the list again, so that the menu, the
+      // counts, and the diff use the same baseline.
+      if (baselineMoved(diff, file.baseline)) return void this.refresh();
       // Keep the scroll position when a refresh finds the same content in the same mode.
       // Changes and Files can show the same file as a diff and as plain text.
       if (this.view && this.shownMode === this.mode(file) && JSON.stringify(file) === JSON.stringify(this.file)) return;

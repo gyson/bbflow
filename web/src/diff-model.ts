@@ -23,6 +23,12 @@ export function baselineRequest(baseline: Baseline): DiffRequest {
   return baselineChoice(baselineValue(baseline));
 }
 
+// A reply for a commit baseline uses another baseline when the server did not find the
+// commit. The server then used its default baseline.
+export function baselineMoved(request: DiffRequest, reply: Baseline): boolean {
+  return request.baseline === 'commit' && (reply.kind !== 'commit' || reply.from !== request.from);
+}
+
 // The menu text of a commit. A long subject is shortened. The option title has the
 // full subject.
 export function commitLabel(id: string, subject: string): string {
