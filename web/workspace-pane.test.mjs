@@ -22,14 +22,18 @@ function setup() {
   globalThis.HTMLElement = globalThis.HTMLButtonElement = Node;
   globalThis.window = { addEventListener() {} };
   globalThis.document = { getElementById: id => nodes[id] };
-  const calls = [];
+  // Fake views. Each one keeps its session and its last shown state. A real view that is
+  // shown when it selects a session can load data or join a shell for the wrong session.
+  // Thus each fake records the sessions that it selected while shown.
   const changes = {
-    select: session => calls.push(`changes select ${session}`),
-    setShown: (open, scope) => calls.push(open ? `changes show ${scope}` : 'changes hide'),
+    session: '', shown: false, scope: undefined, selectedWhileShown: [],
+    select(session) { if (this.shown) this.selectedWhileShown.push(session); this.session = session; },
+    setShown(open, scope) { this.shown = open; if (scope) this.scope = scope; },
   };
   const terminal = {
-    select: session => calls.push(`terminal select ${session}`),
-    setShown: (shown, click) => calls.push(shown ? `terminal show${click ? ' click' : ''}` : 'terminal hide'),
+    session: '', shown: false, click: false, selectedWhileShown: [],
+    select(session) { if (this.shown) this.selectedWhileShown.push(session); this.session = session; },
+    setShown(shown, click) { this.shown = shown; this.click = shown && click; },
   };
   const pane = new WorkspacePane(changes, terminal);
   // Return the pressed view, or closed when the pane is hidden.
@@ -38,7 +42,7 @@ function setup() {
     return views.find(view => nodes[`pane-${view}`].attributes.get('aria-pressed') === 'true');
   };
   const click = view => nodes[`pane-${view}`].onclick();
-  return { nodes, pane, changes, calls, shown, click };
+  return { nodes, pane, changes, terminal, shown, click };
 }
 
 test('each session shows its own view, and a session not shown yet starts with a closed pane', () => {
@@ -109,25 +113,29 @@ test('a draft, Settings, or the home page hides the pane and its icons and keeps
   assert.equal(nodes['side-terminal'].hidden, true);
 });
 
-test('the views hide before they select the next session', () => {
-  const { pane, calls, click } = setup();
+test('the views hide before they select the next session, then show the view of that session', () => {
+  const { pane, changes, terminal, click } = setup();
   pane.select('a');
   click('terminal');
-  assert.deepEqual(calls.slice(-2), ['changes hide', 'terminal show click']);
+  assert.deepEqual([changes.shown, terminal.shown, terminal.click], [false, true, true]);
 
   // Session b has a closed pane. The terminal view does not join a shell of session b.
-  calls.length = 0;
   pane.select('b');
-  assert.deepEqual(calls, ['changes hide', 'terminal hide', 'changes select b', 'terminal select b',
-    'changes hide', 'terminal hide']);
+  assert.deepEqual([changes.session, terminal.session], ['b', 'b']);
+  assert.deepEqual([changes.shown, terminal.shown], [false, false]);
 
-  calls.length = 0;
   click('files');
-  assert.deepEqual(calls, ['changes show files', 'terminal hide']);
+  assert.deepEqual([changes.shown, changes.scope, terminal.shown], [true, 'files', false]);
 
   // Session a shows its terminal again. The view joins the shell without a click.
-  calls.length = 0;
   pane.select('a');
-  assert.deepEqual(calls, ['changes hide', 'terminal hide', 'changes select a', 'terminal select a',
-    'changes hide', 'terminal show']);
+  assert.deepEqual([changes.session, terminal.session], ['a', 'a']);
+  assert.deepEqual([changes.shown, terminal.shown, terminal.click], [false, true, false]);
+
+  // Session b shows Files again.
+  pane.select('b');
+  assert.deepEqual([changes.shown, changes.scope, terminal.shown], [true, 'files', false]);
+
+  assert.deepEqual(changes.selectedWhileShown, [], 'the Changes and Files view was shown when it selected a session');
+  assert.deepEqual(terminal.selectedWhileShown, [], 'the Terminal view was shown when it selected a session');
 });
