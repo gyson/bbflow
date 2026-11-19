@@ -195,6 +195,10 @@ export class DiffPane {
     const generation = this.listGeneration.next();
     this.listAbort?.abort();
     const abort = this.listAbort = new AbortController();
+    // A file request uses the baseline of the earlier list. Its reply must not change
+    // the newer choice. This refresh reads the file again when its list arrives.
+    this.fileAbort?.abort();
+    this.fileGeneration.next();
     const session = this.session;
     if (!this.changes && !this.changesError) this.setStatus('Reading changes…');
     const files = this.scope === 'files';

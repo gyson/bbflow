@@ -112,6 +112,39 @@ test('a file reply without the selected commit reads the list again, and a faile
   assert.equal(nodes['diff-baseline'].value, 'head');
 });
 
+test('a late file reply does not change a newer menu choice', async () => {
+  const { nodes, pending, shown } = setup();
+  const base = { kind: 'base', label: 'Since worktree base', commit: 'base' };
+  pending[0].resolve(changes(base, { base: true }));
+  await settle();
+  pending[1].resolve(file(base));
+  await settle();
+  nodes['diff-baseline'].value = `commit:${commit}`;
+  nodes['diff-baseline'].onchange();
+  pending[2].resolve(changes(baselines.commit, { base: true }));
+  await settle();
+  assert.deepEqual(pending[3].request.diff, { baseline: 'commit', from: commit, path: 'a.txt' });
+
+  // Select Uncommitted changes while the file request for the commit is pending. A
+  // rebase removed the commit, so its reply uses the default baseline. The reply comes
+  // after the new choice and does nothing.
+  nodes['diff-baseline'].value = 'head';
+  nodes['diff-baseline'].onchange();
+  assert.deepEqual(pending[4].request.diff, { baseline: 'head' });
+  assert.equal(pending[3].signal.aborted, true);
+  pending[3].resolve(file(base));
+  for (let i = 0; i < 3; i++) await settle();
+  assert.equal(pending.length, 5);
+  pending[4].resolve(changes(baselines.head, { base: true, commits: [] }));
+  await settle();
+  assert.equal(nodes['diff-baseline'].value, 'head');
+  assert.deepEqual(pending[5].request.diff, { baseline: 'head', path: 'a.txt' });
+  pending[5].resolve(file(baselines.head));
+  await settle();
+  assert.equal(shown.length, 2);
+  assert.equal(nodes['diff-note'].hidden, true);
+});
+
 test('the menu shows the notice of omitted commits also with an empty list', async () => {
   const { nodes, pending } = setup();
   pending[0].resolve(changes(baselines.head, { commits: [], moreCommits: true }));
