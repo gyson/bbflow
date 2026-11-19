@@ -152,6 +152,10 @@ func TestDemo(t *testing.T) {
 	if count, config, status := git(fixture, "rev-list", "--count", "HEAD"), git(fixture, "config", "--local", "--list"), git(fixture, "status", "--porcelain"); count != "1" || strings.Contains(config, "user.") || !strings.Contains(status, "edit.txt") {
 		t.Fatalf("seed changed the repository of GIT_DIR: commits %s, status %q, config:\n%s", count, status, config)
 	}
+	// The Changes and Files views show a long path in a deep folder.
+	if status := git(filepath.Join(demo, "demo", "projects", "orbit-api"), "status", "--porcelain"); !strings.Contains(status, " M "+controller) {
+		t.Fatalf("seed did not change %s:\n%s", controller, status)
+	}
 	expect("SELECT name FROM projects ORDER BY name", "[[General] [Orbit API] [Tide Web]]")
 	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 6] [1 1]]")
 	expect("SELECT status, count(*) FROM runs GROUP BY status ORDER BY status", "[[exited 3] [running 3] [stopped 1]]")

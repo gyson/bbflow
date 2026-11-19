@@ -115,7 +115,10 @@ export class DiffPane {
     };
     this.previewButton.onclick = () => this.openPreview();
     element('preview-close', HTMLButtonElement).onclick = () => this.previewDialog.close();
-    new ResizeObserver(() => this.relayout()).observe(this.pane);
+    // The divider of the file list changes the editor width without a change of the pane.
+    const observer = new ResizeObserver(() => this.relayout());
+    observer.observe(this.pane);
+    observer.observe(this.editorParent);
     // Files change while agents work. Read them again when the user comes back.
     window.addEventListener('focus', () => {
       if (Date.now() - this.refreshedAt > 1000) void this.refresh();
@@ -307,7 +310,7 @@ export class DiffPane {
     this.splitButton.setAttribute('aria-pressed', String(shown === 'split'));
     this.unifiedButton.setAttribute('aria-pressed', String(shown === 'unified'));
     this.splitButton.classList.toggle('waiting', waiting);
-    this.splitButton.title = waiting ? 'The pane is too narrow for Split. Drag the divider to the left to widen the pane.' : '';
+    this.splitButton.title = waiting ? 'The pane is too narrow for Split. Widen the pane, or make the file list narrower.' : '';
     this.filter.disabled = this.outsideGit;
     this.filter.title = this.outsideGit ? 'The filter needs a Git repository.' : '';
   }

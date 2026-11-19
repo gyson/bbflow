@@ -98,11 +98,12 @@
         <button id="diff-close" type="button" class="icon-button" title="Close the pane" aria-label="Close the pane">×</button>
       </div>
       <p id="diff-status" role="status" hidden></p>
-      <div class="diff-body">
-        <nav class="diff-files" aria-label="Files">
+      <div id="diff-body" class="diff-body">
+        <nav id="diff-files" class="diff-files" aria-label="Files">
           <input id="diff-filter" type="search" maxlength="200" placeholder="Filter files" aria-label="Filter files">
           <ul id="diff-list"></ul>
         </nav>
+        <div id="diff-files-divider" role="separator" tabindex="0" aria-label="File list width" aria-orientation="vertical" aria-controls="diff-files" title="Drag to resize. Use Left and Right arrow keys when focused. Double-click to reset."></div>
         <section class="diff-view" aria-label="File">
           <div class="diff-file-header"><span class="diff-path-group"><span id="diff-path"></span><button id="diff-preview" type="button" title="Show the rendered Markdown of the current file" hidden>Preview</button></span><span id="diff-counts"></span><button id="diff-toggle" type="button" hidden>View file</button><button id="diff-copy" type="button" hidden>Copy path</button></div>
           <p id="diff-note" hidden></p>
