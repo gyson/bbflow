@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { restartWarning, updateDialog, updateLabel } from './dist/update.js';
+import { UpdateNotice, restartWarning, updateDialog, updateLabel } from './dist/update.js';
 
 const offer = { version: '0.0.14', available: '0.0.15', state: 'available' };
 
@@ -32,4 +32,58 @@ test('the warning names the live sessions that the restart stops', () => {
   // Live sessions outside the list and a long list show as a count.
   assert.match(restartWarning(['A'], 3), /stops 3 live sessions: A and 2 more\./);
   assert.match(restartWarning(['A', 'B', 'C', 'D', 'E', 'F', 'G'], 7), /: A, B, C, D, E, and 2 more\./);
+});
+
+// A small fake DOM. It has only the parts that the notice uses.
+class Node {
+  hidden = false;
+  disabled = false;
+  textContent = '';
+  classList = { toggle() {} };
+}
+class Dialog extends Node {
+  open = false;
+  showModal() { this.open = true; }
+  close() { this.open = false; }
+}
+
+function setup() {
+  const ids = ['update-open', 'update-form', 'update-title', 'update-versions', 'update-help', 'update-sessions',
+    'update-notes', 'update-error', 'update-submit', 'update-cancel', 'update-close'];
+  const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
+  nodes['update-dialog'] = new Dialog();
+  globalThis.HTMLElement = globalThis.HTMLButtonElement = globalThis.HTMLDialogElement = globalThis.HTMLFormElement = globalThis.HTMLAnchorElement = Node;
+  globalThis.document = { getElementById: id => nodes[id] };
+  const notice = new UpdateNotice({ start: async () => {} });
+  return { nodes, notice, dialog: nodes['update-dialog'], open: () => nodes['update-open'].onclick() };
+}
+
+test('the open dialog counts the live sessions of the latest status message', () => {
+  const { nodes, notice, dialog, open } = setup();
+  notice.show(offer, { names: ['A'], count: 1 });
+  open();
+  assert.ok(dialog.open);
+  assert.match(nodes['update-sessions'].textContent, /stops 1 live session: A\./);
+  notice.show(offer, { names: ['A', 'B'], count: 2 });
+  assert.match(nodes['update-sessions'].textContent, /stops 2 live sessions: A and B\./);
+});
+
+test('a lost status watch hides the offer until the watch sends it again', () => {
+  const { nodes, notice, dialog, open } = setup();
+  notice.show(offer, { names: ['A'], count: 1 });
+  open();
+  notice.lost();
+  // Without the watch, the dialog cannot tell which sessions the restart stops.
+  assert.ok(nodes['update-open'].hidden);
+  assert.ok(!dialog.open);
+  open();
+  assert.ok(!dialog.open);
+  notice.show(offer, { names: ['A'], count: 1 });
+  assert.ok(!nodes['update-open'].hidden);
+  // An update in progress stays, because the server goes away during its restart.
+  notice.show({ ...offer, state: 'updating' }, { names: [], count: 0 });
+  notice.lost();
+  assert.ok(!nodes['update-open'].hidden);
+  assert.equal(nodes['update-open'].textContent, 'Updating to 0.0.15…');
+  assert.ok(nodes['update-open'].disabled);
 });

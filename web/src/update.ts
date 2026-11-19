@@ -5,6 +5,10 @@ import type { Update } from './protocol.js';
 // The dialog names at most this number of live sessions.
 const namedSessions = 5;
 
+// The live sessions of one status message. names has the titles of the live sessions in
+// the list. count also includes live sessions that the list does not show.
+export interface LiveSessions { names: string[]; count: number }
+
 // The sidebar text of an offer. An update in progress cannot start again.
 export function updateLabel(update: Update): { text: string; enabled: boolean } {
   switch (update.state) {
@@ -26,8 +30,7 @@ export function updateDialog(update: Update): { title: string; help: string; sub
   };
 }
 
-// Tell which sessions the restart stops. names has the titles of the live sessions in
-// the list. count also includes live sessions that the list does not show.
+// Tell which sessions the restart stops.
 export function restartWarning(names: readonly string[], count: number): string {
   if (count === 0) return 'No session is live now. The restart also stops the terminals of the workspace pane.';
   const shown = names.slice(0, namedSessions);
@@ -52,24 +55,23 @@ export class UpdateNotice {
   private readonly error = element('update-error', HTMLElement);
   private readonly submit = element('update-submit', HTMLButtonElement);
   private update: Update | undefined;
+  private live: LiveSessions = { names: [], count: 0 };
   private busy = false;
   private starting = false;
   // The error of a start from this dialog. It stays until the dialog opens again.
   private startError = '';
 
-  constructor(private readonly host: {
-    live(): { names: string[]; count: number };
-    start(version: string): Promise<void>;
-  }) {
+  constructor(private readonly host: { start(version: string): Promise<void> }) {
     this.button.onclick = () => this.open();
     element('update-cancel', HTMLButtonElement).onclick = element('update-close', HTMLButtonElement).onclick = () => this.dialog.close();
     this.form.onsubmit = event => { event.preventDefault(); void this.start(); };
   }
 
-  // The status watch sends the offer after each change. Without an offer, the
-  // notice and the dialog close.
-  show(update: Update | undefined): void {
+  // The status watch sends the offer and the live sessions together, after each change.
+  // Without an offer, the notice and the dialog close.
+  show(update: Update | undefined, live: LiveSessions): void {
     this.update = update;
+    this.live = live;
     this.renderButton();
     if (!update) this.dialog.close();
     else if (this.dialog.open && !this.starting) {
@@ -77,6 +79,13 @@ export class UpdateNotice {
       if (update.state === 'updating') this.dialog.close();
       else this.fill(update);
     }
+  }
+
+  // Without the status watch, the offer and the live sessions are unknown. Then the
+  // notice and the dialog close until the watch sends them again. An update in progress
+  // stays, because it cannot start again.
+  lost(): void {
+    if (this.update?.state !== 'updating') this.show(undefined, { names: [], count: 0 });
   }
 
   // A page action in progress disables the notice.
@@ -101,8 +110,7 @@ export class UpdateNotice {
     this.title.textContent = text.title;
     this.versions.textContent = `bbflow ${update.version} → ${update.available}`;
     this.help.textContent = text.help;
-    const live = this.host.live();
-    this.sessions.textContent = restartWarning(live.names, live.count);
+    this.sessions.textContent = restartWarning(this.live.names, this.live.count);
     this.notes.href = text.notes;
     this.submit.textContent = text.submit;
     this.error.textContent = this.startError || (update.state === 'failed' ? `The last attempt failed: ${update.error || 'unknown error'}` : '');

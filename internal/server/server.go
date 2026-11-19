@@ -57,7 +57,8 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		Protocol: protocol.Version, Instance: history.ID(), PID: os.Getpid(),
 		DataDir: filepath.Dir(store.Path), Port: listener.Addr().(*net.TCPAddr).Port,
 		Executable: executable,
-	}, releases: releases, updates: updates{wake: make(chan struct{}, 1)}}
+	}, releases: releases}
+	s.updates.load(store)
 	if err := s.ensureGeneral(); err != nil {
 		return protocol.ServerInfo{}, err
 	}
@@ -171,7 +172,7 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		}
 		result, err := s.store.SaveSettings(*request.Settings)
 		if err == nil {
-			s.settingsChanged()
+			s.updates.saved(result)
 		}
 		s.reply(conn, result, err)
 	case "workspace-inspect":

@@ -290,7 +290,8 @@ func (r releases) Check(ctx context.Context) (*protocol.Update, error) {
 
 // Update follows the steps of the update command after its question. It does not wait
 // for another update. The installer and the updater write to update.log.
-func (r releases) Update(ctx context.Context, release, instance string) (<-chan error, error) {
+func (r releases) Update(ctx context.Context, offer protocol.Update, instance string) (<-chan error, error) {
+	release := offer.Available
 	lock, err := install.Lock(r.destination, nil)
 	if err != nil {
 		return nil, err
@@ -308,9 +309,10 @@ func (r releases) Update(ctx context.Context, release, instance string) (<-chan 
 		return nil, err
 	}
 	if current != release {
-		// Never replace a newer executable that another command installed.
-		if !install.Newer(release, current) {
-			return nil, fmt.Errorf("another command installed bbflow %s; this update changed nothing", current)
+		// The user confirmed only a restart, or another command installed a newer
+		// version. Never download for a restart or replace a newer executable.
+		if offer.Installed || install.Newer(current, release) {
+			return nil, fmt.Errorf("%w: it has bbflow %s now, not %s; this update changed nothing", server.ErrStaleOffer, current, release)
 		}
 		if err = install.InstallContext(ctx, r.destination, release, logFile); err != nil {
 			return nil, err

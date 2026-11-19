@@ -598,23 +598,10 @@ func TestServerUpdateReportsFailedDownload(t *testing.T) {
 // version than the executable. Its update only restarts the server.
 func TestServerUpdateRestartsForInstalledRelease(t *testing.T) {
 	f := newUpdateFixture(t)
-	f.write(f.destination, f.binary("0.0.2"))
-	directory := filepath.Join(f.root, "instance")
-	t.Cleanup(func() { testCommand("--dir", directory, "server", "stop").Run() })
-	// Start this test binary as bbflow 0.0.1 with the 0.0.2 executable as its file.
-	start := testCommand("--dir", directory, "server", "start")
-	start.Env = append(f.env, "BBFLOW_TEST_CLI=1", "BBFLOW_TEST_VERSION=0.0.1", "BBFLOW_TEST_EXECUTABLE="+f.destination)
-	if output, err := start.CombinedOutput(); err != nil {
-		t.Fatalf("start: %s %v", output, err)
-	}
-	target := client.Target{Dir: directory}
+	target := startBehindExecutable(t, f)
 	before, err := target.Health()
 	if err != nil {
 		t.Fatal(err)
-	}
-	offer := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil })
-	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", Installed: true, State: "available"}) {
-		t.Fatalf("offer: %+v", offer)
 	}
 	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2"}); err != nil {
 		t.Fatal(err)
@@ -628,6 +615,53 @@ func TestServerUpdateRestartsForInstalledRelease(t *testing.T) {
 	waitFor(t, func() bool { return !installLocked(t, filepath.Dir(f.destination)) })
 	if f.downloads() {
 		t.Fatal("the restart downloaded the installed release again")
+	}
+}
+
+// startBehindExecutable starts this test binary as bbflow 0.0.1, with the 0.0.2
+// executable as its file. It returns when the server offers the restart.
+func startBehindExecutable(t *testing.T, f *updateFixture) client.Target {
+	t.Helper()
+	f.write(f.destination, f.binary("0.0.2"))
+	directory := filepath.Join(f.root, "instance")
+	t.Cleanup(func() { testCommand("--dir", directory, "server", "stop").Run() })
+	start := testCommand("--dir", directory, "server", "start")
+	start.Env = append(f.env, "BBFLOW_TEST_CLI=1", "BBFLOW_TEST_VERSION=0.0.1", "BBFLOW_TEST_EXECUTABLE="+f.destination)
+	if output, err := start.CombinedOutput(); err != nil {
+		t.Fatalf("start: %s %v", output, err)
+	}
+	target := client.Target{Dir: directory}
+	offer := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil })
+	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", Installed: true, State: "available"}) {
+		t.Fatalf("offer: %+v", offer)
+	}
+	return target
+}
+
+// The user confirms a restart, but the executable changed back to 0.0.1 after the
+// check. The update downloads nothing and changes nothing. The server checks again at
+// once and offers the download, which the user must confirm.
+func TestServerRestartOfferNeverDownloads(t *testing.T) {
+	f := newUpdateFixture(t)
+	target := startBehindExecutable(t, f)
+	before, err := target.Health()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.write(f.destination, f.binary("0.0.1"))
+	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2"}); err != nil {
+		t.Fatal(err)
+	}
+	offer := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil && u.State == "available" && !u.Installed })
+	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", State: "available"}) {
+		t.Fatalf("new offer: %+v", offer)
+	}
+	requests, _ := os.ReadFile(filepath.Join(f.assets, "requests"))
+	if f.downloads() || strings.Count(string(requests), "releases/latest") != 2 {
+		t.Fatalf("the stale restart downloaded, or the server did not check again:\n%s", requests)
+	}
+	if same, err := target.Health(); err != nil || same.Instance != before.Instance || f.installed() != "bbflow 0.0.1" {
+		t.Fatalf("the stale restart changed the server or the executable: %+v %v %s", same, err, f.installed())
 	}
 }
 

@@ -218,9 +218,12 @@ While the **Check for a new version every day** setting is on, the server runs t
 embedded installer with `--check`, as `bbflow update` does. The check downloads no
 binaries. The first check runs when the server starts. The next check runs 24 hours
 after the previous check. Each server start checks again. The result stays only in
-server memory. While the setting is off, the server sends no request and shows no
-offer. When the setting changes to on after a check is due, the check runs at once.
-A failed check writes its reason to `server.log` and shows nothing in the UI.
+server memory. A settings save applies at once, also while a check runs. While the
+setting is off, the server sends no request and shows no offer, and a view cannot start
+an update. When the setting changes to on, the view shows the result of the last check
+again. When the setting changes to on after a check is due, the check runs at once. A
+failed check keeps the result of the last successful check. It writes its reason to
+`server.log` and shows no error in the UI.
 
 The check compares the running version, the version of the executable on disk, and the
 latest release. Another instance can install a release into the same executable. Then
@@ -240,18 +243,24 @@ The [status watch](PROTOCOL.md#session-status) sends the offer to every view. Th
 sidebar then shows a button above **Settings**: **Update available: 0.0.15**, or
 **Restart to use 0.0.15** for an offer that only restarts the server. The button opens
 a confirmation dialog. The dialog shows the two versions and the steps. It names up to
-five live sessions that the restart stops and counts the others. It also links to the
-release notes on GitHub. **Cancel** changes nothing.
+five live sessions that the restart stops and counts the others. It takes the live
+sessions from the same status message as the offer. It also links to the release notes
+on GitHub. **Cancel** changes nothing. While the status watch has no connection, the
+view does not know the live sessions. Then the button and the dialog close until the
+watch sends the offer again. An update in progress stays in the sidebar.
 
 After confirmation, the view saves its message draft and its project draft form. Then it
-sends `update-start` with the offered version. The server rejects another version and
-a second update. All views then show **Updating to 0.0.15…** in the sidebar. The server
+sends `update-start` with the offered version. The server rejects another version, a
+second update, and an offer that the off setting hides. All views then show **Updating to 0.0.15…** in the sidebar. The server
 does these steps in the background:
 
 1. Lock the directory of the executable, as the update command does. If another update
    holds the lock, stop with an error. Do not wait.
 2. Read the version of the executable on disk. If it is the offered version, skip the
-   download. If it is newer, stop with an error and change nothing.
+   download. The executable can disagree with the confirmed offer: the offer only
+   restarts, or the executable has a newer version. Then stop and change nothing. The
+   sidebar shows the failure, and the server checks again at once. The views then show
+   the new offer, which the user must confirm again.
 3. Download, verify, and install the offered release while the server continues. The
    installer appends its output to `update.log`.
 4. Start the new executable as the updater, with the same interface as the update
@@ -1910,8 +1919,14 @@ restart without a download when the executable already has the release, the reas
 a failed download, and an unchanged server after it. A server stop during a hanging
 check ends at once and leaves no temporary files. An in-process server fixture with a
 fake release source verifies a single check across setting changes, the offer in the
-status watch, rejected versions, a second update, and a failed restart. Web fixtures
-verify the sidebar labels, the dialog text, and the session warning. A failed settings
+status watch, rejected versions, a second update, and a failed restart. It also verifies
+that an off setting during a slow check hides the result and rejects its start. A
+newer save can reply first, and an earlier save does not then apply. A stale offer
+starts a check at once. A release fixture changes the executable back to 0.0.1 after a
+restart offer: the confirmed restart downloads nothing, and the server offers the
+download. Web fixtures verify the sidebar labels, the dialog text, and the session
+warning. A fake DOM fixture verifies that the open dialog counts the live sessions of
+the latest status message and that a lost status watch hides the offer. A failed settings
 update in migration 12 rolls back and keeps format 11.
 
 Title fixtures verify the separate user and derived titles, search on both, and the

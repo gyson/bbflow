@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"bbflow/internal/history"
 	"bbflow/internal/protocol"
 )
 
@@ -15,24 +16,43 @@ import (
 // restart reads it again.
 const releaseInterval = 24 * time.Hour
 
+// ErrStaleOffer reports that the executable changed after the check of the offer. Then
+// the update changes nothing, and the server checks again for a new offer.
+var ErrStaleOffer = errors.New("the executable changed after the release check")
+
 // Releases reads and installs bbflow releases for the server. The executable supplies
 // it, because it owns the release version and the installer.
 type Releases interface {
 	// Check returns the newest release that this server can use, without State. It
 	// returns nil when the server runs that release already. It downloads no binaries.
 	Check(ctx context.Context) (*protocol.Update, error)
-	// Update installs version when the executable has another version. Then it starts an
-	// updater process, which stops the server with this instance ID and starts the new
-	// version. When the updater ends while this server runs, the channel gets the reason.
-	Update(ctx context.Context, version, instance string) (<-chan error, error)
+	// Update does what the user confirmed for offer. It installs offer.Available when the
+	// executable has an earlier version, and only restarts for an Installed offer. It
+	// returns ErrStaleOffer when the executable no longer agrees with the offer. Then it
+	// starts an updater process, which stops the server with this instance ID and
+	// starts the new version. When the updater ends while this server runs, the channel
+	// gets the reason.
+	Update(ctx context.Context, offer protocol.Update, instance string) (<-chan error, error)
 }
 
 // updates holds the release offer of the server. The status watch sends it.
 type updates struct {
-	mu      sync.Mutex
-	offer   *protocol.Update
-	enabled bool          // The update check setting.
-	wake    chan struct{} // A settings save wakes the check.
+	mu       sync.Mutex
+	offer    *protocol.Update
+	enabled  bool  // The update check setting.
+	revision int64 // The settings revision of enabled.
+	recheck  bool  // The offer is stale, so check before the next due time.
+	// A settings save or a stale offer wakes the check.
+	wake chan struct{}
+}
+
+// load reads the update check setting when the server starts. Later saves apply
+// through saved.
+func (u *updates) load(store *history.Store) {
+	u.revision, u.wake = -1, make(chan struct{}, 1)
+	if settings, err := store.Settings(); err == nil {
+		u.enabled, u.revision = settings.UpdateCheck, settings.Revision
+	}
 }
 
 // current returns a copy of the offer that views show, or nil. An update in progress
@@ -47,10 +67,34 @@ func (u *updates) current() *protocol.Update {
 	return &offer
 }
 
-func (u *updates) setEnabled(enabled bool) {
+// saved applies the update check setting of a settings save at once, also while a check
+// runs. A later save can reply first, so only a newer revision applies.
+func (u *updates) saved(settings history.Settings) {
+	u.mu.Lock()
+	if settings.Revision > u.revision {
+		u.enabled, u.revision = settings.UpdateCheck, settings.Revision
+	}
+	u.mu.Unlock()
+	u.notify()
+}
+
+func (u *updates) notify() {
+	select {
+	case u.wake <- struct{}{}:
+	default:
+	}
+}
+
+// due reports whether the check is on. It also reports and clears a request to check
+// before the next due time.
+func (u *updates) due() (enabled, recheck bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.enabled = enabled
+	if !u.enabled {
+		return false, false
+	}
+	recheck, u.recheck = u.recheck, false
+	return true, recheck
 }
 
 // checked replaces the offer with the result of a check. It keeps an update in progress.
@@ -66,47 +110,50 @@ func (u *updates) checked(offer *protocol.Update) {
 	u.offer = offer
 }
 
-// start marks the offer of version as in progress. Only one update runs at a time.
-func (u *updates) start(version string) error {
+// start marks the offer of version as in progress and returns a copy of it. Only one
+// update runs at a time. A view cannot start an offer that the off setting hides.
+func (u *updates) start(version string) (protocol.Update, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	switch {
+	case u.offer != nil && u.offer.State == "updating":
+		return protocol.Update{}, fmt.Errorf("the update to bbflow %s is already in progress", u.offer.Available)
+	case !u.enabled:
+		return protocol.Update{}, errors.New("the release check is off; turn on Check for a new version every day in Settings to update")
 	case u.offer == nil || u.offer.Available != version:
-		return fmt.Errorf("bbflow %s is not available now; reload the page to see the current offer", version)
-	case u.offer.State == "updating":
-		return fmt.Errorf("the update to bbflow %s is already in progress", version)
+		return protocol.Update{}, fmt.Errorf("bbflow %s is not available now; reload the page to see the current offer", version)
 	}
 	u.offer.State, u.offer.Error = "updating", ""
-	return nil
+	return *u.offer, nil
 }
 
+// failed shows the reason on the offer of version. A stale offer also asks for a new
+// check, which replaces the offer.
 func (u *updates) failed(version string, err error) {
 	u.mu.Lock()
-	defer u.mu.Unlock()
 	if u.offer != nil && u.offer.Available == version {
 		u.offer.State, u.offer.Error = "failed", err.Error()
 	}
-}
-
-// settingsChanged wakes the release check, so that a changed setting applies at once.
-func (s *Server) settingsChanged() {
-	select {
-	case s.updates.wake <- struct{}{}:
-	default:
+	stale := errors.Is(err, ErrStaleOffer)
+	u.recheck = u.recheck || stale
+	u.mu.Unlock()
+	if stale {
+		u.notify()
 	}
 }
 
 // checkReleases reads the latest release at start and then once a day while the update
 // check setting is on. It reads nothing while the setting is off. When the setting
-// changes to on after the check is due, the check runs at once.
+// changes to on after the check is due, the check runs at once. A stale offer also
+// starts a check at once. A failed check keeps the earlier offer.
 func (s *Server) checkReleases(ctx context.Context) {
 	var due time.Time
 	for {
-		settings, err := s.store.Settings()
-		enabled := err == nil && settings.UpdateCheck
-		s.updates.setEnabled(enabled)
 		var next <-chan time.Time
-		if enabled {
+		if enabled, recheck := s.updates.due(); enabled {
+			if recheck {
+				due = time.Time{}
+			}
 			if wait := time.Until(due); wait > 0 {
 				next = time.After(wait)
 			} else {
@@ -135,13 +182,14 @@ func (s *Server) startUpdate(version string) error {
 	if s.releases == nil {
 		return errors.New("this bbflow build cannot update; install a release")
 	}
-	if err := s.updates.start(version); err != nil {
+	offer, err := s.updates.start(version)
+	if err != nil {
 		return err
 	}
 	s.jobs.Add(1)
 	go func() {
 		defer s.jobs.Done()
-		ended, err := s.releases.Update(s.ctx, version, s.info.Instance)
+		ended, err := s.releases.Update(s.ctx, offer, s.info.Instance)
 		if err != nil {
 			s.updates.failed(version, err)
 			return
