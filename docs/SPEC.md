@@ -986,13 +986,13 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   there. The Files view shows the tree and the current files. When the server has no
   Git executable, Files works in the same way, and Changes shows the error.
 
-The layout, the baseline, the open folders, and the selected file of each view belong
-to the browser tab.
+The baseline, the open folders, the filter text, and the selected file of each view
+belong to the browser tab.
 Other browser tabs keep their own state. A visit to Settings or the home page keeps the
 state. A different session or a reload resets it.
 
-The list width also belongs to the browser tab. A different session keeps it. A reload
-resets it.
+The layout and the list width also belong to the browser tab. A different session keeps
+them. A reload resets them.
 
 The server resolves the workspace and the baseline commit from the session ID. It never
 accepts a workspace path from the client. A repository subfolder session sees only its
