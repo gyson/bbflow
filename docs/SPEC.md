@@ -1,8 +1,8 @@
 # bbflow — Current Specification
 
 bbflow has a separate background server and a browser workspace. The CLI opens the UI,
-manages the server, edits settings, runs read-only SQL queries, and updates the
-installed executable.
+manages the server, edits settings, runs read-only SQL queries, prints a storage report,
+and updates the installed executable.
 See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 
 ## Architecture and build
@@ -65,7 +65,8 @@ call its methods. Ordinary client commands do not open the live database.
 
 [COMMANDS.md](COMMANDS.md) is the reference for each command, its options, its output,
 and its effects. The CLI opens the UI, manages the server, edits tools and settings,
-runs read-only SQL queries, prints the agent guide, and updates the executable. It has
+runs read-only SQL queries, prints a storage report and the agent guide, and updates the
+executable. It has
 no session operations, terminal attachment, or `history` command group.
 
 `bbflow skill` prints `cmd/bbflow/skill.md`, which the executable embeds. Fixtures
@@ -1507,6 +1508,49 @@ The connection uses a five-second cancellation context that applies during prepa
 and row stepping. It does not share the terminal capture connection. See
 [COMMANDS.md](COMMANDS.md#query-sqlite) for the result format, the size limits, and the
 `truncated` flag.
+
+### Storage report
+
+The `storage-report` operation returns the storage use of the archive. `bbflow storage`
+prints it as Markdown. See [COMMANDS.md](COMMANDS.md#storage-report) for the report
+sections.
+
+`Store.StorageReport` uses its own `mode=ro` connection and one read transaction, so the
+page counts and the event totals come from one snapshot. It does not block capture. A
+long read can keep the WAL from a full checkpoint until the read ends. The read stops
+after 10 minutes, or when the client closes its connection.
+
+The report reads every event row once with one plain table scan, and Go adds up the
+rows. The scan reads the byte lengths of `data` and `text` from the record headers. Thus
+SQLite does not copy the payloads, and an attachment larger than the 1 MiB value limit
+of the read connection does not stop the report. A `GROUP BY` is not used, because its
+sort records copy the payloads. Only start events return their data, for the tool names.
+A synthetic archive of 1.4 GB with 6 million events took about 2 seconds on an Apple
+silicon laptop.
+
+The reply lists only the sessions that the report shows: the 10 largest sessions with
+events, and the 5 largest sessions with events in each of the 3 largest projects. Counts
+of all sessions, archived sessions, sessions with no events, and terminals are separate
+fields. Thus the session lists have a fixed limit for any number of sessions or events.
+
+Three lists have no limit. `projects` has one entry for each project with sessions,
+`days` has one entry for each UTC day with events, and `kinds` has one entry for each
+event kind. A project entry uses about 120 to 300 bytes of JSON, and a day entry about
+100 bytes. If the reply is larger than the 16 MiB protocol limit, the server sends the
+error `the result exceeds 16 MiB` in its place. `bbflow storage` then prints that error
+and no report, and exits with code `1`. This needs tens of thousands of projects with
+sessions, or more than 100 years of days with events.
+
+A start event from bbflow 0.0.4 or earlier has no tool. As in the terminal list, the
+first terminal of a session then uses the tool of the session preparation.
+
+Event counts and the bytes of each events column are exact. The embedded SQLite build
+has no `dbstat` table, so the report cannot measure each table or index. SQLite also
+does not record which pages belong to a session. Thus each size for a session, project,
+kind, or day is an estimate: its data and text bytes, plus its event count times the
+average overhead for each event. The average overhead is the used space, less all data
+and text bytes, divided by the event count. The estimates add up to about the used
+space.
 
 Input/output and launch arguments can include secrets. No redaction or encryption is
 implemented. The local archive is not isolated from other processes running as the same

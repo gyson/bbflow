@@ -256,6 +256,8 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "query":
 		result, err := s.store.Query(ctx, request.SQL)
 		s.reply(conn, result, err)
+	case "storage-report":
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.store.StorageReport(ctx) })
 	case "history-search":
 		if request.Search == nil {
 			s.reply(conn, nil, errors.New("missing history search"))

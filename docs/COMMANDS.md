@@ -21,6 +21,7 @@ lines identify an optional argument. Do not type the brackets.
 | `bbflow server restart` | Replace the server with the invoked executable. | Stops active agents, finishes shutdown, then starts a new server and its macOS menu. |
 | `bbflow ui` | Open the web UI home page in the default browser. | Verifies the selected running server, then launches its home URL. Starts no server or agent. |
 | `bbflow query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
+| `bbflow storage [--redact]` | See which projects, sessions, and event kinds use the most space. | Reads the archive. Prints a Markdown report. |
 | `bbflow tool list\|add\|remove` | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
 | `bbflow settings get\|set` | Show or change appearance and session defaults. | Changes saved settings. Starts no session. |
 | `bbflow skill` | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
@@ -408,6 +409,50 @@ query heap to 64 MiB. Queries that exceed these limits or the timeout return an 
 input, start or stop agents, or block capture by sharing its write connection. A missing
 server is an error.
 
+## Storage report
+
+```text
+bbflow [--dir DIR] storage [--redact]
+```
+
+Print a Markdown report about the storage use of the archive. Use it to find the
+projects, sessions, and event kinds that use the most space.
+
+```sh
+bbflow storage > storage-report.md
+bbflow storage --redact > storage-report.md
+```
+
+The report has these sections:
+
+- **Totals:** the database, used, free, and write-ahead log (WAL) sizes, the event
+  count, and the average bytes and overhead for each event.
+- **Used space by events column:** the exact bytes of each events column, and the
+  overhead that remains.
+- **Event kinds**, **Projects**, and **Top 10 sessions**, largest first.
+- **Top 5 sessions in each of the top 3 projects.**
+- **Event kinds in the top 5 sessions.**
+- **Growth by day (UTC).**
+- **Method:** how the report makes its estimates.
+
+Event counts and column bytes are exact. Sizes for each event kind, project, session,
+and day are estimates. See [storage report](SPEC.md#storage-report) for the method.
+
+The report shows project names, session titles, tool names, and the first 8 characters
+of session IDs. It never shows terminal content or workspace paths. Use `--redact` to
+replace project names and session titles with short IDs. General and standalone
+sessions keep their labels.
+The report escapes Markdown characters in names, so each name shows as saved.
+
+The server reads every event once. A large archive can take some seconds. The command
+prints a progress note to standard error and the report to standard output. The read
+stops after 10 minutes. With tens of thousands of projects that have sessions, the
+reply can exceed the 16 MiB protocol limit. The command then prints `the result exceeds
+16 MiB` and no report. See [storage report](SPEC.md#storage-report).
+
+**Impact:** opens a separate read-only connection. It does not change history or block
+capture. A missing server is an error.
+
 ## Manage tools
 
 ```text
@@ -506,7 +551,7 @@ or read history. `--dir` and `BBFLOW_DIR` have no effect on this command.
 
 ## Exit codes
 
-Help and successful server, UI, query, tool, settings, and skill commands exit with
+Help and successful server, UI, query, storage, tool, settings, and skill commands exit with
 code `0`. bbflow errors print a message to standard error and exit with code `1`.
 
 See [README.md](../README.md) for installation, [DEVELOPMENT.md](DEVELOPMENT.md) for

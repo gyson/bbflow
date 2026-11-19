@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/28`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/29`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/28",
+    "protocol": "bbflow/29",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -66,7 +66,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/28",
+    "protocol": "bbflow/29",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -75,8 +75,8 @@ seconds:
 ```
 
 Requests contain no archive path. The connection reaches one server and its archive. The
-browser is the session client. The management CLI uses health, shutdown, and query
-operations.
+browser is the session client. The management CLI uses health, shutdown, query, and
+storage-report operations.
 
 | Operation | Additional request fields | Reply |
 | --- | --- | --- |
@@ -87,6 +87,7 @@ operations.
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed`. An empty `name` removes the user title. |
 | `session-list` | `groups` (group keys, required), `limit` for each group (default 10; `limit` times the number of groups is at most 100), optional `offset` (default 0, needs exactly one group), optional `session` ID to include (not with `offset`), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status). |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
+| `storage-report` | None | `result`, containing database facts, `total`, `columns`, session counts, and the `kinds`, `days`, `projects`, and `sessions` lists. `sessions` has only the largest sessions. The other lists have one entry for each project, day, or kind. Above 16 MiB, the reply is an `error`. See [storage report](SPEC.md#storage-report). Closing the connection cancels the read. |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
 | `workspace-changes` | `session` ID, `diff` object with optional `baseline` and `from` | `result`, containing `repository`, `base`, `baseline`, `commits`, an optional `moreCommits`, `files`, and `truncated` |
@@ -768,13 +769,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/28") {
+    if (message.server.protocol !== "bbflow/29") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/28", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/29", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
