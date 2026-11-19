@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/28';
+export const VERSION = 'bbflow/29';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }

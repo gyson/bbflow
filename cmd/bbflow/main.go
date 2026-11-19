@@ -16,6 +16,7 @@ const usage = `Usage:
   bbflow [--dir DIR] server start|stop|restart
   bbflow [--dir DIR] ui
   bbflow [--dir DIR] query SQL
+  bbflow [--dir DIR] storage [--redact]
   bbflow [--dir DIR] tool list|add|remove
   bbflow [--dir DIR] settings get|set
   bbflow skill
@@ -78,6 +79,8 @@ func run(args []string) error {
 		return update(target, args[1:])
 	case "query":
 		return query(target, args[1:])
+	case "storage":
+		return storage(target, args[1:])
 	case "tool":
 		return toolCommand(target, args[1:])
 	case "settings":

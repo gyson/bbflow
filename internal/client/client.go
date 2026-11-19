@@ -141,7 +141,7 @@ func stop(conn *protocol.Conn, info protocol.ServerInfo) error {
 	if err := conn.Send(protocol.Message{Type: "request", Request: &request}); err != nil {
 		return err
 	}
-	result, err := receiveResult(conn)
+	result, err := receiveResult(conn, 30*time.Second)
 	if err != nil {
 		return err
 	}
@@ -155,16 +155,21 @@ func stop(conn *protocol.Conn, info protocol.ServerInfo) error {
 }
 
 func (t Target) Call(request protocol.Request) (json.RawMessage, error) {
+	return t.CallWithin(request, 30*time.Second)
+}
+
+// CallWithin waits up to timeout for the result. Use it for a long read.
+func (t Target) CallWithin(request protocol.Request, timeout time.Duration) (json.RawMessage, error) {
 	conn, err := t.Connect(request)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	return receiveResult(conn)
+	return receiveResult(conn, timeout)
 }
 
-func receiveResult(conn *protocol.Conn) (json.RawMessage, error) {
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+func receiveResult(conn *protocol.Conn, timeout time.Duration) (json.RawMessage, error) {
+	conn.SetReadDeadline(time.Now().Add(timeout))
 	reply, err := conn.Receive()
 	if err != nil {
 		return nil, err
