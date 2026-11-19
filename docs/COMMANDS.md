@@ -45,10 +45,14 @@ does not change its default. All commands select one instance in this order:
 2. `BBFLOW_DIR`, if set to a nonempty value.
 3. The build's default directory.
 
-Each server chooses an available port on `127.0.0.1`. Clients read the port from
-`server.json` in the selected directory. Before a command, they verify the server's
-directory and instance ID on the same WebSocket connection. You do not configure a port.
-There are no `--port` or `--data-dir` options.
+Each server listens on a port on `127.0.0.1`. The first server of a directory gets a
+free port from the operating system and saves it in `history.sqlite`. Later starts,
+restarts, and updates use that port again, so open browser tabs keep their address.
+When another program holds the saved port, the server gets a new port, saves it, and
+writes a message to `server.log`. Clients read the port from `server.json` in the
+selected directory. Before a command, they verify the server's directory and instance
+ID on the same WebSocket connection. You do not configure a port. There are no `--port`
+or `--data-dir` options.
 
 Query, UI, tool, and settings commands require a running server and do not start one
 automatically. The web UI uses the same server at its printed HTTP URL. There is no
@@ -224,8 +228,9 @@ General project, and creates its `<instance>/workspaces/general` folder. Before 
 requests, it upgrades supported older database formats using SQL embedded in the binary.
 All pending migrations commit together. A failure rolls them back and stops startup.
 
-The command starts no shell or agent. Create sessions in the UI. The operating system
-allocates a free port. A second server cannot own the same directory. If startup fails,
+The command starts no shell or agent. Create sessions in the UI. The server uses the
+saved port of the directory when it is free. Otherwise, it uses a free port from the
+operating system. A second server cannot own the same directory. If startup fails,
 inspect the printed log path.
 
 On macOS, a new server also launches a menu bar companion from this same executable.
@@ -314,8 +319,8 @@ verified shutdown request described above. If stopping fails, it does not launch
 replacement.
 
 **Impact:** the command ends all active agent runs and preserves their history. It opens
-the same archive in a new server process. The new server has a new instance ID and an
-automatically selected port.
+the same archive in a new server process. The new server has a new instance ID. It uses the
+same port when that port is free.
 
 The new server applies pending database migrations before accepting requests. Clients
 discover the new endpoint on their next command. It does not resume agents or replay

@@ -1,5 +1,11 @@
+import { replaces, restartedMessage, serverReplaced } from './restart.js';
+
 // The browser and Go CLI use the same protocol. Each connection carries one request.
 export const VERSION = 'bbflow/29';
+
+// After a lost connection, a view tries again with increasing delays up to this limit.
+// A short limit lets open tabs find a restarted server soon.
+export const retryLimit = 5000;
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -250,6 +256,10 @@ export class Peer {
           if (message.type !== 'server' || !info || info.protocol !== VERSION ||
               info.protocol !== server.protocol || info.instance !== server.instance ||
               info.dataDir !== server.dataDir || info.port !== server.port) {
+            if (message.type === 'server' && replaces(server, info)) {
+              serverReplaced();
+              throw new Error(restartedMessage);
+            }
             throw new Error('The server changed or uses a different protocol. Reload this page.');
           }
           this.greeted = true;

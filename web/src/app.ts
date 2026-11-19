@@ -25,6 +25,7 @@ import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
+import { lastReload, onServerReplaced, recordReload, reloadPlan, restartedMessage } from './restart.js';
 
 const elements = {
   'history-open': element('history-open', HTMLButtonElement),
@@ -198,6 +199,21 @@ function notice(text = '', source: typeof noticeSource = 'action') {
 function clearNotice(source: typeof noticeSource) {
   if (noticeSource === source) notice();
 }
+
+// A restart or an update replaced the server of this instance. Reload once to get the
+// new UI. The reload keeps the path, so the tab shows the same view again.
+let replaced = false;
+onServerReplaced(() => {
+  if (replaced) return;
+  replaced = true;
+  const now = Date.now();
+  if (reloadPlan(composer.unsaved || preparation.unsaved || settingsView.unsaved, lastReload(), now) === 'reload') {
+    recordReload(now);
+    location.reload();
+  } else {
+    notice(restartedMessage);
+  }
+});
 
 // A live view gets status changes on its stream. Keep that status over a slower read.
 function withDetail(session: SessionView, detail: PreparedSession): SessionView {

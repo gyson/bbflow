@@ -161,6 +161,15 @@ One row with the appearance, tool list, and launch defaults of the instance.
 | `revision` | Revision of the settings. |
 | `data` | JSON with the appearance, launch defaults, and tools. Each tool has an ID, name, and startup command. |
 
+### `server`
+
+One row with the port that the server of the instance last used.
+
+| Column | Meaning |
+| --- | --- |
+| `id` | Always `1`. |
+| `port` | Loopback port of the last server start. `0` before the first start. |
+
 To see the exact definitions, read `sqlite_schema`:
 
 ```sh

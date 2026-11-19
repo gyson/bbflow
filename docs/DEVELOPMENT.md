@@ -34,7 +34,8 @@ A running server keeps its code and embedded UI. After a change, do these steps:
 
 1. Run `make build`.
 2. Run `./bin/bbflow server restart`. Restart ends active sessions.
-3. Reload the page. The port can change, so use the newly printed URL or `bbflow ui`.
+3. Wait for the open page to reload. The server keeps its port. If another program
+   holds that port, use the newly printed URL or `bbflow ui`.
 
 Use global `--dir` with a temporary directory for checks that must not touch your data.
 See [instance directory](COMMANDS.md#instance-directory).

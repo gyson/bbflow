@@ -43,8 +43,11 @@ export class PreparationEditor {
         } catch (error) { this.showError(error); }
       })();
     };
-    window.addEventListener('beforeunload', event => { if (this.edits !== this.saved) event.preventDefault(); });
+    window.addEventListener('beforeunload', event => { if (this.unsaved) event.preventDefault(); });
   }
+
+  // True when the server has not saved the latest edit.
+  get unsaved(): boolean { return this.edits !== this.saved; }
 
   get visible(): boolean { return !this.panel.hidden; }
 

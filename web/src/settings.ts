@@ -85,8 +85,10 @@ export class SettingsView {
       event.preventDefault();
       if (this.editing) this.saveTool(this.editTool, this.editing);
     };
-    window.addEventListener('beforeunload', event => { if (this.pending()) event.preventDefault(); });
+    window.addEventListener('beforeunload', event => { if (this.unsaved) event.preventDefault(); });
   }
+
+  get unsaved(): boolean { return this.pending(); }
 
   async open(): Promise<void> {
     const server = this.server();

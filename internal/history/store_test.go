@@ -215,3 +215,31 @@ func recordedEvents(t *testing.T, store *Store, id string) ([]Event, error) {
 	}
 	return events, nil
 }
+
+func TestServerPortSurvivesReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.sqlite")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if port, err := s.Port(); err != nil || port != 0 {
+		t.Fatal("a new archive has a saved port", port, err)
+	}
+	for _, invalid := range []int{0, -1, 65536} {
+		if err := s.SavePort(invalid); err == nil {
+			t.Fatal("saved an invalid port", invalid)
+		}
+	}
+	if err := s.SavePort(49152); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if port, err := s.Port(); err != nil || port != 49152 {
+		t.Fatal("lost the saved port", port, err)
+	}
+}

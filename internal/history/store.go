@@ -101,6 +101,22 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// Port returns the loopback port that the server of this archive last used. It returns
+// 0 when no server has saved a port.
+func (s *Store) Port() (int, error) {
+	var port int
+	err := s.db.QueryRow("SELECT port FROM server WHERE id=1").Scan(&port)
+	return port, err
+}
+
+func (s *Store) SavePort(port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid server port %d", port)
+	}
+	_, err := s.db.Exec("UPDATE server SET port=? WHERE id=1", port)
+	return err
+}
+
 // DisplayTitle returns the user title. Without it, it returns the derived title.
 func (s Session) DisplayTitle() string {
 	if s.Title != "" {
@@ -138,6 +154,7 @@ func checkSchema(ctx context.Context, conn *sql.Conn) error {
 		"SELECT " + runColumns + " FROM runs LIMIT 0",
 		"SELECT " + eventColumns + " FROM events LIMIT 0",
 		"SELECT revision,data FROM settings LIMIT 0",
+		"SELECT port FROM server LIMIT 0",
 		"SELECT session_id,revision,state,data FROM preparations LIMIT 0",
 		"SELECT session_id,path,repository,base,commit_id,branch,state FROM worktrees LIMIT 0",
 		"SELECT seq FROM events INDEXED BY events_run WHERE run_id='' LIMIT 0",

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -97,16 +98,16 @@ func serve(target client.Target) error {
 	// waits for this pipe to close. It does not wait for the lock.
 	var menu *menuBarProcess
 	defer func() { menu.close() }()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		return err
-	}
-	defer listener.Close()
 	store, err := history.Open(filepath.Join(target.Dir, "history.sqlite"))
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	listener, err := listen(store)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
 	if err = store.MarkInterrupted(); err != nil {
 		return err
 	}
@@ -120,6 +121,32 @@ func serve(target client.Target) error {
 	}
 	owned, err = server.Serve(ctx, listener, store)
 	return err
+}
+
+// listen uses the port that the server of this instance last used, so open browser tabs
+// can reconnect after a restart or an update. When another program holds that port, the
+// server uses a new port and saves it.
+func listen(store *history.Store) (net.Listener, error) {
+	port, err := store.Port()
+	if err != nil {
+		return nil, err
+	}
+	if port != 0 {
+		listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err == nil {
+			return listener, nil
+		}
+		fmt.Fprintf(os.Stderr, "bbflow cannot use its earlier port %d (%v). It uses a new port. Open tabs must open the new address.\n", port, err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	if err = store.SavePort(listener.Addr().(*net.TCPAddr).Port); err != nil {
+		listener.Close()
+		return nil, err
+	}
+	return listener, nil
 }
 
 // shuttingDown reports a server that holds the archive lock but refuses connections. At
