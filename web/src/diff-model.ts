@@ -248,6 +248,19 @@ export function languageName(path: string): Language {
   return dot > 0 ? extensions[name.slice(dot + 1)] ?? '' : '';
 }
 
+// These full names are not file extensions, but Markdown authors often use them.
+const fenceNames: Record<string, Language> = {
+  javascript: 'javascript', typescript: 'typescript', golang: 'go', python: 'python', rust: 'rust', shell: 'shell',
+};
+
+// The first word of the info string of a fenced code block names its language, as in
+// "```go" or "```ts title=app.ts".
+export function fenceLanguage(info: string): Language {
+  const word = info.trim().split(/\s/, 1)[0]?.toLowerCase() ?? '';
+  if (Object.hasOwn(fenceNames, word)) return fenceNames[word] ?? '';
+  return Object.hasOwn(extensions, word) ? extensions[word] ?? '' : '';
+}
+
 // Each request takes a new number. A reply for an older number is late. A late reply
 // must not replace a newer view.
 export class Generation {

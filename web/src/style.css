@@ -86,12 +86,12 @@
     --diff-add-text: light-dark(#abf2bc, #264c32);
     --diff-remove-line: light-dark(#ffebe9, #362122);
     --diff-remove-text: light-dark(#ffcecb, #5c3439);
-    --code-keyword: light-dark(#708, #e4cdff);
-    --code-literal: light-dark(#164, #b8e4ff);
-    --code-string: light-dark(#a11, #f1d3a7);
-    --code-comment: light-dark(#735520, #b9bac2);
-    --code-name: light-dark(#2455a0, #bad5ff);
-    --code-meta: light-dark(#47564e, #d2d3da);
+    --code-keyword: light-dark(#708, #d2a8ff);
+    --code-literal: light-dark(#164, #7ee787);
+    --code-string: light-dark(#a11, #ffa198);
+    --code-comment: light-dark(#735520, #c0b29a);
+    --code-name: light-dark(#2455a0, #79c0ff);
+    --code-meta: light-dark(#47564e, #adbdb3);
   }
   :root[data-appearance="light"] { color-scheme: light; }
   :root[data-appearance="dark"] { color-scheme: dark; }

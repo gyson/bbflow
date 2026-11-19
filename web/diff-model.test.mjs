@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { baselineChoice, baselineMoved, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, FolderTree, Generation, languageName, openFolders, sideNote, statusTitle, treeRows } from './dist/diff-model.js';
+import { baselineChoice, baselineMoved, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, languageName, openFolders, sideNote, statusTitle, treeRows } from './dist/diff-model.js';
 
 const change = (path, status = 'M', extra = {}) => ({ path, status, added: 1, removed: 2, ...extra });
 
@@ -227,6 +227,18 @@ test('languages come from the file name', () => {
   assert.equal(languageName('Makefile'), '');
   assert.equal(languageName('.gitignore'), '');
   assert.equal(languageName('archive.tar.gz'), '');
+});
+
+test('fenced code languages come from the first word of the info string', () => {
+  assert.equal(fenceLanguage('go'), 'go');
+  assert.equal(fenceLanguage('golang'), 'go');
+  assert.equal(fenceLanguage(' TS title=app.ts'), 'typescript');
+  assert.equal(fenceLanguage('Python'), 'python');
+  assert.equal(fenceLanguage('bash'), 'shell');
+  assert.equal(fenceLanguage('md'), 'markdown');
+  assert.equal(fenceLanguage(''), '');
+  assert.equal(fenceLanguage('text'), '');
+  assert.equal(fenceLanguage('constructor'), '');
 });
 
 test('counts and titles describe each status', () => {

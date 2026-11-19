@@ -978,6 +978,10 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   changed text. Split shows a gutter marker for each changed line. Unified shows one
   `−` per block of removed lines and one `+` per added line. Syntax colors, line numbers,
   and folded regions follow Appearance. The file view uses the same syntax colors.
+- Markdown files use GitHub Flavored Markdown colors. Headings, links, code, and quotes
+  have their own colors. Markup characters, such as `#` and `**`, are muted. A fenced
+  code block gets the colors of its language when the first word of its info string
+  names a language that the pane supports, such as `go`, `ts`, or `bash`.
 - The **Changes** view lists the changed files with Git status letters A, M, D, R, and T. An
   untracked file has A. After `git rm --cached`, the path has one row with M. An
   untracked nested repository shows as one folder row. The filter box matches any part
