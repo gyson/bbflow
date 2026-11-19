@@ -183,11 +183,11 @@ in order:
    its verified instance ID matches the ID that the command recorded before the
    question. It uses the same identity check on the shutdown connection as the menu
    Quit action.
-5. The updater waits for the archive lock release, starts the server with the new
-   version and its macOS menu, and opens the UI.
+5. The updater waits for the archive lock release. Then it starts the server with the
+   new version and its macOS menu. It does not open the UI.
 6. The command requires a new verified server instance. It does not trust the updater
-   exit status alone. Then it prints the old version and the version that the installed
-   executable reported.
+   exit status alone. Then it prints the old version, the version that the installed
+   executable reported, and the `bbflow ui` command for the instance.
 
 If another server runs at step 4, the updater does not stop it and reports an error.
 If the start fails at step 5, the new executable stays in place and no server runs.

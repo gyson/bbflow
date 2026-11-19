@@ -154,14 +154,16 @@ After confirmation, the command does these steps in order:
    depend on the terminal, so it continues when the server stop closes that terminal.
 5. Stop the confirmed server and wait until it releases its archive.
 6. Start the new version in the same instance directory, with the macOS menu.
-7. Open the UI of the new server in the default browser.
+
+The update does not open the UI. Open browser tabs do not connect to the new server.
+Reopen the UI with `bbflow ui` or the **Open UI** menu item.
 
 The command shows the updater output until the updater ends. Then it confirms that a new
-server answers. The last line names both versions, for example
-`Updated bbflow 0.0.12 to 0.0.13. The server in ~/.bbflow runs the new version.` When no
-server runs, the command prints `Updated bbflow 0.0.12 to 0.0.13.`, then the hint to
-start the server. The updater also appends its output to `update.log` in the instance
-directory. Ctrl+C stops only that display. The update continues.
+server answers. Then it prints a line that names both versions, for example
+`Updated bbflow 0.0.12 to 0.0.13. The server in ~/.bbflow runs the new version.` The
+last line gives the `bbflow ui` command for the instance. When no server runs, the
+command prints `Updated bbflow 0.0.12 to 0.0.13.`, then the hint to start the server.
+The updater also appends its output to `update.log` in the instance directory. Ctrl+C stops only that display. The update continues.
 
 When no server runs, the command only replaces the executable. It does not create the
 instance directory.
