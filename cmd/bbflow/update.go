@@ -42,7 +42,7 @@ func update(target client.Target, args []string) error {
 Install the latest bbflow release. When a server runs in the instance directory, the
 command asks for confirmation first. Then it downloads and verifies the release and
 replaces this executable. Then it stops the server, which ends all of its running
-sessions, starts the new version in the same directory, and opens the UI.
+sessions, and starts the new version in the same directory. It does not open the UI.
 
   --yes  Continue without the confirmation prompt.`)
 	}
@@ -125,7 +125,7 @@ sessions, starts the new version in the same directory, and opens the UI.
 	if err = startUpdater(target, destination, *server, lock); err != nil {
 		return err
 	}
-	fmt.Printf("Updated bbflow %s to %s. The server in %s runs the new version.\n", release.Installed, installed, target.Dir)
+	fmt.Printf("Updated bbflow %s to %s. The server in %s runs the new version.\nOpen with: %s\n", release.Installed, installed, target.Dir, command(target, "ui"))
 	return nil
 }
 
@@ -261,7 +261,7 @@ func followUpdater(logPath string, offset int64, done <-chan error, interrupt <-
 }
 
 // runUpdater runs in the new executable. It stops only the server that the user
-// confirmed, then starts this version and opens the UI. Its output goes to update.log.
+// confirmed, then starts this version. Its output goes to update.log.
 func runUpdater(target client.Target) error {
 	expected := os.Getenv(updaterInstanceEnv)
 	for _, name := range []string{updaterEnv, updaterInstanceEnv} {
@@ -296,13 +296,7 @@ func runUpdater(target client.Target) error {
 	if err = stopConfirmedServer(target, expected); err != nil {
 		return err
 	}
-	if err = startServer(target); err != nil {
-		return err
-	}
-	if err = ui(target, nil); err != nil {
-		fmt.Fprintln(os.Stderr, "bbflow:", err)
-	}
-	return nil
+	return startServer(target)
 }
 
 func stopConfirmedServer(target client.Target, expected string) error {

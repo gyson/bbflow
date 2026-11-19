@@ -194,14 +194,18 @@ func TestUpdateRestartsConfirmedServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update: %s %v", output, err)
 	}
-	for _, want := range []string{"Update bbflow 0.0.1 to 0.0.2.", "ends all of its running sessions", "Installed bbflow 0.0.2", "Stopped bbflow in", "bbflow is running at", "Opened http://"} {
+	for _, want := range []string{"Update bbflow 0.0.1 to 0.0.2.", "ends all of its running sessions", "Installed bbflow 0.0.2", "Stopped bbflow in", "bbflow is running at", "Open with: bbflow --dir "} {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("missing %q in update output:\n%s", want, output)
 		}
 	}
-	// The last line reports the version that the new executable gives.
-	if lines := strings.Split(strings.TrimSpace(string(output)), "\n"); lines[len(lines)-1] != "Updated bbflow 0.0.1 to 0.0.2. The server in "+directory+" runs the new version." {
-		t.Fatalf("final update line: %q", lines[len(lines)-1])
+	if strings.Contains(string(output), "Opened http://") {
+		t.Fatalf("update must not open the UI:\n%s", output)
+	}
+	// The last lines report the version that the new executable gives and the UI command.
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if want := []string{"Updated bbflow 0.0.1 to 0.0.2. The server in " + directory + " runs the new version.", "Open with: " + command(target, "ui")}; len(lines) < 2 || lines[len(lines)-2] != want[0] || lines[len(lines)-1] != want[1] {
+		t.Fatalf("final update lines: %q", lines[max(0, len(lines)-2):])
 	}
 	// The fake curl must serve the download. A real request would reach GitHub.
 	if !f.downloads() || f.installed() != "bbflow 0.0.2" {
@@ -211,9 +215,8 @@ func TestUpdateRestartsConfirmedServer(t *testing.T) {
 	if err != nil || after.Instance == before.Instance || after.PID == before.PID {
 		t.Fatalf("server not replaced: %+v %v", after, err)
 	}
-	args, err := os.ReadFile(argsPath)
-	if want := fmt.Sprintf("http://127.0.0.1:%d/\n", after.Port); err != nil || string(args) != want {
-		t.Fatalf("browser must open the new server: %q %v", args, err)
+	if _, err := os.Stat(argsPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("update must not open a browser: %v", err)
 	}
 	log, err := os.ReadFile(filepath.Join(directory, "update.log"))
 	if err != nil || !strings.Contains(string(log), "to bbflow 0.0.2") {
@@ -446,7 +449,7 @@ func installLocked(t *testing.T, directory string) bool {
 // The updater keeps the installation lock after the command ends, for example after
 // Ctrl+C. The new server must not inherit the lock.
 func TestUpdaterKeepsLockAfterCommandEnds(t *testing.T) {
-	// The updater opens the UI. A recording opener keeps the test away from the browser.
+	// A recording opener detects an unwanted browser launch by the updater.
 	argsPath := browserFixture(t)
 	f := newUpdateFixture(t)
 	directory := filepath.Join(f.root, "instance")
@@ -495,7 +498,7 @@ func TestUpdaterKeepsLockAfterCommandEnds(t *testing.T) {
 	if err != nil || after.Instance == before.Instance {
 		t.Fatalf("server not replaced: %+v %v", after, err)
 	}
-	if args, err := os.ReadFile(argsPath); err != nil || string(args) != fmt.Sprintf("http://127.0.0.1:%d/\n", after.Port) {
-		t.Fatalf("the updater did not use the recording opener: %q %v", args, err)
+	if _, err := os.Stat(argsPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the updater must not open a browser: %v", err)
 	}
 }
