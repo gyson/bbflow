@@ -1,20 +1,10 @@
 import { EditorState, type Extension } from '@codemirror/state';
 import { EditorView, highlightSpecialChars, lineNumbers } from '@codemirror/view';
-import { HighlightStyle, StreamLanguage, syntaxHighlighting, type Language } from '@codemirror/language';
+import { syntaxHighlighting } from '@codemirror/language';
 import { MergeView, unifiedMergeView } from '@codemirror/merge';
-import { cssLanguage } from '@codemirror/lang-css';
-import { goLanguage } from '@codemirror/lang-go';
-import { htmlLanguage } from '@codemirror/lang-html';
-import { javascriptLanguage, jsxLanguage, tsxLanguage, typescriptLanguage } from '@codemirror/lang-javascript';
-import { jsonLanguage } from '@codemirror/lang-json';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { pythonLanguage } from '@codemirror/lang-python';
-import { rustLanguage } from '@codemirror/lang-rust';
-import { yamlLanguage } from '@codemirror/lang-yaml';
-import { scala } from '@codemirror/legacy-modes/mode/clike';
-import { shell } from '@codemirror/legacy-modes/mode/shell';
-import { tags } from '@lezer/highlight';
-import { fenceLanguage, languageName, type DiffLayout, type Language as FileLanguage } from './diff-model.js';
+import { codeHighlighter, parser } from './code-highlight.js';
+import { fenceLanguage, languageName, type DiffLayout } from './diff-model.js';
 
 // The diff and file views are read-only. CodeMirror renders file text as DOM text, never
 // as HTML.
@@ -49,56 +39,6 @@ const theme = EditorView.theme({
   '&.cm-merge-b .cm-changedLineGutter::before': { content: '"+"' },
 });
 
-const codeHighlight = HighlightStyle.define([
-  // A Markdown quote tags all of its text. This rule comes first, so a link, code, or
-  // marker in a quote keeps its own color.
-  { tag: tags.quote, color: 'var(--code-comment)', fontStyle: 'italic' },
-  { tag: [tags.meta, tags.labelName, tags.contentSeparator], color: 'var(--code-meta)' },
-  { tag: tags.emphasis, fontStyle: 'italic' },
-  { tag: tags.strong, fontWeight: 'bold' },
-  { tag: tags.strikethrough, textDecoration: 'line-through' },
-  { tag: tags.keyword, color: 'var(--code-keyword)' },
-  { tag: [tags.literal, tags.atom, tags.bool, tags.inserted], color: 'var(--code-literal)' },
-  { tag: [tags.string, tags.regexp, tags.escape, tags.deleted], color: 'var(--code-string)' },
-  {
-    tag: [tags.definition(tags.variableName), tags.local(tags.variableName), tags.special(tags.variableName),
-      tags.definition(tags.propertyName), tags.typeName, tags.namespace, tags.className, tags.macroName],
-    color: 'var(--code-name)',
-  },
-  { tag: tags.comment, color: 'var(--code-comment)' },
-  { tag: tags.invalid, color: 'var(--danger)' },
-  // Markdown. A later rule wins when a token has two of these tags. The marker rule
-  // comes last, so a marker in a heading, link, or code is muted.
-  { tag: tags.heading, color: 'var(--code-keyword)', fontWeight: 'bold' },
-  { tag: tags.link, color: 'var(--code-name)', textDecoration: 'underline' },
-  { tag: tags.url, color: 'var(--code-meta)', textDecoration: 'underline' },
-  { tag: tags.monospace, color: 'var(--code-string)' },
-  { tag: tags.processingInstruction, color: 'var(--code-meta)' },
-]);
-
-const scalaLanguage = StreamLanguage.define(scala);
-const shellLanguage = StreamLanguage.define(shell);
-
-function parser(name: FileLanguage): Language | null {
-  switch (name) {
-    case 'javascript': return javascriptLanguage;
-    case 'jsx': return jsxLanguage;
-    case 'typescript': return typescriptLanguage;
-    case 'tsx': return tsxLanguage;
-    case 'go': return goLanguage;
-    case 'python': return pythonLanguage;
-    case 'json': return jsonLanguage;
-    case 'markdown': return markdownLanguage;
-    case 'css': return cssLanguage;
-    case 'html': return htmlLanguage;
-    case 'yaml': return yamlLanguage;
-    case 'rust': return rustLanguage;
-    case 'scala': return scalaLanguage;
-    case 'shell': return shellLanguage;
-    default: return null;
-  }
-}
-
 // GitHub Flavored Markdown. A fenced code block with a known language gets the colors of
 // that language. A nested Markdown block does not color its own fenced code blocks.
 const markdownSupport = markdown({ base: markdownLanguage, codeLanguages: info => parser(fenceLanguage(info)) });
@@ -113,7 +53,7 @@ function extensions(path: string): Extension[] {
     lineNumbers(),
     highlightSpecialChars(),
     EditorState.readOnly.of(true),
-    syntaxHighlighting(codeHighlight),
+    syntaxHighlighting(codeHighlighter),
     language(path),
     theme,
   ];

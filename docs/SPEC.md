@@ -1127,7 +1127,9 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
 - Preview uses markdown-it with CommonMark, GitHub tables, strikethrough, and task
   lists. Raw HTML shows as text. Images do not load. The dialog shows "Image not
   loaded" with the alternative text and the source. Task list checkboxes are disabled.
-  An escaped marker, such as `\[x]` or `&#91;x]`, stays text.
+  An escaped marker, such as `\[x]` or `&#91;x]`, stays text. A fenced code block gets
+  the syntax colors of the file view when the first word of its info string names a
+  language that the pane supports. Other code blocks show as plain text.
   Only `http:`, `https:`, and `mailto:` links open, in a new tab. Other links, such as
   relative paths, show as text with the target in their tooltip. `javascript:`,
   `vbscript:`, `file:`, and most `data:` links stay Markdown source text.
@@ -1703,8 +1705,8 @@ failed request for one folder, the unread folders of a failed refresh, and a fai
 first read of the workspace folder. Pane fixtures cover the requests after a file
 reply without the selected commit, a failed list read after it, a late file reply
 after a new choice, and the notice of omitted commits with an empty list. Markdown fixtures cover raw HTML, script links,
-relative and allowed links, images, tables, task lists, escaped task markers, and the
-files that Preview accepts.
+relative and allowed links, images, tables, task lists, escaped task markers, syntax
+colors and escaped text in fenced code, and the files that Preview accepts.
 
 A browser check used a temporary instance, a fixture repository, and a shell session in
 a managed worktree. It checked Split, Unified, folded regions, View file, deleted files,
@@ -1718,6 +1720,9 @@ a table, task lists, a code block, raw HTML and script links as text, an image
 placeholder, and an allowed and a relative link. It also checked that a deleted file
 and a Go file show no Preview button. It checked Esc, ✕, light and dark Appearance, a
 phone width without horizontal scroll, and an empty browser console.
+A later check of Preview covered fenced code with Go, shell, and no language, in light
+and dark Appearance. It also checked the syntax colors of a Go diff and a Markdown file
+view, a phone width without horizontal scroll, and an empty browser console.
 
 A browser check of the Files tree used a temporary instance, a fixture repository, and
 a folder outside Git, each with a shell session. It checked open and closed folders,
