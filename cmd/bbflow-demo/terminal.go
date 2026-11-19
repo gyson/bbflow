@@ -31,11 +31,7 @@ func open(target client.Target, request protocol.Request) *terminal {
 	request.Size = size
 	conn, err := target.Connect(request)
 	check(err)
-	conn.SetReadDeadline(time.Now().Add(timeout))
-	first, err := conn.Receive()
-	if err == nil && first.Type != "session" {
-		err = fmt.Errorf("unexpected reply %q %s", first.Type, first.Error)
-	}
+	first, err := awaitSession(conn)
 	if err != nil {
 		conn.Close()
 		fail("%s: %w", request.Operation, err)
@@ -61,6 +57,25 @@ func open(target client.Target, request protocol.Request) *terminal {
 		fail("%s: no first frame in %s", request.Operation, timeout)
 	}
 	return t
+}
+
+// awaitSession reads the reply of a request that starts a terminal stream. A slow
+// session start sends running statuses before its session message. Each status
+// extends the wait.
+func awaitSession(conn *protocol.Conn) (protocol.Message, error) {
+	for {
+		conn.SetReadDeadline(time.Now().Add(timeout))
+		message, err := conn.Receive()
+		switch {
+		case err != nil:
+			return message, err
+		case message.Type == "status":
+			continue
+		case message.Type != "session":
+			return message, fmt.Errorf("unexpected reply %q %s", message.Type, message.Error)
+		}
+		return message, nil
+	}
 }
 
 func (t *terminal) read(framed chan struct{}) {

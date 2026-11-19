@@ -219,6 +219,30 @@ func TestRemoteBaseIsFetchedBeforeWorktreeCreation(t *testing.T) {
 	}
 }
 
+func TestUnmappedRemoteBranchFailsWithTheMissingRefspec(t *testing.T) {
+	ctx := context.Background()
+	upstream, clone := cloneFixture(t)
+	gitAll(t, upstream, []string{"branch", "new-feature"})
+	// A single-branch clone maps only main.
+	gitAll(t, clone, []string{"remote", "set-branches", "origin", "main"})
+	_, err := refreshBase(ctx, clone, "origin/new-feature")
+	if err == nil || !strings.Contains(err.Error(), "run git remote set-branches --add origin new-feature") {
+		t.Fatal(err)
+	}
+	// After the user adds the refspec, the same base fetches.
+	gitAll(t, clone, []string{"remote", "set-branches", "--add", "origin", "new-feature"})
+	if problem, err := refreshBase(ctx, clone, "origin/new-feature"); problem != "" || err != nil {
+		t.Fatal(problem, err)
+	}
+	if _, err = git(ctx, clone, "rev-parse", "--verify", "refs/remotes/origin/new-feature"); err != nil {
+		t.Fatal(err)
+	}
+	// A name that is not a remote branch is left to worktree creation.
+	if problem, err := refreshBase(ctx, clone, "mian"); problem != "" || err != nil {
+		t.Fatal(problem, err)
+	}
+}
+
 func TestBaseFetchStopsTransportHelpersAtTheDeadline(t *testing.T) {
 	ctx := context.Background()
 	_, clone := cloneFixture(t)

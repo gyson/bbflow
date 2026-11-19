@@ -192,6 +192,19 @@ func remoteBase(ctx context.Context, dir, base string) (string, bool) {
 	return "refs/remotes/" + strings.TrimPrefix(strings.TrimPrefix(base, "refs/"), "remotes/"), false
 }
 
+// remoteName returns the remote whose name starts the tracking ref name. Branch names
+// can contain slashes, so the longest remote name wins.
+func remoteName(ctx context.Context, dir, tracking string) string {
+	list, _ := git(ctx, dir, "remote")
+	remote := ""
+	for _, candidate := range strings.Split(list, "\n") {
+		if candidate != "" && len(candidate) > len(remote) && strings.HasPrefix(tracking, "refs/remotes/"+candidate+"/") {
+			remote = candidate
+		}
+	}
+	return remote
+}
+
 // refreshBase fetches a remote-tracking base before worktree creation. Thus the new
 // checkout starts from the current remote commit, not from the last fetch. The fetch
 // updates only the selected tracking ref, also when other fetch refspecs match.
@@ -213,6 +226,12 @@ func refreshBase(ctx context.Context, workspace, base string) (problem string, e
 	if !ok {
 		if exists {
 			return fmt.Sprintf("No fetch setting of a remote maps to %s, so bbflow did not fetch %s.", tracking, base), nil
+		}
+		// bbflow does not add a tracking ref that the repository does not map. For
+		// example, a single-branch clone maps only its branch.
+		if remote := remoteName(ctx, dir, tracking); remote != "" {
+			branch := strings.TrimPrefix(tracking, "refs/remotes/"+remote+"/")
+			return "", fmt.Errorf("cannot fetch %s: no fetch refspec of the repository maps one remote branch to %s; to add one, run git remote set-branches --add %s %s", base, tracking, remote, branch)
 		}
 		// The name is not a remote branch. Worktree creation reports it.
 		return "", nil
