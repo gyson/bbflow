@@ -59,6 +59,9 @@ export class UpdateNotice {
   private live: readonly string[] = [];
   private busy = false;
   private starting = false;
+  // The offer or the live sessions changed while a start was pending. The dialog then
+  // shows data that is not current, so it allows no other attempt.
+  private stale = false;
   // The error of a start from this dialog. It stays until the dialog opens again.
   private startError = '';
 
@@ -74,21 +77,23 @@ export class UpdateNotice {
 
   // The status watch sends the offer and the live sessions together, after each change.
   // Without an offer, the notice and the dialog close. A new offer also closes the
-  // dialog, because the user confirmed only the earlier offer.
+  // dialog, because the user confirmed only the earlier offer. Another view can also
+  // start the update. Then the sidebar shows its progress. During a pending start, the
+  // dialog becomes stale instead, so that it can still show the result of the start.
   show(update: Update | undefined, live: readonly string[]): void {
     this.update = update;
     this.live = live;
     this.renderButton();
-    if (!this.dialog.open || this.starting) return;
-    // Another view started the update. The sidebar shows its progress.
-    if (!update || update.state === 'updating' || update.revision !== this.shown?.revision) this.dialog.close();
-    else this.fill(update);
+    if (!this.dialog.open || this.stale) return;
+    if (update && update.state !== 'updating' && update.revision === this.shown?.revision) this.fill(update);
+    else if (this.starting) this.stale = true;
+    else this.dialog.close();
   }
 
   // The session list changed, for example after a rename. An open dialog reads the
   // titles again.
   sessionsChanged(): void {
-    if (this.dialog.open && this.shown) this.fill(this.shown);
+    if (this.dialog.open && this.shown && !this.stale) this.fill(this.shown);
   }
 
   // Without the status watch, the offer and the live sessions are unknown. Then the
@@ -136,6 +141,7 @@ export class UpdateNotice {
     const update = this.update;
     if (!update || update.state === 'updating') return;
     this.startError = '';
+    this.stale = false;
     this.fill(update);
     this.submit.disabled = false;
     this.dialog.showModal();
@@ -143,7 +149,7 @@ export class UpdateNotice {
 
   private async start(): Promise<void> {
     const offer = this.shown;
-    if (!offer || this.starting) return;
+    if (!offer || this.starting || this.stale) return;
     this.starting = true;
     this.startError = '';
     this.submit.disabled = true;
@@ -151,11 +157,13 @@ export class UpdateNotice {
       await this.host.start(offer);
       this.dialog.close();
     } catch (error) {
-      this.startError = this.error.textContent = errorMessage(error);
+      this.startError = errorMessage(error);
+      if (this.stale) this.startError += ' The offer or the live sessions changed during the start. Close this dialog, then open the update again.';
+      this.error.textContent = this.startError;
       this.error.hidden = false;
     } finally {
       this.starting = false;
-      this.submit.disabled = false;
+      this.submit.disabled = this.stale;
     }
   }
 }

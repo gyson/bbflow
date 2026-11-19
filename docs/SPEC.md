@@ -254,7 +254,10 @@ a new revision, and an open dialog then closes. A confirmation applies only to t
 offer that the dialog showed. After confirmation, the view saves its message draft and
 its project draft form. Then it sends `update-start` with the version and the revision
 of that offer. The server rejects another version, an earlier revision, a second
-update, and an offer that the off setting hides. All views then show **Updating to 0.0.15…** in the sidebar. The server
+update, and an offer that the off setting hides. The offer can change, or the status
+watch can lose its connection, while the drafts save. Then the dialog stays open but
+does not change. If the start fails, the dialog shows the error and allows no other
+attempt. The user must open the update again with current data. All views then show **Updating to 0.0.15…** in the sidebar. The server
 does these steps in the background:
 
 1. Lock the directory of the executable, as the update command does. If another update
@@ -1933,7 +1936,8 @@ and action keeps the revision. Web fixtures verify the sidebar labels, the dialo
 warning. A fake DOM fixture verifies that the open dialog counts the live sessions of
 the latest status message and shows the titles of the current list. It also verifies
 that a new offer closes the dialog, that the view confirms the revision of the shown
-offer, and that a lost status watch hides the offer. A failed settings
+offer, and that a lost status watch hides the offer. A lost watch during a pending start
+that then fails allows no other attempt. A failed start without a change allows one. A failed settings
 update in migration 12 rolls back and keeps format 11.
 
 Title fixtures verify the separate user and derived titles, search on both, and the

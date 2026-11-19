@@ -57,9 +57,25 @@ function setup() {
   // The titles of the session list. A session outside the list has no title.
   const titles = new Map([['a', 'A'], ['b', 'B']]);
   const starts = [];
-  const notice = new UpdateNotice({ title: id => titles.get(id), start: async update => { starts.push(update); } });
+  // A start can wait for the draft save. hold() makes the next start wait until the test
+  // settles it. Later starts do not wait.
+  let held;
+  const notice = new UpdateNotice({
+    title: id => titles.get(id),
+    start: update => {
+      starts.push(update);
+      const wait = held?.promise ?? Promise.resolve();
+      held = undefined;
+      return wait;
+    },
+  });
   return {
     nodes, notice, titles, starts, dialog: nodes['update-dialog'],
+    hold() {
+      held = {};
+      held.promise = new Promise((resolve, reject) => Object.assign(held, { resolve, reject }));
+      return held;
+    },
     open: () => nodes['update-open'].onclick(),
     confirm: () => nodes['update-form'].onsubmit({ preventDefault() {} }),
   };
@@ -122,4 +138,58 @@ test('a lost status watch hides the offer until the watch sends it again', () =>
   assert.ok(!nodes['update-open'].hidden);
   assert.equal(nodes['update-open'].textContent, 'Updating to 0.0.15…');
   assert.ok(nodes['update-open'].disabled);
+});
+
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test('a failed start after a lost status watch allows no other attempt', async () => {
+  const { nodes, notice, starts, dialog, open, confirm, hold } = setup();
+  notice.show(offer, ['a']);
+  open();
+  const save = hold();
+  confirm();
+  // The status watch fails while the drafts save. Then the save fails.
+  notice.lost();
+  save.reject(new Error('Draft save failed.'));
+  await tick();
+  assert.ok(dialog.open);
+  assert.match(nodes['update-error'].textContent, /^Draft save failed\. The offer or the live sessions changed/);
+  assert.ok(nodes['update-submit'].disabled);
+  // The dialog keeps its earlier text. It does not fill from data that is not current.
+  notice.sessionsChanged();
+  assert.match(nodes['update-sessions'].textContent, /stops 1 live session: A\./);
+  confirm();
+  assert.equal(starts.length, 1);
+});
+
+test('a failed start without a change allows another attempt', async () => {
+  const { nodes, notice, starts, dialog, open, confirm, hold } = setup();
+  notice.show(offer, ['a']);
+  open();
+  const save = hold();
+  confirm();
+  // A status change of the same offer during the start keeps the dialog current.
+  notice.show(offer, ['a', 'b']);
+  save.reject(new Error('Draft save failed.'));
+  await tick();
+  assert.ok(dialog.open);
+  assert.equal(nodes['update-error'].textContent, 'Draft save failed.');
+  assert.ok(!nodes['update-submit'].disabled);
+  assert.match(nodes['update-sessions'].textContent, /stops 2 live sessions: A and B\./);
+  confirm();
+  await tick();
+  assert.equal(starts.length, 2);
+  assert.ok(!dialog.open);
+});
+
+test('a start that succeeds after a new offer closes the dialog', async () => {
+  const { notice, dialog, open, confirm, hold } = setup();
+  notice.show(offer, []);
+  open();
+  const save = hold();
+  confirm();
+  notice.show({ ...offer, revision: 2 }, []);
+  save.resolve();
+  await tick();
+  assert.ok(!dialog.open);
 });
