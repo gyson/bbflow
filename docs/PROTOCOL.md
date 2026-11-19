@@ -681,8 +681,9 @@ failures with delays from 0.5 to 5 seconds. A stalled transport may be closed, b
 process and capture continue.
 
 A protocol or identity mismatch requires explicit recovery. The browser reconnects to
-its original verified instance. A greeting with the same `dataDir` and a different
-`instance` or `protocol` shows a replacement server. Then the browser page reloads to
+its original verified instance. A complete greeting with the same `dataDir` and `port` and a
+different `instance` shows a replacement server. The `dataDir` is a claim of the server.
+It does not authenticate the program that owns the port. Then the browser page reloads to
 load the new UI, unless it has unsaved edits. If the server port changes, reopen the UI. During
 shutdown, the server allows connections up to five seconds to receive completion. Then
 it closes them.

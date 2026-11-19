@@ -25,7 +25,7 @@ import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
-import { lastReload, onServerReplaced, recordReload, reloadPlan, restartedMessage } from './restart.js';
+import { DialogEdits, lastReload, onServerReplaced, recordReload, reloadPlan, restartedMessage } from './restart.js';
 
 const elements = {
   'history-open': element('history-open', HTMLButtonElement),
@@ -200,6 +200,23 @@ function clearNotice(source: typeof noticeSource) {
   if (noticeSource === source) notice();
 }
 
+// These dialogs keep their text only until submission. A reload would discard it.
+const dialogEdits = new DialogEdits([
+  { dialog: $('project-dialog'), fields: [$('project-name'), $('project-workspace')] },
+  { dialog: $('rename-dialog'), fields: [$('rename-name')] },
+  { dialog: $('continue-dialog'), fields: [$('continue-tool')] },
+]);
+const dialogErrors = new Map([
+  [$('project-dialog'), $('project-error')],
+  [$('rename-dialog'), $('rename-error')],
+  [$('continue-dialog'), $('continue-error')],
+]);
+
+function showDialog(dialog: HTMLDialogElement): void {
+  dialog.showModal();
+  dialogEdits.opened(dialog);
+}
+
 // A restart or an update replaced the server of this instance. Reload once to get the
 // new UI. The reload keeps the path, so the tab shows the same view again.
 let replaced = false;
@@ -207,11 +224,18 @@ onServerReplaced(() => {
   if (replaced) return;
   replaced = true;
   const now = Date.now();
-  if (reloadPlan(composer.unsaved || preparation.unsaved || settingsView.unsaved, lastReload(), now) === 'reload') {
+  const dialog = dialogEdits.changed();
+  if (reloadPlan(!!dialog || composer.unsaved || preparation.unsaved || settingsView.unsaved, lastReload(), now) === 'reload') {
     recordReload(now);
     location.reload();
-  } else {
-    notice(restartedMessage);
+    return;
+  }
+  notice(restartedMessage);
+  // A modal dialog covers the page notice. Show the message in the dialog too.
+  const error = dialog && dialogErrors.get(dialog);
+  if (error) {
+    error.textContent = restartedMessage;
+    error.hidden = false;
   }
 });
 
@@ -791,7 +815,7 @@ async function showContinue(): Promise<void> {
   $('continue-error').hidden = true;
   $('continue-copy').textContent = 'Copy prompt';
   continueRun = selected.run?.id;
-  $('continue-dialog').showModal();
+  showDialog($('continue-dialog'));
 }
 
 async function showLaunch(projectId: string): Promise<void> {
@@ -847,7 +871,7 @@ function showProject(project: Project | null = null) {
   $('project-remove').hidden = $('project-remove-help').hidden = !project;
   $('project-error').hidden = true;
   $('project-submit').textContent = project ? 'Save name' : 'Add project';
-  $('project-dialog').showModal();
+  showDialog($('project-dialog'));
 }
 
 async function initialize() {
@@ -931,7 +955,7 @@ async function initialize() {
     $('rename-name').value = selected?.title ?? '';
     $('rename-name').placeholder = selected?.autoTitle || 'Untitled session';
     $('rename-error').hidden = true;
-    $('rename-dialog').showModal();
+    showDialog($('rename-dialog'));
   };
   $('copy-session-id').onclick = () => action(async () => {
     if (!selected?.id) return;

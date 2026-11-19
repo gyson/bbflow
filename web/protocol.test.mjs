@@ -27,7 +27,7 @@ test('verify identity before sending any request', () => {
     const peer = new Peer(server, request, { error: e => { error = e; } }, Socket, 'localhost:1234');
     peer.socket.receive({ type: 'server', server: { ...server, [field]: 'wrong' } });
     assert.equal(peer.socket.sent.length, 0);
-    assert.match(error.message, field === 'dataDir' ? /server changed/ : /bbflow restarted/);
+    assert.match(error.message, field === 'instance' ? /bbflow restarted/ : /server changed/);
     assert.equal(peer.socket.readyState, 3);
   }
 });

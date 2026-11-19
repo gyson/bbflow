@@ -77,7 +77,9 @@ The server listens only on `127.0.0.1`. It does not support remote access. It sa
 its port in the `server` table and uses that port again at the next start. When another
 program holds the port, the server uses a free port from the operating system and saves
 it. A local program that takes the port while bbflow is stopped gets the requests of
-open tabs. The tabs then fail the identity check and do not reload.
+open tabs. The greeting check cannot authenticate that program. The directory in a
+greeting is only what the program claims. A program that gives another directory, or
+an incomplete greeting, fails the check, and the tab does not reload.
 
 ## Release installation
 
@@ -574,11 +576,15 @@ last screen stays visible and input is disabled until a fresh frame is rendered.
 A session connection owns its peer, rendered-frame state, and retry timer. Closing that
 view cancels retries and ignores late callbacks from the old connection. A server
 restart or update keeps the port, so open tabs reconnect at the same address. The new
-server has a new instance ID and can have a new protocol. When a tab finds a new server
-for the same instance directory, it reloads once and keeps its path. The reload loads
+server has a new instance ID and can have a new protocol. A tab can get a complete
+greeting with a new instance ID, the same directory, and the same port. Then it
+reloads once and keeps its path. An incomplete greeting, or a greeting with another
+directory or port, needs manual recovery. The reload loads
 the UI of the new server. A tab with an edit that the old server did not save does not
 reload. It tells the user to copy the edit and reload. The message editor, the project
-draft form, and Settings have this check. A tab that reloaded automatically in the last
+draft form, Settings, and the open Add project, Edit project, Rename, and Continue
+dialogs have this check. A dialog has an edit when a field differs from its value when
+the dialog opened. That dialog also shows the message, because it covers the page. A tab that reloaded automatically in the last
 10 seconds shows the same message. The old page cannot save edits to the new server. Other protocol and instance mismatches require
 explicit recovery. A changed server port requires reopening the UI. Input and session creation are never retried automatically.
 

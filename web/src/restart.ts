@@ -15,11 +15,40 @@ export const restartedMessage = 'bbflow restarted. Copy any edits that were not 
 
 let replaced: (() => void) | undefined;
 
-// The greeting of a different server for the same instance directory shows a restart.
-// A server for a different directory is not a replacement.
+// A complete greeting from a new instance with the same directory and port shows a
+// restart. The directory in a greeting is only a claim. It does not prove which local
+// program owns the port. An incomplete greeting, another directory, or another port
+// needs manual recovery.
 export function replaces(current: ServerInfo, next: Partial<ServerInfo> | undefined): boolean {
-  return !!next && next.dataDir === current.dataDir &&
-    (next.instance !== current.instance || next.protocol !== current.protocol || next.port !== current.port);
+  return !!next && typeof next.instance === 'string' && next.instance !== '' &&
+    typeof next.protocol === 'string' && next.protocol !== '' &&
+    next.instance !== current.instance && next.dataDir === current.dataDir && next.port === current.port;
+}
+
+interface Field { readonly value: string }
+interface Dialog { readonly open: boolean }
+
+// A dialog keeps its text only until the user submits it. Record the fields of a dialog
+// when it opens. An open dialog with a changed field has edits that were not saved.
+export class DialogEdits<D extends Dialog> {
+  private readonly initial = new Map<D, string[]>();
+
+  constructor(private readonly dialogs: ReadonlyArray<{ dialog: D; fields: readonly Field[] }>) {}
+
+  opened(dialog: D): void {
+    const entry = this.dialogs.find(item => item.dialog === dialog);
+    if (entry) this.initial.set(dialog, entry.fields.map(field => field.value));
+  }
+
+  // Returns the first open dialog with a changed field.
+  changed(): D | undefined {
+    for (const { dialog, fields } of this.dialogs) {
+      if (!dialog.open) continue;
+      const initial = this.initial.get(dialog);
+      if (!initial || fields.some((field, i) => field.value !== initial[i])) return dialog;
+    }
+    return undefined;
+  }
 }
 
 // The page sets one handler. Other users of the protocol, such as tests, set none.
