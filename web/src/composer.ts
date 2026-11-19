@@ -105,9 +105,12 @@ export class Composer {
       this.text.focus();
     };
     window.addEventListener('beforeunload', event => {
-      if (this.edits !== this.saved) event.preventDefault();
+      if (this.unsaved) event.preventDefault();
     });
   }
+
+  // True when the server has not saved the latest edit.
+  get unsaved(): boolean { return this.edits !== this.saved; }
 
   controls(blocked = this.blocked, active = this.active): void {
     this.blocked = blocked;

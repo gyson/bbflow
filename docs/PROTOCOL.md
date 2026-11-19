@@ -2,8 +2,8 @@
 
 The CLI selects an instance directory with global `--dir`, `BBFLOW_DIR`, or its build
 default. It reads the assigned port from `<instance>/server.json` and connects to
-`ws://127.0.0.1:PORT/ws`. The operating system assigns an IPv4 loopback port to the
-server. HTTP also serves the embedded web UI and its connection information.
+`ws://127.0.0.1:PORT/ws`. The server uses the IPv4 loopback port that it saved at its
+last start. When that port is not free, the operating system assigns a new one. HTTP also serves the embedded web UI and its connection information.
 
 The transport uses [Gorilla WebSocket](https://github.com/gorilla/websocket). Each
 WebSocket text message contains one JSON object. There is no bbflow length prefix or
@@ -677,11 +677,14 @@ frame acknowledgment.
 Control receipts use a separate bounded queue. Clients must acknowledge frames within 30
 seconds. Idle readers must send a message within 30 seconds. Clients send `ping` every
 five seconds, detect missing server activity after about 20 seconds, and retry transport
-failures with delays from 0.5 to 30 seconds. A stalled transport may be closed, but its
+failures with delays from 0.5 to 5 seconds. A stalled transport may be closed, but its
 process and capture continue.
 
 A protocol or identity mismatch requires explicit recovery. The browser reconnects to
-its original verified instance. If the server port changes, reopen the UI. During
+its original verified instance. A complete greeting with the same `dataDir` and `port` and a
+different `instance` shows a replacement server. The `dataDir` is a claim of the server.
+It does not authenticate the program that owns the port. Then the browser page reloads to
+load the new UI, unless it has unsaved edits. If the server port changes, reopen the UI. During
 shutdown, the server allows connections up to five seconds to receive completion. Then
 it closes them.
 

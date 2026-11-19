@@ -125,7 +125,8 @@ command. After each code change, do these steps:
    DISABLE_AUTO_UPDATE=true ./bin/bbflow --dir .bbflow-demo server restart
    ```
 
-3. Use the new URL. The port changes at each server start.
+3. Wait for the open page to reload. The server keeps its port. For more information, see
+   the restart steps in `docs/DEVELOPMENT.md`.
 
 A restart ends the live terminals. Their sessions then show as ended. To get a live
 terminal again, use **Continue in new terminal** in the UI, or start a new session. To

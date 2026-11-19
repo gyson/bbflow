@@ -139,7 +139,7 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -208,6 +208,7 @@ func TestMigrationFailureRollsBackEntireUpgrade(t *testing.T) {
 		{"later-script", "CREATE TABLE worktrees (original TEXT); INSERT INTO worktrees VALUES('keep')", "apply history migration 5"},
 		{"archive-script", "ALTER TABLE sessions ADD COLUMN archived INTEGER", "apply history migration 6"},
 		{"run-index-script", "CREATE TABLE events_start_run (original TEXT); INSERT INTO events_start_run VALUES('keep')", "apply history migration 7"},
+		{"server-script", "CREATE TABLE server (original TEXT); INSERT INTO server VALUES('keep')", "apply history migration 11"},
 		{"schema-validation", "ALTER TABLE events RENAME COLUMN data TO evidence", "validate history schema"},
 		{"foreign-keys", "PRAGMA foreign_keys=OFF; UPDATE runs SET session_id='missing' WHERE id='finished'", "invalid foreign keys"},
 	} {

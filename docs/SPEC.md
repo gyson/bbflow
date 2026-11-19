@@ -73,7 +73,13 @@ no session operations, terminal attachment, or `history` command group.
 compare its tables and columns with the migrated schema. They also run each example
 through a shell against a test server.
 
-The server listens only on `127.0.0.1`. It does not support remote access.
+The server listens only on `127.0.0.1`. It does not support remote access. It saves
+its port in the `server` table and uses that port again at the next start. When another
+program holds the port, the server uses a free port from the operating system and saves
+it. A local program that takes the port while bbflow is stopped gets the requests of
+open tabs. The greeting check cannot authenticate that program. The directory in a
+greeting is only what the program claims. A program that gives another directory, or
+an incomplete greeting, fails the check, and the tab does not reload.
 
 ## Release installation
 
@@ -564,13 +570,23 @@ other non-display source escape sequences.
 Selecting another session closes the old view before opening the selected one. Closing
 or refreshing the tab leaves work and recording running. Refresh reopens the project
 draft or session identified in the URL path, or Settings at `/settings`. Transport
-failures trigger automatic reconnect with increasing delays from 0.5 to 30 seconds. The
+failures trigger automatic reconnect with increasing delays from 0.5 to 5 seconds. The
 last screen stays visible and input is disabled until a fresh frame is rendered.
 
 A session connection owns its peer, rendered-frame state, and retry timer. Closing that
-view cancels retries and ignores late callbacks from the old connection. Protocol and
-instance mismatches require explicit recovery. A changed server port requires reopening
-the UI. Input and session creation are never retried automatically.
+view cancels retries and ignores late callbacks from the old connection. A server
+restart or update keeps the port, so open tabs reconnect at the same address. The new
+server has a new instance ID and can have a new protocol. A tab can get a complete
+greeting with a new instance ID, the same directory, and the same port. Then it
+reloads once and keeps its path. An incomplete greeting, or a greeting with another
+directory or port, needs manual recovery. The reload loads
+the UI of the new server. A tab with an edit that the old server did not save does not
+reload. It tells the user to copy the edit and reload. The message editor, the project
+draft form, Settings, and the open Add project, Edit project, Rename, and Continue
+dialogs have this check. A dialog has an edit when a field differs from its value when
+the dialog opened. That dialog also shows the message, because it covers the page. A tab that reloaded automatically in the last
+10 seconds shows the same message. The old page cannot save edits to the new server. Other protocol and instance mismatches require
+explicit recovery. A changed server port requires reopening the UI. Input and session creation are never retried automatically.
 
 The server sends a full current screen and up to 10,000 normal-buffer scrollback rows,
 then generated row changes. Each frame is acknowledged after xterm finishes parsing it.
@@ -1458,7 +1474,7 @@ as one transaction after column, index, and foreign-key checks. Any failure roll
 the entire upgrade and stops startup. A failed SQL step reports its migration number.
 WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4 through 10. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 11. In the same
   transaction, a new database sets `worktree` to true in the settings JSON. Thus new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -1480,7 +1496,10 @@ WAL is enabled after the schema transaction commits.
   does not guess which old titles were defaults. Sessions with an empty derived title
   never get automatic titles. It also adds `titleTool: "none"` to
   the settings JSON, so automatic titles start off. The settings revision stays.
-- Format 10 opens without running scripts or rewriting history, settings, or metadata.
+- Format 10 gains the `server` table through migration 11. Its one row keeps the last
+  port of the server, with `0` for no saved port. The first start after the upgrade
+  saves a new port.
+- Format 11 opens without running scripts or rewriting history, settings, or metadata.
 
 The upgrade preserves IDs, timestamps, event sequences, original blobs, text, drafts,
 and attachments. It also preserves the highest allocated event sequence. Migration
@@ -1489,7 +1508,7 @@ afterward. Repeated or concurrent opens see the committed version and skip compl
 steps.
 
 Formats 1 and 2 have no known migration path in this repository. They, nonempty
-unversioned databases, and formats newer than 10 are rejected without changing their
+unversioned databases, and formats newer than 11 are rejected without changing their
 schema or records. A newer format error asks for a newer executable. There is no
 downgrade path, external migration command, or automatic backup.
 
@@ -1797,7 +1816,7 @@ launch in a worktree, and separate drafts for subsequent sessions.
 
 No real agent CLI was used for these project checks.
 
-Frozen schemas from repository history test upgrades from formats 3–9 to format 10 and
+Frozen schemas from repository history test upgrades from formats 3–10 to format 11 and
 verify that reopen preserves the upgraded data. Fixtures compare original blobs, archive
 flags, metadata, and event allocation state. They test rollback of the entire upgrade
 after SQL, schema, or foreign-key failures. They also cover repeated opens, concurrent

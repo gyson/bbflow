@@ -1,5 +1,5 @@
 import type { Terminal } from '@xterm/xterm';
-import { ConnectionError, Peer } from './protocol.js';
+import { ConnectionError, Peer, retryLimit } from './protocol.js';
 import type { ServerInfo, ServerMessage, Size, StreamRequest } from './protocol.js';
 import { TerminalStream } from './terminal-stream.js';
 
@@ -77,7 +77,7 @@ export class SessionConnection {
           this.ready = false;
           const retrying = error instanceof ConnectionError && error.retryable && rejoins(this.request);
           if (retrying) {
-            const delay = Math.min(30000, 500 * 2 ** Math.min(this.attempt++, 6));
+            const delay = Math.min(retryLimit, 500 * 2 ** Math.min(this.attempt++, 6));
             this.timer = setTimeout(() => { this.connect().catch(() => {}); }, delay);
           }
           this.host.disconnected(error, retrying);

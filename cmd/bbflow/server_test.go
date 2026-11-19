@@ -131,6 +131,9 @@ func TestServerLifecycleAndRestartStopsActiveRun(t *testing.T) {
 	if err != nil || after.Instance == before.Instance || after.PID == before.PID {
 		t.Fatalf("server not replaced: %+v %v", after, err)
 	}
+	if after.Port != before.Port {
+		t.Fatalf("restart changed the port from %d to %d", before.Port, after.Port)
+	}
 	if after.Executable != executable {
 		t.Fatalf("restart used %s, expected %s", after.Executable, executable)
 	}
@@ -149,6 +152,52 @@ func TestServerLifecycleAndRestartStopsActiveRun(t *testing.T) {
 	}
 	if output, err = testCommand("--dir", directory, "server", "stop").CombinedOutput(); err != nil {
 		t.Fatalf("repeated stop: %s %v", output, err)
+	}
+}
+
+// Open browser tabs keep their address only when the port stays the same. A held port
+// must not block startup.
+func TestServerReusesItsPortOrSavesANewOne(t *testing.T) {
+	directory := t.TempDir()
+	target := client.Target{Dir: directory}
+	port := startTestServer(t, directory)
+	stop := func() {
+		t.Helper()
+		if output, err := testCommand("--dir", directory, "server", "stop").CombinedOutput(); err != nil {
+			t.Fatalf("stop: %s %v", output, err)
+		}
+	}
+	start := func() string {
+		t.Helper()
+		if output, err := testCommand("--dir", directory, "server", "start").CombinedOutput(); err != nil {
+			t.Fatalf("start: %s %v", output, err)
+		}
+		info, err := target.Health()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strconv.Itoa(info.Port)
+	}
+	stop()
+	if got := start(); got != port {
+		t.Fatalf("start used port %s, expected %s", got, port)
+	}
+	stop()
+	holder, err := net.Listen("tcp4", "127.0.0.1:"+port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := start()
+	if moved == port {
+		t.Fatal("start used a held port")
+	}
+	if log, _ := os.ReadFile(filepath.Join(directory, "server.log")); !strings.Contains(string(log), "cannot use its earlier port "+port) {
+		t.Fatalf("the log does not report the held port:\n%s", log)
+	}
+	stop()
+	holder.Close()
+	if got := start(); got != moved {
+		t.Fatalf("start used port %s, expected the saved port %s", got, moved)
 	}
 }
 
