@@ -23,6 +23,7 @@ import { mergeSessions, sessionGroups, sessionWindow } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
+import { UpdateNotice } from './update.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
 import { DialogEdits, lastReload, onServerReplaced, recordReload, reloadPlan, restartedMessage } from './restart.js';
@@ -189,6 +190,26 @@ const preparation = new PreparationEditor({
   }),
 });
 
+// The status watch sends the release offer of the server. An update restarts the server,
+// so save the drafts of this view first. The reload after the restart shows the new UI.
+const updateNotice = new UpdateNotice({
+  live() {
+    const ids = Object.keys(liveStatuses);
+    const names = ids.flatMap(id => {
+      const session = sessions.find(item => item.id === id);
+      return session ? [sessionTitle(session) || 'Untitled session'] : [];
+    });
+    return { names, count: ids.length };
+  },
+  async start(version) {
+    if (!server) throw new Error('The server is not connected.');
+    await preparation.flush();
+    await composer.flush();
+    await call(server, { operation: 'update-start', version });
+    notice(`bbflow updates to ${version}. This page reloads when the new server starts.`);
+  },
+});
+
 let noticeSource: 'action' | 'list' | 'stream' = 'action';
 function notice(text = '', source: typeof noticeSource = 'action') {
   noticeSource = source;
@@ -278,6 +299,7 @@ function controls() {
   $('archive-session').textContent = selected?.archived ? 'Restore' : 'Archive';
   if (!showingSettings && selected?.status === 'draft') $('status').textContent = selected.archived ? 'Draft · Archived' : 'Draft';
   $('settings-open').disabled = busy || !server;
+  updateNotice.controls(busy || !server);
   $('settings-close').disabled = busy;
   composer.controls(busy, !!connection?.ready && !!connection.peer?.active);
   $('add-project').disabled = busy || !server;
@@ -485,6 +507,7 @@ function watchStatuses(info: ServerInfo) {
   new Watch(info, { operation: 'status-watch' }, {
     message(message) {
       if (message.type !== 'statuses') return;
+      updateNotice.show(message.update);
       const next = message.statuses ?? {};
       const changed = terminalsChanged(liveStatuses, next);
       liveStatuses = next;

@@ -23,7 +23,7 @@ lines identify an optional argument. Do not type the brackets.
 | `bbflow query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
 | `bbflow storage [--redact]` | See which projects, sessions, and event kinds use the most space. | Reads the archive. Prints a Markdown report. |
 | `bbflow tool list\|add\|remove` | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
-| `bbflow settings get\|set` | Show or change appearance and session defaults. | Changes saved settings. Starts no session. |
+| `bbflow settings get\|set` | Show or change appearance, session defaults, and the update check. | Changes saved settings. Starts no session. |
 | `bbflow skill` | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
 
 Create, browse, reopen, and stop sessions in the web UI. The CLI has no session
@@ -159,8 +159,9 @@ After confirmation, the command does these steps in order:
 5. Stop the confirmed server and wait until it releases its archive.
 6. Start the new version in the same instance directory, with the macOS menu.
 
-The update does not open the UI. Open browser tabs do not connect to the new server.
-Reopen the UI with `bbflow ui` or the **Open UI** menu item.
+The update does not open the UI. The new server uses the same port, so open browser
+tabs reconnect and reload. If the port changed, reopen the UI with `bbflow ui` or the
+**Open UI** menu item.
 
 The command shows the updater output until the updater ends. Then it confirms that a new
 server answers. Then it prints a line that names both versions, for example
@@ -201,6 +202,10 @@ the same executable continue on the previous version until you restart them.
 
 Do not run the command inside a bbflow session if you want to see its result there. The
 server stop ends that terminal. The update continues, and `update.log` has its output.
+
+The web UI can start the same update without this command. When the server finds a
+newer release, the sidebar shows it above **Settings**. The update starts only after
+you confirm in its dialog. See [update from the web UI](SPEC.md#update-from-the-web-ui).
 
 ## Start the server
 
@@ -511,6 +516,7 @@ bbflow settings set default-tool Codex
 bbflow settings set worktree true
 bbflow settings set base main
 bbflow settings set title-tool codex
+bbflow settings set update-check false
 ```
 
 `settings get` prints the saved settings as JSON, including the revision and the tools.
@@ -524,6 +530,7 @@ bbflow settings set title-tool codex
 | `worktree` | `true` or `false`. `true` selects **Use worktree** for new drafts in Git folders. A new installation starts with `true`. An upgrade keeps the saved value. |
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
 | `title-tool` | `none`, `claude`, `codex`, or `code-puppy`. It selects the agent CLI that makes automatic session titles. `none` turns them off. A new installation and an upgrade start with `none`. See [session titles](SPEC.md#session-titles) for the commands. |
+| `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
 
 **Impact:** the same as `tool add`. A rejected value changes nothing.
 

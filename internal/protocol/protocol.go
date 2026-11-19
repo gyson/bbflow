@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/29"
+const Version = "bbflow/30"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -62,7 +62,8 @@ type Request struct {
 	Size        Size               `json:"size,omitempty"`
 	Draft       *Draft             `json:"draft,omitempty"`
 	Upload      *Upload            `json:"upload,omitempty"`
-	Text        string             `json:"text,omitempty"` // A sample message for title-test.
+	Text        string             `json:"text,omitempty"`    // A sample message for title-test.
+	Version     string             `json:"version,omitempty"` // The release that update-start installs.
 
 	Search  *history.SearchFilter   `json:"search,omitempty"`
 	Context *history.ContextRequest `json:"context,omitempty"`
@@ -292,6 +293,18 @@ type TitleTool struct {
 	Command string `json:"command"`
 }
 
+// Update offers a newer bbflow release to the server. Version is the version of the
+// running server. Available is the newer release. Installed reports that the executable
+// already has that release, so the update only restarts the server. State is
+// "available", "updating", or "failed". Error tells why the last update failed.
+type Update struct {
+	Version   string `json:"version"`
+	Available string `json:"available"`
+	Installed bool   `json:"installed,omitempty"`
+	State     string `json:"state"`
+	Error     string `json:"error,omitempty"`
+}
+
 type ServerInfo struct {
 	Protocol   string `json:"protocol"`
 	Instance   string `json:"instance"`
@@ -304,7 +317,8 @@ type ServerInfo struct {
 // Message carries one request, reply, or terminal event. Set only the fields that its
 // Type needs. Input bytes and rendered frames use base64 in JSON. Statuses holds running
 // or idle for each session that has a live terminal. In a statuses message, Revision
-// counts session title changes. Run identifies the run that an exit message is about.
+// counts session title changes, and Update offers a newer release. Run identifies the
+// run that an exit message is about.
 type Message struct {
 	Type     string            `json:"type"`
 	Revision int64             `json:"revision,omitempty"`
@@ -325,6 +339,7 @@ type Message struct {
 	Error    string            `json:"error,omitempty"`
 	Notice   string            `json:"notice,omitempty"` // A warning for the view that started a session.
 	Composer *Composer         `json:"composer,omitempty"`
+	Update   *Update           `json:"update,omitempty"`
 	Result   json.RawMessage   `json:"result,omitempty"`
 }
 

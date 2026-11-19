@@ -59,12 +59,13 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	cli("settings", "set", "worktree", "true")
 	cli("settings", "set", "base", "main")
 	cli("settings", "set", "default-tool", "Other")
-	if saved().TitleTool != "none" {
-		t.Fatal("automatic titles are on by default")
+	if settings := saved(); settings.TitleTool != "none" || !settings.UpdateCheck {
+		t.Fatal("automatic titles are on or the update check is off by default", settings)
 	}
 	cli("settings", "set", "title-tool", "code-puppy")
+	cli("settings", "set", "update-check", "false")
 	settings = saved()
-	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != settings.Tools[1].ID || settings.TitleTool != "code-puppy" {
+	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != settings.Tools[1].ID || settings.TitleTool != "code-puppy" || settings.UpdateCheck {
 		t.Fatalf("settings after set: %+v", settings)
 	}
 
@@ -72,6 +73,7 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	fails("appearance must be", "settings", "set", "appearance", "blue")
 	fails("tool command is required", "tool", "add", "Other", " ")
 	fails("worktree must be true or false", "settings", "set", "worktree", "maybe")
+	fails("update-check must be true or false", "settings", "set", "update-check", "daily")
 	fails("unknown settings key", "settings", "set", "theme", "dark")
 	fails("title tool must be one of none, claude, codex, code-puppy", "settings", "set", "title-tool", "claude -p")
 	fails(`tool "Absent" does not exist`, "tool", "remove", "Absent")

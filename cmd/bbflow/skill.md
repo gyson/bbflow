@@ -153,13 +153,14 @@ One row for each session that has launch choices.
 
 ### `settings`
 
-One row with the appearance, tool list, and launch defaults of the instance.
+One row with the appearance, tool list, launch defaults, and update check of the
+instance.
 
 | Column | Meaning |
 | --- | --- |
 | `id` | Always `1`. |
 | `revision` | Revision of the settings. |
-| `data` | JSON with the appearance, launch defaults, and tools. Each tool has an ID, name, and startup command. |
+| `data` | JSON with the appearance, launch defaults, tools, title tool, and `updateCheck`. Each tool has an ID, name, and startup command. |
 
 ### `server`
 

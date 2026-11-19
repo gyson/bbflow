@@ -16,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"bbflow/internal/client"
 	"bbflow/internal/install"
@@ -87,7 +88,8 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 case "$url" in
-    */releases/latest|*/releases/tags/v0.0.2) cp "$TEST_ASSETS/release.json" "$output" ;;
+    */releases/latest) [ -z "${TEST_CURL_HANG:-}" ] || sleep 60; cp "$TEST_ASSETS/release.json" "$output" ;;
+    */releases/tags/v0.0.2) cp "$TEST_ASSETS/release.json" "$output" ;;
     */releases/assets/1) cp "$TEST_ASSETS/release.tar.gz" "$output" ;;
     */releases/assets/2) cp "$TEST_ASSETS/checksums.txt" "$output" ;;
     *) exit 6 ;;
@@ -500,5 +502,151 @@ func TestUpdaterKeepsLockAfterCommandEnds(t *testing.T) {
 	}
 	if _, err := os.Stat(argsPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the updater must not open a browser: %v", err)
+	}
+}
+
+// watchOffer returns the first release offer of the server that matches.
+func watchOffer(t *testing.T, target client.Target, match func(*protocol.Update) bool) *protocol.Update {
+	t.Helper()
+	watch, err := target.Connect(protocol.Request{Operation: "status-watch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watch.Close()
+	for {
+		watch.SetReadDeadline(time.Now().Add(8 * time.Second))
+		message, err := watch.Receive()
+		if err != nil {
+			t.Fatal("no matching release offer:", err)
+		}
+		if message.Type == "statuses" && match(message.Update) {
+			return message.Update
+		}
+	}
+}
+
+// The web UI asks the server to update. The server reads the release at start, then
+// installs it and restarts with the same updater as the update command.
+func TestServerUpdateInstallsAndRestarts(t *testing.T) {
+	argsPath := browserFixture(t)
+	f := newUpdateFixture(t)
+	directory := filepath.Join(f.root, "instance")
+	target := f.startServer(directory)
+	before, err := target.Health()
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil })
+	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", State: "available"}) {
+		t.Fatalf("offer: %+v", offer)
+	}
+	if f.downloads() {
+		t.Fatal("the release check downloaded the release")
+	}
+	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		after, err := target.Identify()
+		return err == nil && after.Instance != before.Instance
+	})
+	if !f.downloads() || f.installed() != "bbflow 0.0.2" {
+		t.Fatal("executable not replaced from the fixture:", f.installed())
+	}
+	log, err := os.ReadFile(filepath.Join(directory, "update.log"))
+	for _, want := range []string{"the web UI updates the server in " + directory + " to bbflow 0.0.2", "Installed bbflow 0.0.2", "Stopped bbflow in"} {
+		if err != nil || !strings.Contains(string(log), want) {
+			t.Fatalf("missing %q in update log: %s %v", want, log, err)
+		}
+	}
+	if _, err := os.Stat(argsPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the update must not open a browser: %v", err)
+	}
+	// The updater releases the installation lock when it ends. The new server has no copy.
+	// Until the updater ends, it holds the lifecycle lock, and the cleanup cannot stop
+	// the server.
+	waitFor(t, func() bool { return !installLocked(t, filepath.Dir(f.destination)) })
+}
+
+// A failed download keeps the executable and the server. The offer shows the reason
+// that the installer gave.
+func TestServerUpdateReportsFailedDownload(t *testing.T) {
+	f := newUpdateFixture(t)
+	if err := os.Remove(filepath.Join(f.assets, "release.tar.gz")); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(f.root, "instance")
+	target := f.startServer(directory)
+	before, err := target.Health()
+	if err != nil {
+		t.Fatal(err)
+	}
+	watchOffer(t, target, func(u *protocol.Update) bool { return u != nil })
+	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2"}); err != nil {
+		t.Fatal(err)
+	}
+	failed := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil && u.State == "failed" })
+	if !strings.HasPrefix(failed.Error, "download failed: bbflow_0.0.2_darwin_") {
+		t.Fatalf("failed offer: %+v", failed)
+	}
+	if same, err := target.Health(); err != nil || same.Instance != before.Instance || f.installed() != "bbflow 0.0.1" {
+		t.Fatalf("a failed download changed the server or the executable: %+v %v %s", same, err, f.installed())
+	}
+}
+
+// Another instance can update the shared executable. This server then runs an earlier
+// version than the executable. Its update only restarts the server.
+func TestServerUpdateRestartsForInstalledRelease(t *testing.T) {
+	f := newUpdateFixture(t)
+	f.write(f.destination, f.binary("0.0.2"))
+	directory := filepath.Join(f.root, "instance")
+	t.Cleanup(func() { testCommand("--dir", directory, "server", "stop").Run() })
+	// Start this test binary as bbflow 0.0.1 with the 0.0.2 executable as its file.
+	start := testCommand("--dir", directory, "server", "start")
+	start.Env = append(f.env, "BBFLOW_TEST_CLI=1", "BBFLOW_TEST_VERSION=0.0.1", "BBFLOW_TEST_EXECUTABLE="+f.destination)
+	if output, err := start.CombinedOutput(); err != nil {
+		t.Fatalf("start: %s %v", output, err)
+	}
+	target := client.Target{Dir: directory}
+	before, err := target.Health()
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil })
+	if *offer != (protocol.Update{Version: "0.0.1", Available: "0.0.2", Installed: true, State: "available"}) {
+		t.Fatalf("offer: %+v", offer)
+	}
+	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		after, err := target.Identify()
+		return err == nil && after.Instance != before.Instance
+	})
+	// The updater ends after it verifies the new server. Until then, it holds the
+	// lifecycle lock, and the cleanup cannot stop the server.
+	waitFor(t, func() bool { return !installLocked(t, filepath.Dir(f.destination)) })
+	if f.downloads() {
+		t.Fatal("the restart downloaded the installed release again")
+	}
+}
+
+// A server stop ends a release check at once. The installer removes its temporary
+// files.
+func TestServerStopEndsReleaseCheck(t *testing.T) {
+	f := newUpdateFixture(t)
+	f.env = append(f.env, "TEST_CURL_HANG=1")
+	directory := filepath.Join(f.root, "instance")
+	f.startServer(directory)
+	waitFor(t, func() bool {
+		requests, _ := os.ReadFile(filepath.Join(f.assets, "requests"))
+		return strings.Contains(string(requests), "releases/latest")
+	})
+	started := time.Now()
+	if output, err := testCommand("--dir", directory, "server", "stop").CombinedOutput(); err != nil || time.Since(started) > 8*time.Second {
+		t.Fatalf("stop during the check: %s %v after %v", output, err, time.Since(started))
+	}
+	if downloads, _ := filepath.Glob(filepath.Join(f.root, "bbflow-download.*")); len(downloads) != 0 {
+		t.Fatal("the check left temporary files:", downloads)
 	}
 }

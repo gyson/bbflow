@@ -3,7 +3,7 @@ import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
 import { mergeToolEdit, sameSettings, sameTools, titleControls } from './settings-model.js';
 
-type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool'>;
+type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool' | 'updateCheck'>;
 type SettingsChange = (settings: Settings) => Settings;
 
 // Test sends this message to the title tool in place of a real first message.
@@ -29,6 +29,7 @@ export class SettingsView {
   private readonly tool = element('settings-tool', HTMLSelectElement);
   private readonly worktree = element('settings-worktree', HTMLInputElement);
   private readonly base = element('settings-base', HTMLInputElement);
+  private readonly updateCheck = element('settings-update-check', HTMLInputElement);
   private readonly error = element('settings-error', HTMLElement);
   private readonly status = element('settings-status', HTMLElement);
   private readonly tools = element('settings-tools', HTMLElement);
@@ -67,6 +68,7 @@ export class SettingsView {
     };
     this.tool.onchange = () => this.saveDefault('defaultTool', this.tool.value);
     this.worktree.onchange = () => this.saveDefault('worktree', this.worktree.checked);
+    this.updateCheck.onchange = () => this.saveDefault('updateCheck', this.updateCheck.checked);
     this.base.onchange = () => this.saveBase();
     this.base.oninput = () => this.showStatus();
     this.form.onsubmit = event => { event.preventDefault(); this.saveBase(); };
@@ -130,6 +132,7 @@ export class SettingsView {
     if (!saved) return;
     this.applyAppearance(this.defaults.appearance ?? saved.appearance);
     this.worktree.checked = this.defaults.worktree ?? saved.worktree;
+    this.updateCheck.checked = this.defaults.updateCheck ?? saved.updateCheck;
     // Keep any text entered since the last blur or submit.
     if (this.base.value === this.renderedBase) {
       this.renderedBase = this.defaults.base ?? saved.base;

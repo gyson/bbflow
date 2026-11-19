@@ -19,7 +19,7 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
 export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&
     a.worktree === b.worktree && a.base === b.base && a.titleTool === b.titleTool &&
-    sameTools(a.tools, b.tools);
+    a.updateCheck === b.updateCheck && sameTools(a.tools, b.tools);
 }
 
 export function sameTools(a: Tool[], b: Tool[]): boolean {

@@ -49,6 +49,9 @@ When a server runs, `bbflow update` asks for confirmation first. It then replace
 executable and restarts the server with the new version. The restart ends active
 sessions. See [Update bbflow](docs/COMMANDS.md#update-bbflow).
 
+The web UI also shows a newer release above **Settings** in the sidebar. Click it to
+see which sessions the restart ends. The update starts only after you confirm.
+
 ## Use the web UI
 
 1. Click **Add project** to save an existing folder. **General** is always available
@@ -82,6 +85,9 @@ To share a tool set with a team, write a setup script with `bbflow tool add` and
   type. bbflow does not redact or encrypt it.
 - The server listens only on `127.0.0.1` and uses no authentication token. It does not
   protect the data from other processes that run as you.
+- The server asks GitHub for the latest release when it starts and then once a day. The
+  request sends no history or settings. Turn it off with **Check for a new version
+  every day** in Settings.
 - Backup and restore are not available. A copy of `history.sqlite` alone can miss
   committed data while the server runs.
 - `bbflow query` reads the history with read-only SQL. An agent can run `bbflow skill`
