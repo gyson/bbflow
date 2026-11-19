@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/29`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/30`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/29",
+    "protocol": "bbflow/30",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -66,7 +66,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/29",
+    "protocol": "bbflow/30",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -96,12 +96,13 @@ storage-report operations.
 | `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath`, `baseline`, and `from` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
-| `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal first, then all of them again after each change |
+| `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal and the [release offer](#release-offers) first, then all of them again after each change |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
 | `composer-watch` | `session` ID | A stream of `draft` messages: the latest draft first, then each newer saved draft |
 | `composer-sent` | `session` ID, optional `revision` (list sends older than this revision) | `result`, containing `messages` (at most 20, newest first) and `more` |
 | `composer-attach` | `session` ID, `upload` with `name`, `mediaType`, base64 `data` | `result`, containing attachment metadata and its local file path |
 | `stop` | `instance`, from the verified greeting | `result`, containing `stopping`. The server then shuts down. |
+| `update-start` | `version` and `revision`, the `available` version and the `revision` of the [release offer](#release-offers) that the user confirmed | `result`, containing `updating`. The server installs the release in the background and then restarts, which ends all live sessions. It rejects another version, an earlier revision, a second update, and an offer that the off setting hides. |
 | `settings-get` | none | `result`, saved settings and revision |
 | `settings-save` | `settings`, including current revision | `result`, updated settings and revision |
 | `title-tools` | None | `result`, containing the title tools with `id`, `name`, and `command` |
@@ -187,6 +188,10 @@ operations `title-tools` and `title-test` are new. A `statuses` message adds
 
 Protocol 28 adds the `commit` baseline of the
 [workspace change operations](#workspace-changes). The SQLite format does not change.
+
+Protocol 30 adds `update-start`, the `version` request field, and the `update` field of
+`statuses` messages for [release offers](#release-offers). Settings add `updateCheck`.
+SQLite format 12 adds `updateCheck: true`.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -465,7 +470,7 @@ Request such a folder alone before you replace its shown entries.
 
 Settings contain revision, defaultTool (empty means Shell), worktree, base (default
 HEAD), and an ordered tools array. Each tool has a stable client-generated id, name, and
-command.
+command. updateCheck turns the daily [release check](SPEC.md#release-check) on or off.
 Saving requires the current revision. Removing a default tool requires selecting
 another default in the same save. These operations do not install or authenticate
 tools.
@@ -600,6 +605,31 @@ the server started. The server also sends the message after each title change. T
 client reads `session-list` again. A session is absent before its terminal starts and
 after its terminal ends. Read `session-list` for those sessions. The client sends `ping`
 at least every 30 seconds and gets `pong`. Closing the stream only removes the watch.
+
+### Release offers
+
+A `statuses` message has an `update` object when the server offers a newer release.
+The server omits it when it runs the newest release, when the
+[release check](SPEC.md#release-check) is off, and in a build that cannot update. The
+server sends the message again when the offer changes.
+
+| Field | Meaning |
+| --- | --- |
+| `revision` | Identifies the offer. A check that finds another release or another action gives a new revision. Send it with `update-start`. |
+| `version` | The version of the running server. |
+| `available` | The newer release. Send it as `version` with `update-start`. |
+| `installed` | True when the executable already has the release. The update then only restarts the server. |
+| `state` | `available`, `updating` while the server installs the release and restarts, or `failed`. |
+| `error` | The reason of the last failure, for the `failed` state. |
+
+An update in progress shows also when the check setting changes to off. After the
+restart, open views reload with the UI of the new server.
+
+The executable can change after the check, so that it no longer agrees with the
+confirmed offer. Then `update-start` changes nothing, and the offer shows `failed`. The
+server checks again at once and sends the new offer with a new revision. Ask the user
+again before you send `update-start` for it. A confirmation of the earlier revision,
+for example from another view, fails.
 
 ## Terminal streams
 
@@ -772,13 +802,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/29") {
+    if (message.server.protocol !== "bbflow/30") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/29", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/30", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);

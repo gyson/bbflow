@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"bbflow/internal/client"
 	"bbflow/internal/install"
 	"bbflow/internal/protocol"
+	"bbflow/internal/server"
 	"golang.org/x/term"
 )
 
@@ -190,7 +192,7 @@ func runningServer(target *client.Target) (*protocol.ServerInfo, error) {
 // continues when this process ends early, for example after Ctrl+C.
 func startUpdater(target client.Target, executable string, server protocol.ServerInfo, lock *os.File) error {
 	logPath := filepath.Join(target.Dir, "update.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	logFile, err := openUpdateLog(target)
 	if err != nil {
 		return err
 	}
@@ -199,19 +201,7 @@ func startUpdater(target client.Target, executable string, server protocol.Serve
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(executable, "--dir", target.Dir, "update")
-	// The updater starts the server, and the server passes its environment to each
-	// session. GITHUB_TOKEN is only for release requests, so it must not reach them.
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "GITHUB_TOKEN=") {
-			cmd.Env = append(cmd.Env, entry)
-		}
-	}
-	cmd.Env = append(cmd.Env, updaterEnv+"=1", updaterInstanceEnv+"="+server.Instance)
-	cmd.Dir = target.Dir
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	cmd.ExtraFiles = []*os.File{lock}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd := updaterCommand(target, executable, server.Instance, lock, logFile)
 	// Stop following on an interrupt. The updater continues in its own session.
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
@@ -231,6 +221,122 @@ func startUpdater(target client.Target, executable string, server protocol.Serve
 		return fmt.Errorf("the new version is installed, but no new server answers in %s; see %s; then run %s", target.Dir, logPath, command(target, "server", "start"))
 	}
 	return nil
+}
+
+func openUpdateLog(target client.Target) (*os.File, error) {
+	return os.OpenFile(filepath.Join(target.Dir, "update.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+}
+
+// updaterCommand runs executable as the updater of the server with this instance ID.
+// The updater gets lock as file 3 and writes its output to log.
+func updaterCommand(target client.Target, executable, instance string, lock, log *os.File) *exec.Cmd {
+	cmd := exec.Command(executable, "--dir", target.Dir, "update")
+	// The updater starts the server, and the server passes its environment to each
+	// session. GITHUB_TOKEN is only for release requests, so it must not reach them.
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "GITHUB_TOKEN=") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	cmd.Env = append(cmd.Env, updaterEnv+"=1", updaterInstanceEnv+"="+instance)
+	cmd.Dir = target.Dir
+	cmd.Stdout, cmd.Stderr = log, log
+	cmd.ExtraFiles = []*os.File{lock}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return cmd
+}
+
+// releases reads and installs releases for the server of an instance. The web UI starts
+// its updates.
+type releases struct {
+	target      client.Target
+	destination string
+}
+
+// newReleases returns nil when this executable cannot update: on another platform, for
+// a development build, or for a renamed executable.
+func newReleases(target client.Target) server.Releases {
+	if runtime.GOOS != "darwin" || version == "dev" {
+		return nil
+	}
+	executable, err := executablePath()
+	if err == nil {
+		var destination string
+		if destination, err = install.Destination(executable); err == nil {
+			return releases{target: target, destination: destination}
+		}
+	}
+	fmt.Fprintln(os.Stderr, "bbflow cannot check for new releases:", err)
+	return nil
+}
+
+// Check compares the running version with the latest release and with the executable.
+// Another instance can install a release into the same executable. Then this server
+// runs an earlier version than the executable, and only a restart is necessary.
+func (r releases) Check(ctx context.Context) (*protocol.Update, error) {
+	release, err := install.CheckContext(ctx, r.destination)
+	if err != nil {
+		return nil, err
+	}
+	newest, installed := release.Available, false
+	if !release.Newer() {
+		newest, installed = release.Installed, true
+	}
+	if !install.Newer(newest, version) {
+		return nil, nil
+	}
+	return &protocol.Update{Version: version, Available: newest, Installed: installed}, nil
+}
+
+// Update follows the steps of the update command after its question. It does not wait
+// for another update. The installer and the updater write to update.log.
+func (r releases) Update(ctx context.Context, offer protocol.Update, instance string) (<-chan error, error) {
+	release := offer.Available
+	lock, err := install.Lock(r.destination, nil)
+	if err != nil {
+		return nil, err
+	}
+	// The updater keeps its own copy of the lock.
+	defer lock.Close()
+	logFile, err := openUpdateLog(r.target)
+	if err != nil {
+		return nil, err
+	}
+	defer logFile.Close()
+	fmt.Fprintf(logFile, "%s: the web UI updates the server in %s to bbflow %s.\n", time.Now().Format(time.RFC3339), r.target.Dir, release)
+	current, err := install.Version(r.destination)
+	if err != nil {
+		return nil, err
+	}
+	if current != release {
+		// The user confirmed only a restart, or another command installed a newer
+		// version. Never download for a restart or replace a newer executable.
+		if offer.Installed || install.Newer(current, release) {
+			return nil, fmt.Errorf("%w: it has bbflow %s now, not %s; this update changed nothing", server.ErrStaleOffer, current, release)
+		}
+		if err = install.InstallContext(ctx, r.destination, release, logFile); err != nil {
+			return nil, err
+		}
+		if current, err = install.Version(r.destination); err != nil {
+			return nil, err
+		} else if current != release {
+			return nil, fmt.Errorf("the installed executable reports bbflow %s, not %s", current, release)
+		}
+	}
+	// A server that stops during the download must not start again.
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	cmd := updaterCommand(r.target, r.destination, instance, lock, logFile)
+	if err = cmd.Start(); err != nil {
+		return nil, err
+	}
+	ended := make(chan error, 1)
+	go func() {
+		err := cmd.Wait()
+		ended <- fmt.Errorf("bbflow %s is installed, but the server restart failed (%v); see %s", release, err, logFile.Name())
+	}()
+	return ended, nil
 }
 
 func followUpdater(logPath string, offset int64, done <-chan error, interrupt <-chan os.Signal) error {

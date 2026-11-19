@@ -38,14 +38,18 @@ type Server struct {
 	jobs sync.WaitGroup
 	// titles counts title changes. A status watch sends it, so that views read titles again.
 	titles atomic.Int64
+	// releases is nil for a build that cannot update, such as a development build.
+	releases Releases
+	updates  updates
 }
 
 // On cancellation, Serve stops new requests and waits for agent cleanup. The caller
 // owns the archive and the exclusive server lock for its directory. Serve publishes
 // server.json and returns the published identity. The caller removes that descriptor
 // after its own cleanup, immediately before it releases the lock. Until then, clients
-// can identify a server that is shutting down.
-func Serve(ctx context.Context, listener net.Listener, store *history.Store) (protocol.ServerInfo, error) {
+// can identify a server that is shutting down. A nil releases turns off the release
+// check and the update operation.
+func Serve(ctx context.Context, listener net.Listener, store *history.Store, releases Releases) (protocol.ServerInfo, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	executable, _ := os.Executable()
@@ -53,12 +57,20 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) (pr
 		Protocol: protocol.Version, Instance: history.ID(), PID: os.Getpid(),
 		DataDir: filepath.Dir(store.Path), Port: listener.Addr().(*net.TCPAddr).Port,
 		Executable: executable,
-	}}
+	}, releases: releases}
+	s.updates.load(store)
 	if err := s.ensureGeneral(); err != nil {
 		return protocol.ServerInfo{}, err
 	}
 	if err := instance.Publish(s.info); err != nil {
 		return protocol.ServerInfo{}, err
+	}
+	if releases != nil {
+		s.jobs.Add(1)
+		go func() {
+			defer s.jobs.Done()
+			s.checkReleases(ctx)
+		}()
 	}
 	upgrader := websocket.Upgrader{HandshakeTimeout: 5 * time.Second}
 	mux := http.NewServeMux()
@@ -159,6 +171,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 			return
 		}
 		result, err := s.store.SaveSettings(*request.Settings)
+		if err == nil {
+			s.updates.saved(result)
+		}
 		s.reply(conn, result, err)
 	case "workspace-inspect":
 		s.reply(conn, inspectRepository(ctx, request.Workspace), nil)
@@ -178,6 +193,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "worktree-remove":
 		err := s.removeWorktree(ctx, request.Session)
 		s.reply(conn, map[string]bool{"removed": err == nil}, err)
+	case "update-start":
+		err := s.startUpdate(request.Version, request.Revision)
+		s.reply(conn, map[string]bool{"updating": err == nil}, err)
 	case "stop":
 		if request.Instance != s.info.Instance {
 			s.reply(conn, nil, errors.New("server instance changed; retry stop"))

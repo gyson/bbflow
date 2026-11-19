@@ -40,3 +40,8 @@ test('a title tool change needs a save', () => {
   const titled = { ...settings, titleTool: 'none' };
   assert.ok(!sameSettings(titled, { ...titled, titleTool: 'codex' }));
 });
+
+test('an update check change needs a save', () => {
+  const checked = { ...settings, updateCheck: true };
+  assert.ok(!sameSettings(checked, { ...checked, updateCheck: false }));
+});

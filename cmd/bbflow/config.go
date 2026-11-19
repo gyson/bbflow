@@ -31,7 +31,8 @@ Keys:
   default-tool  a tool name, or "" for the built-in Shell
   worktree      true or false
   base          the default Git branch or commit, such as HEAD
-  title-tool    none, claude, codex, or code-puppy for automatic session titles`
+  title-tool    none, claude, codex, or code-puppy for automatic session titles
+  update-check  true or false: read the latest release from GitHub once a day`
 
 func toolCommand(target client.Target, args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
@@ -162,8 +163,14 @@ func settingsCommand(target client.Target, args []string) error {
 				settings.Base = value
 			case "title-tool":
 				settings.TitleTool = strings.TrimSpace(value)
+			case "update-check":
+				enabled, err := strconv.ParseBool(value)
+				if err != nil {
+					return errors.New("update-check must be true or false")
+				}
+				settings.UpdateCheck = enabled
 			default:
-				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, or title-tool", key)
+				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, title-tool, or update-check", key)
 			}
 			return nil
 		})

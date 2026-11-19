@@ -28,6 +28,8 @@ type Settings struct {
 	// TitleTool selects the agent CLI that makes automatic session titles. It is one of
 	// TitleTools. "none" turns automatic titles off.
 	TitleTool string `json:"titleTool"`
+	// UpdateCheck lets the server read the latest release from GitHub once a day.
+	UpdateCheck bool `json:"updateCheck"`
 }
 
 // TitleTools lists the values of Settings.TitleTool. The server owns the command of each

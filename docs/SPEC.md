@@ -205,7 +205,85 @@ variables `BBFLOW_UPDATE_CHILD` and `BBFLOW_UPDATE_INSTANCE`, and the locked dir
 as file 3, are the interface between the two versions. Keep their names and meaning
 stable.
 
-There is no UI update action, background check, or automatic update.
+The web UI can start the same update after a release check. See
+[Update from the web UI](#update-from-the-web-ui). There is no automatic update.
+
+### Release check
+
+The server of a release build on macOS checks for a newer release by itself.
+Development builds, other platforms, and a renamed executable do not check. For a
+renamed executable, `server.log` tells why.
+
+While the **Check for a new version every day** setting is on, the server runs the
+embedded installer with `--check`, as `bbflow update` does. The check downloads no
+binaries. The first check runs when the server starts. The next check runs 24 hours
+after the previous check. Each server start checks again. The result stays only in
+server memory. A settings save applies at once, also while a check runs. While the
+setting is off, the server sends no request and shows no offer, and a view cannot start
+an update. When the setting changes to on, the view shows the result of the last check
+again. When the setting changes to on after a check is due, the check runs at once. A
+failed check keeps the result of the last successful check. It writes its reason to
+`server.log` and shows no error in the UI.
+
+The check compares the running version, the version of the executable on disk, and the
+latest release. Another instance can install a release into the same executable. Then
+this server runs an earlier version than the executable. The server takes the newer of
+the latest release and the executable on disk. It offers that version when it is newer
+than the running version. When the executable on disk has that version, the offer only
+restarts the server.
+
+The installer of a check or a server update runs in its own process group. Server
+shutdown stops that group and its curl requests at once. The installer then removes its
+temporary files. The update command keeps the installer in the process group of its
+terminal, so Ctrl+C in that terminal stops the installer.
+
+### Update from the web UI
+
+The [status watch](PROTOCOL.md#session-status) sends the offer to every view. The
+sidebar then shows a button above **Settings**: **Update available: 0.0.15**, or
+**Restart to use 0.0.15** for an offer that only restarts the server. The button opens
+a confirmation dialog. The dialog shows the two versions and the steps. It names up to
+five live sessions that the restart stops and counts the others. It takes the live
+sessions from the same status message as the offer. Their titles come from the current
+session list, also after a rename. It also links to the release notes on GitHub. **Cancel** changes nothing. While the status watch has no connection, the
+view does not know the live sessions. Then the button and the dialog close until the
+watch sends the offer again. An update in progress stays in the sidebar.
+
+Each offer has a revision. A check that finds another release or another action gives
+a new revision, and an open dialog then closes. A confirmation applies only to the
+offer that the dialog showed. After confirmation, the view saves its message draft and
+its project draft form. Then it sends `update-start` with the version and the revision
+of that offer. The server rejects another version, an earlier revision, a second
+update, and an offer that the off setting hides. The offer can change, or the status
+watch can lose its connection, while the drafts save. Then the dialog stays open but
+does not change. If the start fails, the dialog shows the error and allows no other
+attempt. The user must open the update again with current data. All views then show **Updating to 0.0.15…** in the sidebar. The server
+does these steps in the background:
+
+1. Lock the directory of the executable, as the update command does. If another update
+   holds the lock, stop with an error. Do not wait.
+2. Read the version of the executable on disk. If it is the offered version, skip the
+   download. The executable can disagree with the confirmed offer: the offer only
+   restarts, or the executable has a newer version. Then stop and change nothing. The
+   sidebar shows the failure, and the server checks again at once. The views then show
+   the new offer, which the user must confirm again. A late confirmation of the earlier
+   offer from another view fails, because its revision is earlier.
+3. Download, verify, and install the offered release while the server continues. The
+   installer appends its output to `update.log`.
+4. Start the new executable as the updater, with the same interface as the update
+   command. The updater gets the server environment without `GITHUB_TOKEN`. It stops
+   this server and starts the new version in the same directory, as described above.
+
+Open tabs then reconnect to the same port and reload, as after `bbflow update`. A tab
+with an edit that was not saved keeps the edit and asks the user to reload.
+
+A failure before step 4 leaves the server running. A failure before the rename in step
+3 also leaves the executable unchanged. The sidebar then shows
+**Update to 0.0.15 failed**. The dialog shows the reason, and the user can try again.
+If the updater ends while the server still runs, the offer shows that the restart failed
+and names `update.log`. A server that stops during the download stops the installer and
+does not start again. If it stops after the rename, the next server start uses the new
+executable.
 
 ## Server lifecycle
 
@@ -408,6 +486,10 @@ The theme covers the workspace, dialogs, terminal, and Changes pane. Dark uses c
 surfaces, a near-black terminal, and blue for primary actions and focus. The terminal
 renders the colors supplied by each program. Light also uses a dark terminal. A browser
 without CSS `light-dark()` support uses the Light palette.
+
+**Updates** has the **Check for a new version every day** setting. It saves at once.
+New installations and upgrades start with the setting on. See
+[Release check](#release-check).
 
 Settings also has a default tool, default worktree choice, default Git base, and an
 ordered list of named commands. Shell is built in and sends no startup command.
@@ -1479,7 +1561,7 @@ as one transaction after column, index, and foreign-key checks. Any failure roll
 the entire upgrade and stops startup. A failed SQL step reports its migration number.
 WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4 through 11. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 12. In the same
   transaction, a new database sets `worktree` to true in the settings JSON. Thus new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -1504,7 +1586,10 @@ WAL is enabled after the schema transaction commits.
 - Format 10 gains the `server` table through migration 11. Its one row keeps the last
   port of the server, with `0` for no saved port. The first start after the upgrade
   saves a new port.
-- Format 11 opens without running scripts or rewriting history, settings, or metadata.
+- Format 11 gains `updateCheck: true` in the settings JSON through migration 12. Thus
+  the daily release check starts on, also after an upgrade. The settings revision and
+  the other values stay.
+- Format 12 opens without running scripts or rewriting history, settings, or metadata.
 
 The upgrade preserves IDs, timestamps, event sequences, original blobs, text, drafts,
 and attachments. It also preserves the highest allocated event sequence. Migration
@@ -1821,7 +1906,7 @@ launch in a worktree, and separate drafts for subsequent sessions.
 
 No real agent CLI was used for these project checks.
 
-Frozen schemas from repository history test upgrades from formats 3–10 to format 11 and
+Frozen schemas from repository history test upgrades from formats 3–11 to format 12 and
 verify that reopen preserves the upgraded data. Fixtures compare original blobs, archive
 flags, metadata, and event allocation state. They test rollback of the entire upgrade
 after SQL, schema, or foreign-key failures. They also cover repeated opens, concurrent
@@ -1833,6 +1918,27 @@ Appearance fixtures verify the System default, successful Dark saves, and reject
 an invalid value. The migration tests preserve other settings and verify rollback and
 concurrent opens. A Chrome check with a synthetic Shell session verified Light, Dark,
 and System, saved appearance on reload, terminal replay, dialogs, and both diff layouts.
+
+Release check fixtures use a fake curl, a synthetic release, and this test binary as
+bbflow 0.0.1 and 0.0.2. They verify that a server start offers the release without a
+download, and that `update-start` installs it and starts a new server. They verify a
+restart without a download when the executable already has the release, the reason of
+a failed download, and an unchanged server after it. A server stop during a hanging
+check ends at once and leaves no temporary files. An in-process server fixture with a
+fake release source verifies a single check across setting changes, the offer in the
+status watch, rejected versions, a second update, and a failed restart. It also verifies
+that an off setting during a slow check hides the result and rejects its start. A
+newer save can reply first, and an earlier save does not then apply. A stale offer
+starts a check at once. A release fixture changes the executable back to 0.0.1 after a
+restart offer: the confirmed restart downloads nothing, and the server offers the
+download. A second confirmation of the restart then fails. A check of the same release
+and action keeps the revision. Web fixtures verify the sidebar labels, the dialog text, and the session
+warning. A fake DOM fixture verifies that the open dialog counts the live sessions of
+the latest status message and shows the titles of the current list. It also verifies
+that a new offer closes the dialog, that the view confirms the revision of the shown
+offer, and that a lost status watch hides the offer. A lost watch during a pending start
+that then fails allows no other attempt. A failed start without a change allows one. A failed settings
+update in migration 12 rolls back and keeps format 11.
 
 Title fixtures verify the separate user and derived titles, search on both, and the
 title tool values. A failed settings update in migration 10 rolls back the new column

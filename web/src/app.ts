@@ -23,6 +23,7 @@ import { mergeSessions, sessionGroups, sessionWindow } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
+import { UpdateNotice } from './update.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
 import { DialogEdits, lastReload, onServerReplaced, recordReload, reloadPlan, restartedMessage } from './restart.js';
@@ -189,6 +190,22 @@ const preparation = new PreparationEditor({
   }),
 });
 
+// The status watch sends the release offer of the server. An update restarts the server,
+// so save the drafts of this view first. The reload after the restart shows the new UI.
+const updateNotice = new UpdateNotice({
+  title(id) {
+    const session = sessions.find(item => item.id === id);
+    return session ? sessionTitle(session) || 'Untitled session' : undefined;
+  },
+  async start(offer) {
+    if (!server) throw new Error('The server is not connected.');
+    await preparation.flush();
+    await composer.flush();
+    await call(server, { operation: 'update-start', version: offer.available, revision: offer.revision });
+    notice(`bbflow updates to ${offer.available}. This page reloads when the new server starts.`);
+  },
+});
+
 let noticeSource: 'action' | 'list' | 'stream' = 'action';
 function notice(text = '', source: typeof noticeSource = 'action') {
   noticeSource = source;
@@ -278,6 +295,7 @@ function controls() {
   $('archive-session').textContent = selected?.archived ? 'Restore' : 'Archive';
   if (!showingSettings && selected?.status === 'draft') $('status').textContent = selected.archived ? 'Draft · Archived' : 'Draft';
   $('settings-open').disabled = busy || !server;
+  updateNotice.controls(busy || !server);
   $('settings-close').disabled = busy;
   composer.controls(busy, !!connection?.ready && !!connection.peer?.active);
   $('add-project').disabled = busy || !server;
@@ -488,6 +506,8 @@ function watchStatuses(info: ServerInfo) {
       const next = message.statuses ?? {};
       const changed = terminalsChanged(liveStatuses, next);
       liveStatuses = next;
+      // The update dialog counts the live sessions of the same message as the offer.
+      updateNotice.show(message.update, Object.keys(next));
       renderSessions();
       // A terminal started or ended, or a session title changed. Read the stored session
       // data again.
@@ -498,6 +518,7 @@ function watchStatuses(info: ServerInfo) {
     // Without the watch, the list refresh supplies each status.
     failed() {
       liveStatuses = {};
+      updateNotice.lost();
       renderSessions();
     },
   });
@@ -539,6 +560,7 @@ async function refreshSessions() {
     const merged = mergeSessions(projects, recent, nextWindows, sessionStep);
     sessions = merged.sessions;
     moreGroups = new Set(merged.more);
+    updateNotice.sessionsChanged();
     if (detail && selected && selected.id === selectedId) selected.archived = detail.archived;
     $('connection').textContent = '● Local server connected';
     clearNotice('list');

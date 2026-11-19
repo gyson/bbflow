@@ -16,6 +16,7 @@
     <div class="section-heading"><span id="list-heading">PROJECTS · SESSIONS</span><button id="refresh" class="text-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button></div>
     <button id="add-project" class="add-project">＋ Add project</button>
     <nav id="sessions" aria-label="Projects and sessions"><p class="muted">Connecting…</p></nav>
+    <button id="update-open" class="update-notice" aria-haspopup="dialog" hidden></button>
     <button id="settings-open">Settings</button>
     <div class="instance"><span id="connection" role="status">Connecting to server</span><span id="instance-dir" title="Instance directory"></span></div>
   </aside>
@@ -171,6 +172,11 @@
           <div id="title-test-result" role="status" hidden><p id="title-test-sample" class="form-help"></p><p id="title-test-outcome"></p><p id="title-test-detail" class="form-help"></p></div>
           <p class="form-help">The CLI must be installed on the PATH of the server and signed in. The tool sends your first message to its provider, with paths masked and the tools of the CLI turned off. Code Puppy still runs your user plugins. Claude and Code Puppy can save each call in their own history.</p>
         </section>
+        <section class="settings-card">
+          <h3>Updates</h3>
+          <label class="checkbox"><input id="settings-update-check" type="checkbox">Check for a new version every day</label>
+          <p class="form-help">The server asks GitHub for the latest release when it starts, then once a day. The request sends no history or settings. A new version shows above Settings in the sidebar. bbflow updates only after you confirm. Development builds never check.</p>
+        </section>
       </div>
     </section>
   </main>
@@ -205,6 +211,17 @@
       <p id="continue-warning" class="form-warning" role="alert" hidden>The latest terminal was interrupted. If the server stopped unexpectedly, its agent can still run and change files in this workspace. Check this before you continue.</p>
       <p id="continue-error" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button id="continue-copy" type="button">Copy prompt</button><button id="continue-submit" type="submit" class="primary">Start new terminal ↗</button></div>
+    </form>
+  </dialog>
+  <dialog id="update-dialog" class="update-dialog" aria-labelledby="update-title">
+    <form id="update-form">
+      <div class="dialog-heading"><div><span class="eyebrow">NEW VERSION</span><h2 id="update-title">Update bbflow</h2></div><button type="button" id="update-cancel" class="text-button" aria-label="Close update">✕</button></div>
+      <p id="update-versions" class="update-versions"></p>
+      <p id="update-help" class="form-help"></p>
+      <p id="update-sessions" class="form-warning"></p>
+      <p class="form-help">Open tabs reload when the new server starts. A tab with an edit that was not saved does not reload. It tells you to copy the edit first. <a id="update-notes" target="_blank" rel="noreferrer">Release notes ↗</a></p>
+      <p id="update-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="update-close" type="button">Cancel</button><button id="update-submit" type="submit" class="primary">Update and restart</button></div>
     </form>
   </dialog>
   <dialog id="handoff-dialog" class="continue-dialog" aria-labelledby="handoff-title">
