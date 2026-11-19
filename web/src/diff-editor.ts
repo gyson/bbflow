@@ -50,6 +50,9 @@ const theme = EditorView.theme({
 });
 
 const codeHighlight = HighlightStyle.define([
+  // A Markdown quote tags all of its text. This rule comes first, so a link, code, or
+  // marker in a quote keeps its own color.
+  { tag: tags.quote, color: 'var(--code-comment)', fontStyle: 'italic' },
   { tag: [tags.meta, tags.labelName, tags.contentSeparator], color: 'var(--code-meta)' },
   { tag: tags.emphasis, fontStyle: 'italic' },
   { tag: tags.strong, fontWeight: 'bold' },
@@ -64,14 +67,13 @@ const codeHighlight = HighlightStyle.define([
   },
   { tag: tags.comment, color: 'var(--code-comment)' },
   { tag: tags.invalid, color: 'var(--danger)' },
-  // Markdown. The marker rule comes last. Its color then replaces the color of the
-  // heading, link, or code that contains the marker.
+  // Markdown. A later rule wins when a token has two of these tags. The marker rule
+  // comes last, so a marker in a heading, link, or code is muted.
   { tag: tags.heading, color: 'var(--code-keyword)', fontWeight: 'bold' },
   { tag: tags.link, color: 'var(--code-name)', textDecoration: 'underline' },
-  { tag: tags.url, color: 'var(--text-muted)', textDecoration: 'underline' },
+  { tag: tags.url, color: 'var(--code-meta)', textDecoration: 'underline' },
   { tag: tags.monospace, color: 'var(--code-string)' },
-  { tag: tags.quote, color: 'var(--code-comment)', fontStyle: 'italic' },
-  { tag: tags.processingInstruction, color: 'var(--text-muted)' },
+  { tag: tags.processingInstruction, color: 'var(--code-meta)' },
 ]);
 
 const scalaLanguage = StreamLanguage.define(scala);

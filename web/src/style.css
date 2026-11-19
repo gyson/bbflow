@@ -89,9 +89,9 @@
     --code-keyword: light-dark(#708, #d2a8ff);
     --code-literal: light-dark(#164, #7ee787);
     --code-string: light-dark(#a11, #ffa198);
-    --code-comment: light-dark(#735520, #8b949e);
+    --code-comment: light-dark(#735520, #c0b29a);
     --code-name: light-dark(#2455a0, #79c0ff);
-    --code-meta: light-dark(#47564e, #a3b3a9);
+    --code-meta: light-dark(#47564e, #adbdb3);
   }
   :root[data-appearance="light"] { color-scheme: light; }
   :root[data-appearance="dark"] { color-scheme: dark; }
