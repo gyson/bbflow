@@ -28,7 +28,7 @@ func storage(target client.Target, args []string) error {
 	if flags.NArg() != 0 {
 		return errors.New("storage takes no arguments")
 	}
-	fmt.Fprintln(os.Stderr, "Reading the archive. A large archive can take a minute.")
+	fmt.Fprintln(os.Stderr, "Reading the archive. A large archive can take some seconds.")
 	// Wait a little longer than the server, so that its timeout error can arrive.
 	data, err := target.CallWithin(protocol.Request{Operation: "storage-report"}, history.StorageReportTimeout+30*time.Second)
 	if err != nil {
@@ -65,18 +65,6 @@ func redactStorage(report *history.StorageReport) {
 
 func writeStorageReport(w io.Writer, r history.StorageReport, now time.Time) {
 	total := r.Total.Disk
-	sessions, archived, idle := 0, 0, 0
-	terminals := 0
-	for _, item := range r.Sessions {
-		sessions++
-		terminals += item.Terminals
-		if item.Archived {
-			archived++
-		}
-		if item.Events == 0 {
-			idle++
-		}
-	}
 	fmt.Fprintln(w, "# bbflow storage report")
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "- Generated: %s.\n", now.Format("2006-01-02 15:04 UTC"))
@@ -94,7 +82,7 @@ func writeStorageReport(w io.Writer, r history.StorageReport, now time.Time) {
 			average(r.Total.Data+r.Total.Text, r.Total.Events), count(int64(math.Round(r.Overhead))))
 	}
 	fmt.Fprintf(w, "- Projects with sessions: %d. Sessions: %d (%d archived, %d with no events). Terminals: %d.\n",
-		len(r.Projects), sessions, archived, idle, terminals)
+		len(r.Projects), r.SessionCount, r.ArchivedSessions, r.EmptySessions, r.Terminals)
 	if len(r.Days) > 0 {
 		fmt.Fprintf(w, "- First event: %s. Last event: %s. Days with events: %d.\n", r.Days[0].Day, r.Days[len(r.Days)-1].Day, len(r.Days))
 	}
@@ -139,16 +127,12 @@ func writeStorageReport(w io.Writer, r history.StorageReport, now time.Time) {
 	}
 	table(w, []column{{"#", true}, {"Project", false}, {"Sessions", true}, {"Terminals", true}, {"Events", true}, {"Data + text", true}, {"Est. disk", true}, {"Share", true}}, rows)
 
-	recorded := make([]history.StorageSession, 0, len(r.Sessions))
-	for _, item := range r.Sessions {
-		if item.Events > 0 {
-			recorded = append(recorded, item)
-		}
-	}
-	fmt.Fprintln(w, "## Top 10 sessions")
+	// The server lists the largest sessions only. See history.StorageReport.Sessions.
+	recorded := r.Sessions
+	fmt.Fprintf(w, "## Top %d sessions\n", history.StorageTopSessions)
 	fmt.Fprintln(w)
 	rows = nil
-	for i, item := range recorded[:min(10, len(recorded))] {
+	for i, item := range recorded[:min(history.StorageTopSessions, len(recorded))] {
 		rows = append(rows, []string{strconv.Itoa(i + 1), "`" + shortID(item.ID) + "`", cell(item.Title), projectName(item.ProjectID, item.Project),
 			tools(item.Tools), dateOf(item.Created), yes(item.Archived), count(int64(item.Terminals)), count(item.Events),
 			size(item.Data), size(item.Text), size(item.Disk), percent(item.Disk, total)})
@@ -156,9 +140,9 @@ func writeStorageReport(w io.Writer, r history.StorageReport, now time.Time) {
 	table(w, []column{{"#", true}, {"ID", false}, {"Title", false}, {"Project", false}, {"Tools", false}, {"Created", false}, {"Archived", false},
 		{"Terminals", true}, {"Events", true}, {"Data", true}, {"Text", true}, {"Est. disk", true}, {"Share", true}}, rows)
 
-	fmt.Fprintln(w, "## Top 5 sessions in each of the top 3 projects")
+	fmt.Fprintf(w, "## Top %d sessions in each of the top %d projects\n", history.StorageProjectSessions, history.StorageTopProjects)
 	fmt.Fprintln(w)
-	for i, project := range r.Projects[:min(3, len(r.Projects))] {
+	for i, project := range r.Projects[:min(history.StorageTopProjects, len(r.Projects))] {
 		fmt.Fprintf(w, "### %d. %s: %s, %s of the total\n\n", i+1, projectName(project.ID, project.Name), size(project.Disk), percent(project.Disk, total))
 		rows = nil
 		for _, item := range recorded {
@@ -167,7 +151,7 @@ func writeStorageReport(w io.Writer, r history.StorageReport, now time.Time) {
 			}
 			rows = append(rows, []string{strconv.Itoa(len(rows) + 1), "`" + shortID(item.ID) + "`", cell(item.Title), tools(item.Tools),
 				dateOf(item.Created), count(int64(item.Terminals)), count(item.Events), size(item.Data + item.Text), size(item.Disk), percent(item.Disk, project.Disk)})
-			if len(rows) == 5 {
+			if len(rows) == history.StorageProjectSessions {
 				break
 			}
 		}
@@ -303,10 +287,14 @@ func yes(value bool) string {
 	return ""
 }
 
-// cell keeps a title on one table row.
+// markdownEscaper adds a backslash before each character that can start Markdown
+// syntax inside a line, such as a link, emphasis, code, HTML, or a table cell border.
+var markdownEscaper = strings.NewReplacer("\\", "\\\\", "`", "\\`", "*", "\\*", "_", "\\_", "[", "\\[", "]", "\\]",
+	"<", "\\<", ">", "\\>", "|", "\\|", "~", "\\~", "&", "\\&")
+
+// cell shows a saved name as literal text on one line of a heading or table row.
 func cell(text string) string {
-	text = strings.Join(strings.Fields(text), " ")
-	return strings.ReplaceAll(text, "|", "\\|")
+	return markdownEscaper.Replace(strings.Join(strings.Fields(text), " "))
 }
 
 func projectName(id, name string) string {

@@ -87,7 +87,7 @@ storage-report operations.
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed`. An empty `name` removes the user title. |
 | `session-list` | `groups` (group keys, required), `limit` for each group (default 10; `limit` times the number of groups is at most 100), optional `offset` (default 0, needs exactly one group), optional `session` ID to include (not with `offset`), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status). |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
-| `storage-report` | None | `result`, containing database facts, `total`, `columns`, and the `kinds`, `days`, `projects`, and `sessions` lists. See [storage report](SPEC.md#storage-report). Closing the connection cancels the read. |
+| `storage-report` | None | `result`, containing database facts, `total`, `columns`, session counts, and the `kinds`, `days`, `projects`, and `sessions` lists. `sessions` has only the largest sessions. See [storage report](SPEC.md#storage-report). Closing the connection cancels the read. |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
 | `workspace-changes` | `session` ID, `diff` object with optional `baseline` and `from` | `result`, containing `repository`, `base`, `baseline`, `commits`, an optional `moreCommits`, `files`, and `truncated` |

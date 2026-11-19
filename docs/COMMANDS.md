@@ -442,8 +442,9 @@ The report shows project names, session titles, tool names, and the first 8 char
 of session IDs. It never shows terminal content or workspace paths. Use `--redact` to
 replace project names and session titles with short IDs. General and standalone
 sessions keep their labels.
+The report escapes Markdown characters in names, so each name shows as saved.
 
-The server reads every event once. A large archive can take a minute. The command
+The server reads every event once. A large archive can take some seconds. The command
 prints a progress note to standard error and the report to standard output. The read
 stops after 10 minutes.
 

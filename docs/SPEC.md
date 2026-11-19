@@ -1516,10 +1516,21 @@ page counts and the event totals come from one snapshot. It does not block captu
 long read can keep the WAL from a full checkpoint until the read ends. The read stops
 after 10 minutes, or when the client closes its connection.
 
-The report reads every event row once with one `GROUP BY` on session, kind, and UTC day.
-It reads the start events again for tool names. A synthetic archive of 1.4 GB with 6
-million events took about 13 seconds on an Apple silicon laptop. The reply has one entry
-for each session, so its size grows with the number of sessions, not events.
+The report reads every event row once with one plain table scan, and Go adds up the
+rows. The scan reads the byte lengths of `data` and `text` from the record headers. Thus
+SQLite does not copy the payloads, and an attachment larger than the 1 MiB value limit
+of the read connection does not stop the report. A `GROUP BY` is not used, because its
+sort records copy the payloads. Only start events return their data, for the tool names.
+A synthetic archive of 1.4 GB with 6 million events took about 2 seconds on an Apple
+silicon laptop.
+
+The reply lists only the sessions that the report shows: the 10 largest sessions with
+events, and the 5 largest sessions with events in each of the 3 largest projects. Counts
+of all sessions, archived sessions, sessions with no events, and terminals are separate
+fields. Thus the reply size does not grow with the number of sessions or events.
+
+A start event from bbflow 0.0.4 or earlier has no tool. As in the terminal list, the
+first terminal of a session then uses the tool of the session preparation.
 
 Event counts and the bytes of each events column are exact. The embedded SQLite build
 has no `dbstat` table, so the report cannot measure each table or index. SQLite also

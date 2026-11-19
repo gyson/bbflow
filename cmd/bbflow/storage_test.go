@@ -68,6 +68,18 @@ func TestStorageReportFormatsEmptyArchiveAndNumbers(t *testing.T) {
 			t.Fatalf("count(%d) = %q, want %q", n, got, want)
 		}
 	}
+	// A saved name shows as literal text, not as a link, emphasis, code, or HTML.
+	for name, want := range map[string]string{
+		"[notes](design.md)":       `\[notes\](design.md)`,
+		"*bold* _x_ `code` a\\b":   "\\*bold\\* \\_x\\_ \\`code\\` a\\\\b",
+		"<b>R&D</b> ~~old~~ | two": `\<b\>R\&D\</b\> \~\~old\~\~ \| two`,
+		"line\none":                "line one",
+		"Codex · orbit-api":        "Codex · orbit-api",
+	} {
+		if got := cell(name); got != want {
+			t.Fatalf("cell(%q) = %q, want %q", name, got, want)
+		}
+	}
 	for n, want := range map[int64]string{512: "512 B", 2048: "2.0 KB", 5 << 20: "5.0 MB", 3 << 30: "3.00 GB"} {
 		if got := size(n); got != want {
 			t.Fatalf("size(%d) = %q, want %q", n, got, want)
