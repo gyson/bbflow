@@ -152,13 +152,16 @@ func TestArchiveFamilyChecksLiveMembers(t *testing.T) {
 	}
 	// A live terminal that the server owns blocks the archive of the family.
 	s.sessions = map[string]*runningSession{child.ID: {id: child.ID}}
-	if err = s.archiveSession(parent.ID, true, nil); err == nil || !strings.Contains(err.Error(), "every session of this family") {
+	if err = s.archiveSession(parent.ID, true, []string{child.ID}); err == nil || !strings.Contains(err.Error(), "every session of this family") {
 		t.Fatal(err)
 	}
 	s.sessions = nil
-	// The archive checks the sub-sessions that the user confirmed.
-	if err = s.archiveSession(parent.ID, true, []string{}); err != history.ErrFamilyChanged {
-		t.Fatal(err)
+	// The archive checks the sub-sessions that the user confirmed. A request without them
+	// confirms none.
+	for _, members := range [][]string{nil, {}} {
+		if err = s.archiveSession(parent.ID, true, members); err != history.ErrFamilyChanged {
+			t.Fatal(members, err)
+		}
 	}
 	if err = s.archiveSession(parent.ID, true, []string{child.ID}); err != nil {
 		t.Fatal(err)

@@ -180,21 +180,21 @@ func TestFamilyArchive(t *testing.T) {
 	}
 	// A live member blocks the archive of the family.
 	live := func(id string) bool { return id == f.ids["Docs"] }
-	if _, err = f.SetSessionArchived(f.ids["Parent"], true, live, nil); err == nil || !strings.Contains(err.Error(), "every session of this family") {
+	if _, err = f.SetSessionArchived(f.ids["Parent"], true, live, []string{f.ids["Docs"]}); err == nil || !strings.Contains(err.Error(), "every session of this family") {
 		t.Fatal(err)
 	}
 	if _, err = f.db.Exec("UPDATE preparations SET state='creating' WHERE session_id=?", f.ids["Docs"]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil, nil); err == nil {
-		t.Fatal("archived a family with an unfinished launch claim")
+	if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil, []string{f.ids["Docs"]}); err == nil || err == ErrFamilyChanged {
+		t.Fatal("archived a family with an unfinished launch claim", err)
 	}
 	if _, err = f.db.Exec("UPDATE preparations SET state='draft' WHERE session_id=?", f.ids["Docs"]); err != nil {
 		t.Fatal(err)
 	}
 	// A family archive checks the sub-sessions that the user confirmed. An archived
 	// sub-session is not a member of the archive.
-	for _, members := range [][]string{{}, {f.ids["Docs"], f.ids["Reviewer"]}, {f.ids["Reviewer"]}} {
+	for _, members := range [][]string{nil, {}, {f.ids["Docs"], f.ids["Reviewer"]}, {f.ids["Reviewer"]}} {
 		if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil, members); err != ErrFamilyChanged {
 			t.Fatal(members, err)
 		}
@@ -221,11 +221,39 @@ func TestFamilyArchive(t *testing.T) {
 		t.Fatal(titles)
 	}
 	// Restore of the parent restores all of its archived sub-sessions.
-	if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil, nil); err != nil {
+	if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil, []string{f.ids["Docs"]}); err != nil {
 		t.Fatal(err)
 	}
 	ids, err = f.SetSessionArchived(f.ids["Parent"], false, nil, nil)
 	if err != nil || !reflect.DeepEqual(ids, []string{f.ids["Parent"], f.ids["Reviewer"], f.ids["Docs"]}) {
+		t.Fatal(ids, err)
+	}
+}
+
+// A view can still show a session as a sub-session after another view made it a parent.
+// Its archive confirms no sub-sessions, so it archives nothing.
+func TestArchiveOfAFormerSubSessionChecksItsNewFamily(t *testing.T) {
+	f := newFamilyStore(t)
+	reviewer := f.ids["Reviewer"]
+	if err := f.SetSessionParent(reviewer, ""); err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.CreateSubPreparation(reviewer, f.work.Workspace, f.work.ID, Preparation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, members := range [][]string{nil, {}} {
+		if _, err = f.SetSessionArchived(reviewer, true, nil, members); err != ErrFamilyChanged {
+			t.Fatal(members, err)
+		}
+	}
+	for _, id := range []string{reviewer, child.ID} {
+		if session, err := f.Session(id); err != nil || session.Archived {
+			t.Fatal("a rejected archive changed a session", session, err)
+		}
+	}
+	ids, err := f.SetSessionArchived(reviewer, true, nil, []string{child.ID})
+	if err != nil || !reflect.DeepEqual(ids, []string{reviewer, child.ID}) {
 		t.Fatal(ids, err)
 	}
 }

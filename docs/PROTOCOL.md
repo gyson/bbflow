@@ -94,7 +94,7 @@ storage-report operations.
 | `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
 | `workspace-folders` | `session` ID, `diff` object with `folders` | `result`, containing `folders` and an optional `ignoreError` |
 | `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath`, `baseline`, and `from` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
-| `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed) | `result`, containing `archived`. Applies to the family as described below. Rejects active runs and unfinished launch claims. |
+| `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed; missing confirms none) | `result`, containing `archived`. Applies to the family as described below. Rejects active runs and unfinished launch claims. |
 | `session-parent` | `session` ID, `parent` (a top-level session ID, or empty for the top level) | `result`, containing `parent`. Changes only the family of the session. |
 | `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
 | `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal and the [release offer](#release-offers) first, then all of them again after each change |
@@ -251,10 +251,10 @@ event text.
 
 `session-archive` changes visibility without deleting records or files and without
 changing run/preparation state. Archive of a top-level session also archives its
-sub-sessions. Every member must be stopped. With `members`, the archive of a top-level
-session fails with no change unless its sub-sessions that are not archived are exactly
-these. An empty list expects no sub-sessions. Restore of a top-level session also restores
-its archived sub-sessions. Restore of a sub-session also restores its archived parent.
+sub-sessions. Every member must be stopped. The archive of a top-level session fails
+with no change unless its sub-sessions that are not archived are exactly `members`. A
+missing or empty list confirms no sub-sessions. Restore of a top-level session also
+restores its archived sub-sessions. Restore of a sub-session also restores its archived parent.
 It shares the launch lock with session-start and rejects live sessions and unfinished
 launch claims. Archived drafts remain editable, but session-start rejects them until
 restored. Restoration starts no process. Direct reads, composer operations, and

@@ -1110,28 +1110,35 @@ function fillArchiveDialog(session: ArchiveTarget, children: SessionInfo[]): voi
 }
 
 // Archive or restore a session. Archive of a top-level session with sub-sessions asks
-// first, because it archives the whole family. Each archive of a top-level session sends
-// the sub-sessions that the user saw, also an empty list. If a sub-session came after the
-// check, the dialog shows the new members.
+// first, because it archives the whole family. Each archive sends the sub-sessions that
+// the user saw, also an empty list for a sub-session. The server archives nothing if the
+// family is different now, for example after another view made a sub-session a parent.
+// The dialog then shows the current members.
 async function requestArchive(session: ArchiveTarget, archived: boolean): Promise<void> {
   if (!server) return;
-  if (!archived || session.parentId) {
-    await setArchived(session.id, archived);
+  if (!archived) {
+    await setArchived(session.id, false);
     return;
   }
-  let children = await familyChildren(session);
-  if (!children.length) {
-    try {
-      await setArchived(session.id, true, false, []);
-      return;
-    } catch (error) {
-      if (!errorMessage(error).includes(familyChanged)) throw error;
-    }
-    children = await familyChildren(session);
-    if (!children.length) throw new Error('The sub-sessions of this family changed. Try the archive again.');
+  const children = session.parentId ? [] : await familyChildren(session);
+  if (children.length) {
+    fillArchiveDialog(session, children);
+    $('archive-error').hidden = true;
+    showDialog($('archive-dialog'));
+    return;
   }
-  fillArchiveDialog(session, children);
-  $('archive-error').hidden = true;
+  try {
+    await setArchived(session.id, true, false, []);
+    return;
+  } catch (error) {
+    if (!errorMessage(error).includes(familyChanged)) throw error;
+  }
+  const current = await call(server, { operation: 'session-config', session: session.id });
+  const now = current.parentId ? [] : await familyChildren(current);
+  if (!now.length) throw new Error('The family of this session changed. Try the archive again.');
+  fillArchiveDialog(current, now);
+  $('archive-error').textContent = 'The sub-sessions of this family changed. Check the list again.';
+  $('archive-error').hidden = false;
   showDialog($('archive-dialog'));
 }
 
