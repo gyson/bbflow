@@ -687,8 +687,9 @@ Archive and restore follow the family:
   the sub-sessions that it listed. If the family has other sub-sessions at that time,
   bbflow archives nothing, and the dialog shows the new members. An archive without the
   dialog confirms no sub-sessions. Thus a new sub-session also stops it, also when
-  another view made the session a parent after this view listed it as a sub-session. The
-  view then shows the dialog with the current members.
+  another view made the session a parent after this view listed it as a sub-session. A
+  confirmation also fails when another view made the parent a sub-session. The view then
+  shows the dialog with the current members.
 - Archive of a sub-session archives only that session. Archived then shows it under its
   parent as a context row.
 - Restore of a top-level session also restores all of its archived sub-sessions, also a
@@ -2091,7 +2092,8 @@ family archive dialog, the welcome view after the archive of a selected sub-sess
 restore of the family, and search context. No real agent CLI was used. Web fixtures also
 verify the status icons and texts and the first 5 sub-sessions of a family. Family
 fixtures verify a rejected archive when the confirmed sub-sessions differ, also for a
-sub-session that became a parent, and a stale draft revision after a move. Server fixtures verify the base from a parent worktree
+sub-session that became a parent and for a parent that became a sub-session, and a stale
+draft revision after a move. Server fixtures verify the base from a parent worktree
 after a branch switch and on a detached commit, and the rejection of a parent workspace
 before the first terminal of the parent.
 

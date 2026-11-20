@@ -258,6 +258,34 @@ func TestArchiveOfAFormerSubSessionChecksItsNewFamily(t *testing.T) {
 	}
 }
 
+// A view can still list a family after another view made its parent a sub-session. Its
+// confirmation names sub-sessions that the session does not have now, so it archives
+// nothing.
+func TestArchiveOfAFormerParentChecksItsSubSessions(t *testing.T) {
+	f := newFamilyStore(t)
+	parent, docs := f.ids["Parent"], f.ids["Docs"]
+	for _, child := range []string{f.ids["Reviewer"], docs} {
+		if err := f.SetSessionParent(child, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.SetSessionParent(parent, f.ids["Solo"]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.SetSessionArchived(parent, true, nil, []string{docs}); err != ErrFamilyChanged {
+		t.Fatal(err)
+	}
+	for _, id := range []string{parent, docs} {
+		if session, err := f.Session(id); err != nil || session.Archived {
+			t.Fatal("a rejected archive changed a session", session, err)
+		}
+	}
+	ids, err := f.SetSessionArchived(parent, true, nil, nil)
+	if err != nil || !reflect.DeepEqual(ids, []string{parent}) {
+		t.Fatal(ids, err)
+	}
+}
+
 func TestSessionParentRules(t *testing.T) {
 	f := newFamilyStore(t)
 	for _, test := range []struct{ session, parent, message string }{

@@ -187,11 +187,11 @@ const listSessionsSQL = `WITH listed AS (
 //
 // The transaction rejects archive for recorded active runs or an unfinished launch claim
 // in any of these sessions. live reports a live terminal that the server owns. It can be
-// nil. members are the sub-sessions that the user confirmed for the archive of a
-// top-level session. Nil confirms no sub-sessions. The archive fails with
-// ErrFamilyChanged unless the sub-sessions that are not archived are exactly these. Thus
-// a view that saw a session as a sub-session or without sub-sessions cannot archive a
-// family that another view made.
+// nil. members are the sub-sessions that the user confirmed for the archive. Nil confirms
+// no sub-sessions. Each archive fails with ErrFamilyChanged unless the sub-sessions of
+// the session that are not archived are exactly these. A sub-session has none. Thus a
+// view with an earlier family cannot archive a family that another view changed, in
+// either direction.
 func (s *Store) SetSessionArchived(id string, archived bool, live func(id string) bool, members []string) ([]string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -230,7 +230,8 @@ func (s *Store) SetSessionArchived(id string, archived bool, live func(id string
 			return nil, err
 		}
 	}
-	if archived && parent == "" {
+	if archived {
+		// ids holds only the session itself for a sub-session.
 		confirmed := slices.Clone(members)
 		children := slices.Clone(ids[1:])
 		slices.Sort(confirmed)

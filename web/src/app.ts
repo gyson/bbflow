@@ -1243,13 +1243,16 @@ async function initialize() {
       if (!archiving) return;
       const { session, members } = archiving;
       try {
-        await setArchived(session.id, true, true, members);
+        // A family changed in another view can have no sub-sessions now.
+        await setArchived(session.id, true, members.length > 0, members);
         $('archive-dialog').close();
       } catch (error) {
         let message = errorMessage(error);
-        if (message.includes(familyChanged)) {
-          // Another view changed the family. Show its members now and archive nothing.
-          fillArchiveDialog(session, await familyChildren(session));
+        if (message.includes(familyChanged) && server) {
+          // Another view changed the family. Read the session again, because it can be a
+          // sub-session now, and show its members. Nothing is archived.
+          const current = await call(server, { operation: 'session-config', session: session.id });
+          fillArchiveDialog(current, current.parentId ? [] : await familyChildren(current));
           message = 'The sub-sessions of this family changed. Check the list again.';
         }
         $('archive-error').textContent = message;

@@ -46,28 +46,28 @@ type Request struct {
 	Revision    int64              `json:"revision,omitempty"`
 	Project     string             `json:"project,omitempty"`
 	Parent      string             `json:"parent,omitempty"` // A top-level session. Empty means the top level.
-	// Members are the sub-sessions that the user confirmed for a family archive. Nil
-	// means no check.
-	Members []string `json:"members,omitempty"`
-	Name        string             `json:"name,omitempty"`
-	Workspace   string             `json:"workspace,omitempty"`
-	Protocol    string             `json:"protocol"`
-	Operation   string             `json:"operation"`
-	Instance    string             `json:"instance,omitempty"`
-	SQL         string             `json:"sql,omitempty"`
-	Session     string             `json:"session,omitempty"`
-	LatestRun   string             `json:"latestRun,omitempty"` // The latest run that the view saw.
-	Run         string             `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
-	Shell       string             `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
-	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
-	Limit       int                `json:"limit,omitempty"`
-	Groups      []string           `json:"groups,omitempty"` // Session list group keys. "" is Standalone.
-	Offset      int                `json:"offset,omitempty"` // The sessions of the group to skip.
-	Size        Size               `json:"size,omitempty"`
-	Draft       *Draft             `json:"draft,omitempty"`
-	Upload      *Upload            `json:"upload,omitempty"`
-	Text        string             `json:"text,omitempty"`    // A sample message for title-test.
-	Version     string             `json:"version,omitempty"` // The release of the offer that update-start confirms.
+	// Members are the sub-sessions that the user confirmed for an archive. Nil confirms
+	// none. The archive fails if the session has other sub-sessions.
+	Members   []string `json:"members,omitempty"`
+	Name      string   `json:"name,omitempty"`
+	Workspace string   `json:"workspace,omitempty"`
+	Protocol  string   `json:"protocol"`
+	Operation string   `json:"operation"`
+	Instance  string   `json:"instance,omitempty"`
+	SQL       string   `json:"sql,omitempty"`
+	Session   string   `json:"session,omitempty"`
+	LatestRun string   `json:"latestRun,omitempty"` // The latest run that the view saw.
+	Run       string   `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
+	Shell     string   `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
+	Tool      string   `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
+	Limit     int      `json:"limit,omitempty"`
+	Groups    []string `json:"groups,omitempty"` // Session list group keys. "" is Standalone.
+	Offset    int      `json:"offset,omitempty"` // The sessions of the group to skip.
+	Size      Size     `json:"size,omitempty"`
+	Draft     *Draft   `json:"draft,omitempty"`
+	Upload    *Upload  `json:"upload,omitempty"`
+	Text      string   `json:"text,omitempty"`    // A sample message for title-test.
+	Version   string   `json:"version,omitempty"` // The release of the offer that update-start confirms.
 
 	Search  *history.SearchFilter   `json:"search,omitempty"`
 	Context *history.ContextRequest `json:"context,omitempty"`

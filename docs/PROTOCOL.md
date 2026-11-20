@@ -251,9 +251,9 @@ event text.
 
 `session-archive` changes visibility without deleting records or files and without
 changing run/preparation state. Archive of a top-level session also archives its
-sub-sessions. Every member must be stopped. The archive of a top-level session fails
-with no change unless its sub-sessions that are not archived are exactly `members`. A
-missing or empty list confirms no sub-sessions. Restore of a top-level session also
+sub-sessions. Every member must be stopped. Each archive fails with no change unless
+the sub-sessions of the session that are not archived are exactly `members`. A
+sub-session has none. A missing or empty list confirms no sub-sessions. Restore of a top-level session also
 restores its archived sub-sessions. Restore of a sub-session also restores its archived parent.
 It shares the launch lock with session-start and rejects live sessions and unfinished
 launch claims. Archived drafts remain editable, but session-start rejects them until
