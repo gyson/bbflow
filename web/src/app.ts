@@ -837,7 +837,9 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   endReason = null;
   await composer.select('');
   notice();
-  if (selected?.id !== session.id) terminalPicker.update([]);
+  // A start or a continue adds a terminal, so the list of the session is stale. Until the
+  // new list arrives, the view shows no terminal selector and no tool.
+  if (start || selected?.id !== session.id) terminalPicker.update([]);
   selected = session;
   terminalPicker.show(start ? '' : run);
   if (archivedList !== !!session.archived) {

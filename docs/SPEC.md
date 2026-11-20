@@ -1152,7 +1152,9 @@ session. The session toolbar hides **Stop session** and **Continue in new termin
 you view an earlier terminal.
 
 The UI reads the list with `session-terminals` when it opens a session, when a terminal
-starts or exits, and when the selector opens. The tool name comes from the start event
+starts or exits, and when the selector opens. A start or a continue first clears the list
+of the view, because the list then lacks the new terminal. The selector hides until the
+new list arrives. The tool name comes from the start event
 of each run. Start events from bbflow 0.0.4 and earlier have no tool, so the first run
 uses the tool of the preparation. A new terminal has no run record until its process
 starts. Until then, the list ends with a `starting` terminal without a run ID. The UI
@@ -1639,7 +1641,8 @@ line shows the tool of the shown terminal, the worktree branch, and the workspac
 for example `Codex · ⑂ feature · /path/to/workspace`. Each terminal records its own tool,
 so the line changes when a view shows an earlier terminal with another tool. A draft
 shows only its path. Until the terminal list loads, or when it cannot load, the line
-shows no tool. The toolbar does not show the startup command. The shell usually
+shows no tool. A start or a continue clears the list of the view, so the line shows no
+tool until the list with the new terminal arrives. The toolbar does not show the startup command. The shell usually
 echoes it at the top of the terminal, and the start event records it. At the right, a search
 icon opens **Search history**. Three icons show the Changes, Files, and Terminal views of
 the workspace pane. **Reconnect** shows when a view of a live terminal has no connection.
@@ -2286,7 +2289,9 @@ reply of the demo agent. An earlier terminal showed the selector, the hint, and
 **Back to live terminal**. An ended session showed **Continue in new terminal** in the
 toolbar. The home page, a draft, Settings, and two dialogs also showed correctly. With the Files pane open in a window 1,152 pixels wide, the
 action row of the message editor wrapped, and **Send** stayed inside the editor. A
-dropped `session-terminals` request left the toolbar line without a tool. After
+dropped `session-terminals` request left the toolbar line without a tool. During a
+continue with another tool, a delayed list left the line without a tool until the new
+list arrived. Then the line showed the new tool. After
 Command-Enter, the keyboard focus was in the editor again. The check did not use a
 pointer, so tooltip display on hover is not verified.
 
