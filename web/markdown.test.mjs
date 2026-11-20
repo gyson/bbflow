@@ -53,6 +53,21 @@ test('an escaped or entity checkbox marker stays text', () => {
   assert.match(html, /<li>\[x\] Late escape<\/li>/);
 });
 
+test('fenced code of a supported language gets syntax color classes', () => {
+  const html = renderMarkdown('```Go title\nfunc main() { s := "<b>&amp;" } // <i>\n```\n');
+  assert.match(html, /^<pre><code class="language-Go"><span class="hl-keyword">func<\/span> /);
+  assert.match(html, /<span class="hl-string">&quot;&lt;b&gt;&amp;amp;&quot;<\/span>/);
+  assert.match(html, /<span class="hl-comment">\/\/ &lt;i&gt;<\/span>\n<\/code><\/pre>\n$/);
+  assert.doesNotMatch(html, /<b>|<i>/);
+});
+
+test('fenced code of another language stays plain escaped text', () => {
+  assert.equal(renderMarkdown('```\n<i>x</i>\n```\n'), '<pre><code>&lt;i&gt;x&lt;/i&gt;\n</code></pre>\n');
+  assert.equal(renderMarkdown('```nope\nfunc x\n```\n'), '<pre><code class="language-nope">func x\n</code></pre>\n');
+  const html = renderMarkdown('```go"><script>\nfunc x\n```\n');
+  assert.equal(html, '<pre><code class="language-go&quot;&gt;&lt;script&gt;">func x\n</code></pre>\n');
+});
+
 test('a checkbox prefix outside a list item stays text', () => {
   assert.equal(renderMarkdown('[ ] not a task\n'), '<p>[ ] not a task</p>\n');
 });

@@ -1,12 +1,28 @@
 import MarkdownIt from 'markdown-it';
 import type { StateCore, Token } from 'markdown-it';
+import { highlightCode } from '@lezer/highlight';
 import type { WorkspaceFile } from './protocol.js';
-import { languageName } from './diff-model.js';
+import { codeHighlighter, parser } from './code-highlight.js';
+import { fenceLanguage, languageName } from './diff-model.js';
 
 // The preview renders untrusted file text. markdown-it escapes all text, and html: false
-// shows raw HTML as text. The rules below also keep links and images from loading
-// content.
-const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
+// shows raw HTML as text. fencedCode escapes the code text that it colors. The rules
+// below also keep links and images from loading content.
+const md = new MarkdownIt({ html: false, linkify: false, typographer: false, highlight: fencedCode });
+
+// A fenced code block gets the syntax colors of the file view when the first word of its
+// info string names a supported language. An empty result lets markdown-it escape the
+// block as plain text.
+function fencedCode(code: string, info: string): string {
+  const language = parser(fenceLanguage(info));
+  if (!language) return '';
+  let html = '';
+  highlightCode(code, language.parser.parse(code), codeHighlighter, (text, classes) => {
+    const escaped = md.utils.escapeHtml(text);
+    html += classes ? `<span class="${classes}">${escaped}</span>` : escaped;
+  }, () => { html += '\n'; });
+  return html;
+}
 
 // Only these links open, in a new tab. Other links, such as relative paths, show as text.
 // The markdown-it link check also keeps javascript:, vbscript:, file:, and most data:
