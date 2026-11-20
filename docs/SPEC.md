@@ -517,8 +517,8 @@ port that the server uses now and when a saved port applies. Text that is not a 
 number, a port outside 1024 to 65535, and a new port that another program holds fail to
 save. A port that browsers refuse to open also fails. The error shows below the
 field. A failed port save does not join a later save of another setting. An edit made
-during a port save stays in the field after the reply. Open tabs do not move to a new
-port.
+during a port save stays in the field after the reply, with its own error. Open tabs do
+not move to a new port.
 
 In **Tools**, enter a name and command in the blank row at the bottom. Click **Add tool**
 to save the new tool. Click **Edit** beside a saved tool to edit it in its row. Click

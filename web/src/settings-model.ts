@@ -138,9 +138,14 @@ export class PortField {
     return this.inputs;
   }
 
-  done(token: number, saved: boolean): void {
+  // done tells if the save is current: no input came after the save started. Only a
+  // current save changes the error of the field. Thus a late reply keeps the error of a
+  // newer edit.
+  done(token: number, saved: boolean): boolean {
     this.saving--;
-    if (saved && token === this.inputs) this.edited = false;
+    const current = token === this.inputs;
+    if (saved && current) this.edited = false;
+    return current;
   }
 }
 

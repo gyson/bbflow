@@ -188,10 +188,25 @@ test('a Port field with the saved text has no edit, and a failed save keeps the 
   assert.ok(!field.edited);
   field.input('6000', 50001);
   const token = field.begin();
-  field.done(token, false);
+  assert.ok(field.done(token, false));
   assert.ok(field.edited);
   assert.equal(field.render(50001), '6000');
   const again = field.begin();
-  field.done(again, true);
+  assert.ok(field.done(again, true));
   assert.equal(field.render(50001), '50001');
+});
+
+test('a late port reply does not change the error of a newer edit', () => {
+  const field = new PortField();
+  field.input('50001', 0);
+  const token = field.begin();
+  // Invalid text after the save started. Its validation error must stay.
+  field.input('abc', 0);
+  assert.ok(!field.done(token, true), 'a late success would hide the newer error');
+  assert.ok(field.edited);
+  assert.equal(field.render(50001), 'abc');
+  field.input('50002', 50001);
+  const failed = field.begin();
+  field.input('xyz', 50001);
+  assert.ok(!field.done(failed, false), 'a late failure would replace the newer error');
 });

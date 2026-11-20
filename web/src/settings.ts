@@ -398,11 +398,10 @@ export class SettingsView {
     if (!this.saved) return;
     const token = this.portField.begin();
     void this.saves.savePort(port).then(() => {
-      this.portField.done(token, true);
-      this.portError.hidden = true;
+      if (this.portField.done(token, true)) this.portError.hidden = true;
       this.render();
     }, (error: unknown) => {
-      this.portField.done(token, false);
+      if (!this.portField.done(token, false)) return;
       this.portError.textContent = errorMessage(error);
       this.portError.hidden = false;
     });
