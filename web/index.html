@@ -30,7 +30,7 @@
         <button id="pane-terminal" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show terminal" data-tip="Show terminal" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M6 8l2.5 2L6 12"/><path d="M10.5 12.5h3.5"/></svg></button>
         <button id="reconnect" hidden data-tip="Connect this view to the live terminal again.">Reconnect</button>
         <span id="session-menu-box"><button id="session-menu-open" class="toolbar-icon" aria-haspopup="menu" aria-expanded="false" aria-controls="session-menu" aria-label="More actions" data-tip="More actions" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><g class="dots"><circle cx="4.5" cy="10" r="1.4"/><circle cx="10" cy="10" r="1.4"/><circle cx="15.5" cy="10" r="1.4"/></g></svg></button>
-          <div id="session-menu" role="menu" aria-label="More actions" hidden><button id="rename-session" role="menuitem" hidden>Rename</button><button id="copy-session-id" role="menuitem" hidden>Copy session ID</button><button id="new-sub-session" role="menuitem" hidden>New sub-session</button><button id="move-session" role="menuitem" aria-haspopup="dialog" hidden>Move under…</button><button id="move-top-level" role="menuitem" hidden>Move to top level</button><button id="archive-session" role="menuitem" hidden>Archive</button><button id="reload-output" role="menuitem" hidden>Reload output</button><button id="remove-worktree" role="menuitem" class="danger" hidden>Remove worktree</button></div></span>
+          <div id="session-menu" role="menu" aria-label="More actions" hidden><button id="rename-session" role="menuitem" hidden>Rename</button><button id="copy-session-id" role="menuitem" hidden>Copy session ID</button><button id="new-sub-session" role="menuitem" hidden>New sub-session</button><button id="archive-session" role="menuitem" hidden>Archive</button><button id="reload-output" role="menuitem" hidden>Reload output</button><button id="remove-worktree" role="menuitem" class="danger" hidden>Remove worktree</button></div></span>
       </div>
     </header>
     <div id="notice" role="status" hidden></div>
@@ -193,15 +193,6 @@
       <p id="project-remove-help" class="form-help" hidden>Removing a project moves its sessions to Standalone. Their history, running processes, and files are preserved.</p>
       <p id="project-error" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button id="project-remove" type="button" class="danger" hidden>Remove project</button><button id="project-submit" type="submit" class="primary">Add project</button></div>
-    </form>
-  </dialog>
-  <dialog id="move-dialog" aria-labelledby="move-title">
-    <form id="move-form">
-      <div class="dialog-heading"><div><span class="eyebrow">SUB-SESSION</span><h2 id="move-title">Move under a session</h2></div><button type="button" id="cancel-move" class="text-button" aria-label="Close move">✕</button></div>
-      <p class="form-help">Choose a top-level session of the same project. A move changes only the sidebar. The workspace, files, and history of the session stay the same.</p>
-      <div id="move-choices" class="choice-list" role="radiogroup" aria-label="Parent session"></div>
-      <p id="move-error" class="form-error" role="alert" hidden></p>
-      <button id="move-submit" type="submit" class="primary">Move</button>
     </form>
   </dialog>
   <dialog id="archive-dialog" aria-labelledby="archive-title">

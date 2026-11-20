@@ -45,7 +45,7 @@ type Request struct {
 	Preparation *PreparationConfig `json:"preparation,omitempty"`
 	Revision    int64              `json:"revision,omitempty"`
 	Project     string             `json:"project,omitempty"`
-	Parent      string             `json:"parent,omitempty"` // A top-level session. Empty means the top level.
+	Parent      string             `json:"parent,omitempty"` // The parent session of a new sub-session draft.
 	// Members are the sub-sessions that the user confirmed for an archive. Nil confirms
 	// none. The archive fails if the session has other sub-sessions.
 	Members   []string `json:"members,omitempty"`

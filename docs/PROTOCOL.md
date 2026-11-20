@@ -95,7 +95,6 @@ storage-report operations.
 | `workspace-folders` | `session` ID, `diff` object with `folders` | `result`, containing `folders` and an optional `ignoreError` |
 | `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath`, `baseline`, and `from` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed; missing confirms none) | `result`, containing `archived`. Applies to the family as described below. Rejects active runs and unfinished launch claims. |
-| `session-parent` | `session` ID, `parent` (a top-level session ID, or empty for the top level) | `result`, containing `parent`. Changes only the family of the session. |
 | `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
 | `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal and the [release offer](#release-offers) first, then all of them again after each change |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
@@ -132,14 +131,8 @@ reattach. Never repeat session-start.
 
 New sessions start with project-draft, session-config, then session-start. A sub-session
 draft without a worktree starts in the current workspace of its parent. Its start fails
-until the first terminal of the parent started.
-
-`session-parent` moves a session under a top-level session of the same project, or to
-the top level with an empty `parent`. It rejects a session with sub-sessions, a
-sub-session as parent, an archived session or parent, and a parent in another project.
-It changes no workspace, history, or recency. A move of a draft increases its
-preparation revision, so that a view with the earlier revision cannot save or start it. The project
-supplies a fixed workspace. An unknown project fails before draft creation. A missing
+until the first terminal of the parent started. The parent of a sub-session does not
+change. The project supplies a fixed workspace. An unknown project fails before draft creation. A missing
 folder fails creation or launch. The server resolves its `$SHELL` from PATH or an
 absolute path.
 
@@ -202,9 +195,9 @@ Protocol 30 adds `update-start`, the `version` request field, and the `update` f
 `statuses` messages for [release offers](#release-offers). Settings add `updateCheck`.
 SQLite format 12 adds `updateCheck: true`.
 
-Protocol 31 adds session families. `project-draft` accepts `parent`, and `session-parent`
-is new. Session summaries add `parentId`, `context`, and `runStatus`. `session-list` limits and offsets
-count families. `session-archive` archives and restores families. SQLite format 13 adds
+Protocol 31 adds session families. `project-draft` accepts `parent`. Session summaries
+add `parentId`, `context`, and `runStatus`. `session-list` limits and offsets count
+families. `session-archive` archives and restores families. SQLite format 13 adds
 the `sessions.parent_id` column.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the

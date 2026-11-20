@@ -58,16 +58,8 @@ const elements = {
   'cancel-project': element('cancel-project', HTMLButtonElement),
   'rename-session': element('rename-session', HTMLButtonElement),
   'new-sub-session': element('new-sub-session', HTMLButtonElement),
-  'move-session': element('move-session', HTMLButtonElement),
-  'move-top-level': element('move-top-level', HTMLButtonElement),
   'session-parent': element('session-parent', HTMLElement),
   'session-parent-open': element('session-parent-open', HTMLButtonElement),
-  'move-dialog': element('move-dialog', HTMLDialogElement),
-  'move-form': element('move-form', HTMLFormElement),
-  'move-choices': element('move-choices', HTMLElement),
-  'move-error': element('move-error', HTMLElement),
-  'move-submit': element('move-submit', HTMLButtonElement),
-  'cancel-move': element('cancel-move', HTMLButtonElement),
   'archive-dialog': element('archive-dialog', HTMLDialogElement),
   'archive-form': element('archive-form', HTMLFormElement),
   'archive-summary': element('archive-summary', HTMLElement),
@@ -252,7 +244,6 @@ const dialogEdits = new DialogEdits([
 ]);
 const dialogErrors = new Map([
   [$('project-dialog'), $('project-error')],
-  [$('move-dialog'), $('move-error')],
   [$('archive-dialog'), $('archive-error')],
   [$('rename-dialog'), $('rename-error')],
   [$('continue-dialog'), $('continue-error')],
@@ -368,9 +359,7 @@ function controls() {
   const organize = !showingSettings && !!selected?.id && !selected.archived;
   $('new-sub-session').hidden = !organize || !projects.some(project => project.id === selected?.projectId);
   $('new-sub-session').textContent = selected?.parentId ? 'New sub-session in this family' : 'New sub-session';
-  $('move-session').hidden = !organize || sessions.some(session => session.parentId === selected?.id);
-  $('move-top-level').hidden = !organize || !selected?.parentId;
-  $('new-sub-session').disabled = $('move-session').disabled = $('move-top-level').disabled = $('move-submit').disabled = $('archive-submit').disabled = busy;
+  $('new-sub-session').disabled = $('archive-submit').disabled = busy;
   const parent = selected?.parentId ? sessions.find(session => session.id === selected?.parentId) : undefined;
   $('session-parent').hidden = showingSettings || !selected?.parentId;
   $('session-parent-open').textContent = parent ? sessionTitle(parent) || 'Untitled session' : 'its parent session';
@@ -1111,9 +1100,8 @@ function fillArchiveDialog(session: ArchiveTarget, children: SessionInfo[]): voi
 
 // Archive or restore a session. Archive of a top-level session with sub-sessions asks
 // first, because it archives the whole family. Each archive sends the sub-sessions that
-// the user saw, also an empty list for a sub-session. The server archives nothing if the
-// family is different now, for example after another view made a sub-session a parent.
-// The dialog then shows the current members.
+// the user saw, also an empty list. The server archives nothing if another view added a
+// sub-session. The dialog then shows the current members.
 async function requestArchive(session: ArchiveTarget, archived: boolean): Promise<void> {
   if (!server) return;
   if (!archived) {
@@ -1133,74 +1121,12 @@ async function requestArchive(session: ArchiveTarget, archived: boolean): Promis
   } catch (error) {
     if (!errorMessage(error).includes(familyChanged)) throw error;
   }
-  const current = await call(server, { operation: 'session-config', session: session.id });
-  const now = current.parentId ? [] : await familyChildren(current);
-  if (!now.length) throw new Error('The family of this session changed. Try the archive again.');
-  fillArchiveDialog(current, now);
+  const now = await familyChildren(session);
+  if (!now.length) throw new Error('The sub-sessions of this family changed. Try the archive again.');
+  fillArchiveDialog(session, now);
   $('archive-error').textContent = 'The sub-sessions of this family changed. Check the list again.';
   $('archive-error').hidden = false;
   showDialog($('archive-dialog'));
-}
-
-// The session that the move dialog moves.
-let moving: { id: string; parentId: string } | null = null;
-
-// List the top-level sessions of the same project as choices for a new parent.
-async function showMove(): Promise<void> {
-  if (!server || !selected?.id) return;
-  const session = { id: selected.id, parentId: selected.parentId ?? '' };
-  const page = await call(server, { operation: 'session-list', groups: [groupKey(selected.projectId)], limit: sessionWindow });
-  const choices = page.sessions.filter(item => !item.parentId && !item.context && item.id !== session.id);
-  moving = session;
-  $('move-choices').replaceChildren(...choices.map(choice => {
-    const label = document.createElement('label');
-    label.className = 'choice';
-    const input = document.createElement('input');
-    input.type = 'radio';
-    input.name = 'move-parent';
-    input.value = choice.id;
-    input.checked = choice.id === session.parentId;
-    const dot = document.createElement('span');
-    dot.className = `status-icon ${statusIcon(listStatus(choice, liveStatuses), choice.runStatus)}`;
-    const text = document.createElement('span');
-    text.className = 'choice-text';
-    const name = document.createElement('strong');
-    name.textContent = sessionTitle(choice) || (choice.status === 'draft' ? 'Untitled draft' : 'Untitled session');
-    const detail = document.createElement('small');
-    detail.textContent = (choice.id === session.parentId ? 'Current parent · ' : '') + listStatusLabel(listStatus(choice, liveStatuses), choice);
-    text.append(name, detail);
-    label.append(input, dot, text);
-    return label;
-  }));
-  if (!choices.length) {
-    const empty = document.createElement('p');
-    empty.className = 'form-help';
-    empty.textContent = 'This project has no other top-level session.';
-    $('move-choices').append(empty);
-  }
-  $('move-error').hidden = true;
-  showDialog($('move-dialog'));
-}
-
-// Move a session under a parent, or to the top level with an empty parent.
-async function moveSession(id: string, parent: string): Promise<void> {
-  if (!server) return;
-  // A move changes the meaning of the workspace choice of a draft. The server then makes
-  // the saved choices stale in every view. Save an open draft first. Then open it again
-  // with the choices of its new place.
-  const current = selected?.id === id ? selected : null;
-  if (current) {
-    await preparation.flush();
-    await composer.flush();
-  }
-  await call(server, { operation: 'session-parent', session: id, parent });
-  if (current) {
-    current.parentId = parent;
-    if (current.status === 'draft' && !showingSettings) await openSession(current);
-  }
-  await refreshSessions();
-  const title = sessionTitle(sessions.find(session => session.id === parent) ?? { title: '' });
-  notice(parent ? `Moved under “${title || 'the parent session'}”. The workspace did not change.` : 'Moved to the top level. The workspace did not change.');
 }
 
 // Archive or restore a session. The selected session first saves its launch choices and
@@ -1243,16 +1169,14 @@ async function initialize() {
       if (!archiving) return;
       const { session, members } = archiving;
       try {
-        // A family changed in another view can have no sub-sessions now.
+        // Another view can archive the sub-sessions first, so that the list is empty now.
         await setArchived(session.id, true, members.length > 0, members);
         $('archive-dialog').close();
       } catch (error) {
         let message = errorMessage(error);
-        if (message.includes(familyChanged) && server) {
-          // Another view changed the family. Read the session again, because it can be a
-          // sub-session now, and show its members. Nothing is archived.
-          const current = await call(server, { operation: 'session-config', session: session.id });
-          fillArchiveDialog(current, current.parentId ? [] : await familyChildren(current));
+        if (message.includes(familyChanged)) {
+          // Another view changed the sub-sessions. Show them now. Nothing is archived.
+          fillArchiveDialog(session, await familyChildren(session));
           message = 'The sub-sessions of this family changed. Check the list again.';
         }
         $('archive-error').textContent = message;
@@ -1263,30 +1187,6 @@ async function initialize() {
   $('new-sub-session').onclick = () => action(async () => {
     if (selected?.id) await showSubLaunch(selected.id);
   });
-  $('move-session').onclick = () => action(showMove);
-  $('move-top-level').onclick = () => action(async () => {
-    if (selected?.id) await moveSession(selected.id, '');
-  });
-  $('cancel-move').onclick = () => $('move-dialog').close();
-  $('move-form').onsubmit = event => {
-    event.preventDefault();
-    action(async () => {
-      const choice = $('move-choices').querySelector<HTMLInputElement>('input:checked');
-      if (!moving) return;
-      if (!choice || choice.value === moving.parentId) {
-        $('move-error').textContent = 'Choose a new parent session.';
-        $('move-error').hidden = false;
-        return;
-      }
-      try {
-        await moveSession(moving.id, choice.value);
-        $('move-dialog').close();
-      } catch (error) {
-        $('move-error').textContent = errorMessage(error);
-        $('move-error').hidden = false;
-      }
-    });
-  };
   $('session-parent-open').onclick = () => action(async () => {
     const id = selected?.parentId;
     if (id) await openSession(sessions.find(session => session.id === id) || { id, title: 'Session', workspace: '', status: 'unknown' });

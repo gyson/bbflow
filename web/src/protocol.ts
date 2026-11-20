@@ -135,8 +135,6 @@ type ListRequest = { operation: 'session-list'; limit?: number; groups: string[]
 // members are the sub-sessions that the user confirmed for the archive of a top-level
 // session. The server then archives nothing if the family has other sub-sessions.
 type ArchiveRequest = { operation: 'session-archive'; session: string; archived: boolean; members?: string[] };
-// An empty parent moves the session to the top level.
-type ParentRequest = { operation: 'session-parent'; session: string; parent: string };
 type StopSessionRequest = { operation: 'session-stop'; session: string };
 type ProjectListRequest = { operation: 'project-list' };
 type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: string };
@@ -157,7 +155,7 @@ type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
 // shell stops only that shell. Without shell, the request stops the live shell.
 type StopSideRequest = { operation: 'side-terminal-stop'; session: string; shell?: string };
-type RPCRequest = UpdateRequest | DiffRPC | TitleTestRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | ParentRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = UpdateRequest | DiffRPC | TitleTestRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -394,7 +392,6 @@ export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Pr
 export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;
 export function call(server: ServerInfo, request: ProjectRemoveRequest): Promise<{ removed: boolean }>;
 export function call(server: ServerInfo, request: ArchiveRequest): Promise<{ archived: boolean }>;
-export function call(server: ServerInfo, request: ParentRequest): Promise<{ parent: string }>;
 export function call(server: ServerInfo, request: ListRequest): Promise<SessionPage>;
 export function call(server: ServerInfo, request: StopSessionRequest | StopSideRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;

@@ -230,134 +230,38 @@ func TestFamilyArchive(t *testing.T) {
 	}
 }
 
-// A view can still show a session as a sub-session after another view made it a parent.
-// Its archive confirms no sub-sessions, so it archives nothing.
-func TestArchiveOfAFormerSubSessionChecksItsNewFamily(t *testing.T) {
+// A sub-session draft needs a top-level parent in the same project that is not archived.
+// Nothing changes the parent after the draft exists.
+func TestSubSessionDraftRules(t *testing.T) {
 	f := newFamilyStore(t)
-	reviewer := f.ids["Reviewer"]
-	if err := f.SetSessionParent(reviewer, ""); err != nil {
+	if _, err := f.SetSessionArchived(f.ids["Older"], true, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	child, err := f.CreateSubPreparation(reviewer, f.work.Workspace, f.work.ID, Preparation{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, members := range [][]string{nil, {}} {
-		if _, err = f.SetSessionArchived(reviewer, true, nil, members); err != ErrFamilyChanged {
-			t.Fatal(members, err)
-		}
-	}
-	for _, id := range []string{reviewer, child.ID} {
-		if session, err := f.Session(id); err != nil || session.Archived {
-			t.Fatal("a rejected archive changed a session", session, err)
-		}
-	}
-	ids, err := f.SetSessionArchived(reviewer, true, nil, []string{child.ID})
-	if err != nil || !reflect.DeepEqual(ids, []string{reviewer, child.ID}) {
-		t.Fatal(ids, err)
-	}
-}
-
-// A view can still list a family after another view made its parent a sub-session. Its
-// confirmation names sub-sessions that the session does not have now, so it archives
-// nothing.
-func TestArchiveOfAFormerParentChecksItsSubSessions(t *testing.T) {
-	f := newFamilyStore(t)
-	parent, docs := f.ids["Parent"], f.ids["Docs"]
-	for _, child := range []string{f.ids["Reviewer"], docs} {
-		if err := f.SetSessionParent(child, ""); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := f.SetSessionParent(parent, f.ids["Solo"]); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.SetSessionArchived(parent, true, nil, []string{docs}); err != ErrFamilyChanged {
-		t.Fatal(err)
-	}
-	for _, id := range []string{parent, docs} {
-		if session, err := f.Session(id); err != nil || session.Archived {
-			t.Fatal("a rejected archive changed a session", session, err)
-		}
-	}
-	ids, err := f.SetSessionArchived(parent, true, nil, nil)
-	if err != nil || !reflect.DeepEqual(ids, []string{parent}) {
-		t.Fatal(ids, err)
-	}
-}
-
-func TestSessionParentRules(t *testing.T) {
-	f := newFamilyStore(t)
-	for _, test := range []struct{ session, parent, message string }{
-		{"Solo", "Solo", "own parent"},
-		{"Solo", "Reviewer", "cannot have sub-sessions"},
-		{"Parent", "Solo", "has sub-sessions"},
-		{"Solo", "Other", "same project"},
-		{"Solo", "missing", "not found"},
+	for _, test := range []struct{ parent, message string }{
+		{"Reviewer", "cannot have sub-sessions"},
+		{"Other", "same project"},
+		{"Older", "restore the parent"},
+		{"missing", "not found"},
+		{"", "choose a parent"},
 	} {
-		parent := f.ids[test.parent]
-		if parent == "" {
+		parent, known := f.ids[test.parent]
+		if !known {
 			parent = test.parent
 		}
-		if err := f.SetSessionParent(f.ids[test.session], parent); err == nil || !strings.Contains(err.Error(), test.message) {
-			t.Errorf("%s under %s: %v", test.session, test.parent, err)
+		if _, err := f.CreateSubPreparation(parent, f.work.Workspace, f.work.ID, Preparation{}); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("under %q: %v", test.parent, err)
 		}
 	}
-	if err := f.SetSessionParent("missing", ""); err != ErrNotFound {
-		t.Fatal(err)
-	}
-	// A move changes only the parent.
-	before, err := f.Session(f.ids["Solo"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = f.SetSessionParent(f.ids["Solo"], f.ids["Parent"]); err != nil {
-		t.Fatal(err)
-	}
-	after, err := f.Session(f.ids["Solo"])
-	// The parent gives the meaning of the workspace choice of a draft. Thus a view with
-	// the revision from before the move cannot start the draft.
-	before.ParentID = f.ids["Parent"]
-	before.Preparation.Revision++
-	if err != nil || !reflect.DeepEqual(after, before) {
-		t.Fatal(after, before, err)
-	}
-	if err = f.SetPreparationState(f.ids["Solo"], before.Preparation.Revision-1, "draft", "creating"); err == nil {
-		t.Fatal("claimed a draft with its revision from before the move")
-	}
-	titles, _ := f.list(t, SessionFilter{Groups: []string{f.work.ID}})
-	if want := []string{"Parent", "-Reviewer", "-Solo", "-Docs", "Older"}; !reflect.DeepEqual(titles, want) {
-		t.Fatal(titles)
-	}
-	if err = f.SetSessionParent(f.ids["Reviewer"], ""); err != nil {
-		t.Fatal(err)
-	}
-	if session, err := f.Session(f.ids["Reviewer"]); err != nil || session.ParentID != "" {
-		t.Fatal(session, err)
-	}
-	// Archived sessions and archived parents do not move.
-	if _, err = f.SetSessionArchived(f.ids["Older"], true, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err = f.SetSessionParent(f.ids["Older"], f.ids["Parent"]); err == nil {
-		t.Fatal("moved an archived session")
-	}
-	if err = f.SetSessionParent(f.ids["Reviewer"], f.ids["Older"]); err == nil {
-		t.Fatal("moved a session under an archived parent")
-	}
-	// A sub-session draft needs a top-level parent in the same project.
-	if _, err = f.CreateSubPreparation(f.ids["Docs"], f.work.Workspace, f.work.ID, Preparation{}); err == nil {
-		t.Fatal("created a second level")
-	}
-	if _, err = f.CreateSubPreparation(f.ids["Other"], f.work.Workspace, f.work.ID, Preparation{}); err == nil {
-		t.Fatal("created a sub-session in another project")
+	draft, err := f.CreateSubPreparation(f.ids["Parent"], f.work.Workspace, f.work.ID, Preparation{})
+	if err != nil || draft.ParentID != f.ids["Parent"] || draft.ProjectID != f.work.ID {
+		t.Fatal(draft, err)
 	}
 	// Project removal keeps the family together under Standalone.
 	if err = f.RemoveProject(f.work.ID); err != nil {
 		t.Fatal(err)
 	}
-	titles, _ = f.list(t, SessionFilter{Groups: []string{""}, Query: "parent"})
-	if want := []string{"Parent", "-Solo", "-Docs"}; !reflect.DeepEqual(titles, want) {
+	titles, _ := f.list(t, SessionFilter{Groups: []string{""}, Query: "parent"})
+	if want := []string{"Parent", "-Reviewer", "-Docs", "-"}; !reflect.DeepEqual(titles, want) {
 		t.Fatal(titles)
 	}
 }

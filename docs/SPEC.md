@@ -630,7 +630,9 @@ errors.
 A session can have sub-sessions. A sub-session belongs to one top-level session, its
 parent. A parent and its sub-sessions form a family. A family has one level: a
 sub-session cannot have sub-sessions. `sessions.parent_id` keeps the parent, or NULL for
-a top-level session. The link only organizes the list. A sub-session inherits no
+a top-level session. The parent is set when the sub-session draft is created, and it
+does not change. Thus families form only through **New sub-session**. Sessions from
+before families stay top-level sessions. The link only organizes the list. A sub-session inherits no
 history, draft, or settings from its parent. Each session keeps its own terminal, status,
 and lifecycle. **Stop session** stops one session only.
 
@@ -669,15 +671,8 @@ draft selects **Parent workspace**. A review-loop reviewer runs
 `gh pr checkout --detach`. In the parent workspace, that command would change the
 checkout of the implementer, so the draft form recommends a new worktree for it.
 
-**Move under…** in the More actions menu moves a session under a top-level session of
-the same project. The dialog lists the 100 most recent top-level sessions that are not
-archived. **Move to top level** makes a sub-session a top-level session. A move changes
-only `parent_id`. The workspace, files, history, and recency stay the same. The parent
-gives the meaning of the workspace choice of a draft. Thus a move of a draft increases
-its launch revision. The view that moved it opens the draft again with the choices of
-its new place. Another view must reload before it saves or starts the draft. The server
-rejects a move of a session with sub-sessions, a move under a sub-session, an archived
-parent, or a parent in another project. Removal of a project moves the whole family to
+The server rejects a sub-session draft under a sub-session, under an archived parent, or
+under a parent in another project. Removal of a project moves the whole family to
 Standalone.
 
 Archive and restore follow the family:
@@ -686,9 +681,7 @@ Archive and restore follow the family:
   It then archives the whole family. Every member must be stopped first. The view sends
   the sub-sessions that it listed. If the family has other sub-sessions at that time,
   bbflow archives nothing, and the dialog shows the new members. An archive without the
-  dialog confirms no sub-sessions. Thus a new sub-session also stops it, also when
-  another view made the session a parent after this view listed it as a sub-session. A
-  confirmation also fails when another view made the parent a sub-session. The view then
+  dialog confirms no sub-sessions, so a new sub-session also stops it. The view then
   shows the dialog with the current members.
 - Archive of a sub-session archives only that session. Archived then shows it under its
   parent as a context row.
@@ -1611,9 +1604,8 @@ When the session ends, **Continue in new terminal** shows there in the latest te
 - **Rename** shows for started sessions. The field shows the user title, or the derived
   title as a placeholder. An empty field removes the user title.
 - **Copy session ID** copies the ID of a started session to the clipboard.
-- **New sub-session** and **Move under…** show for sessions that are not archived. **Move
-  under…** does not show for a session with sub-sessions in the list. **Move to top
-  level** shows for a sub-session. See [session families](#session-families).
+- **New sub-session** shows for a session that is not archived and has a saved project.
+  See [session families](#session-families).
 - **Archive** shows for `draft` and `ended` sessions. It changes to **Restore** for an
   archived session.
 - **Reload output** shows for an ended session, in a view of its latest terminal.
@@ -2081,19 +2073,16 @@ update in migration 12 rolls back and keeps format 11.
 Family fixtures verify family order by the latest member, paging by family, an included
 sub-session that brings its family, search context, and context parents in Archived.
 They verify family archive and restore, live members that block an archive, and the
-rules of a move. Server fixtures create sub-session drafts with a Git repository. They
+rules of a sub-session draft. Server fixtures create sub-session drafts with a Git repository. They
 verify the base from the parent branch, a start in the parent worktree, a new worktree
 from the parent commit, and the rejection of a parent draft workspace. A failed index
 creation in migration 13 rolls back and keeps the earlier format. Web fixtures verify
 the families of the list, context families, the place labels, and the merge of pages
 without a repeated family. A browser check of a demo instance with the Demo agent
-verified a start in the parent workspace, **Move under…**, **Move to top level**, the
-family archive dialog, the welcome view after the archive of a selected sub-session,
+verified a start in the parent workspace, the family archive dialog, the welcome view after the archive of a selected sub-session,
 restore of the family, and search context. No real agent CLI was used. Web fixtures also
 verify the status icons and texts and the first 5 sub-sessions of a family. Family
-fixtures verify a rejected archive when the confirmed sub-sessions differ, also for a
-sub-session that became a parent and for a parent that became a sub-session, and a stale
-draft revision after a move. Server fixtures verify the base from a parent worktree
+fixtures verify a rejected archive when the confirmed sub-sessions differ. Server fixtures verify the base from a parent worktree
 after a branch switch and on a detached commit, and the rejection of a parent workspace
 before the first terminal of the parent.
 

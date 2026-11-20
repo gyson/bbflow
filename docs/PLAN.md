@@ -117,6 +117,10 @@ work remains.
 - Then let the review-loop implementer create its reviewer draft.
 - Do not start or send automatically. bbflow does not detect prompt readiness.
 - Consider a family bar above the terminal to switch between the members of a family.
+- Consider a way to put an existing session into a family, or to take a sub-session out,
+  only if daily use needs it. A parent that can change needs checks for views that
+  still show the earlier family: a stale draft form, and archive confirmations in both
+  directions.
 - Consider a restore of only the sub-sessions that a family archive archived. Now a
   restore of a parent restores all of its archived sub-sessions.
 

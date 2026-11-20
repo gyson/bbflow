@@ -335,13 +335,6 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .place-text strong { font-size: 13px; font-weight: 550; }
 .place-text small { font-size: 11px; color: var(--text-muted); line-height: 1.5; overflow-wrap: anywhere; }
 .place-help { grid-column: 1 / -1; margin: 0; }
-.choice-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; margin: 0 0 16px; padding: 2px; }
-.choice { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
-.choice:has(input:checked) { border-color: var(--accent); background: var(--selected); }
-.choice input { width: auto; margin: 0; accent-color: var(--primary); }
-.choice-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.choice-text strong { font-size: 13px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.choice-text small { font-size: 11px; color: var(--text-muted); }
 .archive-members { margin: 0 0 14px; padding-left: 20px; font-size: 13px; line-height: 1.8; }
 .project-more { margin: 2px 0 6px; padding: 6px 9px; background: transparent; border-color: transparent; font-size: 11px; color: var(--text-muted); }
 .project-more:hover { color: inherit; }

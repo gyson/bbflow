@@ -265,9 +265,6 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.reply(conn, result, err)
 	case "status-watch":
 		s.watchStatus(ctx, conn)
-	case "session-parent":
-		err := s.store.SetSessionParent(request.Session, request.Parent)
-		s.reply(conn, map[string]string{"parent": request.Parent}, err)
 	case "session-archive":
 		err := s.archiveSession(request.Session, request.Archived, request.Members)
 		s.reply(conn, map[string]bool{"archived": request.Archived}, err)

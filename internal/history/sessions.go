@@ -190,8 +190,8 @@ const listSessionsSQL = `WITH listed AS (
 // nil. members are the sub-sessions that the user confirmed for the archive. Nil confirms
 // no sub-sessions. Each archive fails with ErrFamilyChanged unless the sub-sessions of
 // the session that are not archived are exactly these. A sub-session has none. Thus a
-// view with an earlier family cannot archive a family that another view changed, in
-// either direction.
+// view that listed the family earlier cannot archive a sub-session that another view
+// added.
 func (s *Store) SetSessionArchived(id string, archived bool, live func(id string) bool, members []string) ([]string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -268,52 +268,6 @@ func (s *Store) SetSessionArchived(id string, archived bool, live func(id string
 // ErrFamilyChanged reports that the sub-sessions of a family are not the ones that the
 // user confirmed for an archive.
 var ErrFamilyChanged = errors.New("the sub-sessions of this family changed; check the list again")
-
-// SetSessionParent moves a session under a top-level session of the same project, or to
-// the top level when parent is empty. The move changes only the organization of the
-// sidebar. A session with sub-sessions cannot move under another session. The parent
-// changes the meaning of the workspace choice of a draft. Thus a move increases the
-// revision of a draft, so that a view with the earlier choices cannot save or start it.
-func (s *Store) SetSessionParent(id, parent string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var project sql.NullString
-	var archived bool
-	err = tx.QueryRow("SELECT project_id,archived FROM sessions WHERE id=?", id).Scan(&project, &archived)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	} else if err != nil {
-		return err
-	}
-	if archived {
-		return errors.New("restore the session before you move it")
-	}
-	if parent != "" {
-		if parent == id {
-			return errors.New("a session cannot be its own parent")
-		}
-		var children bool
-		if err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM sessions WHERE parent_id=?)", id).Scan(&children); err != nil {
-			return err
-		}
-		if children {
-			return errors.New("this session has sub-sessions; move them to the top level first")
-		}
-		if err = checkParent(tx, parent, project); err != nil {
-			return err
-		}
-	}
-	if _, err = tx.Exec("UPDATE sessions SET parent_id=NULLIF(?,'') WHERE id=?", parent, id); err != nil {
-		return err
-	}
-	if _, err = tx.Exec("UPDATE preparations SET revision=revision+1 WHERE session_id=? AND state='draft'", id); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
 
 // checkParent accepts a top-level session that is not archived and is in the project.
 func checkParent(tx *sql.Tx, parent string, project sql.NullString) error {
