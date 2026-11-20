@@ -108,7 +108,7 @@ storage-report operations.
 | `title-tools` | None | `result`, containing the title tools with `id`, `name`, and `command` |
 | `title-test` | `settings` with `titleTool`, and `text` | `result`, containing `title`. It runs the title tool once with `text` and saves nothing. |
 | `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
-| `project-draft` | `project` ID, or `parent` session ID for a sub-session draft | `result`, a new independent draft with saved defaults and `status`. With `parent`, the draft joins the family of that session in its project. Starts no process. |
+| `project-draft` | `project` ID, or `parent` session ID for a sub-session draft | `result`, a new independent draft with saved defaults and `status`. With `parent`, the draft joins the family of that session. A top-level session becomes the parent. For a sub-session, its parent becomes the parent, so the draft is a sibling. The draft takes the project of the family. The request fails for a missing session, a family without a saved project, and an archived parent. Starts no process. |
 | `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
 | `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. Before `session`, a `status` of `running` comes every 5 seconds while the server fetches the base and creates the worktree. |
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |

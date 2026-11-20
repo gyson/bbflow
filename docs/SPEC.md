@@ -671,9 +671,13 @@ draft selects **Parent workspace**. A review-loop reviewer runs
 `gh pr checkout --detach`. In the parent workspace, that command would change the
 checkout of the implementer, so the draft form recommends a new worktree for it.
 
-The server rejects a sub-session draft under a sub-session, under an archived parent, or
-under a parent in another project. Removal of a project moves the whole family to
-Standalone.
+A request for a sub-session draft names a session. For a top-level session, that session
+becomes the parent. For a sub-session, the parent of that sub-session becomes the parent,
+so the new draft is a sibling. The draft takes the project of the family. The request
+fails for a missing session, for a family without a saved project, and for an archived
+parent. The store also keeps the storage rule: the parent of a sub-session is a
+top-level session of the same project that is not archived. Removal of a project moves
+the whole family to Standalone.
 
 Archive and restore follow the family:
 
