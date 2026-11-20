@@ -187,8 +187,10 @@ const listSessionsSQL = `WITH listed AS (
 //
 // The transaction rejects archive for recorded active runs or an unfinished launch claim
 // in any of these sessions. live reports a live terminal that the server owns. It can be
-// nil.
-func (s *Store) SetSessionArchived(id string, archived bool, live func(id string) bool) ([]string, error) {
+// nil. members are the sub-sessions that the user confirmed for the archive of a
+// top-level session. When members is not nil, the archive fails with
+// ErrFamilyChanged unless the sub-sessions that are not archived are exactly these.
+func (s *Store) SetSessionArchived(id string, archived bool, live func(id string) bool, members []string) ([]string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -226,6 +228,15 @@ func (s *Store) SetSessionArchived(id string, archived bool, live func(id string
 			return nil, err
 		}
 	}
+	if archived && parent == "" && members != nil {
+		confirmed := slices.Clone(members)
+		children := slices.Clone(ids[1:])
+		slices.Sort(confirmed)
+		slices.Sort(children)
+		if !slices.Equal(slices.Compact(confirmed), children) {
+			return nil, ErrFamilyChanged
+		}
+	}
 	if archived {
 		for _, member := range ids {
 			var active bool
@@ -251,9 +262,15 @@ func (s *Store) SetSessionArchived(id string, archived bool, live func(id string
 	return ids, tx.Commit()
 }
 
+// ErrFamilyChanged reports that the sub-sessions of a family are not the ones that the
+// user confirmed for an archive.
+var ErrFamilyChanged = errors.New("the sub-sessions of this family changed; check the list again")
+
 // SetSessionParent moves a session under a top-level session of the same project, or to
 // the top level when parent is empty. The move changes only the organization of the
-// sidebar. A session with sub-sessions cannot move under another session.
+// sidebar. A session with sub-sessions cannot move under another session. The parent
+// changes the meaning of the workspace choice of a draft. Thus a move increases the
+// revision of a draft, so that a view with the earlier choices cannot save or start it.
 func (s *Store) SetSessionParent(id, parent string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -287,6 +304,9 @@ func (s *Store) SetSessionParent(id, parent string) error {
 		}
 	}
 	if _, err = tx.Exec("UPDATE sessions SET parent_id=NULLIF(?,'') WHERE id=?", parent, id); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("UPDATE preparations SET revision=revision+1 WHERE session_id=? AND state='draft'", id); err != nil {
 		return err
 	}
 	return tx.Commit()

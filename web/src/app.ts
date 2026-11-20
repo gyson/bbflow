@@ -1078,31 +1078,61 @@ function groupKey(projectId = ''): string {
   return projects.some(project => project.id === projectId) ? projectId : '';
 }
 
-// The top-level session that the archive dialog asks about.
-let archiving: { id: string } | null = null;
+type ArchiveTarget = { id: string; parentId?: string; projectId?: string; title: string; autoTitle?: string; status?: string };
+
+// The top-level session that the archive dialog asks about, and the IDs of the
+// sub-sessions that the dialog lists. The server archives the family only when its
+// sub-sessions are still these.
+let archiving: { session: ArchiveTarget; members: string[] } | null = null;
+
+// The server rejects a family archive when the sub-sessions changed after the check.
+const familyChanged = 'sub-sessions of this family changed';
+
+// Read the sub-sessions of a top-level session that are not archived.
+async function familyChildren(session: ArchiveTarget): Promise<SessionInfo[]> {
+  if (!server) return [];
+  const page = await call(server, { operation: 'session-list', groups: [groupKey(session.projectId)], limit: 1, session: session.id });
+  return page.sessions.filter(item => item.parentId === session.id && !item.archived);
+}
+
+// Show the members of a family in the archive dialog.
+function fillArchiveDialog(session: ArchiveTarget, children: SessionInfo[]): void {
+  archiving = { session, members: children.map(child => child.id) };
+  const title = sessionTitle(session) || 'Untitled session';
+  $('archive-summary').textContent = children.length
+    ? `This archives “${title}” and ${children.length} sub-session${children.length === 1 ? '' : 's'}:`
+    : `This archives “${title}”. It has no sub-sessions now.`;
+  $('archive-members').replaceChildren(...[session, ...children].map(member => {
+    const item = document.createElement('li');
+    item.textContent = sessionTitle(member) || (member.status === 'draft' ? 'Untitled draft' : 'Untitled session');
+    return item;
+  }));
+}
 
 // Archive or restore a session. Archive of a top-level session with sub-sessions asks
-// first, because it archives the whole family.
-async function requestArchive(session: { id: string; parentId?: string; projectId?: string; title: string; autoTitle?: string }, archived: boolean): Promise<void> {
+// first, because it archives the whole family. Each archive of a top-level session sends
+// the sub-sessions that the user saw, also an empty list. If a sub-session came after the
+// check, the dialog shows the new members.
+async function requestArchive(session: ArchiveTarget, archived: boolean): Promise<void> {
   if (!server) return;
-  if (archived && !session.parentId) {
-    const page = await call(server, { operation: 'session-list', groups: [groupKey(session.projectId)], limit: 1, session: session.id });
-    const children = page.sessions.filter(item => item.parentId === session.id && !item.archived);
-    if (children.length) {
-      archiving = { id: session.id };
-      const title = sessionTitle(session) || 'Untitled session';
-      $('archive-summary').textContent = `This archives “${title}” and ${children.length} sub-session${children.length === 1 ? '' : 's'}:`;
-      $('archive-members').replaceChildren(...[session, ...children].map(member => {
-        const item = document.createElement('li');
-        item.textContent = sessionTitle(member) || ('status' in member && member.status === 'draft' ? 'Untitled draft' : 'Untitled session');
-        return item;
-      }));
-      $('archive-error').hidden = true;
-      showDialog($('archive-dialog'));
-      return;
-    }
+  if (!archived || session.parentId) {
+    await setArchived(session.id, archived);
+    return;
   }
-  await setArchived(session.id, archived);
+  let children = await familyChildren(session);
+  if (!children.length) {
+    try {
+      await setArchived(session.id, true, false, []);
+      return;
+    } catch (error) {
+      if (!errorMessage(error).includes(familyChanged)) throw error;
+    }
+    children = await familyChildren(session);
+    if (!children.length) throw new Error('The sub-sessions of this family changed. Try the archive again.');
+  }
+  fillArchiveDialog(session, children);
+  $('archive-error').hidden = true;
+  showDialog($('archive-dialog'));
 }
 
 // The session that the move dialog moves.
@@ -1148,8 +1178,19 @@ async function showMove(): Promise<void> {
 // Move a session under a parent, or to the top level with an empty parent.
 async function moveSession(id: string, parent: string): Promise<void> {
   if (!server) return;
+  // A move changes the meaning of the workspace choice of a draft. The server then makes
+  // the saved choices stale in every view. Save an open draft first. Then open it again
+  // with the choices of its new place.
+  const current = selected?.id === id ? selected : null;
+  if (current) {
+    await preparation.flush();
+    await composer.flush();
+  }
   await call(server, { operation: 'session-parent', session: id, parent });
-  if (selected?.id === id) selected.parentId = parent;
+  if (current) {
+    current.parentId = parent;
+    if (current.status === 'draft' && !showingSettings) await openSession(current);
+  }
   await refreshSessions();
   const title = sessionTitle(sessions.find(session => session.id === parent) ?? { title: '' });
   notice(parent ? `Moved under “${title || 'the parent session'}”. The workspace did not change.` : 'Moved to the top level. The workspace did not change.');
@@ -1158,7 +1199,7 @@ async function moveSession(id: string, parent: string): Promise<void> {
 // Archive or restore a session. The selected session first saves its launch choices and
 // message editor. Its view then closes, or opens in the normal list after a restore.
 // Settings stays open. Back to session then opens the welcome view or the restored session.
-async function setArchived(id: string, archived: boolean, family = false): Promise<void> {
+async function setArchived(id: string, archived: boolean, family = false, members?: string[]): Promise<void> {
   if (!server) return;
   // The archive of a family also archives a selected sub-session of that family.
   const current = selected?.id === id || (family && archived && !!selected?.parentId && selected.parentId === id) ? selected : null;
@@ -1166,7 +1207,7 @@ async function setArchived(id: string, archived: boolean, family = false): Promi
     await preparation.flush();
     await composer.flush();
   }
-  await call(server, { operation: 'session-archive', session: id, archived });
+  await call(server, { operation: 'session-archive', session: id, archived, ...(members ? { members } : {}) });
   if (current) {
     current.archived = archived;
     if (showingSettings) {
@@ -1193,11 +1234,18 @@ async function initialize() {
     event.preventDefault();
     action(async () => {
       if (!archiving) return;
+      const { session, members } = archiving;
       try {
-        await setArchived(archiving.id, true, true);
+        await setArchived(session.id, true, true, members);
         $('archive-dialog').close();
       } catch (error) {
-        $('archive-error').textContent = errorMessage(error);
+        let message = errorMessage(error);
+        if (message.includes(familyChanged)) {
+          // Another view changed the family. Show its members now and archive nothing.
+          fillArchiveDialog(session, await familyChildren(session));
+          message = 'The sub-sessions of this family changed. Check the list again.';
+        }
+        $('archive-error').textContent = message;
         $('archive-error').hidden = false;
       }
     });

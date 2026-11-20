@@ -46,6 +46,9 @@ type Request struct {
 	Revision    int64              `json:"revision,omitempty"`
 	Project     string             `json:"project,omitempty"`
 	Parent      string             `json:"parent,omitempty"` // A top-level session. Empty means the top level.
+	// Members are the sub-sessions that the user confirmed for a family archive. Nil
+	// means no check.
+	Members []string `json:"members,omitempty"`
 	Name        string             `json:"name,omitempty"`
 	Workspace   string             `json:"workspace,omitempty"`
 	Protocol    string             `json:"protocol"`

@@ -160,7 +160,7 @@ func TestFamilyArchive(t *testing.T) {
 	f := newFamilyStore(t)
 	// Archive of a sub-session changes only that session. The archived list shows its
 	// parent as context.
-	ids, err := f.SetSessionArchived(f.ids["Reviewer"], true, nil)
+	ids, err := f.SetSessionArchived(f.ids["Reviewer"], true, nil, nil)
 	if err != nil || !reflect.DeepEqual(ids, []string{f.ids["Reviewer"]}) {
 		t.Fatal(ids, err)
 	}
@@ -180,20 +180,30 @@ func TestFamilyArchive(t *testing.T) {
 	}
 	// A live member blocks the archive of the family.
 	live := func(id string) bool { return id == f.ids["Docs"] }
-	if _, err = f.SetSessionArchived(f.ids["Parent"], true, live); err == nil || !strings.Contains(err.Error(), "every session of this family") {
+	if _, err = f.SetSessionArchived(f.ids["Parent"], true, live, nil); err == nil || !strings.Contains(err.Error(), "every session of this family") {
 		t.Fatal(err)
 	}
 	if _, err = f.db.Exec("UPDATE preparations SET state='creating' WHERE session_id=?", f.ids["Docs"]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil); err == nil {
+	if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil, nil); err == nil {
 		t.Fatal("archived a family with an unfinished launch claim")
 	}
 	if _, err = f.db.Exec("UPDATE preparations SET state='draft' WHERE session_id=?", f.ids["Docs"]); err != nil {
 		t.Fatal(err)
 	}
+	// A family archive checks the sub-sessions that the user confirmed. An archived
+	// sub-session is not a member of the archive.
+	for _, members := range [][]string{{}, {f.ids["Docs"], f.ids["Reviewer"]}, {f.ids["Reviewer"]}} {
+		if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil, members); err != ErrFamilyChanged {
+			t.Fatal(members, err)
+		}
+	}
+	if session, err := f.Session(f.ids["Parent"]); err != nil || session.Archived {
+		t.Fatal("a rejected family archive changed the parent", session, err)
+	}
 	// Archive of the parent archives the family.
-	ids, err = f.SetSessionArchived(f.ids["Parent"], true, nil)
+	ids, err = f.SetSessionArchived(f.ids["Parent"], true, nil, []string{f.ids["Docs"]})
 	if err != nil || !reflect.DeepEqual(ids, []string{f.ids["Parent"], f.ids["Docs"]}) {
 		t.Fatal(ids, err)
 	}
@@ -202,7 +212,7 @@ func TestFamilyArchive(t *testing.T) {
 		t.Fatal(titles)
 	}
 	// Restore of a sub-session also restores its parent.
-	ids, err = f.SetSessionArchived(f.ids["Docs"], false, nil)
+	ids, err = f.SetSessionArchived(f.ids["Docs"], false, nil, nil)
 	if err != nil || !reflect.DeepEqual(ids, []string{f.ids["Docs"], f.ids["Parent"]}) {
 		t.Fatal(ids, err)
 	}
@@ -211,10 +221,10 @@ func TestFamilyArchive(t *testing.T) {
 		t.Fatal(titles)
 	}
 	// Restore of the parent restores all of its archived sub-sessions.
-	if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil); err != nil {
+	if _, err = f.SetSessionArchived(f.ids["Parent"], true, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	ids, err = f.SetSessionArchived(f.ids["Parent"], false, nil)
+	ids, err = f.SetSessionArchived(f.ids["Parent"], false, nil, nil)
 	if err != nil || !reflect.DeepEqual(ids, []string{f.ids["Parent"], f.ids["Reviewer"], f.ids["Docs"]}) {
 		t.Fatal(ids, err)
 	}
@@ -249,9 +259,15 @@ func TestSessionParentRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, err := f.Session(f.ids["Solo"])
+	// The parent gives the meaning of the workspace choice of a draft. Thus a view with
+	// the revision from before the move cannot start the draft.
 	before.ParentID = f.ids["Parent"]
+	before.Preparation.Revision++
 	if err != nil || !reflect.DeepEqual(after, before) {
 		t.Fatal(after, before, err)
+	}
+	if err = f.SetPreparationState(f.ids["Solo"], before.Preparation.Revision-1, "draft", "creating"); err == nil {
+		t.Fatal("claimed a draft with its revision from before the move")
 	}
 	titles, _ := f.list(t, SessionFilter{Groups: []string{f.work.ID}})
 	if want := []string{"Parent", "-Reviewer", "-Solo", "-Docs", "Older"}; !reflect.DeepEqual(titles, want) {
@@ -264,7 +280,7 @@ func TestSessionParentRules(t *testing.T) {
 		t.Fatal(session, err)
 	}
 	// Archived sessions and archived parents do not move.
-	if _, err = f.SetSessionArchived(f.ids["Older"], true, nil); err != nil {
+	if _, err = f.SetSessionArchived(f.ids["Older"], true, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = f.SetSessionParent(f.ids["Older"], f.ids["Parent"]); err == nil {

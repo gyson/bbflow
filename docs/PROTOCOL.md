@@ -94,7 +94,7 @@ storage-report operations.
 | `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
 | `workspace-folders` | `session` ID, `diff` object with `folders` | `result`, containing `folders` and an optional `ignoreError` |
 | `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath`, `baseline`, and `from` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
-| `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Applies to the family as described below. Rejects active runs and unfinished launch claims. |
+| `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed) | `result`, containing `archived`. Applies to the family as described below. Rejects active runs and unfinished launch claims. |
 | `session-parent` | `session` ID, `parent` (a top-level session ID, or empty for the top level) | `result`, containing `parent`. Changes only the family of the session. |
 | `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
 | `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal and the [release offer](#release-offers) first, then all of them again after each change |
@@ -132,12 +132,13 @@ reattach. Never repeat session-start.
 
 New sessions start with project-draft, session-config, then session-start. A sub-session
 draft without a worktree starts in the current workspace of its parent. Its start fails
-while the parent is a draft.
+until the first terminal of the parent started.
 
 `session-parent` moves a session under a top-level session of the same project, or to
 the top level with an empty `parent`. It rejects a session with sub-sessions, a
 sub-session as parent, an archived session or parent, and a parent in another project.
-It changes no workspace, history, or recency. The project
+It changes no workspace, history, or recency. A move of a draft increases its
+preparation revision, so that a view with the earlier revision cannot save or start it. The project
 supplies a fixed workspace. An unknown project fails before draft creation. A missing
 folder fails creation or launch. The server resolves its `$SHELL` from PATH or an
 absolute path.
@@ -250,7 +251,9 @@ event text.
 
 `session-archive` changes visibility without deleting records or files and without
 changing run/preparation state. Archive of a top-level session also archives its
-sub-sessions. Every member must be stopped. Restore of a top-level session also restores
+sub-sessions. Every member must be stopped. With `members`, the archive of a top-level
+session fails with no change unless its sub-sessions that are not archived are exactly
+these. An empty list expects no sub-sessions. Restore of a top-level session also restores
 its archived sub-sessions. Restore of a sub-session also restores its archived parent.
 It shares the launch lock with session-start and rejects live sessions and unfinished
 launch claims. Archived drafts remain editable, but session-start rejects them until

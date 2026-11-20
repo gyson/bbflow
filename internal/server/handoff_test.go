@@ -211,11 +211,11 @@ func TestPrepareContinueChecksSessionAndUsesStartupCommand(t *testing.T) {
 	s.sessions[session.ID] = &runningSession{id: session.ID}
 	fails("a live terminal", request(first.ID, "agent"), "live terminal")
 	delete(s.sessions, session.ID)
-	if _, err := s.store.SetSessionArchived(session.ID, true, nil); err != nil {
+	if _, err := s.store.SetSessionArchived(session.ID, true, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	fails("an archived session", request(first.ID, "agent"), "restore this session")
-	if _, err := s.store.SetSessionArchived(session.ID, false, nil); err != nil {
+	if _, err := s.store.SetSessionArchived(session.ID, false, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	stored, _ := s.store.Session(session.ID)

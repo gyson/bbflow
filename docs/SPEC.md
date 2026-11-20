@@ -655,11 +655,14 @@ same parent. A session without a saved project cannot get a sub-session. The dra
 offers two workspaces:
 
 - **Parent workspace** starts the sub-session in the current workspace of its parent.
-  Both sessions then change the same files. This choice needs a started parent. The
-  sub-session gets no worktree record.
+  Both sessions then change the same files. This choice needs a parent whose first
+  terminal started. Before that, the parent has no launch workspace, also after a launch
+  that stopped early. The sub-session gets no worktree record.
 - **New worktree** creates a managed worktree from the project folder. The default base
-  is the worktree branch of the parent, else the default Git base. Uncommitted changes of
-  the parent are not copied.
+  is the current branch of the managed worktree of the parent, or its commit when that
+  checkout is detached. Thus the base has the commits of the parent, also after it
+  switched branches. Without a parent worktree, the default is the default Git base.
+  Uncommitted changes of the parent are not copied.
 
 In a Git project, the Settings worktree default selects **New worktree**. Otherwise the
 draft selects **Parent workspace**. A review-loop reviewer runs
@@ -669,7 +672,10 @@ checkout of the implementer, so the draft form recommends a new worktree for it.
 **Move under…** in the More actions menu moves a session under a top-level session of
 the same project. The dialog lists the 100 most recent top-level sessions that are not
 archived. **Move to top level** makes a sub-session a top-level session. A move changes
-only `parent_id`. The workspace, files, history, and recency stay the same. The server
+only `parent_id`. The workspace, files, history, and recency stay the same. The parent
+gives the meaning of the workspace choice of a draft. Thus a move of a draft increases
+its launch revision. The view that moved it opens the draft again with the choices of
+its new place. Another view must reload before it saves or starts the draft. The server
 rejects a move of a session with sub-sessions, a move under a sub-session, an archived
 parent, or a parent in another project. Removal of a project moves the whole family to
 Standalone.
@@ -677,7 +683,10 @@ Standalone.
 Archive and restore follow the family:
 
 - Archive of a top-level session with sub-sessions first shows the members in a dialog.
-  It then archives the whole family. Every member must be stopped first.
+  It then archives the whole family. Every member must be stopped first. The view sends
+  the sub-sessions that it listed. If the family has other sub-sessions at that time,
+  bbflow archives nothing, and the dialog shows the new members. An archive without the
+  dialog sends an empty list, so a new sub-session also stops it.
 - Archive of a sub-session archives only that session. Archived then shows it under its
   parent as a context row.
 - Restore of a top-level session also restores all of its archived sub-sessions, also a
@@ -2078,7 +2087,11 @@ without a repeated family. A browser check of a demo instance with the Demo agen
 verified a start in the parent workspace, **Move under…**, **Move to top level**, the
 family archive dialog, the welcome view after the archive of a selected sub-session,
 restore of the family, and search context. No real agent CLI was used. Web fixtures also
-verify the status icons and texts and the first 5 sub-sessions of a family.
+verify the status icons and texts and the first 5 sub-sessions of a family. Family
+fixtures verify a rejected archive when the confirmed sub-sessions differ, and a stale
+draft revision after a move. Server fixtures verify the base from a parent worktree
+after a branch switch and on a detached commit, and the rejection of a parent workspace
+before the first terminal of the parent.
 
 Title fixtures verify the separate user and derived titles, search on both, and the
 title tool values. A failed settings update in migration 10 rolls back the new column

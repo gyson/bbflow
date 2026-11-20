@@ -38,11 +38,11 @@ func TestArchivePersistenceAndSearchAcrossPages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err = s.SetSessionArchived(session.ID, true, nil); err != nil {
+		if _, err = s.SetSessionArchived(session.ID, true, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err = s.SetSessionArchived(first.ID, true, nil); err != nil {
+	if _, err = s.SetSessionArchived(first.ID, true, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.Close(); err != nil {
@@ -79,7 +79,7 @@ func TestArchivePersistenceAndSearchAcrossPages(t *testing.T) {
 	if err = s.RemoveProject(project.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.SetSessionArchived(first.ID, false, nil); err != nil {
+	if _, err = s.SetSessionArchived(first.ID, false, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.Session(first.ID)
@@ -118,7 +118,7 @@ func TestArchiveRejectsActiveRunsAndLaunchClaims(t *testing.T) {
 		if err = s.SetPreparationState(draft.ID, 1, "draft", state); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = s.SetSessionArchived(draft.ID, true, nil); err == nil {
+		if _, err = s.SetSessionArchived(draft.ID, true, nil, nil); err == nil {
 			t.Fatal("archived unfinished launch", state)
 		}
 		if err = s.SetPreparationState(draft.ID, 1, state, "draft"); err != nil {
@@ -134,12 +134,12 @@ func TestArchiveRejectsActiveRunsAndLaunchClaims(t *testing.T) {
 		if err = s.SaveRun(run); err != nil {
 			t.Fatal(err)
 		}
-		_, err = s.SetSessionArchived(draft.ID, true, nil)
+		_, err = s.SetSessionArchived(draft.ID, true, nil, nil)
 		if wantError := status == "starting" || status == "running"; (err != nil) != wantError {
 			t.Fatal("incorrect archive eligibility", status, err)
 		}
 	}
-	if _, err = s.SetSessionArchived("missing", true, nil); err == nil {
+	if _, err = s.SetSessionArchived("missing", true, nil, nil); err == nil {
 		t.Fatal("archived nonexistent session")
 	}
 	standalone := ""

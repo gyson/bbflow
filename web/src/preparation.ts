@@ -35,7 +35,8 @@ export class PreparationEditor {
   private available = false;
   private blocked = false;
   private archived = false;
-  // A sub-session can start in the parent workspace only after the parent started.
+  // A sub-session can start in the parent workspace only after the first terminal of the
+  // parent started. Before that, the parent has no launch workspace.
   private parentReady = true;
 
   constructor(private readonly host: {
@@ -96,7 +97,7 @@ export class PreparationEditor {
     this.parentPath.textContent = '';
     if (sub) {
       const parent = await call(server, { operation: 'session-config', session: session.parentId! });
-      this.parentReady = parent.status !== 'draft';
+      this.parentReady = !!parent.run;
       this.parentPath.textContent = !this.parentReady ? 'Start the parent session first. Its workspace is not set yet.'
         : parent.worktree ? `⑂ ${parent.worktree.branch} · ${parent.workspace}` : parent.workspace;
     }

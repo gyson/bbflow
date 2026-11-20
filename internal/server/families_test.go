@@ -50,6 +50,10 @@ func TestSubSessionDraftsAndWorkspaces(t *testing.T) {
 	}
 	id, revision = choose(parent, true)
 	parent, _, err = s.launchPrepared(ctx, id, revision, size)
+	if err == nil {
+		// The terminal of the parent starts after the launch.
+		_, err = s.store.NewRun(parent.ID)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +83,44 @@ func TestSubSessionDraftsAndWorkspaces(t *testing.T) {
 	if err != nil || launched.Worktree == nil || launched.Worktree.Base != parent.Worktree.Branch ||
 		launched.Worktree.Commit != parent.Worktree.Commit || launched.Workspace == parent.Workspace {
 		t.Fatal(launched, err)
+	}
+	// The default base follows the current checkout of the parent worktree: its branch,
+	// or its commit when the checkout is detached.
+	gitAll(t, parent.Workspace, []string{"switch", "--quiet", "-c", "topic"})
+	topic := commitFile(t, parent.Workspace, "topic.txt", "topic")
+	gitAll(t, parent.Workspace, []string{"switch", "--quiet", "--detach"})
+	detached := commitFile(t, parent.Workspace, "detached.txt", "detached")
+	gitAll(t, parent.Workspace, []string{"switch", "--quiet", "topic"})
+	for _, want := range []struct{ base, commit string }{{"topic", topic}, {detached, detached}} {
+		if want.base == detached {
+			gitAll(t, parent.Workspace, []string{"switch", "--quiet", "--detach", detached})
+		}
+		child, err := s.prepareProject(ctx, "", parent.ID)
+		if err != nil || child.Preparation.Base != want.base {
+			t.Fatal(child, err)
+		}
+		id, revision := choose(child, true)
+		launched, _, err := s.launchPrepared(ctx, id, revision, size)
+		if err != nil || launched.Worktree.Commit != want.commit {
+			t.Fatal(launched, err)
+		}
+	}
+	// A parent launch that stopped before its first terminal keeps the project folder as
+	// its workspace. A sub-session cannot start there in place of the parent workspace.
+	stalled, err := s.prepareProject(ctx, project.ID, "")
+	if err == nil {
+		err = s.store.SetPreparationState(stalled.ID, stalled.Preparation.Revision, "draft", "interrupted")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting, err := s.prepareProject(ctx, "", stalled.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, revision = choose(waiting, false)
+	if _, _, err = s.launchPrepared(ctx, id, revision, size); err == nil || !strings.Contains(err.Error(), "start the parent session first") {
+		t.Fatal(err)
 	}
 	// A session without a project cannot get a sub-session.
 	standalone, err := s.store.CreateSession("Standalone", repo, "")
@@ -110,11 +152,15 @@ func TestArchiveFamilyChecksLiveMembers(t *testing.T) {
 	}
 	// A live terminal that the server owns blocks the archive of the family.
 	s.sessions = map[string]*runningSession{child.ID: {id: child.ID}}
-	if err = s.archiveSession(parent.ID, true); err == nil || !strings.Contains(err.Error(), "every session of this family") {
+	if err = s.archiveSession(parent.ID, true, nil); err == nil || !strings.Contains(err.Error(), "every session of this family") {
 		t.Fatal(err)
 	}
 	s.sessions = nil
-	if err = s.archiveSession(parent.ID, true); err != nil {
+	// The archive checks the sub-sessions that the user confirmed.
+	if err = s.archiveSession(parent.ID, true, []string{}); err != history.ErrFamilyChanged {
+		t.Fatal(err)
+	}
+	if err = s.archiveSession(parent.ID, true, []string{child.ID}); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{parent.ID, child.ID} {
@@ -122,7 +168,7 @@ func TestArchiveFamilyChecksLiveMembers(t *testing.T) {
 			t.Fatal(session, err)
 		}
 	}
-	if err = s.archiveSession(parent.ID, false); err != nil {
+	if err = s.archiveSession(parent.ID, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if session, err := s.store.Session(child.ID); err != nil || session.Archived {

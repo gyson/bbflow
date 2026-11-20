@@ -132,7 +132,9 @@ type UploadRequest = { operation: 'composer-attach'; session: string; upload: { 
 type ListRequest = { operation: 'session-list'; limit?: number; groups: string[]; offset?: number; session?: string; archived?: boolean; query?: string };
 // Archive of a top-level session also archives its sub-sessions. Restore of a top-level
 // session also restores its sub-sessions. Restore of a sub-session also restores its parent.
-type ArchiveRequest = { operation: 'session-archive'; session: string; archived: boolean };
+// members are the sub-sessions that the user confirmed for the archive of a top-level
+// session. The server then archives nothing if the family has other sub-sessions.
+type ArchiveRequest = { operation: 'session-archive'; session: string; archived: boolean; members?: string[] };
 // An empty parent moves the session to the top level.
 type ParentRequest = { operation: 'session-parent'; session: string; parent: string };
 type StopSessionRequest = { operation: 'session-stop'; session: string };

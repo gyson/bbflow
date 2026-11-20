@@ -493,12 +493,13 @@ func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPag
 }
 
 // archiveSession archives or restores a session. Archive of a top-level session also
-// archives its sub-sessions. See history.Store.SetSessionArchived for the restore rules.
-func (s *Server) archiveSession(id string, archived bool) error {
+// archives its sub-sessions. members are the sub-sessions that the user confirmed, or nil
+// for no check. See history.Store.SetSessionArchived for the rules.
+func (s *Server) archiveSession(id string, archived bool, members []string) error {
 	// Serialize archive changes with launch to prevent a race with a new PTY or worktree.
 	s.launchMu.Lock()
 	defer s.launchMu.Unlock()
-	ids, err := s.store.SetSessionArchived(id, archived, func(id string) bool { return s.running(id) != nil })
+	ids, err := s.store.SetSessionArchived(id, archived, func(id string) bool { return s.running(id) != nil }, members)
 	if err != nil || !archived {
 		return err
 	}
