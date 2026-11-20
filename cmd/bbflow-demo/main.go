@@ -248,6 +248,10 @@ func (d *demo) sessions(port int) {
 		}
 	}
 	for _, session := range sessions {
+		// A context row is the parent of an archived sub-session. Its own row prints it.
+		if session.Context {
+			continue
+		}
 		state := session.Status
 		if session.Archived {
 			state = "archived"

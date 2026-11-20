@@ -22,7 +22,7 @@
   <main>
     <header class="toolbar">
       <div class="toolbar-title"><button id="sidebar-toggle" class="toolbar-icon" aria-controls="sidebar" aria-expanded="true" aria-label="Hide sidebar" aria-keyshortcuts="Meta+B" data-tip="Hide sidebar (⌘B)"><svg viewBox="0 0 20 20" aria-hidden="true"><path class="panel" d="M5.25 3.75h2.5v12.5h-2.5a2.5 2.5 0 0 1-2.5-2.5v-7.5a2.5 2.5 0 0 1 2.5-2.5z"/><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M7.75 3.75v12.5"/></svg></button>
-        <div class="session-heading"><div class="session-title-row"><h1 id="session-title">Your workspace</h1><span id="status" class="badge" hidden></span></div><p id="workspace"><span id="workspace-path">A home for your terminal sessions.</span> <span id="workspace-removed" hidden>(worktree removed)</span></p><p id="launch-summary" hidden></p></div></div>
+        <div class="session-heading"><p id="session-parent" hidden>Sub-session of <button id="session-parent-open" class="link-button"></button></p><div class="session-title-row"><h1 id="session-title">Your workspace</h1><span id="status" class="badge" hidden></span></div><p id="workspace"><span id="workspace-path">A home for your terminal sessions.</span> <span id="workspace-removed" hidden>(worktree removed)</span></p><p id="launch-summary" hidden></p></div></div>
       <div class="actions">
         <button id="history-open" class="toolbar-icon" disabled aria-label="Search history" data-tip="Search history (⌘⇧F or Ctrl+Shift+F)"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.75" cy="8.75" r="5.25"/><path d="M12.75 12.75l4 4"/></svg></button>
         <button id="pane-changes" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show changes" data-tip="Show changes" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6.5 6.5h7M10 3v7M6.5 14.5h7"/><rect x="2.75" y="2.75" width="14.5" height="14.5" rx="2.5"/></svg></button>
@@ -30,7 +30,7 @@
         <button id="pane-terminal" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show terminal" data-tip="Show terminal" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M6 8l2.5 2L6 12"/><path d="M10.5 12.5h3.5"/></svg></button>
         <button id="reconnect" hidden data-tip="Connect this view to the live terminal again.">Reconnect</button>
         <span id="session-menu-box"><button id="session-menu-open" class="toolbar-icon" aria-haspopup="menu" aria-expanded="false" aria-controls="session-menu" aria-label="More actions" data-tip="More actions" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><g class="dots"><circle cx="4.5" cy="10" r="1.4"/><circle cx="10" cy="10" r="1.4"/><circle cx="15.5" cy="10" r="1.4"/></g></svg></button>
-          <div id="session-menu" role="menu" aria-label="More actions" hidden><button id="rename-session" role="menuitem" hidden>Rename</button><button id="copy-session-id" role="menuitem" hidden>Copy session ID</button><button id="archive-session" role="menuitem" hidden>Archive</button><button id="reload-output" role="menuitem" hidden>Reload output</button><button id="remove-worktree" role="menuitem" class="danger" hidden>Remove worktree</button></div></span>
+          <div id="session-menu" role="menu" aria-label="More actions" hidden><button id="rename-session" role="menuitem" hidden>Rename</button><button id="copy-session-id" role="menuitem" hidden>Copy session ID</button><button id="new-sub-session" role="menuitem" hidden>New sub-session</button><button id="move-session" role="menuitem" aria-haspopup="dialog" hidden>Move under…</button><button id="move-top-level" role="menuitem" hidden>Move to top level</button><button id="archive-session" role="menuitem" hidden>Archive</button><button id="reload-output" role="menuitem" hidden>Reload output</button><button id="remove-worktree" role="menuitem" class="danger" hidden>Remove worktree</button></div></span>
       </div>
     </header>
     <div id="notice" role="status" hidden></div>
@@ -44,11 +44,17 @@
     <section id="session-view" hidden>
       <section id="preparation" aria-label="Prepare session" hidden>
         <form id="launch-form">
-          <div class="preparation-heading"><div><span class="eyebrow">PROJECT DRAFT</span><h2>Prepare a session.</h2></div><span id="launch-saved" role="status"></span></div>
+          <div class="preparation-heading"><div><span id="launch-eyebrow" class="eyebrow">PROJECT DRAFT</span><h2 id="launch-heading">Prepare a session.</h2></div><span id="launch-saved" role="status"></span></div>
           <div class="launch-grid">
             <label>Session name<input id="launch-name" maxlength="200" placeholder="What are you working on?"></label>
             <label>Tool<select id="launch-tool"></select></label>
-            <label class="checkbox wide"><input id="launch-worktree" type="checkbox">Use worktree</label>
+            <label id="launch-worktree-option" class="checkbox wide"><input id="launch-worktree" type="checkbox">Use worktree</label>
+            <fieldset id="launch-place" class="wide place-group" hidden>
+              <legend>Workspace</legend>
+              <label class="place"><input id="launch-place-parent" type="radio" name="launch-place"><span class="place-text"><strong>Parent workspace</strong><small id="launch-parent-path"></small></span></label>
+              <label class="place"><input id="launch-place-worktree" type="radio" name="launch-place"><span class="place-text"><strong>New worktree</strong><small>A new checkout from the starting branch or commit</small></span></label>
+              <p class="form-help place-help">In the parent workspace, both sessions change the same files. A review-loop reviewer needs a new worktree, because it checks out the pull request.</p>
+            </fieldset>
             <div id="worktree-options" class="wide launch-grid" hidden>
               <label>Starting branch or commit<input id="launch-base" placeholder="HEAD" maxlength="250"></label>
               <label>New branch <span class="optional">optional</span><input id="launch-branch" placeholder="Generated automatically" maxlength="250"></label>
@@ -187,6 +193,25 @@
       <p id="project-remove-help" class="form-help" hidden>Removing a project moves its sessions to Standalone. Their history, running processes, and files are preserved.</p>
       <p id="project-error" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button id="project-remove" type="button" class="danger" hidden>Remove project</button><button id="project-submit" type="submit" class="primary">Add project</button></div>
+    </form>
+  </dialog>
+  <dialog id="move-dialog" aria-labelledby="move-title">
+    <form id="move-form">
+      <div class="dialog-heading"><div><span class="eyebrow">SUB-SESSION</span><h2 id="move-title">Move under a session</h2></div><button type="button" id="cancel-move" class="text-button" aria-label="Close move">✕</button></div>
+      <p class="form-help">Choose a top-level session of the same project. A move changes only the sidebar. The workspace, files, and history of the session stay the same.</p>
+      <div id="move-choices" class="choice-list" role="radiogroup" aria-label="Parent session"></div>
+      <p id="move-error" class="form-error" role="alert" hidden></p>
+      <button id="move-submit" type="submit" class="primary">Move</button>
+    </form>
+  </dialog>
+  <dialog id="archive-dialog" aria-labelledby="archive-title">
+    <form id="archive-form">
+      <div class="dialog-heading"><div><span class="eyebrow">ARCHIVE FAMILY</span><h2 id="archive-title">Archive this family?</h2></div><button type="button" id="cancel-archive" class="text-button" aria-label="Close archive">✕</button></div>
+      <p id="archive-summary" class="form-help"></p>
+      <ul id="archive-members" class="archive-members"></ul>
+      <p class="form-help">Restore of the parent brings back all of its sub-sessions. Nothing is deleted.</p>
+      <p id="archive-error" class="form-error" role="alert" hidden></p>
+      <button id="archive-submit" type="submit" class="primary">Archive family</button>
     </form>
   </dialog>
   <dialog id="rename-dialog" aria-labelledby="rename-title">

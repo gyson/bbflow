@@ -8,6 +8,15 @@ export class PreparationEditor {
   private readonly name = element('launch-name', HTMLInputElement);
   private readonly tool = element('launch-tool', HTMLSelectElement);
   private readonly worktree = element('launch-worktree', HTMLInputElement);
+  private readonly worktreeOption = element('launch-worktree-option', HTMLElement);
+  private readonly eyebrow = element('launch-eyebrow', HTMLElement);
+  private readonly heading = element('launch-heading', HTMLElement);
+  // A sub-session draft chooses the workspace of its parent or a new worktree. Both
+  // choices set the worktree checkbox, which the save reads.
+  private readonly place = element('launch-place', HTMLElement);
+  private readonly placeParent = element('launch-place-parent', HTMLInputElement);
+  private readonly placeWorktree = element('launch-place-worktree', HTMLInputElement);
+  private readonly parentPath = element('launch-parent-path', HTMLElement);
   private readonly base = element('launch-base', HTMLInputElement);
   private readonly branch = element('launch-branch', HTMLInputElement);
   private readonly options = element('worktree-options', HTMLElement);
@@ -26,6 +35,8 @@ export class PreparationEditor {
   private available = false;
   private blocked = false;
   private archived = false;
+  // A sub-session can start in the parent workspace only after the parent started.
+  private parentReady = true;
 
   constructor(private readonly host: {
     server(): ServerInfo | null;
@@ -34,6 +45,12 @@ export class PreparationEditor {
   }) {
     this.form.oninput = () => this.changed();
     this.worktree.onchange = () => { this.options.hidden = !this.worktree.checked; this.changed(); };
+    this.placeParent.onchange = this.placeWorktree.onchange = () => {
+      this.worktree.checked = this.placeWorktree.checked;
+      this.options.hidden = !this.worktree.checked;
+      this.changed();
+      this.controls();
+    };
     this.form.onsubmit = event => {
       event.preventDefault();
       void (async () => {
@@ -68,6 +85,21 @@ export class PreparationEditor {
     this.tool.value = p.toolId;
     this.tool.onchange = () => this.changed();
     this.worktree.checked = p.worktree;
+    const sub = !!session.parentId;
+    this.eyebrow.textContent = sub ? 'SUB-SESSION DRAFT' : 'PROJECT DRAFT';
+    this.heading.textContent = sub ? 'Prepare a sub-session.' : 'Prepare a session.';
+    this.worktreeOption.hidden = sub;
+    this.place.hidden = !sub;
+    this.placeParent.checked = !p.worktree;
+    this.placeWorktree.checked = p.worktree;
+    this.parentReady = true;
+    this.parentPath.textContent = '';
+    if (sub) {
+      const parent = await call(server, { operation: 'session-config', session: session.parentId! });
+      this.parentReady = parent.status !== 'draft';
+      this.parentPath.textContent = !this.parentReady ? 'Start the parent session first. Its workspace is not set yet.'
+        : parent.worktree ? `⑂ ${parent.worktree.branch} · ${parent.workspace}` : parent.workspace;
+    }
     this.base.value = p.base;
     this.branch.value = p.branch;
     this.options.hidden = !p.worktree;
@@ -84,8 +116,10 @@ export class PreparationEditor {
     this.blocked = blocked;
     this.archived = archived;
     for (const field of this.form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input,select')) field.disabled = blocked;
-    this.worktree.disabled = blocked || !this.available;
-    this.submit.disabled = blocked || archived || this.checking || !this.session || (this.worktree.checked && !this.available);
+    this.worktree.disabled = this.placeWorktree.disabled = blocked || !this.available;
+    this.placeParent.disabled = blocked || !this.parentReady;
+    this.submit.disabled = blocked || archived || this.checking || !this.session || (this.worktree.checked && !this.available) ||
+      (!!this.session.parentId && !this.worktree.checked && !this.parentReady);
     this.submit.textContent = archived ? 'Restore before starting' : 'Start session ↗';
   }
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { endReasonText, exitReason, hasTerminal, listStatus, listStatusText, live, statusText, terminalsChanged } from './dist/session-status.js';
+import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, terminalsChanged } from './dist/session-status.js';
 
 test('only running and idle sessions are live', () => {
   for (const status of ['running', 'idle']) assert.equal(live(status), true, status);
@@ -49,10 +49,17 @@ test('an exit shows its code, and other ends show the recorded run status', () =
 });
 
 test('the status line of a listed session shows its status, archive state, and views', () => {
-  assert.equal(listStatusText('running', {}), 'running');
-  assert.equal(listStatusText('draft', { archived: true }), 'draft · Archived');
-  assert.equal(listStatusText('idle', { viewers: 1 }), 'idle · 1 view');
-  assert.equal(listStatusText('ended', { archived: true, viewers: 2 }), 'ended · Archived · 2 views');
+  assert.equal(listStatusText('running', {}), 'Running: output in the last 3 seconds');
+  assert.equal(listStatusText('draft', { archived: true }), 'Draft: not started · Archived');
+  assert.equal(listStatusText('idle', { viewers: 1 }, 'own worktree'), 'Idle: live, with no output in the last 3 seconds · 1 view · own worktree');
+  assert.equal(listStatusText('ended', { archived: true, viewers: 2, runStatus: 'stopped' }), 'Ended · stopped · Archived · 2 views');
+  assert.equal(listStatusText('ended', {}), 'Ended');
+  assert.equal(listStatusLabel('idle', { viewers: 1 }, 'parent workspace'), 'idle, 1 view, parent workspace');
+  assert.equal(listStatusLabel('ended', { runStatus: 'interrupted' }), 'ended, interrupted');
+  assert.equal(listStatusLabel('ended', { runStatus: 'exited', archived: true }), 'ended, Archived');
+  // A failed or interrupted end has its own icon. A stop or an exit does not.
+  assert.deepEqual(['exited', 'stopped', 'failed', 'interrupted', ''].map(run => statusIcon('ended', run)), ['ended', 'ended', 'failed', 'failed', 'ended']);
+  assert.equal(statusIcon('running', 'failed'), 'running');
 });
 
 test('an end reason applies only to the run that it is about', () => {

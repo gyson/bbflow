@@ -478,7 +478,10 @@ func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPag
 	result := protocol.SessionPage{Sessions: make([]protocol.SessionInfo, 0, len(page.Sessions)), More: page.More}
 	now := time.Now()
 	for _, session := range page.Sessions {
-		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Archived: session.Archived, Title: session.Title, AutoTitle: session.AutoTitle, Workspace: session.Workspace, Updated: session.Updated, Status: s.sessionStatus(session.Session, now), Preparation: session.Preparation, Worktree: session.Worktree}
+		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, ParentID: session.ParentID, Context: session.Context, Archived: session.Archived, Title: session.Title, AutoTitle: session.AutoTitle, Workspace: session.Workspace, Updated: session.Updated, Status: s.sessionStatus(session.Session, now), Preparation: session.Preparation, Worktree: session.Worktree}
+		if session.Run != nil {
+			info.RunStatus = session.Run.Status
+		}
 		if r := s.running(session.ID); r != nil {
 			r.mu.Lock()
 			info.Viewers = len(r.clients)
@@ -489,19 +492,23 @@ func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPag
 	return result, nil
 }
 
+// archiveSession archives or restores a session. Archive of a top-level session also
+// archives its sub-sessions. See history.Store.SetSessionArchived for the restore rules.
 func (s *Server) archiveSession(id string, archived bool) error {
 	// Serialize archive changes with launch to prevent a race with a new PTY or worktree.
 	s.launchMu.Lock()
 	defer s.launchMu.Unlock()
-	if archived && s.running(id) != nil {
-		return errors.New("stop the session before archiving it")
-	}
-	if err := s.store.SetSessionArchived(id, archived); err != nil || !archived {
+	ids, err := s.store.SetSessionArchived(id, archived, func(id string) bool { return s.running(id) != nil })
+	if err != nil || !archived {
 		return err
 	}
 	// An archived session keeps no side terminal.
-	_, err := s.stopSide(id, "")
-	return err
+	for _, id := range ids {
+		if _, err = s.stopSide(id, ""); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) stopSession(id string) (any, error) {

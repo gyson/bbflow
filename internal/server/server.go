@@ -178,7 +178,7 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "workspace-inspect":
 		s.reply(conn, inspectRepository(ctx, request.Workspace), nil)
 	case "project-draft":
-		result, err := s.prepareProject(ctx, request.Project)
+		result, err := s.prepareProject(ctx, request.Project, request.Parent)
 		s.reply(conn, s.sessionDetail(result), err)
 	case "session-config":
 		if request.Preparation == nil {
@@ -265,6 +265,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.reply(conn, result, err)
 	case "status-watch":
 		s.watchStatus(ctx, conn)
+	case "session-parent":
+		err := s.store.SetSessionParent(request.Session, request.Parent)
+		s.reply(conn, map[string]string{"parent": request.Parent}, err)
 	case "session-archive":
 		err := s.archiveSession(request.Session, request.Archived)
 		s.reply(conn, map[string]bool{"archived": request.Archived}, err)

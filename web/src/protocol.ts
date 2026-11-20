@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/30';
+export const VERSION = 'bbflow/31';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -40,17 +40,23 @@ export interface TerminalInfo { number: number; run: string; tool: string; statu
 // status is the session status that the server derives. run.status is the stored status
 // of the latest run.
 // title is the title that the user set, or empty. autoTitle is derived by the server.
-export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; autoTitle?: string; workspace: string; status: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
+// parentId is the top-level session of a sub-session, or empty.
+export interface PreparedSession { archived: boolean; id: string; projectId: string; parentId?: string; title: string; autoTitle?: string; workspace: string; status: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
 // bbflow writes the handoff folder before it starts a new terminal in an ended session.
 // available means that the folder has a README, so the prompt can be used now.
 export interface Handoff { folder: string; prompt: string; available: boolean }
 export interface RepositoryInfo { available: boolean; root: string; head: string; branch: string; reason: string }
 
 // status is draft, running, idle, or ended.
-// more holds the keys of the groups that have more sessions.
+// more holds the keys of the groups that have more families. A family lists its
+// top-level session first, then its sub-sessions in creation order.
 export interface SessionPage { sessions: SessionInfo[]; more: string[] }
+// parentId is the top-level session of a sub-session, or empty. context marks a
+// top-level session that shows only as the parent of listed sub-sessions.
 export interface SessionInfo {
   archived: boolean;
+  parentId: string;
+  context?: boolean;
   preparation?: Preparation;
   worktree?: Worktree;
   projectId: string;
@@ -60,6 +66,9 @@ export interface SessionInfo {
   workspace: string;
   updated: string;
   status: string;
+  // The stored status of the latest run: exited, stopped, failed, or interrupted after
+  // the end. It is absent for a draft.
+  runStatus?: string;
   viewers: number;
 }
 
@@ -117,11 +126,15 @@ type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draf
 type SentRequest = { operation: 'composer-sent'; session: string; revision?: number };
 type UploadRequest = { operation: 'composer-attach'; session: string; upload: { name: string; mediaType: string; data: string } };
 
-// limit applies to each listed group. limit times the number of groups must be at most
-// 100. offset skips the first sessions of one group. A group key is a project ID, or ''
+// limit applies to the families of each listed group. limit times the number of groups
+// must be at most 100. offset skips the first families of one group. A group key is a project ID, or ''
 // for Standalone. Without offset, the list includes session outside its group limit.
 type ListRequest = { operation: 'session-list'; limit?: number; groups: string[]; offset?: number; session?: string; archived?: boolean; query?: string };
+// Archive of a top-level session also archives its sub-sessions. Restore of a top-level
+// session also restores its sub-sessions. Restore of a sub-session also restores its parent.
 type ArchiveRequest = { operation: 'session-archive'; session: string; archived: boolean };
+// An empty parent moves the session to the top level.
+type ParentRequest = { operation: 'session-parent'; session: string; parent: string };
 type StopSessionRequest = { operation: 'session-stop'; session: string };
 type ProjectListRequest = { operation: 'project-list' };
 type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: string };
@@ -134,14 +147,15 @@ type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
 // The server does what the offer with this version and revision says, then restarts.
 // The restart ends all sessions.
 type UpdateRequest = { operation: 'update-start'; version: string; revision: number };
-type PrepareRequest = { operation: 'project-draft'; project: string };
+// A parent creates a sub-session draft in the family and project of that session.
+type PrepareRequest = { operation: 'project-draft'; project: string } | { operation: 'project-draft'; parent: string };
 type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'worktree' | 'base' | 'branch'>; name?: string };
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
 type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
 // shell stops only that shell. Without shell, the request stops the live shell.
 type StopSideRequest = { operation: 'side-terminal-stop'; session: string; shell?: string };
-type RPCRequest = UpdateRequest | DiffRPC | TitleTestRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = UpdateRequest | DiffRPC | TitleTestRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | ParentRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -378,6 +392,7 @@ export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Pr
 export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;
 export function call(server: ServerInfo, request: ProjectRemoveRequest): Promise<{ removed: boolean }>;
 export function call(server: ServerInfo, request: ArchiveRequest): Promise<{ archived: boolean }>;
+export function call(server: ServerInfo, request: ParentRequest): Promise<{ parent: string }>;
 export function call(server: ServerInfo, request: ListRequest): Promise<SessionPage>;
 export function call(server: ServerInfo, request: StopSessionRequest | StopSideRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;

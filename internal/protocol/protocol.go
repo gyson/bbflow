@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/30"
+const Version = "bbflow/31"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -45,6 +45,7 @@ type Request struct {
 	Preparation *PreparationConfig `json:"preparation,omitempty"`
 	Revision    int64              `json:"revision,omitempty"`
 	Project     string             `json:"project,omitempty"`
+	Parent      string             `json:"parent,omitempty"` // A top-level session. Empty means the top level.
 	Name        string             `json:"name,omitempty"`
 	Workspace   string             `json:"workspace,omitempty"`
 	Protocol    string             `json:"protocol"`
@@ -273,6 +274,8 @@ type SessionPage struct {
 // output. It does not mean that the application is ready for input.
 type SessionInfo struct {
 	Archived    bool                 `json:"archived"`
+	ParentID    string               `json:"parentId"`
+	Context     bool                 `json:"context,omitempty"`
 	Preparation *history.Preparation `json:"preparation,omitempty"`
 	Worktree    *history.Worktree    `json:"worktree,omitempty"`
 	ProjectID   string               `json:"projectId"`
@@ -282,6 +285,7 @@ type SessionInfo struct {
 	Workspace   string               `json:"workspace"`
 	Updated     string               `json:"updated"`
 	Status      string               `json:"status"`
+	RunStatus   string               `json:"runStatus,omitempty"` // The stored status of the latest run. Empty without a run.
 	Viewers     int                  `json:"viewers"`
 }
 

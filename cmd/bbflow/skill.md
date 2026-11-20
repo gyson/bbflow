@@ -73,6 +73,7 @@ One row for each session. A session has one workspace and one or more terminals.
 | `project_id` | ID of the project in `projects`, or NULL. |
 | `archived` | `1` when the user archived the session, else `0`. |
 | `auto_title` | Derived title: the tool and folder at launch, then a summary from the title tool. It is empty for sessions from before automatic titles. |
+| `parent_id` | ID of the parent session of a sub-session, or NULL for a top-level session. A parent has no parent. A sub-session inherits no history from its parent. |
 
 ### `runs`
 
@@ -214,6 +215,13 @@ Search the output of all sessions for a word. Replace `WORD`:
 
 ```sh
 bbflow query "SELECT e.seq,e.session_id,s.title,e.created,e.text FROM events e JOIN sessions s ON s.id=e.session_id WHERE e.kind='output' AND e.text LIKE '%WORD%' ORDER BY e.seq DESC LIMIT 50"
+```
+
+List the other sessions in the family of your session: its parent and its sub-sessions,
+or the parent and the other sub-sessions of a sub-session:
+
+```sh
+bbflow query "SELECT id,COALESCE(NULLIF(title,''),auto_title) AS title,parent_id,workspace FROM sessions WHERE id<>'$BBFLOW_SESSION' AND COALESCE(parent_id,id)=(SELECT COALESCE(parent_id,id) FROM sessions WHERE id='$BBFLOW_SESSION') ORDER BY created"
 ```
 
 Find sessions that used a directory. Replace `PATH`:

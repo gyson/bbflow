@@ -8,40 +8,50 @@ import (
 	"strings"
 )
 
+// ListedSession is a session in a sidebar page. Context is true for a top-level session
+// that shows only as the parent of listed sub-sessions: it is not in the archive
+// collection of the page, or it does not match the search.
 type ListedSession struct {
 	Session
 	Updated string
+	Context bool
 }
 
 // SessionFilter selects sessions for the sidebar. Sessions form one group for each saved
 // project. Sessions without a saved project form the Standalone group, with the key "".
-// The page lists the most recent sessions of each selected group. With Offset, the page
-// lists one window of one group.
+// A family is a top-level session and its sub-sessions. The page lists the most recent
+// families of each selected group. With Offset, the page lists one window of one group.
 type SessionFilter struct {
-	Limit    int      // The number of sessions in each group. Zero selects 10.
+	Limit    int      // The number of families in each group. Zero selects 10.
 	Groups   []string // The group keys to list. Nil selects all groups.
-	Offset   int      // The sessions to skip. It needs exactly one group.
-	Include  string   // A session ID to list outside its group limit. It needs no Offset.
+	Offset   int      // The families to skip. It needs exactly one group.
+	Include  string   // A session ID whose family is listed outside its group limit. It needs no Offset.
 	Archived bool
 	Query    string
 }
 
-// SessionPage lists matching sessions, most recent first. More holds the keys of the
-// groups that have more matching sessions after the listed ones.
+// SessionPage lists matching families, most recent first. Each family lists its
+// top-level session first, then its sub-sessions in creation order. More holds the keys
+// of the groups that have more matching families after the listed ones.
 type SessionPage struct {
 	Sessions []ListedSession
 	More     []string
 }
 
 // MaxSessionLimit keeps each reply small. Limit times the number of groups must not be
-// larger. More sessions need more pages.
+// larger. More families need more pages.
 const MaxSessionLimit = 100
 
-// ListSessions orders sessions by terminal input, output, and run lifecycle activity.
-// This includes output while detached. View changes and unsent drafts do not count.
-// SQLite compares these times in whole milliseconds. For equal times, the event sequence
-// and then the creation order decide. The rowid keeps the creation order.
-// Search and archive filters apply before the group limits, including to old sessions.
+// ListSessions orders families by the terminal input, output, and run lifecycle activity
+// of their members in the archive collection. This includes output while detached. View
+// changes and unsent drafts do not count. SQLite compares these times in whole
+// milliseconds. For equal times, the event sequence and then the creation order decide.
+// The rowid keeps the creation order. Search and archive filters apply to each member
+// before the group limits, including to old sessions. A family is listed when one of its
+// members in the collection matches. A match of the top-level session lists all members
+// in the collection. Otherwise the top-level session shows as context for the matching
+// sub-sessions. A sub-session in the collection can thus list a top-level session from
+// the other collection.
 func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	if filter.Limit == 0 {
 		filter.Limit = 10
@@ -60,55 +70,47 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	if err != nil {
 		return SessionPage{}, err
 	}
-	query := strings.TrimSpace(filter.Query)
-	// Each group reads one session more than its limit to report more sessions.
-	rows, err := s.db.Query(`WITH listed AS (
-            SELECT sessions.id,title,auto_title,workspace,sessions.created,COALESCE(project_id,'') AS project,archived,
-                COALESCE(activity.created,sessions.created) AS updated,COALESCE(activity.seq,0) AS activity,
-                sessions.rowid AS creation,
-                CASE WHEN EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id) THEN project_id ELSE '' END AS grp
-            FROM sessions LEFT JOIN events AS activity ON activity.seq=(
-                SELECT seq FROM events WHERE session_id=sessions.id
-                AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
-            )
-            WHERE archived=? AND (?='' OR instr(lower(title),lower(?))>0 OR instr(lower(auto_title),lower(?))>0
-                OR instr(lower(workspace),lower(?))>0 OR instr(lower(sessions.id),lower(?))>0
-                OR EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id
-                    AND (instr(lower(projects.name),lower(?))>0 OR instr(lower(projects.workspace),lower(?))>0)))
-        ), ranked AS (
-            SELECT *,ROW_NUMBER() OVER (PARTITION BY grp ORDER BY julianday(updated) DESC,activity DESC,creation DESC) AS position
-            FROM listed
-        )
-        SELECT id,title,auto_title,workspace,created,project,archived,updated,grp,position>?+? FROM ranked
-        WHERE (? OR grp IN (SELECT value FROM json_each(?))) AND position>? AND (position<=?+?+1 OR id=?)
-        ORDER BY julianday(updated) DESC,activity DESC,creation DESC`,
-		filter.Archived, query, query, query, query, query, query, query,
-		filter.Offset, filter.Limit, filter.Groups == nil, string(groups), filter.Offset, filter.Offset, filter.Limit, filter.Include)
+	// Each group reads one family more than its limit to report more families.
+	rows, err := s.db.Query(listSessionsSQL, filter.Archived, strings.TrimSpace(filter.Query), filter.Offset, filter.Limit,
+		filter.Groups == nil, string(groups), filter.Include)
 	if err != nil {
 		return SessionPage{}, err
 	}
-	page := SessionPage{Sessions: []ListedSession{}, More: []string{}}
-	more := map[string]bool{}
+	type listedRow struct {
+		item   ListedSession
+		group  string
+		beyond bool
+	}
+	var listed []listedRow
+	included := ""
 	for rows.Next() {
-		var item ListedSession
-		var group string
-		var beyond bool
-		if err = rows.Scan(&item.ID, &item.Title, &item.AutoTitle, &item.Workspace, &item.Created, &item.ProjectID, &item.Archived, &item.Updated, &group, &beyond); err != nil {
+		var row listedRow
+		item := &row.item
+		if err = rows.Scan(&item.ID, &item.Title, &item.AutoTitle, &item.Workspace, &item.Created, &item.ProjectID, &item.Archived,
+			&item.Updated, &item.ParentID, &item.Context, &row.group, &row.beyond); err != nil {
 			rows.Close()
 			return SessionPage{}, err
 		}
-		if beyond {
-			more[group] = true
-			if item.ID != filter.Include {
-				continue
-			}
+		if item.ID == filter.Include {
+			included = family(item.Session)
 		}
-		page.Sessions = append(page.Sessions, item)
+		listed = append(listed, row)
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return SessionPage{}, err
+	}
+	page := SessionPage{Sessions: []ListedSession{}, More: []string{}}
+	more := map[string]bool{}
+	for _, row := range listed {
+		if row.beyond {
+			more[row.group] = true
+			if included == "" || family(row.item.Session) != included {
+				continue
+			}
+		}
+		page.Sessions = append(page.Sessions, row.item)
 	}
 	for group := range more {
 		page.More = append(page.More, group)
@@ -126,30 +128,188 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	return page, nil
 }
 
-// Archive changes affect visibility only. The transaction also prevents archive changes
-// for recorded active runs or an unfinished launch claim.
-func (s *Store) SetSessionArchived(id string, archived bool) error {
+// family returns the ID of the top-level session of the family of a session.
+func family(session Session) string {
+	if session.ParentID != "" {
+		return session.ParentID
+	}
+	return session.ID
+}
+
+// The parameters are ?1 archived, ?2 query, ?3 offset, ?4 limit, ?5 all groups, ?6 the
+// group keys as JSON, and ?7 the included session ID.
+//
+// listed holds the sessions of the collection and the top-level sessions of its
+// sub-sessions. A member is in the collection and matches, or its top-level session
+// matches. A family with a member is listed. Its latest member in the collection gives
+// its position in its group. The top-level session always shows with a listed family.
+const listSessionsSQL = `WITH listed AS (
+        SELECT sessions.id,title,auto_title,workspace,sessions.created,COALESCE(project_id,'') AS project,archived,
+            COALESCE(parent_id,'') AS parent,COALESCE(parent_id,sessions.id) AS family,
+            COALESCE(activity.created,sessions.created) AS updated,julianday(COALESCE(activity.created,sessions.created)) AS day,
+            COALESCE(activity.seq,0) AS activity,sessions.rowid AS creation,
+            CASE WHEN EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id) THEN project_id ELSE '' END AS grp,
+            archived=?1 AS shown,
+            (?2='' OR instr(lower(title),lower(?2))>0 OR instr(lower(auto_title),lower(?2))>0
+                OR instr(lower(workspace),lower(?2))>0 OR instr(lower(sessions.id),lower(?2))>0
+                OR EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id
+                    AND (instr(lower(projects.name),lower(?2))>0 OR instr(lower(projects.workspace),lower(?2))>0))) AS hit
+        FROM sessions LEFT JOIN events AS activity ON activity.seq=(
+            SELECT seq FROM events WHERE session_id=sessions.id
+            AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
+        )
+        WHERE archived=?1 OR sessions.id IN (SELECT parent_id FROM sessions WHERE archived=?1 AND parent_id IS NOT NULL)
+    ), members AS (
+        SELECT *,shown AND (hit OR MAX(parent='' AND hit) OVER (PARTITION BY family)) AS member FROM listed
+    ), ranked AS (
+        SELECT *,MAX(member) OVER (PARTITION BY family) AS listed_family,
+            MAX(CASE WHEN parent='' THEN grp END) OVER (PARTITION BY family) AS family_group,
+            ROW_NUMBER() OVER (PARTITION BY family ORDER BY shown DESC,day DESC,activity DESC,creation DESC) AS latest
+        FROM members
+    ), positions AS (
+        SELECT family,family_group,day,activity,creation,
+            ROW_NUMBER() OVER (PARTITION BY family_group ORDER BY day DESC,activity DESC,creation DESC) AS position
+        FROM ranked WHERE latest=1 AND listed_family
+    )
+    SELECT r.id,r.title,r.auto_title,r.workspace,r.created,r.project,r.archived,r.updated,r.parent,NOT r.member,
+        p.family_group,p.position>?3+?4
+    FROM ranked AS r JOIN positions AS p ON p.family=r.family
+    WHERE (r.member OR r.parent='') AND (?5 OR p.family_group IN (SELECT value FROM json_each(?6)))
+        AND p.position>?3 AND (p.position<=?3+?4+1 OR r.family IN (SELECT COALESCE(parent_id,id) FROM sessions WHERE id=?7))
+    ORDER BY p.day DESC,p.activity DESC,p.creation DESC,r.parent<>'',r.creation`
+
+// SetSessionArchived archives or restores a session and returns the IDs of the changed
+// sessions. Archive changes affect visibility only.
+//
+//   - Archive of a top-level session also archives its sub-sessions.
+//   - Restore of a top-level session also restores its archived sub-sessions.
+//   - Restore of a sub-session also restores its archived parent.
+//
+// The transaction rejects archive for recorded active runs or an unfinished launch claim
+// in any of these sessions. live reports a live terminal that the server owns. It can be
+// nil.
+func (s *Store) SetSessionArchived(id string, archived bool, live func(id string) bool) ([]string, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var parent string
+	err = tx.QueryRow("SELECT COALESCE(parent_id,'') FROM sessions WHERE id=?", id).Scan(&parent)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	ids := []string{id}
+	var rows *sql.Rows
+	if parent == "" {
+		rows, err = tx.Query("SELECT id FROM sessions WHERE parent_id=? AND archived<>? ORDER BY rowid", id, archived)
+	} else if !archived {
+		rows, err = tx.Query("SELECT id FROM sessions WHERE id=? AND archived", parent)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if rows != nil {
+		for rows.Next() {
+			var member string
+			if err = rows.Scan(&member); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			ids = append(ids, member)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if archived {
+		for _, member := range ids {
+			var active bool
+			err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM runs WHERE session_id=?1 AND status IN ('starting','running'))
+            OR EXISTS(SELECT 1 FROM preparations WHERE session_id=?1 AND
+                (state='creating' OR (state='launched' AND NOT EXISTS(SELECT 1 FROM runs WHERE session_id=?1))))`, member).Scan(&active)
+			if err != nil {
+				return nil, err
+			}
+			if active || (live != nil && live(member)) {
+				if len(ids) > 1 {
+					return nil, errors.New("stop every session of this family before archiving it")
+				}
+				return nil, errors.New("stop the session before archiving it")
+			}
+		}
+	}
+	for _, member := range ids {
+		if _, err = tx.Exec("UPDATE sessions SET archived=? WHERE id=?", archived, member); err != nil {
+			return nil, err
+		}
+	}
+	return ids, tx.Commit()
+}
+
+// SetSessionParent moves a session under a top-level session of the same project, or to
+// the top level when parent is empty. The move changes only the organization of the
+// sidebar. A session with sub-sessions cannot move under another session.
+func (s *Store) SetSessionParent(id, parent string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	var project sql.NullString
+	var archived bool
+	err = tx.QueryRow("SELECT project_id,archived FROM sessions WHERE id=?", id).Scan(&project, &archived)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
 	if archived {
-		var active bool
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM runs WHERE session_id=? AND status IN ('starting','running'))
-            OR EXISTS(SELECT 1 FROM preparations WHERE session_id=? AND
-                (state='creating' OR (state='launched' AND NOT EXISTS(SELECT 1 FROM runs WHERE session_id=?))))`, id, id, id).Scan(&active)
-		if err != nil {
+		return errors.New("restore the session before you move it")
+	}
+	if parent != "" {
+		if parent == id {
+			return errors.New("a session cannot be its own parent")
+		}
+		var children bool
+		if err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM sessions WHERE parent_id=?)", id).Scan(&children); err != nil {
 			return err
 		}
-		if active {
-			return errors.New("stop the session before archiving it")
+		if children {
+			return errors.New("this session has sub-sessions; move them to the top level first")
+		}
+		if err = checkParent(tx, parent, project); err != nil {
+			return err
 		}
 	}
-	if err = changedRow(tx.Exec("UPDATE sessions SET archived=? WHERE id=?", archived, id)); err != nil {
+	if _, err = tx.Exec("UPDATE sessions SET parent_id=NULLIF(?,'') WHERE id=?", parent, id); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// checkParent accepts a top-level session that is not archived and is in the project.
+func checkParent(tx *sql.Tx, parent string, project sql.NullString) error {
+	var parentProject, grandparent sql.NullString
+	var archived bool
+	err := tx.QueryRow("SELECT project_id,parent_id,archived FROM sessions WHERE id=?", parent).Scan(&parentProject, &grandparent, &archived)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return errors.New("parent session not found")
+	case err != nil:
+		return err
+	case grandparent.Valid:
+		return errors.New("a sub-session cannot have sub-sessions; choose a top-level session")
+	case archived:
+		return errors.New("restore the parent session first")
+	case parentProject != project:
+		return errors.New("choose a parent session in the same project")
+	}
+	return nil
 }
 
 func (s *Store) Session(id string) (Session, error) {

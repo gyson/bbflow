@@ -6,7 +6,7 @@ import { DiffPane } from './diff-pane.js';
 import { SideTerminal } from './side-terminal.js';
 import { WorkspacePane } from './workspace-pane.js';
 import { continueAction, continueDialogProblem, defaultContinueTool } from './continue.js';
-import { endReasonText, exitReason, hasTerminal, listStatus, listStatusText, live, statusText, terminalsChanged } from './session-status.js';
+import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
 import { Watch } from './watch.js';
 import { Terminal } from '@xterm/xterm';
@@ -16,10 +16,13 @@ import './style.css';
 import { element } from './dom.js';
 import { Composer } from './composer.js';
 import { SessionMenu } from './session-menu.js';
+import { RowMenus } from './row-menu.js';
+import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
 import { Sidebar, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
-import { mergeSessions, sessionGroups, sessionWindow } from './projects.js';
+import { mergeSessions, placeText, sessionGroups, sessionWindow, shownChildren } from './projects.js';
+import type { Family } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
@@ -54,6 +57,24 @@ const elements = {
   'project-remove-help': element('project-remove-help', HTMLElement),
   'cancel-project': element('cancel-project', HTMLButtonElement),
   'rename-session': element('rename-session', HTMLButtonElement),
+  'new-sub-session': element('new-sub-session', HTMLButtonElement),
+  'move-session': element('move-session', HTMLButtonElement),
+  'move-top-level': element('move-top-level', HTMLButtonElement),
+  'session-parent': element('session-parent', HTMLElement),
+  'session-parent-open': element('session-parent-open', HTMLButtonElement),
+  'move-dialog': element('move-dialog', HTMLDialogElement),
+  'move-form': element('move-form', HTMLFormElement),
+  'move-choices': element('move-choices', HTMLElement),
+  'move-error': element('move-error', HTMLElement),
+  'move-submit': element('move-submit', HTMLButtonElement),
+  'cancel-move': element('cancel-move', HTMLButtonElement),
+  'archive-dialog': element('archive-dialog', HTMLDialogElement),
+  'archive-form': element('archive-form', HTMLFormElement),
+  'archive-summary': element('archive-summary', HTMLElement),
+  'archive-members': element('archive-members', HTMLElement),
+  'archive-error': element('archive-error', HTMLElement),
+  'archive-submit': element('archive-submit', HTMLButtonElement),
+  'cancel-archive': element('cancel-archive', HTMLButtonElement),
   'copy-session-id': element('copy-session-id', HTMLButtonElement),
   'rename-dialog': element('rename-dialog', HTMLDialogElement),
   'rename-form': element('rename-form', HTMLFormElement),
@@ -103,6 +124,8 @@ interface SessionView {
   worktree?: Worktree;
   run?: Run;
   projectId?: string;
+  // The top-level session of a sub-session, or empty.
+  parentId?: string;
   id?: string;
   title: string;
   autoTitle?: string;
@@ -126,10 +149,14 @@ let titleRevision = 0;
 let projects: Project[] = [];
 let editingProject: Project | null = null;
 const collapsedProjects = new Set<string>();
+// The families that show all of their sub-sessions in this view until reload.
+const shownFamilies = new Set<string>();
 let renderedSidebar = '';
-// The status elements and the archive button of each session in the list. A status change
-// updates them in place, so the buttons and the keyboard focus stay.
-const statusMarks: { session: SessionInfo; dot: HTMLElement; text: Text; archive: HTMLButtonElement }[] = [];
+// The status elements of each session row in the list. A status change updates them in
+// place, so the buttons and the keyboard focus stay. place tells where a sub-session
+// works. The archive item and the ⋯ button of the row menu follow the status too. fixed
+// is true when the menu has an item that applies in each status.
+const statusMarks: { session: SessionInfo; button: HTMLElement; icon: HTMLElement; label: HTMLElement; place: string; archive: HTMLButtonElement; menu: HTMLButtonElement; fixed: boolean }[] = [];
 let selected: SessionView | null = null;
 let continueRun: string | undefined;
 // The handoff prompt of the selected session. It stays available after a new terminal
@@ -157,6 +184,7 @@ const composer = new Composer({
 });
 const sessionSplit = new SessionSplit();
 const sessionMenu = new SessionMenu();
+const rowMenus = new RowMenus(() => renderSessions());
 const handoffPrompt = new HandoffPrompt({ insert: text => composer.insert(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
 // final screen. The live process continues while a view shows an earlier terminal.
@@ -224,6 +252,8 @@ const dialogEdits = new DialogEdits([
 ]);
 const dialogErrors = new Map([
   [$('project-dialog'), $('project-error')],
+  [$('move-dialog'), $('move-error')],
+  [$('archive-dialog'), $('archive-error')],
   [$('rename-dialog'), $('rename-error')],
   [$('continue-dialog'), $('continue-error')],
 ]);
@@ -333,6 +363,18 @@ function controls() {
   terminalPicker.controls(busy);
   $('project-submit').disabled = $('project-remove').disabled = $('rename-submit').disabled = busy;
   $('rename-session').hidden = $('copy-session-id').hidden = showingSettings || !selected?.id || selected.status === 'draft';
+  // A family has one level. On a sub-session, New sub-session adds one to the same parent.
+  // A sub-session draft needs a saved project. The server checks the other rules too.
+  const organize = !showingSettings && !!selected?.id && !selected.archived;
+  $('new-sub-session').hidden = !organize || !projects.some(project => project.id === selected?.projectId);
+  $('new-sub-session').textContent = selected?.parentId ? 'New sub-session in this family' : 'New sub-session';
+  $('move-session').hidden = !organize || sessions.some(session => session.parentId === selected?.id);
+  $('move-top-level').hidden = !organize || !selected?.parentId;
+  $('new-sub-session').disabled = $('move-session').disabled = $('move-top-level').disabled = $('move-submit').disabled = $('archive-submit').disabled = busy;
+  const parent = selected?.parentId ? sessions.find(session => session.id === selected?.parentId) : undefined;
+  $('session-parent').hidden = showingSettings || !selected?.parentId;
+  $('session-parent-open').textContent = parent ? sessionTitle(parent) || 'Untitled session' : 'its parent session';
+  $('session-parent-open').disabled = busy;
   // The More menu lists only the actions that apply. A live session keeps its worktree.
   $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed' || live(selected.status);
   $('remove-worktree').disabled = $('rename-session').disabled = $('copy-session-id').disabled = busy;
@@ -349,54 +391,140 @@ async function action(work: () => Promise<void>): Promise<void> {
   finally { busy = false; controls(); }
 }
 
-// Icons of the archive button in a session row. They are constant markup.
-const archiveIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="4" rx="1"/><path d="M4.25 7.75v7.5a1 1 0 0 0 1 1h9.5a1 1 0 0 0 1-1v-7.5M8.25 11h3.5"/></svg>';
-const restoreIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="4" rx="1"/><path d="M4.25 7.75v7.5a1 1 0 0 0 1 1h9.5a1 1 0 0 0 1-1v-7.5M10 14.25v-4M8.25 11.75 10 10l1.75 1.75"/></svg>';
+interface RowOptions {
+  showWorkspace: boolean;
+  // The top-level session of a sub-session.
+  parent?: SessionInfo;
+  // The family of a top-level session.
+  family?: Family;
+}
 
-// Return a list row with the session button and its archive button. A button cannot
-// contain another button, so the row holds both.
-function sessionRow(session: SessionInfo, showWorkspace: boolean): HTMLElement {
+// Places of a sub-session that get the worktree mark after its title.
+const worktreePlaces = new Set(['own worktree', 'new worktree']);
+
+// Return a list row with the session button and its row actions. A button cannot
+// contain another button, so the row holds them all. The row has one line: a status
+// icon, the title, and a worktree mark for a sub-session with its own worktree. The
+// status text shows in the tooltip of the icon and in a label for screen readers.
+function sessionRow(session: SessionInfo, options: RowOptions): HTMLElement {
+  const { showWorkspace, parent, family } = options;
+  const context = !!family?.context;
+  const place = parent ? placeText(session, parent) : '';
   const button = document.createElement('button');
   button.className = 'session-item' + (selected?.id === session.id ? ' selected' : '');
   button.setAttribute('aria-current', selected?.id === session.id ? 'true' : 'false');
-  button.title = `${sessionTitle(session)}\n${session.workspace}\n${session.id}\n${session.updated}`;
+  button.dataset.focus = `session:${session.id}`;
+  const line = document.createElement('span');
+  line.className = 'session-line';
+  const icon = document.createElement('span');
   const title = document.createElement('strong');
   title.textContent = sessionTitle(session) || (session.status === 'draft' ? 'Untitled draft' : 'Untitled session');
-  const status = document.createElement('span');
-  status.className = 'run-state';
-  const dot = document.createElement('span'), text = document.createTextNode('');
-  status.append(dot, text);
-  button.dataset.focus = `session:${session.id}`;
-  button.append(title);
+  line.append(icon, title);
+  if (worktreePlaces.has(place)) {
+    const mark = document.createElement('span');
+    mark.className = 'worktree-mark';
+    mark.textContent = '⑂';
+    mark.title = place === 'new worktree' ? 'Starts in a new worktree' : 'Own worktree';
+    mark.setAttribute('aria-hidden', 'true');
+    line.append(mark);
+  }
+  const label = document.createElement('span');
+  label.className = 'sr-only';
+  button.append(line, label);
+  if (context) {
+    // The top-level session is in the other collection, or it does not match the search.
+    const tag = document.createElement('small');
+    tag.className = 'context-tag';
+    tag.textContent = session.archived === archivedList ? 'Parent of a match' : session.archived ? 'Archived' : 'Not archived';
+    button.append(tag);
+  }
   if (showWorkspace) {
     const workspace = document.createElement('small');
     workspace.textContent = session.workspace;
     button.append(workspace);
   }
-  button.append(status);
   button.onclick = () => action(() => openSession(session));
-  const archive = document.createElement('button');
-  archive.className = 'session-archive';
-  archive.title = `${session.archived ? 'Restore' : 'Archive'} ${title.textContent}`;
-  archive.setAttribute('aria-label', archive.title);
-  archive.innerHTML = session.archived ? restoreIcon : archiveIcon;
-  archive.dataset.focus = `archive:${session.id}`;
-  archive.onclick = async () => {
-    // The row leaves the list. A keyboard user then gets the nearest session row that
-    // shows, or else a sidebar control.
-    const keyboard = document.activeElement === archive;
-    const before = shownSessionKeys();
-    await action(() => setArchived(session.id, !session.archived));
-    if (!keyboard || (document.activeElement && document.activeElement !== document.body)) return;
-    const key = nearestRow(before, button.dataset.focus!, shownSessionKeys());
-    if (key) focusSidebar(key);
-    else (archivedList ? $('sessions-open') : $('filter')).focus();
-  };
-  statusMarks.push({ session, dot, text, archive });
   const row = document.createElement('div');
-  row.className = 'session-row';
-  row.append(button, archive);
+  row.className = 'session-row' + (parent ? ' sub-session' : '') + (context ? ' context' : '');
+  row.append(button);
+  // The ⋯ button opens the actions of the row, so one click never runs an action.
+  const actions: RowAction[] = [];
+  // A sub-session draft needs a saved project. A family has one level.
+  const canAdd = !parent && !context && !archivedList && projects.some(project => project.id === session.projectId);
+  if (canAdd) actions.push({ label: 'New sub-session', run: () => void action(() => showSubLaunch(session.id)) });
+  // A context row is not in this collection. Its own row in the other list changes it.
+  if (!context) actions.push({ label: session.archived ? 'Restore' : 'Archive', run: keyboard => void archiveFromList(session, keyboard) });
+  const mark = { session, button, icon, label, place };
+  if (actions.length) {
+    const menu = rowMenus.create(title.textContent, `menu:${session.id}`, actions);
+    row.append(menu.box);
+    if (!context) statusMarks.push({ ...mark, archive: menu.items.at(-1)!, menu: menu.button, fixed: canAdd });
+  }
+  // A context row is not in the status watch of this list. It shows the listed status.
+  if (context) showRowStatus(mark, session.status);
   return row;
+}
+
+// Show a status on the icon, the tooltips, and the screen reader label of a row.
+function showRowStatus(mark: { session: SessionInfo; button: HTMLElement; icon: HTMLElement; label: HTMLElement; place: string }, status: string): void {
+  const { session, button, icon, label, place } = mark;
+  const className = `status-icon ${statusIcon(status, session.runStatus)}`;
+  const text = listStatusText(status, session, place);
+  if (icon.className !== className) icon.className = className;
+  if (icon.title !== text) icon.title = text;
+  const tip = `${sessionTitle(session)}\n${text}\n${session.workspace}\n${session.id}\n${session.updated}`;
+  if (button.title !== tip) button.title = tip;
+  const spoken = `, ${listStatusLabel(status, session, place)}`;
+  if (label.textContent !== spoken) label.textContent = spoken;
+}
+
+// Return a family: the row of its top-level session, then the rows of its sub-sessions.
+// A family is always open. After the first sub-sessions, Show more shows the others in
+// this view.
+function familyBlock(family: Family, showWorkspace: boolean): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'family';
+  block.append(sessionRow(family.root, { showWorkspace, family }));
+  if (!family.children.length) return block;
+  const id = family.root.id;
+  const all = !!$('filter').value.trim() || shownFamilies.has(id);
+  const { shown, hidden } = shownChildren(family.children, all, selected?.id);
+  const list = document.createElement('div');
+  list.id = `family-${id}`;
+  list.className = 'family-children';
+  for (const child of shown) list.append(sessionRow(child, { showWorkspace: false, parent: family.root }));
+  if (hidden) {
+    const row = document.createElement('div');
+    row.className = 'session-row family-more-row';
+    const more = document.createElement('button');
+    more.className = 'family-more';
+    more.textContent = `Show ${hidden} more`;
+    more.setAttribute('aria-label', `Show ${hidden} more sub-sessions of ${sessionTitle(family.root) || 'this session'}`);
+    more.dataset.focus = `family-more:${id}`;
+    more.onclick = () => {
+      // A keyboard user continues at the first sub-session that was hidden.
+      const keyboard = document.activeElement === more;
+      const next = family.children.find(child => !shown.includes(child));
+      shownFamilies.add(id);
+      renderSessions();
+      if (keyboard && next) focusSidebar(`session:${next.id}`);
+    };
+    row.append(more);
+    list.append(row);
+  }
+  block.append(list);
+  return block;
+}
+
+// Archive or restore a session from its row menu. The row leaves the list. A keyboard user
+// then gets the nearest session row that shows, or else a sidebar control.
+async function archiveFromList(session: SessionInfo, keyboard: boolean): Promise<void> {
+  const before = shownSessionKeys();
+  await action(() => requestArchive(session, !session.archived));
+  if (!keyboard || (document.activeElement && document.activeElement !== document.body)) return;
+  const key = nearestRow(before, `session:${session.id}`, shownSessionKeys());
+  if (key) focusSidebar(key);
+  else (archivedList ? $('sessions-open') : $('filter')).focus();
 }
 
 // Return the focus keys of the session rows that show. A collapsed group hides its rows.
@@ -408,22 +536,23 @@ function shownSessionKeys(): string[] {
 
 // Show the current status of each session in the list, without new buttons.
 function showListStatuses() {
-  for (const { session, dot, text, archive } of statusMarks) {
+  for (const mark of statusMarks) {
     // A live view and the status watch get status changes at once. The list is older.
-    const shown = connection?.peer?.active && selected?.id === session.id ? selected.status : listStatus(session, liveStatuses);
-    const className = `dot ${shown}`, line = listStatusText(shown, session);
-    if (dot.className !== className) dot.className = className;
-    if (text.data !== line) text.data = line;
-    // The server archives only drafts and ended sessions.
-    archive.hidden = live(shown);
+    const shown = connection?.peer?.active && selected?.id === mark.session.id ? selected.status : listStatus(mark.session, liveStatuses);
+    showRowStatus(mark, shown);
+    // The server archives only drafts and ended sessions. A menu without items does not
+    // show its button.
+    mark.archive.hidden = live(shown);
+    mark.menu.hidden = !mark.fixed && mark.archive.hidden;
   }
 }
 
 function renderSessions() {
   const query = $('filter').value.toLowerCase();
   // A status is not part of the fingerprint. A status change must not replace the buttons.
-  const fingerprint = JSON.stringify([projects, sessions, query, archivedList, [...moreGroups], selected?.id, showingSettings, [...collapsedProjects]]);
-  if (fingerprint === renderedSidebar) { showListStatuses(); controls(); return; }
+  const fingerprint = JSON.stringify([projects, sessions, query, archivedList, [...moreGroups], selected?.id, showingSettings, [...collapsedProjects], [...shownFamilies]]);
+  // An open row menu keeps the buttons of the list. Its close renders the list again.
+  if (fingerprint === renderedSidebar || rowMenus.open) { showListStatuses(); controls(); return; }
   renderedSidebar = fingerprint;
   // New buttons replace the list. Give the keyboard focus to the new button of the same item.
   const focused = document.activeElement instanceof HTMLElement && $('sessions').contains(document.activeElement) ? document.activeElement.dataset.focus : undefined;
@@ -433,7 +562,7 @@ function renderSessions() {
   $('archived-heading').hidden = !archivedList;
   $('sessions').setAttribute('aria-label', archivedList ? 'Archived sessions' : 'Projects and sessions');
   $('filter').placeholder = archivedList ? 'Search archived sessions…' : 'Search names and folders…';
-  const groups = sessionGroups(projects, sessions, query).filter(group => !archivedList || group.sessions.length);
+  const groups = sessionGroups(projects, sessions, query).filter(group => !archivedList || group.families.length);
   for (const group of groups) {
     const project = group.project;
     const id = project?.id ?? '';
@@ -485,12 +614,12 @@ function renderSessions() {
         heading.append(edit);
       }
     }
-    for (const session of group.sessions) list.append(sessionRow(session, !project));
+    for (const family of group.families) list.append(familyBlock(family, !project));
     if (moreGroups.has(id)) {
       const more = document.createElement('button');
       more.className = 'project-more';
       more.textContent = 'Show more';
-      more.title = `Show ${sessionStep} more sessions of ${name}`;
+      more.title = `Show ${sessionStep} more families of ${name}`;
       more.dataset.focus = `more:${id}`;
       more.onclick = async () => {
         // A busy action disables the sidebar buttons, and a disabled button loses the focus.
@@ -504,7 +633,7 @@ function renderSessions() {
       };
       list.append(more);
     }
-    if (!group.sessions.length) {
+    if (!group.families.length) {
       const empty = document.createElement('p');
       empty.className = 'project-empty';
       empty.textContent = query ? 'No matching sessions.' : 'Create a draft with ＋.';
@@ -886,6 +1015,17 @@ async function showLaunch(projectId: string): Promise<void> {
   await refreshSessions();
 }
 
+// Create a sub-session draft in the family of a session and open it.
+async function showSubLaunch(parent: string): Promise<void> {
+  if (!server) return;
+  await leaveView();
+  const session = await call(server, { operation: 'project-draft', parent });
+  archivedList = false; $('filter').value = '';
+  collapsedProjects.delete(session.projectId);
+  await openSession({ ...session, status: 'draft' });
+  await refreshSessions();
+}
+
 async function showWelcome(): Promise<void> {
   await leaveView();
   settingsView.close(); showingSettings = false;
@@ -932,12 +1072,96 @@ function showProject(project: Project | null = null) {
   showDialog($('project-dialog'));
 }
 
+// The group key of a project in the session list. A session without a saved project is
+// in the Standalone group.
+function groupKey(projectId = ''): string {
+  return projects.some(project => project.id === projectId) ? projectId : '';
+}
+
+// The top-level session that the archive dialog asks about.
+let archiving: { id: string } | null = null;
+
+// Archive or restore a session. Archive of a top-level session with sub-sessions asks
+// first, because it archives the whole family.
+async function requestArchive(session: { id: string; parentId?: string; projectId?: string; title: string; autoTitle?: string }, archived: boolean): Promise<void> {
+  if (!server) return;
+  if (archived && !session.parentId) {
+    const page = await call(server, { operation: 'session-list', groups: [groupKey(session.projectId)], limit: 1, session: session.id });
+    const children = page.sessions.filter(item => item.parentId === session.id && !item.archived);
+    if (children.length) {
+      archiving = { id: session.id };
+      const title = sessionTitle(session) || 'Untitled session';
+      $('archive-summary').textContent = `This archives “${title}” and ${children.length} sub-session${children.length === 1 ? '' : 's'}:`;
+      $('archive-members').replaceChildren(...[session, ...children].map(member => {
+        const item = document.createElement('li');
+        item.textContent = sessionTitle(member) || ('status' in member && member.status === 'draft' ? 'Untitled draft' : 'Untitled session');
+        return item;
+      }));
+      $('archive-error').hidden = true;
+      showDialog($('archive-dialog'));
+      return;
+    }
+  }
+  await setArchived(session.id, archived);
+}
+
+// The session that the move dialog moves.
+let moving: { id: string; parentId: string } | null = null;
+
+// List the top-level sessions of the same project as choices for a new parent.
+async function showMove(): Promise<void> {
+  if (!server || !selected?.id) return;
+  const session = { id: selected.id, parentId: selected.parentId ?? '' };
+  const page = await call(server, { operation: 'session-list', groups: [groupKey(selected.projectId)], limit: sessionWindow });
+  const choices = page.sessions.filter(item => !item.parentId && !item.context && item.id !== session.id);
+  moving = session;
+  $('move-choices').replaceChildren(...choices.map(choice => {
+    const label = document.createElement('label');
+    label.className = 'choice';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'move-parent';
+    input.value = choice.id;
+    input.checked = choice.id === session.parentId;
+    const dot = document.createElement('span');
+    dot.className = `status-icon ${statusIcon(listStatus(choice, liveStatuses), choice.runStatus)}`;
+    const text = document.createElement('span');
+    text.className = 'choice-text';
+    const name = document.createElement('strong');
+    name.textContent = sessionTitle(choice) || (choice.status === 'draft' ? 'Untitled draft' : 'Untitled session');
+    const detail = document.createElement('small');
+    detail.textContent = (choice.id === session.parentId ? 'Current parent · ' : '') + listStatusLabel(listStatus(choice, liveStatuses), choice);
+    text.append(name, detail);
+    label.append(input, dot, text);
+    return label;
+  }));
+  if (!choices.length) {
+    const empty = document.createElement('p');
+    empty.className = 'form-help';
+    empty.textContent = 'This project has no other top-level session.';
+    $('move-choices').append(empty);
+  }
+  $('move-error').hidden = true;
+  showDialog($('move-dialog'));
+}
+
+// Move a session under a parent, or to the top level with an empty parent.
+async function moveSession(id: string, parent: string): Promise<void> {
+  if (!server) return;
+  await call(server, { operation: 'session-parent', session: id, parent });
+  if (selected?.id === id) selected.parentId = parent;
+  await refreshSessions();
+  const title = sessionTitle(sessions.find(session => session.id === parent) ?? { title: '' });
+  notice(parent ? `Moved under “${title || 'the parent session'}”. The workspace did not change.` : 'Moved to the top level. The workspace did not change.');
+}
+
 // Archive or restore a session. The selected session first saves its launch choices and
 // message editor. Its view then closes, or opens in the normal list after a restore.
 // Settings stays open. Back to session then opens the welcome view or the restored session.
-async function setArchived(id: string, archived: boolean): Promise<void> {
+async function setArchived(id: string, archived: boolean, family = false): Promise<void> {
   if (!server) return;
-  const current = selected?.id === id ? selected : null;
+  // The archive of a family also archives a selected sub-session of that family.
+  const current = selected?.id === id || (family && archived && !!selected?.parentId && selected.parentId === id) ? selected : null;
   if (current) {
     await preparation.flush();
     await composer.flush();
@@ -955,14 +1179,59 @@ async function setArchived(id: string, archived: boolean): Promise<void> {
     }
   }
   await refreshSessions();
-  notice(archived ? 'Session archived. Find it in Archived and restore it any time.' : 'Session restored.');
+  notice(archived ? `${family ? 'Family' : 'Session'} archived. Find it in Archived and restore it any time.` : 'Session restored.');
 }
 
 async function initialize() {
   systemDark.addEventListener('change', updateTerminalTheme);
   controls();
   $('archive-session').onclick = () => action(async () => {
-    if (selected?.id) await setArchived(selected.id, !selected.archived);
+    if (selected?.id) await requestArchive({ ...selected, id: selected.id }, !selected.archived);
+  });
+  $('cancel-archive').onclick = () => $('archive-dialog').close();
+  $('archive-form').onsubmit = event => {
+    event.preventDefault();
+    action(async () => {
+      if (!archiving) return;
+      try {
+        await setArchived(archiving.id, true, true);
+        $('archive-dialog').close();
+      } catch (error) {
+        $('archive-error').textContent = errorMessage(error);
+        $('archive-error').hidden = false;
+      }
+    });
+  };
+  $('new-sub-session').onclick = () => action(async () => {
+    if (selected?.id) await showSubLaunch(selected.id);
+  });
+  $('move-session').onclick = () => action(showMove);
+  $('move-top-level').onclick = () => action(async () => {
+    if (selected?.id) await moveSession(selected.id, '');
+  });
+  $('cancel-move').onclick = () => $('move-dialog').close();
+  $('move-form').onsubmit = event => {
+    event.preventDefault();
+    action(async () => {
+      const choice = $('move-choices').querySelector<HTMLInputElement>('input:checked');
+      if (!moving) return;
+      if (!choice || choice.value === moving.parentId) {
+        $('move-error').textContent = 'Choose a new parent session.';
+        $('move-error').hidden = false;
+        return;
+      }
+      try {
+        await moveSession(moving.id, choice.value);
+        $('move-dialog').close();
+      } catch (error) {
+        $('move-error').textContent = errorMessage(error);
+        $('move-error').hidden = false;
+      }
+    });
+  };
+  $('session-parent-open').onclick = () => action(async () => {
+    const id = selected?.parentId;
+    if (id) await openSession(sessions.find(session => session.id === id) || { id, title: 'Session', workspace: '', status: 'unknown' });
   });
   $('archives-open').onclick = () => action(async () => {
     archivedList = !archivedList;

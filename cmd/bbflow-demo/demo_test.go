@@ -157,7 +157,11 @@ func TestDemo(t *testing.T) {
 		t.Fatalf("seed did not change %s:\n%s", controller, status)
 	}
 	expect("SELECT name FROM projects ORDER BY name", "[[General] [Orbit API] [Tide Web]]")
-	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 6] [1 1]]")
+	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 7] [1 1]]")
+	// The reviewer draft is a sub-session of the worktree session. Its base is the branch
+	// of its parent.
+	expect("SELECT s.title, p.title, CAST(r.data AS TEXT)->>'base' FROM sessions s JOIN sessions p ON p.id=s.parent_id JOIN preparations r ON r.session_id=s.id",
+		"[[Review the refactor Refactor orbit in a worktree demo/refactor-orbit]]")
 	expect("SELECT status, count(*) FROM runs GROUP BY status ORDER BY status", "[[exited 3] [running 3] [stopped 1]]")
 	expect("SELECT branch, state FROM worktrees", "[[demo/refactor-orbit ready]]")
 	// The worktree has three commits after its base and an uncommitted file, for each
@@ -181,12 +185,12 @@ func TestDemo(t *testing.T) {
 	expect(`SELECT count(*) FROM events AS input
 		JOIN events AS start ON start.run_id=input.run_id AND start.kind='start'
 		WHERE input.kind='input' AND CAST(start.data AS TEXT)->>'continues' IS NOT NULL`, "[[1]]")
-	expect("SELECT s.title, CAST(p.data AS TEXT)->>'worktree' FROM preparations p JOIN sessions s ON s.id=p.session_id WHERE p.state='draft'",
-		"[[Plan release notes 1]]")
+	expect("SELECT s.title, CAST(p.data AS TEXT)->>'worktree' FROM preparations p JOIN sessions s ON s.id=p.session_id WHERE p.state='draft' ORDER BY s.title",
+		"[[Plan release notes 1] [Review the refactor 1]]")
 
 	// A second seed adds nothing and prints each session.
 	output := pass("bbflow-demo", demo, "seed")
-	expect("SELECT count(*) FROM sessions", "[[7]]")
+	expect("SELECT count(*) FROM sessions", "[[8]]")
 	for _, state := range []string{"running", "ended", "draft", "archived"} {
 		if !strings.Contains(output, "\n  "+state+" ") {
 			t.Errorf("seed output has no %s session:\n%s", state, output)
@@ -195,7 +199,7 @@ func TestDemo(t *testing.T) {
 
 	// The regular restart keeps the demo data.
 	pass("bbflow", demo, "server", "restart")
-	expect("SELECT count(*) FROM sessions", "[[7]]")
+	expect("SELECT count(*) FROM sessions", "[[8]]")
 	expect("SELECT count(*) FROM runs WHERE status='running'", "[[0]]")
 
 	// seed refuses an instance with other files or data, and writes no marker. clean

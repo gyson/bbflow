@@ -142,7 +142,7 @@ func TestRemoteBaseIsFetchedBeforeWorktreeCreation(t *testing.T) {
 	}
 	draft := func(base string) (string, int64) {
 		t.Helper()
-		session, err := s.prepareProject(ctx, project.ID)
+		session, err := s.prepareProject(ctx, project.ID, "")
 		if err != nil {
 			t.Fatal(err)
 		}

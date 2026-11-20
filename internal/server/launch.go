@@ -11,9 +11,29 @@ import (
 	agent "bbflow/internal/runtime"
 )
 
-func (s *Server) prepareProject(ctx context.Context, projectID string) (history.Session, error) {
+// prepareProject creates a draft in a project. With parentID, it creates a sub-session
+// draft in the family of that session, in the project of the family. Its default Git base
+// is the worktree branch of the parent.
+func (s *Server) prepareProject(ctx context.Context, projectID, parentID string) (history.Session, error) {
 	s.launchMu.Lock()
 	defer s.launchMu.Unlock()
+	var parent history.Session
+	if parentID != "" {
+		var err error
+		if parent, err = s.store.Session(parentID); err != nil {
+			return history.Session{}, err
+		}
+		// A family has one level. A sub-session of a sub-session joins the same family.
+		if parent.ParentID != "" {
+			if parent, err = s.store.Session(parent.ParentID); err != nil {
+				return history.Session{}, err
+			}
+		}
+		if parent.ProjectID == "" {
+			return history.Session{}, errors.New("this session has no project; add its project again before you add a sub-session")
+		}
+		projectID = parent.ProjectID
+	}
 	project, err := s.store.Project(projectID)
 	if err != nil {
 		return history.Session{}, err
@@ -33,7 +53,13 @@ func (s *Server) prepareProject(ctx context.Context, projectID string) (history.
 		return history.Session{}, err
 	}
 	p.Worktree = settings.Worktree && inspectRepository(ctx, workspace).Available
-	return s.store.CreatePreparation("", workspace, project.ID, p)
+	if parent.ID == "" {
+		return s.store.CreatePreparation("", workspace, project.ID, p)
+	}
+	if parent.Worktree != nil && parent.Worktree.Branch != "" {
+		p.Base = parent.Worktree.Branch
+	}
+	return s.store.CreateSubPreparation(parent.ID, workspace, project.ID, p)
 }
 
 func (s *Server) savePreparation(request *protocol.Request) (history.Session, error) {
@@ -87,7 +113,19 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 	if p == nil || p.State != "draft" || p.Revision != revision {
 		return session, nil, errors.New("session already started or launch settings changed; reload the session")
 	}
-	run, err := prepareRun(&protocol.Run{Workspace: session.Workspace, Title: session.Title, Command: p.Command, Size: size})
+	// A sub-session without a worktree starts in the current workspace of its parent.
+	workspace := session.Workspace
+	if session.ParentID != "" && !p.Worktree {
+		parent, err := s.store.Session(session.ParentID)
+		if err != nil {
+			return session, nil, err
+		}
+		if parent.Preparation != nil && parent.Preparation.State == "draft" {
+			return session, nil, errors.New("start the parent session first, or choose a new worktree")
+		}
+		workspace = parent.Workspace
+	}
+	run, err := prepareRun(&protocol.Run{Workspace: workspace, Title: session.Title, Command: p.Command, Size: size})
 	if err != nil {
 		return session, nil, err
 	}
@@ -115,8 +153,12 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 		session.Worktree = &worktree
 	}
 	// Each launch records the derived title, also under a user title. A session from
-	// before the upgrade has none, so it never gets an automatic title.
+	// before the upgrade has none, so it never gets an automatic title. The title names
+	// the project folder, also for a sub-session in the workspace of its parent.
 	autoTitle := p.ToolName + " · " + filepath.Base(source)
+	if workspace != session.Workspace {
+		autoTitle = p.ToolName + " · " + filepath.Base(session.Workspace)
+	}
 	if run.Title == "" {
 		run.Title = autoTitle
 	}

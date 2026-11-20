@@ -104,6 +104,22 @@ implemented. See [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees).
 - Add project-specific defaults if daily use needs them. Current defaults are per
   instance.
 
+## Session family follow-ups
+
+Session families are implemented. See [SPEC.md](SPEC.md#session-families). The following
+work remains.
+
+- Let an agent create a sub-session draft of its own session, for example a review-loop
+  reviewer. This needs a decision about a narrow `bbflow` command or an MCP tool for
+  drafts, because the CLI has no session commands now. Accept a tool name from Settings,
+  never a raw command. Mark the draft as created by an agent. The user starts the draft
+  and sends its message. `BBFLOW_SESSION` is only a claim of the caller.
+- Then let the review-loop implementer create its reviewer draft.
+- Do not start or send automatically. bbflow does not detect prompt readiness.
+- Consider a family bar above the terminal to switch between the members of a family.
+- Consider a restore of only the sub-sessions that a family archive archived. Now a
+  restore of a parent restores all of its archived sub-sessions.
+
 ## Fork a session from an earlier point
 
 Status: future possibility. This feature is not implemented. Add conversation branching
@@ -116,8 +132,10 @@ and can continue independently.
 
 ### Expected behavior
 
-- Give the fork its own bbflow session ID. Store its parent and fixed history cutoff in
-  SQLite, with stable references to the original evidence.
+- Give the fork its own bbflow session ID. Store its source session and fixed history
+  cutoff in SQLite, with stable references to the original evidence. Keep this source
+  separate from `sessions.parent_id`. A parent only organizes the sidebar, can change,
+  and gives no history.
 - Inherit history through the selected point. Later parent messages and sibling branches
   must not enter the fork's inherited view, even if the parent continues.
 - Apply the cutoff consistently to future session-aware reads, search, attachments, and
