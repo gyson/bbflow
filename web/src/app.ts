@@ -58,8 +58,6 @@ const elements = {
   'cancel-project': element('cancel-project', HTMLButtonElement),
   'rename-session': element('rename-session', HTMLButtonElement),
   'new-sub-session': element('new-sub-session', HTMLButtonElement),
-  'session-parent': element('session-parent', HTMLElement),
-  'session-parent-open': element('session-parent-open', HTMLButtonElement),
   'archive-dialog': element('archive-dialog', HTMLDialogElement),
   'archive-form': element('archive-form', HTMLFormElement),
   'archive-summary': element('archive-summary', HTMLElement),
@@ -360,10 +358,6 @@ function controls() {
   $('new-sub-session').hidden = !organize || !projects.some(project => project.id === selected?.projectId);
   $('new-sub-session').textContent = selected?.parentId ? 'New sub-session in this family' : 'New sub-session';
   $('new-sub-session').disabled = $('archive-submit').disabled = busy;
-  const parent = selected?.parentId ? sessions.find(session => session.id === selected?.parentId) : undefined;
-  $('session-parent').hidden = showingSettings || !selected?.parentId;
-  $('session-parent-open').textContent = parent ? sessionTitle(parent) || 'Untitled session' : 'its parent session';
-  $('session-parent-open').disabled = busy;
   // The More menu lists only the actions that apply. A live session keeps its worktree.
   $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed' || live(selected.status);
   $('remove-worktree').disabled = $('rename-session').disabled = $('copy-session-id').disabled = busy;
@@ -1186,10 +1180,6 @@ async function initialize() {
   };
   $('new-sub-session').onclick = () => action(async () => {
     if (selected?.id) await showSubLaunch(selected.id);
-  });
-  $('session-parent-open').onclick = () => action(async () => {
-    const id = selected?.parentId;
-    if (id) await openSession(sessions.find(session => session.id === id) || { id, title: 'Session', workspace: '', status: 'unknown' });
   });
   $('archives-open').onclick = () => action(async () => {
     archivedList = !archivedList;

@@ -689,7 +689,8 @@ Archive and restore follow the family:
   sub-session that was archived alone before.
 - Restore of a sub-session also restores its archived parent.
 
-The toolbar of a sub-session shows **Sub-session of** with a link to the parent.
+The sidebar is the only place that shows the family of a session. The toolbar of a
+sub-session is the same as the toolbar of a top-level session.
 
 ### Projects and launches
 

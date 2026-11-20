@@ -321,9 +321,6 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 /* A context row shows the parent of a match from the other collection or the search. */
 .session-row.context > .session-item { opacity: .72; }
 .session-item small.context-tag { font-size: 9px; letter-spacing: .7px; text-transform: uppercase; margin-top: 4px; }
-#session-parent { display: flex; align-items: center; gap: 5px; min-width: 0; margin: 0 0 5px; font-size: 11px; color: var(--text-muted); }
-.link-button { min-width: 0; padding: 0; border: 0; background: none; color: var(--accent-text); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; overflow: hidden; text-overflow: ellipsis; }
-.link-button:hover:not(:disabled) { background: none; }
 /* A sub-session draft chooses the parent workspace or a new worktree. */
 .place-group { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-width: 0; }
 .place-group legend { padding: 0; margin-bottom: 8px; font-size: 12px; font-weight: 550; }
