@@ -290,10 +290,12 @@ function heading(title: string, tab = title) {
 }
 
 // Return the tool of the shown terminal. Each terminal records its own tool, so a new
-// terminal can show another tool than the first one. A draft has no terminal yet.
+// terminal can show another tool than the first one. A draft has no terminal yet. While
+// the terminal list is not loaded, or when it cannot load, the tool is unknown. The
+// tool of the first start would then be wrong after a continue with another tool.
 function shownTool(): string {
   if (!selected || showingSettings || selected.status === 'draft') return '';
-  return terminalPicker.shown()?.tool || selected.preparation?.toolName || '';
+  return terminalPicker.shown()?.tool ?? '';
 }
 
 // Show the tool of the shown terminal, the worktree branch, and the workspace path. An

@@ -89,7 +89,12 @@ export class Composer {
     this.text.onkeydown = event => {
       if (!sendShortcut(event)) return;
       event.preventDefault();
-      if (!event.repeat && !this.submit.disabled) this.submit.click();
+      if (event.repeat || this.submit.disabled) return;
+      // The send disables the editor, so the browser moves the focus to the page. Then
+      // give the focus back to the editor, unless the user moved it to another control.
+      void this.host.action(() => this.send()).then(() => {
+        if (!document.activeElement || document.activeElement === document.body) this.text.focus();
+      });
     };
     this.attach.onclick = () => this.picker.click();
     this.picker.onchange = () => {

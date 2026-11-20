@@ -237,16 +237,18 @@ body.resizing-session, body.resizing-session * { cursor: row-resize !important; 
 #composer > :not(textarea) { flex-shrink: 0; }
 #composer-text { flex: 1; border: 0; border-radius: 0; padding: 2px 0 10px; resize: none; min-height: 60px; line-height: 1.6; background: transparent; }
 #composer-text:focus-visible { outline-offset: 5px; }
-.composer-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+/* The action row wraps to the width of the editor, also when the workspace pane makes the
+   editor narrow. Send stays at the right end of its line. */
+.composer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
 .composer-actions button { font-size: 12px; }
 #composer-attach, #handoff-open, #composer-history { padding: 6px 8px; border-color: transparent; background: transparent; }
 #composer-status { flex: 1; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+#composer-submit { margin-left: auto; }
 #composer-status.form-error { color: var(--danger); }
 #composer-files { display: flex; flex-wrap: wrap; gap: 6px; }
 .composer-file { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid var(--border); border-radius: 6px; padding-left: 9px; background: var(--inset); font-size: 11px; }
 .composer-file > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-file > button { padding: 3px 8px; background: transparent; border: 0; font-size: 17px; }
-@media (max-width: 950px) { .composer-actions { flex-wrap: wrap; } #composer-status { min-width: 120px; } }
 .sent-dialog { width: 680px; }
 .sent-dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 40px); }
 .sent-dialog .dialog-heading { margin-bottom: 4px; }

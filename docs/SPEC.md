@@ -697,9 +697,10 @@ offers two workspaces:
   Uncommitted changes of the parent are not copied.
 
 In a Git project, the Settings worktree default selects **New worktree**. Otherwise the
-draft selects **Parent workspace**. A review-loop reviewer runs
+draft selects **Parent workspace**. The form says that, in the parent workspace, both
+sessions change the same files. For example, a review-loop reviewer runs
 `gh pr checkout --detach`. In the parent workspace, that command would change the
-checkout of the implementer, so the draft form recommends a new worktree for it.
+checkout of the implementer, so such a reviewer needs **New worktree**.
 
 A request for a sub-session draft names a session. For a top-level session, that session
 becomes the parent. For a sub-session, the parent of that sub-session becomes the parent,
@@ -1390,10 +1391,12 @@ A viewport change resizes the PTY only from the size owner view. Direct terminal
 interaction remains available.
 The editor has no visible label or help text. Its action row holds **＋ Attach files**,
 **Handoff prompt**, **Sent messages**, the draft status, and **Send ⌘↵**. The tooltips
-of these buttons explain them.
+of these buttons explain them. The row wraps when the editor is narrow, for example
+while the workspace pane is open. **Send** stays at the right end of its line.
 
 Enter inserts a newline. Command-Enter or Ctrl+Enter in the editor does the same as
-Send. Send sends one `input` control to the attached PTY with the
+Send. After such a send, the keyboard focus returns to the editor, unless the user
+moved it to another control. Send sends one `input` control to the attached PTY with the
 message followed by Enter. When the application enables bracketed paste, the message
 uses its paste delimiters. Newlines are normalized to carriage returns, matching
 terminal paste.
@@ -1635,7 +1638,8 @@ The session toolbar shows the status next to the session title. Below the title,
 line shows the tool of the shown terminal, the worktree branch, and the workspace path,
 for example `Codex · ⑂ feature · /path/to/workspace`. Each terminal records its own tool,
 so the line changes when a view shows an earlier terminal with another tool. A draft
-shows only its path. The toolbar does not show the startup command. The shell usually
+shows only its path. Until the terminal list loads, or when it cannot load, the line
+shows no tool. The toolbar does not show the startup command. The shell usually
 echoes it at the top of the terminal, and the start event records it. At the right, a search
 icon opens **Search history**. Three icons show the Changes, Files, and Terminal views of
 the workspace pane. **Reconnect** shows when a view of a live terminal has no connection.
@@ -2280,8 +2284,11 @@ A Shell session that continued with the demo agent showed **Shell** for terminal
 the demo agent for terminal 2. Command-Enter sent the saved draft, and the terminal printed the
 reply of the demo agent. An earlier terminal showed the selector, the hint, and
 **Back to live terminal**. An ended session showed **Continue in new terminal** in the
-toolbar. The home page, a draft, Settings, and two dialogs also showed correctly. The check did not use a pointer, so tooltip display on hover is
-not verified.
+toolbar. The home page, a draft, Settings, and two dialogs also showed correctly. With the Files pane open in a window 1,152 pixels wide, the
+action row of the message editor wrapped, and **Send** stayed inside the editor. A
+dropped `session-terminals` request left the toolbar line without a tool. After
+Command-Enter, the keyboard focus was in the editor again. The check did not use a
+pointer, so tooltip display on hover is not verified.
 
 ## Limitations
 
@@ -2320,9 +2327,8 @@ recording can delay other launches during this rebuild. A transcript keeps
 only the last screen of a program that uses the alternate screen, such as Codex CLI
 0.160.0 without `--no-alt-screen`.
 
-The session header shows the tool of the original launch, also after a continue with
-another tool. The prompt gives the new agent a record of earlier work. It does not
-restore the internal state of the earlier agent.
+The prompt gives the new agent a record of earlier work. It does not restore the
+internal state of the earlier agent.
 
 The Changes pane reads files only when it opens, on Refresh, and on window focus. It
 shows one file at a time. It cannot show one earlier commit alone or a range of
