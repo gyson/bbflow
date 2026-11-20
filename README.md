@@ -54,8 +54,8 @@ see which sessions the restart ends. The update starts only after you confirm.
 
 ## Use the web UI
 
-1. Click **Add project** to save an existing folder. **General** is always available
-   for work across projects.
+1. Click **＋ Project** at the bottom of the sidebar to save an existing folder.
+   **General** is always available for work across projects.
 2. In **Settings**, give each tool a name and a startup command, for example **Codex**
    with `codex`. **Shell** is always available.
 3. Click **＋** beside a project to create a draft. Select a tool. To get independent

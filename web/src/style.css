@@ -118,8 +118,17 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .local-label { margin-left: auto; font-size: 9px; letter-spacing: 1px; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 3px 5px; }
 .search-label input { background: var(--inset); font-size: 12px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; color: var(--text-muted); font-size: 10px; font-weight: 600; letter-spacing: 1.2px; margin-bottom: -12px; padding-left: 8px; }
+.section-heading button { padding: 4px 8px; border-color: transparent; background: transparent; color: var(--accent-text); font-size: 11px; font-weight: 500; letter-spacing: 0; }
 #sessions { flex: 1; overflow-y: auto; min-height: 0; }
 .session-item { width: 100%; display: block; text-align: left; padding: 13px 11px; margin: 4px 0; border: 1px solid transparent; background: transparent; white-space: normal; }
+/* The archive button shows on pointer hover and keyboard focus. The title keeps room for it. */
+.session-row { position: relative; }
+.session-row:has(.session-archive:not([hidden])) .session-item strong { padding-right: 22px; }
+.session-archive { position: absolute; top: 9px; right: 5px; display: flex; padding: 4px; border-color: transparent; background: transparent; color: var(--text-muted); opacity: 0; }
+.session-archive svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.session-row:hover .session-archive:not(:disabled), .session-archive:focus-visible { opacity: 1; }
+.session-archive:hover:not(:disabled) { color: var(--text); background: var(--hover); border-color: transparent; }
+@media (hover: none) { .session-archive:not(:disabled) { opacity: 1; } }
 .session-item.selected { background: var(--selected); border-color: var(--border); box-shadow: 0 2px 4px var(--shadow-soft); }
 .session-item strong, .session-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-item strong { font-size: 13px; font-weight: 550; }
@@ -136,6 +145,9 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .update-dialog .form-help { margin: 0 0 14px; }
 .update-dialog .form-warning { margin: 0 0 14px; }
 .update-versions { margin: 0 0 14px; font-family: ui-monospace, monospace; font-size: 13px; color: var(--accent-text); }
+.sidebar-actions { display: flex; flex-wrap: wrap; gap: 4px; margin: -6px -4px -8px; }
+.sidebar-actions button { padding: 6px 8px; border-color: transparent; background: transparent; font-size: 12px; }
+.sidebar-actions button[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); }
 .instance { padding: 12px 8px 0; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
 .instance span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.8; }
 #instance-dir { font-size: 10px; color: var(--text-muted); }
@@ -265,17 +277,13 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 @media (max-width: 950px) { .sidebar { width: var(--sidebar-width, 240px); } .toolbar { padding: 18px; flex-wrap: wrap; } #session-view { padding: 16px; } .actions { flex-wrap: wrap; } }
-@media (max-width: 620px) { body { flex-direction: column; overflow: auto; height: auto; min-height: 100dvh; } .sidebar { width: 100%; border-right: 0; padding: 14px; gap: 10px; } #sidebar-divider { display: none; } .brand { padding-bottom: 2px; } .section-heading, .instance { display: none; } #sessions { max-height: 145px; } main { overflow: visible; } #session-view { height: 650px; flex: none; } .welcome { padding: 36px 24px; } .welcome-notes { margin-top: 40px; gap: 20px; } .toolbar { min-height: 90px; } }
+@media (max-width: 620px) { body { flex-direction: column; overflow: auto; height: auto; min-height: 100dvh; } .sidebar { width: 100%; border-right: 0; padding: 14px; gap: 10px; } #sidebar-divider { display: none; } .brand { padding-bottom: 2px; } .instance { display: none; } #sessions { max-height: 145px; } main { overflow: visible; } #session-view { height: 650px; flex: none; } .welcome { padding: 36px 24px; } .welcome-notes { margin-top: 40px; gap: 20px; } .toolbar { min-height: 90px; } }
 
-.add-project { background: transparent; text-align: left; border-style: dashed; font-size: 12px; }
 .project-group { margin-bottom: 16px; }
 .project-heading { display: flex; align-items: center; gap: 2px; }
 .project-toggle { flex: 0 0 24px; font-size: 12px; }
 .project-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
 .project-toggle, .project-action { background: transparent; border-color: transparent; padding: 6px; }
-.session-scopes { display: flex; gap: 6px; }
-.session-scopes button { flex: 1; font-size: 12px; background: transparent; }
-.session-scopes button[aria-pressed="true"] { background: var(--surface); border-color: var(--selected-border); }
 .project-action { font-size: 18px; line-height: 1; }
 .project-sessions { padding-left: 10px; border-left: 1px solid var(--border); margin: 5px 0 0 9px; }
 .project-empty { font-size: 11px; color: var(--text-muted); line-height: 1.6; margin: 9px 6px; }

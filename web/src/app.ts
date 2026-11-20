@@ -17,7 +17,7 @@ import { element } from './dom.js';
 import { Composer } from './composer.js';
 import { SessionMenu } from './session-menu.js';
 import { SessionSplit } from './session-split.js';
-import { Sidebar } from './sidebar.js';
+import { Sidebar, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
 import { mergeSessions, sessionGroups, sessionWindow } from './projects.js';
 import { SessionConnection } from './session-connection.js';
@@ -33,7 +33,7 @@ const elements = {
   'home-link': element('home-link', HTMLAnchorElement),
   'sessions-open': element('sessions-open', HTMLButtonElement),
   'archives-open': element('archives-open', HTMLButtonElement),
-  'list-heading': element('list-heading', HTMLElement),
+  'archived-heading': element('archived-heading', HTMLElement),
   'archive-session': element('archive-session', HTMLButtonElement),
   'launch-summary': element('launch-summary', HTMLElement),
   'settings-open': element('settings-open', HTMLButtonElement),
@@ -81,7 +81,6 @@ const elements = {
   'handoff-open': element('handoff-open', HTMLButtonElement),
   'sessions': element('sessions', HTMLElement),
   'filter': element('filter', HTMLInputElement),
-  'refresh': element('refresh', HTMLButtonElement),
   'connection': element('connection', HTMLElement),
   'session-title': element('session-title', HTMLElement),
   'workspace': element('workspace', HTMLElement),
@@ -128,9 +127,9 @@ let projects: Project[] = [];
 let editingProject: Project | null = null;
 const collapsedProjects = new Set<string>();
 let renderedSidebar = '';
-// The status elements of each session button in the list. A status change updates them
-// in place, so the buttons and the keyboard focus stay.
-const statusMarks: { session: SessionInfo; dot: HTMLElement; text: Text }[] = [];
+// The status elements and the archive button of each session in the list. A status change
+// updates them in place, so the buttons and the keyboard focus stay.
+const statusMarks: { session: SessionInfo; dot: HTMLElement; text: Text; archive: HTMLButtonElement }[] = [];
 let selected: SessionView | null = null;
 let continueRun: string | undefined;
 // The handoff prompt of the selected session. It stays available after a new terminal
@@ -350,7 +349,13 @@ async function action(work: () => Promise<void>): Promise<void> {
   finally { busy = false; controls(); }
 }
 
-function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButtonElement {
+// Icons of the archive button in a session row. They are constant markup.
+const archiveIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="4" rx="1"/><path d="M4.25 7.75v7.5a1 1 0 0 0 1 1h9.5a1 1 0 0 0 1-1v-7.5M8.25 11h3.5"/></svg>';
+const restoreIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="4" rx="1"/><path d="M4.25 7.75v7.5a1 1 0 0 0 1 1h9.5a1 1 0 0 0 1-1v-7.5M10 14.25v-4M8.25 11.75 10 10l1.75 1.75"/></svg>';
+
+// Return a list row with the session button and its archive button. A button cannot
+// contain another button, so the row holds both.
+function sessionRow(session: SessionInfo, showWorkspace: boolean): HTMLElement {
   const button = document.createElement('button');
   button.className = 'session-item' + (selected?.id === session.id ? ' selected' : '');
   button.setAttribute('aria-current', selected?.id === session.id ? 'true' : 'false');
@@ -361,7 +366,6 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
   status.className = 'run-state';
   const dot = document.createElement('span'), text = document.createTextNode('');
   status.append(dot, text);
-  statusMarks.push({ session, dot, text });
   button.dataset.focus = `session:${session.id}`;
   button.append(title);
   if (showWorkspace) {
@@ -371,17 +375,47 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
   }
   button.append(status);
   button.onclick = () => action(() => openSession(session));
-  return button;
+  const archive = document.createElement('button');
+  archive.className = 'session-archive';
+  archive.title = `${session.archived ? 'Restore' : 'Archive'} ${title.textContent}`;
+  archive.setAttribute('aria-label', archive.title);
+  archive.innerHTML = session.archived ? restoreIcon : archiveIcon;
+  archive.dataset.focus = `archive:${session.id}`;
+  archive.onclick = async () => {
+    // The row leaves the list. A keyboard user then gets the nearest session row that
+    // shows, or else a sidebar control.
+    const keyboard = document.activeElement === archive;
+    const before = shownSessionKeys();
+    await action(() => setArchived(session.id, !session.archived));
+    if (!keyboard || (document.activeElement && document.activeElement !== document.body)) return;
+    const key = nearestRow(before, button.dataset.focus!, shownSessionKeys());
+    if (key) focusSidebar(key);
+    else (archivedList ? $('sessions-open') : $('filter')).focus();
+  };
+  statusMarks.push({ session, dot, text, archive });
+  const row = document.createElement('div');
+  row.className = 'session-row';
+  row.append(button, archive);
+  return row;
+}
+
+// Return the focus keys of the session rows that show. A collapsed group hides its rows.
+function shownSessionKeys(): string[] {
+  return [...$('sessions').querySelectorAll<HTMLElement>('.session-item')]
+    .filter(item => item.getClientRects().length)
+    .map(item => item.dataset.focus!);
 }
 
 // Show the current status of each session in the list, without new buttons.
 function showListStatuses() {
-  for (const { session, dot, text } of statusMarks) {
+  for (const { session, dot, text, archive } of statusMarks) {
     // A live view and the status watch get status changes at once. The list is older.
     const shown = connection?.peer?.active && selected?.id === session.id ? selected.status : listStatus(session, liveStatuses);
     const className = `dot ${shown}`, line = listStatusText(shown, session);
     if (dot.className !== className) dot.className = className;
     if (text.data !== line) text.data = line;
+    // The server archives only drafts and ended sessions.
+    archive.hidden = live(shown);
   }
 }
 
@@ -395,10 +429,10 @@ function renderSessions() {
   const focused = document.activeElement instanceof HTMLElement && $('sessions').contains(document.activeElement) ? document.activeElement.dataset.focus : undefined;
   statusMarks.length = 0;
   $('sessions').replaceChildren();
-  $('sessions-open').setAttribute('aria-pressed', String(!archivedList));
   $('archives-open').setAttribute('aria-pressed', String(archivedList));
-  $('list-heading').textContent = archivedList ? 'ARCHIVED SESSIONS' : 'PROJECTS · SESSIONS';
-  $('add-project').hidden = archivedList;
+  $('archived-heading').hidden = !archivedList;
+  $('sessions').setAttribute('aria-label', archivedList ? 'Archived sessions' : 'Projects and sessions');
+  $('filter').placeholder = archivedList ? 'Search archived sessions…' : 'Search names and folders…';
   const groups = sessionGroups(projects, sessions, query).filter(group => !archivedList || group.sessions.length);
   for (const group of groups) {
     const project = group.project;
@@ -451,7 +485,7 @@ function renderSessions() {
         heading.append(edit);
       }
     }
-    for (const session of group.sessions) list.append(sessionButton(session, !project));
+    for (const session of group.sessions) list.append(sessionRow(session, !project));
     if (moreGroups.has(id)) {
       const more = document.createElement('button');
       more.className = 'project-more';
@@ -524,11 +558,16 @@ function watchStatuses(info: ServerInfo) {
   });
 }
 
+// Show the connection line only while the server is unavailable.
+function showConnection(available: boolean) {
+  $('connection').textContent = available ? '' : '○ Server unavailable';
+  $('connection').hidden = available;
+}
+
 async function refreshSessions() {
   if (!server) return;
   const generation = ++refreshGeneration;
   const selectedId = selected?.id;
-  $('refresh').disabled = true;
   try {
     const filter = { archived: archivedList, query: $('filter').value };
     const [nextProjects, detail] = await Promise.all([
@@ -562,7 +601,7 @@ async function refreshSessions() {
     moreGroups = new Set(merged.more);
     updateNotice.sessionsChanged();
     if (detail && selected && selected.id === selectedId) selected.archived = detail.archived;
-    $('connection').textContent = '● Local server connected';
+    showConnection(true);
     clearNotice('list');
     if (selected && !showingSettings && !preparation.visible) {
       if (detail && selected.id === detail.id) {
@@ -575,13 +614,10 @@ async function refreshSessions() {
     renderSessions();
   } catch (error) {
     if (generation !== refreshGeneration) return;
-    $('connection').textContent = '○ Server unavailable';
+    showConnection(false);
     notice(errorMessage(error), 'list');
   } finally {
-    if (generation === refreshGeneration) {
-      $('refresh').disabled = false;
-      controls();
-    }
+    if (generation === refreshGeneration) controls();
   }
 }
 
@@ -896,31 +932,46 @@ function showProject(project: Project | null = null) {
   showDialog($('project-dialog'));
 }
 
+// Archive or restore a session. The selected session first saves its launch choices and
+// message editor. Its view then closes, or opens in the normal list after a restore.
+// Settings stays open. Back to session then opens the welcome view or the restored session.
+async function setArchived(id: string, archived: boolean): Promise<void> {
+  if (!server) return;
+  const current = selected?.id === id ? selected : null;
+  if (current) {
+    await preparation.flush();
+    await composer.flush();
+  }
+  await call(server, { operation: 'session-archive', session: id, archived });
+  if (current) {
+    current.archived = archived;
+    if (showingSettings) {
+      if (archived) selected = null;
+    } else if (archived) await showWelcome();
+    else {
+      archivedList = false; $('filter').value = '';
+      collapsedProjects.delete(current.projectId ?? '');
+      await openSession(current);
+    }
+  }
+  await refreshSessions();
+  notice(archived ? 'Session archived. Find it in Archived and restore it any time.' : 'Session restored.');
+}
+
 async function initialize() {
   systemDark.addEventListener('change', updateTerminalTheme);
   controls();
   $('archive-session').onclick = () => action(async () => {
-    if (!server || !selected?.id) return;
-    await preparation.flush();
-    await composer.flush();
-    const archived = !selected.archived;
-    await call(server, { operation: 'session-archive', session: selected.id, archived });
-    selected.archived = archived;
-    if (archived) await showWelcome();
-    else {
-      archivedList = false; $('filter').value = '';
-      collapsedProjects.delete(selected.projectId ?? '');
-      await openSession(selected);
-    }
-    await refreshSessions();
-    notice(archived ? 'Session archived. Find it in Archived and restore it any time.' : 'Session restored.');
+    if (selected?.id) await setArchived(selected.id, !selected.archived);
   });
-  for (const [button, archived] of [[$('sessions-open'), false], [$('archives-open'), true]] as const) {
-    button.onclick = () => action(async () => {
-      archivedList = archived;
-      await refreshSessions();
-    });
-  }
+  $('archives-open').onclick = () => action(async () => {
+    archivedList = !archivedList;
+    await refreshSessions();
+  });
+  $('sessions-open').onclick = () => action(async () => {
+    archivedList = false;
+    await refreshSessions();
+  });
   $('home-link').onclick = event => {
     // Keep a plain click in this page so drafts save. Let modified clicks open a new tab.
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -948,7 +999,11 @@ async function initialize() {
       const project = editingProject;
       try {
         if (project) await call(server, { operation: 'project-rename', project: project.id, name: $('project-name').value });
-        else await call(server, { operation: 'project-add', name: $('project-name').value, workspace: $('project-workspace').value.trim() });
+        else {
+          await call(server, { operation: 'project-add', name: $('project-name').value, workspace: $('project-workspace').value.trim() });
+          // The archived list shows only groups with archived sessions. Show the new project.
+          if (archivedList) { archivedList = false; $('filter').value = ''; }
+        }
         $('project-dialog').close();
         await refreshSessions();
       } catch (error) {
@@ -1011,7 +1066,6 @@ async function initialize() {
     event.stopPropagation();
     if (!event.repeat) $('history-open').click();
   }, true);
-  $('refresh').onclick = refreshSessions;
   $('filter').oninput = () => {
     // Invalidate pending results before the debounce delay ends.
     refreshGeneration++;
@@ -1084,7 +1138,7 @@ async function initialize() {
     }, 5000);
   } catch (error) {
     server = null;
-    $('connection').textContent = '○ Server unavailable';
+    showConnection(false);
     notice(errorMessage(error));
   }
   controls();
