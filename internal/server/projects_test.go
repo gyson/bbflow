@@ -32,16 +32,16 @@ func TestProjectWorkspaceResolution(t *testing.T) {
 	if _, err = s.addProject("Alias", alias); err == nil {
 		t.Fatal("accepted duplicate canonical folder")
 	}
-	draft, err := s.prepareProject(context.Background(), p.ID)
+	draft, err := s.prepareProject(context.Background(), p.ID, "")
 	if err != nil || draft.Workspace != p.Workspace || draft.ProjectID != p.ID {
 		t.Fatalf("project preparation: %+v %v", draft, err)
 	}
 	for _, id := range []string{"", "missing"} {
-		if _, err = s.prepareProject(context.Background(), id); err == nil {
+		if _, err = s.prepareProject(context.Background(), id, ""); err == nil {
 			t.Fatal("accepted missing project")
 		}
 	}
-	draft, err = s.prepareProject(context.Background(), history.GeneralProjectID)
+	draft, err = s.prepareProject(context.Background(), history.GeneralProjectID, "")
 	if err != nil || !strings.HasSuffix(draft.Workspace, "/workspaces/general") {
 		t.Fatalf("general preparation: %+v %v", draft, err)
 	}

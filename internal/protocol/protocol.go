@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/30"
+const Version = "bbflow/31"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -45,25 +45,29 @@ type Request struct {
 	Preparation *PreparationConfig `json:"preparation,omitempty"`
 	Revision    int64              `json:"revision,omitempty"`
 	Project     string             `json:"project,omitempty"`
-	Name        string             `json:"name,omitempty"`
-	Workspace   string             `json:"workspace,omitempty"`
-	Protocol    string             `json:"protocol"`
-	Operation   string             `json:"operation"`
-	Instance    string             `json:"instance,omitempty"`
-	SQL         string             `json:"sql,omitempty"`
-	Session     string             `json:"session,omitempty"`
-	LatestRun   string             `json:"latestRun,omitempty"` // The latest run that the view saw.
-	Run         string             `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
-	Shell       string             `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
-	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
-	Limit       int                `json:"limit,omitempty"`
-	Groups      []string           `json:"groups,omitempty"` // Session list group keys. "" is Standalone.
-	Offset      int                `json:"offset,omitempty"` // The sessions of the group to skip.
-	Size        Size               `json:"size,omitempty"`
-	Draft       *Draft             `json:"draft,omitempty"`
-	Upload      *Upload            `json:"upload,omitempty"`
-	Text        string             `json:"text,omitempty"`    // A sample message for title-test.
-	Version     string             `json:"version,omitempty"` // The release of the offer that update-start confirms.
+	Parent      string             `json:"parent,omitempty"` // The parent session of a new sub-session draft.
+	// Members are the sub-sessions that the user confirmed for an archive. Nil confirms
+	// none. The archive fails if the session has other sub-sessions.
+	Members   []string `json:"members,omitempty"`
+	Name      string   `json:"name,omitempty"`
+	Workspace string   `json:"workspace,omitempty"`
+	Protocol  string   `json:"protocol"`
+	Operation string   `json:"operation"`
+	Instance  string   `json:"instance,omitempty"`
+	SQL       string   `json:"sql,omitempty"`
+	Session   string   `json:"session,omitempty"`
+	LatestRun string   `json:"latestRun,omitempty"` // The latest run that the view saw.
+	Run       string   `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
+	Shell     string   `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
+	Tool      string   `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
+	Limit     int      `json:"limit,omitempty"`
+	Groups    []string `json:"groups,omitempty"` // Session list group keys. "" is Standalone.
+	Offset    int      `json:"offset,omitempty"` // The sessions of the group to skip.
+	Size      Size     `json:"size,omitempty"`
+	Draft     *Draft   `json:"draft,omitempty"`
+	Upload    *Upload  `json:"upload,omitempty"`
+	Text      string   `json:"text,omitempty"`    // A sample message for title-test.
+	Version   string   `json:"version,omitempty"` // The release of the offer that update-start confirms.
 
 	Search  *history.SearchFilter   `json:"search,omitempty"`
 	Context *history.ContextRequest `json:"context,omitempty"`
@@ -273,6 +277,8 @@ type SessionPage struct {
 // output. It does not mean that the application is ready for input.
 type SessionInfo struct {
 	Archived    bool                 `json:"archived"`
+	ParentID    string               `json:"parentId"`
+	Context     bool                 `json:"context,omitempty"`
 	Preparation *history.Preparation `json:"preparation,omitempty"`
 	Worktree    *history.Worktree    `json:"worktree,omitempty"`
 	ProjectID   string               `json:"projectId"`
@@ -282,6 +288,7 @@ type SessionInfo struct {
 	Workspace   string               `json:"workspace"`
 	Updated     string               `json:"updated"`
 	Status      string               `json:"status"`
+	RunStatus   string               `json:"runStatus,omitempty"` // The stored status of the latest run. Empty without a run.
 	Viewers     int                  `json:"viewers"`
 }
 

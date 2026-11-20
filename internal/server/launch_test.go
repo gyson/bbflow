@@ -31,7 +31,7 @@ func TestProjectDraftsAreIndependentAndCommandsComeFromSettings(t *testing.T) {
 	ids := make(chan string, 8)
 	for range 8 {
 		wg.Go(func() {
-			draft, err := s.prepareProject(context.Background(), project.ID)
+			draft, err := s.prepareProject(context.Background(), project.ID, "")
 			if err != nil {
 				t.Error(err)
 				return
@@ -144,7 +144,7 @@ func TestPreparedSessionDefaultsAndWorktreeLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := s.prepareProject(ctx, project.ID)
+	session, err := s.prepareProject(ctx, project.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestPreparationConflictsAndInterruptedCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := s.prepareProject(ctx, project.ID)
+	session, err := s.prepareProject(ctx, project.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestGitCapabilityLinkedCheckoutAndInvalidBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := s.prepareProject(ctx, project.ID)
+	session, err := s.prepareProject(ctx, project.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -121,23 +121,39 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .section-heading button { padding: 4px 8px; border-color: transparent; background: transparent; color: var(--accent-text); font-size: 11px; font-weight: 500; letter-spacing: 0; }
 #sessions { flex: 1; overflow-y: auto; min-height: 0; }
 .session-item { width: 100%; display: block; text-align: left; padding: 13px 11px; margin: 4px 0; border: 1px solid transparent; background: transparent; white-space: normal; }
-/* The archive button shows on pointer hover and keyboard focus. The title keeps room for it. */
+/* The ⋯ button of a row shows on pointer hover and keyboard focus. It opens the row
+   menu. The title keeps room for the button. */
 .session-row { position: relative; }
-.session-row:has(.session-archive:not([hidden])) .session-item strong { padding-right: 22px; }
-.session-archive { position: absolute; top: 9px; right: 5px; display: flex; padding: 4px; border-color: transparent; background: transparent; color: var(--text-muted); opacity: 0; }
-.session-archive svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.session-row:hover .session-archive:not(:disabled), .session-archive:focus-visible { opacity: 1; }
-.session-archive:hover:not(:disabled) { color: var(--text); background: var(--hover); border-color: transparent; }
-@media (hover: none) { .session-archive:not(:disabled) { opacity: 1; } }
+.session-row:has(> .row-menu-box .row-menu-button:not([hidden])) > .session-item .session-line { padding-right: 24px; }
+.row-menu-box { position: absolute; top: 6px; right: 5px; z-index: 5; }
+.row-menu-button { display: flex; padding: 4px; border-color: transparent; background: transparent; color: var(--text-muted); opacity: 0; }
+.row-menu-button svg { width: 16px; height: 16px; fill: currentColor; }
+.session-row:hover > .row-menu-box .row-menu-button:not(:disabled), .row-menu-button:focus-visible, .row-menu-box.open .row-menu-button { opacity: 1; }
+.row-menu-button:hover:not(:disabled), .row-menu-box.open .row-menu-button { color: var(--text); background: var(--hover); border-color: transparent; }
+@media (hover: none) { .row-menu-button:not(:disabled) { opacity: 1; } }
+.row-menu { position: absolute; top: calc(100% + 4px); right: 0; display: flex; flex-direction: column; min-width: 160px; padding: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; box-shadow: 0 10px 30px var(--shadow-overlay); }
+.row-menu-box.up .row-menu { top: auto; bottom: calc(100% + 4px); }
+.row-menu button { margin: 1px 0; padding: 6px 10px; border-color: transparent; background: transparent; text-align: left; font-size: 12px; }
+.row-menu button:hover:not(:disabled), .row-menu button:focus-visible { background: var(--selected); border-color: var(--selected-border); }
 .session-item.selected { background: var(--selected); border-color: var(--border); box-shadow: 0 2px 4px var(--shadow-soft); }
+/* A row has one line: the status icon, the title, and an optional worktree mark. A
+   second line aligns with the title. */
+.session-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .session-item strong, .session-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-item strong { font-size: 13px; font-weight: 550; }
-.session-item small { font-size: 11px; color: var(--text-muted); margin-top: 7px; }
-.session-item .run-state { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-muted); margin-top: 10px; }
-.dot { background: var(--inactive); width: 6px; height: 6px; border-radius: 50%; }
-.dot.running { background: var(--running); }
-/* A ring shows a live terminal without recent output. */
-.dot.idle { background: none; box-shadow: inset 0 0 0 1.5px var(--running); }
+.session-item strong { min-width: 0; font-size: 13px; font-weight: 550; }
+.session-item small { font-size: 11px; color: var(--text-muted); margin-top: 7px; padding-left: 18px; }
+.worktree-mark { flex: none; font-size: 11px; color: var(--text-muted); }
+/* The status icon of a session: a pulsing dot for running, a ring for idle, a dashed
+   ring for a draft, a gray dot for an end, and an amber dot for a failed end. */
+.status-icon { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 10px; height: 10px; }
+.status-icon::before { content: ""; box-sizing: border-box; width: 7px; height: 7px; border-radius: 50%; background: var(--inactive); }
+.status-icon.running::before { background: var(--running); }
+.status-icon.running::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--running); animation: status-pulse 2s ease-out infinite; }
+@keyframes status-pulse { 0% { transform: scale(.5); opacity: .55; } 80%, 100% { transform: scale(1.9); opacity: 0; } }
+.status-icon.idle::before { background: none; border: 1.5px solid var(--running); }
+.status-icon.draft::before { width: 8px; height: 8px; background: none; border: 1.5px dashed var(--text-muted); }
+.status-icon.failed::before { background: var(--warning); }
+@media (prefers-reduced-motion: reduce) { .status-icon.running::after { animation: none; opacity: 0; } }
 .update-notice { margin-bottom: -8px; border-color: var(--accent); color: var(--accent-text); background: var(--selected); font-weight: 550; text-align: left; overflow: hidden; text-overflow: ellipsis; }
 .update-notice.failed { border-color: var(--danger); color: var(--danger); background: var(--surface); }
 .update-notice:disabled { cursor: default; opacity: 1; }
@@ -287,8 +303,36 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .project-action { font-size: 18px; line-height: 1; }
 .project-sessions { padding-left: 10px; border-left: 1px solid var(--border); margin: 5px 0 0 9px; }
 .project-empty { font-size: 11px; color: var(--text-muted); line-height: 1.6; margin: 9px 6px; }
-.project-sessions .session-item { padding: 10px 9px; }
-.project-sessions .run-state { margin-top: 6px; }
+.project-sessions .session-item { padding: 9px 9px; }
+/* A family: the row of a top-level session, then its sub-sessions on a guide line. */
+/* Each sub-session draws its connector from the line above to its title. The line goes
+   on only to the next sub-session, so it ends at the last one. */
+.family-children { margin: 0 0 6px 11px; padding-left: 9px; }
+.family-children > .session-row::before { content: ""; position: absolute; left: -9px; top: -6px; width: 6px; height: 22px; border-left: 1px solid var(--selected-border); border-bottom: 1px solid var(--selected-border); }
+.family-children > .session-row:last-child::before { border-bottom-left-radius: 4px; }
+.family-children > .session-row:not(:last-child)::after { content: ""; position: absolute; left: -9px; top: 16px; bottom: -4px; border-left: 1px solid var(--selected-border); }
+.project-sessions .family-children .session-item { padding: 7px 9px; margin: 2px 0; }
+.family-children .session-item strong { font-size: 12.5px; font-weight: 500; }
+.family-children .row-menu-box { top: 4px; }
+/* Show more after the first sub-sessions of a family ends the guide line. */
+.family-children > .family-more-row::before { height: 19px; }
+.family-more { display: block; width: 100%; margin: 2px 0; padding: 5px 9px; border-color: transparent; background: transparent; font-size: 11px; color: var(--text-muted); text-align: left; }
+.family-more:hover:not(:disabled) { color: var(--text); background: var(--hover); border-color: transparent; }
+/* A context row shows the parent of a match from the other collection or the search. */
+.session-row.context > .session-item { opacity: .72; }
+.session-item small.context-tag { font-size: 9px; letter-spacing: .7px; text-transform: uppercase; margin-top: 4px; }
+/* A sub-session draft chooses the parent workspace or a new worktree. */
+.place-group { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-width: 0; }
+.place-group legend { padding: 0; margin-bottom: 8px; font-size: 12px; font-weight: 550; }
+.launch-grid label.place { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); cursor: pointer; min-width: 0; font-weight: 400; }
+.launch-grid label.place:has(input:checked) { border-color: var(--accent); background: var(--selected); }
+.launch-grid label.place:has(input:disabled) { opacity: .55; cursor: default; }
+.place input { width: auto; margin: 2px 0 0; accent-color: var(--primary); }
+.place-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.place-text strong { font-size: 13px; font-weight: 550; }
+.place-text small { font-size: 11px; color: var(--text-muted); line-height: 1.5; overflow-wrap: anywhere; }
+.place-help { grid-column: 1 / -1; margin: 0; }
+.archive-members { margin: 0 0 14px; padding-left: 20px; font-size: 13px; line-height: 1.8; }
 .project-more { margin: 2px 0 6px; padding: 6px 9px; background: transparent; border-color: transparent; font-size: 11px; color: var(--text-muted); }
 .project-more:hover { color: inherit; }
 .dialog-actions { display: flex; justify-content: space-between; gap: 12px; }
@@ -356,7 +400,7 @@ form.tool-row .tool-actions button { grid-column: span 2; }
   .tool-columns { display: none; }
   .tool-row > :is(label, span, code) { grid-column: 1 / -1; margin-inline-end: 0; }
 }
-@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 16px; } .settings-heading { flex-wrap: wrap; } #session-view:has(#preparation:not([hidden])) { height: auto; } }
+@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid, .place-group { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 16px; } .settings-heading { flex-wrap: wrap; } #session-view:has(#preparation:not([hidden])) { height: auto; } }
 #launch-summary { margin: 6px 0 0; font-family: ui-monospace, monospace; font-size: 10px; color: var(--accent-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .continue-dialog { width: 620px; }
 .continue-dialog .form-help { margin: 0 0 14px; }

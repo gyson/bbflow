@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/30`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/31`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/30",
+    "protocol": "bbflow/31",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -66,7 +66,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/30",
+    "protocol": "bbflow/31",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -85,7 +85,7 @@ storage-report operations.
 | `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
 | `project-remove` | `project` ID | `result`, containing `removed`. Sessions become standalone. |
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed`. An empty `name` removes the user title. |
-| `session-list` | `groups` (group keys, required), `limit` for each group (default 10; `limit` times the number of groups is at most 100), optional `offset` (default 0, needs exactly one group), optional `session` ID to include (not with `offset`), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status). |
+| `session-list` | `groups` (group keys, required), `limit` of families for each group (default 10; `limit` times the number of groups is at most 100), optional `offset` of families (default 0, needs exactly one group), optional `session` ID whose family to include (not with `offset`), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status), `parentId`, an optional `context` flag, and an optional `runStatus`, the stored status of the latest run. |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `storage-report` | None | `result`, containing database facts, `total`, `columns`, session counts, and the `kinds`, `days`, `projects`, and `sessions` lists. `sessions` has only the largest sessions. The other lists have one entry for each project, day, or kind. Above 16 MiB, the reply is an `error`. See [storage report](SPEC.md#storage-report). Closing the connection cancels the read. |
 | `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
@@ -94,7 +94,7 @@ storage-report operations.
 | `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
 | `workspace-folders` | `session` ID, `diff` object with `folders` | `result`, containing `folders` and an optional `ignoreError` |
 | `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath`, `baseline`, and `from` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
-| `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
+| `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed; missing confirms none) | `result`, containing `archived`. Applies to the family as described below. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
 | `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal and the [release offer](#release-offers) first, then all of them again after each change |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
@@ -108,7 +108,7 @@ storage-report operations.
 | `title-tools` | None | `result`, containing the title tools with `id`, `name`, and `command` |
 | `title-test` | `settings` with `titleTool`, and `text` | `result`, containing `title`. It runs the title tool once with `text` and saves nothing. |
 | `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
-| `project-draft` | `project` ID | `result`, a new independent draft with saved defaults and `status`. Starts no process. |
+| `project-draft` | `project` ID, or `parent` session ID for a sub-session draft | `result`, a new independent draft with saved defaults and `status`. With `parent`, the draft joins the family of that session. A top-level session becomes the parent. For a sub-session, its parent becomes the parent, so the draft is a sibling. The draft takes the project of the family. The request fails for a missing session, a family without a saved project, and an archived parent. Starts no process. |
 | `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
 | `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. Before `session`, a `status` of `running` comes every 5 seconds while the server fetches the base and creates the worktree. |
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
@@ -129,8 +129,10 @@ After a lost reply, inspect session-list before creating another. Reopen existin
 by ID through session-config. After an uncertain result, inspect session-config and
 reattach. Never repeat session-start.
 
-New sessions start with project-draft, session-config, then session-start. The project
-supplies a fixed workspace. An unknown project fails before draft creation. A missing
+New sessions start with project-draft, session-config, then session-start. A sub-session
+draft without a worktree starts in the current workspace of its parent. Its start fails
+until the first terminal of the parent started. The parent of a sub-session does not
+change. The project supplies a fixed workspace. An unknown project fails before draft creation. A missing
 folder fails creation or launch. The server resolves its `$SHELL` from PATH or an
 absolute path.
 
@@ -193,6 +195,11 @@ Protocol 30 adds `update-start`, the `version` request field, and the `update` f
 `statuses` messages for [release offers](#release-offers). Settings add `updateCheck`.
 SQLite format 12 adds `updateCheck: true`.
 
+Protocol 31 adds session families. `project-draft` accepts `parent`. Session summaries
+add `parentId`, `context`, and `runStatus`. `session-list` limits and offsets count
+families. `session-archive` archives and restores families. SQLite format 13 adds
+the `sessions.parent_id` column.
+
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
 
@@ -211,24 +218,40 @@ Standalone. Their `workspace` remains the saved canonical path.
 `session-list` selects only the requested archive collection, then applies query,
 ordering, and group limits. A group holds the sessions of one saved project. Its key is
 the project ID. Sessions without a saved project form the Standalone group, with the key
-`""`. Each listed group gives its `limit` most recent sessions. With `offset`, the reply
-gives one window of one group: the `limit` sessions after the first `offset` sessions. A
-reply thus holds at most 100 sessions, or 101 with an included session. A client reads
-more groups or more sessions in more requests. `more` lists the keys of the listed
-groups that have more matching sessions after the listed ones. `sessions` keeps the
-order of all listed groups together. If the `session` ID matches the collection, the
-query, and a listed group, a reply without `offset` includes it outside its group limit. Separate replies can see
-different activity, so a client that joins windows must drop repeated sessions. If a
+`""`. A family is a top-level session and its sub-sessions. It counts as one entry of
+its group. Each listed group gives its `limit` most recent families. With `offset`, the
+reply gives one window of one group: the `limit` families after the first `offset`
+families. A reply thus holds at most 100 families, or 101 with an included family. A
+family lists all of its members that the reply selects, without a separate limit. A
+client reads more groups or more families in more requests. `more` lists the keys of
+the listed groups that have more matching families after the listed ones. `sessions`
+keeps the order of all listed families together. Each family lists its top-level
+session first, then its sub-sessions in creation order. If the `session` ID matches the
+collection, the query, and a listed group, a reply without `offset` includes its family
+outside its group limit. Separate replies can see different activity, so a client that
+joins windows must drop repeated families.
+
+A family is listed when one of its members in the collection matches the query. A match
+of the top-level session lists all of its members in the collection. Otherwise the reply
+lists only the matching sub-sessions. The top-level session then has `context: true`.
+`context` also marks a top-level session from the other collection, for example a parent
+that is not archived of an archived sub-session. The latest member in the collection
+gives the position of the family. If a
 result exceeds the 16 MiB message limit, the reply is an `error`. Search matches session titles, IDs, workspace paths, and
 project names/paths using SQLite's ASCII case-insensitive matching. The query is a
 literal substring. It does not accept SQL or wildcard expressions and does not search
 event text.
 
 `session-archive` changes visibility without deleting records or files and without
-changing run/preparation state. It shares the launch lock with session-start and rejects
-live sessions and unfinished launch claims. Archived drafts remain editable, but
-session-start rejects them until restored. Restoration starts no process. Direct reads,
-composer operations, and read-only SQL can still access archived data.
+changing run/preparation state. Archive of a top-level session also archives its
+sub-sessions. Every member must be stopped. Each archive fails with no change unless
+the sub-sessions of the session that are not archived are exactly `members`. A
+sub-session has none. A missing or empty list confirms no sub-sessions. Restore of a top-level session also
+restores its archived sub-sessions. Restore of a sub-session also restores its archived parent.
+It shares the launch lock with session-start and rejects live sessions and unfinished
+launch claims. Archived drafts remain editable, but session-start rejects them until
+restored. Restoration starts no process. Direct reads, composer operations, and
+read-only SQL can still access archived data.
 
 `session-list` orders by the latest `start`, `run`, `input`, `output`, or interruption
 `notice` event, newest first, falling back to session creation time. `updated` carries
@@ -802,13 +825,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/30") {
+    if (message.server.protocol !== "bbflow/31") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/30", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/31", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);

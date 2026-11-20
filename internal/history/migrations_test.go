@@ -142,7 +142,7 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -161,7 +161,8 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			if version >= 8 {
 				appearance = "dark"
 			}
-			if err != nil || settings.Appearance != appearance || settings.TitleTool != "none" || !settings.UpdateCheck || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}, TitleTool: "none", UpdateCheck: true})) {
+			// The format 12 fixture turned the release check off. Earlier upgrades turn it on.
+			if err != nil || settings.Appearance != appearance || settings.TitleTool != "none" || settings.UpdateCheck != (version < 12) || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}, TitleTool: "none", UpdateCheck: true})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
@@ -179,6 +180,9 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			}
 			if session.Archived != (version >= 6) {
 				t.Fatal("changed archive state", session)
+			}
+			if session.ParentID != "" {
+				t.Fatal("assigned an invented parent", session)
 			}
 			if version == 5 && (session.Preparation.Command != "old-tool --interactive" || session.Worktree.Commit != "abcdef") {
 				t.Fatal("lost launch metadata", session)
@@ -212,6 +216,7 @@ func TestMigrationFailureRollsBackEntireUpgrade(t *testing.T) {
 		{"archive-script", "ALTER TABLE sessions ADD COLUMN archived INTEGER", "apply history migration 6"},
 		{"run-index-script", "CREATE TABLE events_start_run (original TEXT); INSERT INTO events_start_run VALUES('keep')", "apply history migration 7"},
 		{"server-script", "CREATE TABLE server (original TEXT); INSERT INTO server VALUES('keep')", "apply history migration 11"},
+		{"parent-script", "CREATE INDEX sessions_parent ON sessions(title)", "apply history migration 13"},
 		{"schema-validation", "ALTER TABLE events RENAME COLUMN data TO evidence", "validate history schema"},
 		{"foreign-keys", "PRAGMA foreign_keys=OFF; UPDATE runs SET session_id='missing' WHERE id='finished'", "invalid foreign keys"},
 	} {
@@ -328,7 +333,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6, 7, 8, 9, 11} {
+	for _, version := range []int{3, 6, 7, 8, 9, 11, 12} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }

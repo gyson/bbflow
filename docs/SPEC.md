@@ -51,11 +51,11 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 The SQLite driver exposes query authorization and cancellation through supported APIs.
 This keeps read-only query enforcement in SQLite and avoids a custom SQL parser.
 
-Storage has projects, sessions, runs, events, settings, preparations, worktree metadata,
-archive flags, and run indexes. Embedded SQL migrations upgrade older formats at server
-startup. See [database upgrades](#database-upgrades) for the format numbers. Commands
-and APIs may still change during early development. Database upgrades preserve durable
-data.
+Storage has projects, sessions, session parents, runs, events, settings, preparations,
+worktree metadata, archive flags, and run indexes. Embedded SQL migrations upgrade older
+formats at server startup. See [database upgrades](#database-upgrades) for the format
+numbers. Commands and APIs may still change during early development. Database upgrades
+preserve durable data.
 
 The history package separates schema and models, session/run operations, event capture,
 replay, and read-only SQL. Database access stays inside that package. Server handlers
@@ -396,14 +396,16 @@ and caching rules.
 
 The sidebar lists saved projects and groups sessions, including drafts, through
 `project-list` and `session-list`. General appears first. Custom projects follow in name
-order. Groups can be collapsed in each view. Each group shows its 10 most recent
-sessions. **Show more** below a group shows 10 more of its sessions. It has no upper
-limit. Each reply holds at most 100 sessions. Thus the list reads the 10 most recent
-sessions of 10 groups in each request. It reads the sessions after the first 10 of a
-group in separate windows of at most 100 sessions. When the group then shows all of its sessions, the
-keyboard focus moves from **Show more** to its last session. The list and
-Archived keep separate group sizes until reload. The selected session stays in its
-group, also when it is older than the other sessions that the group shows.
+order. Groups can be collapsed in each view. A group lists
+[session families](#session-families): a top-level session and its sub-sessions count
+as one family. Each group shows its 10 most recent families. **Show more** below a group
+shows 10 more of its families. It has no upper limit. Each reply holds at most 100
+families. Thus the list reads the 10 most recent families of 10 groups in each request.
+It reads the families after the first 10 of a group in separate windows of at most 100
+families. When the group then shows all of its families, the keyboard focus moves from
+**Show more** to its last session. The list and Archived keep separate group sizes until
+reload. The family of the selected session stays in its group, also when it is older
+than the other families that the group shows.
 
 A vertical divider on the right edge of the sidebar changes its width. Drag it with a
 mouse or touch. Or focus it and use Left/Right to resize. Use Home/End to reach the
@@ -417,8 +419,9 @@ and visibility stay with the browser view across session switches and reset on r
 Below 620 pixels, the sidebar is above the main area and the divider is not available.
 
 Server-side search matches project names and paths, or session titles, workspaces, and
-IDs, before the group limits. It uses SQLite's case-insensitive ASCII matching and
-treats wildcard characters literally. This UI does not search message or terminal
+IDs, before the group limits. A match of a sub-session also shows its top-level session
+as context. It uses SQLite's case-insensitive ASCII matching and treats wildcard
+characters literally. This UI does not search message or terminal
 contents. Each refresh reads the most recent sessions again, so activity changes can
 move a session into or out of the shown part of a group.
 
@@ -439,21 +442,28 @@ a window width of 620 pixels. The sidebar shows the server connection only while
 server is unavailable.
 
 **Archive** hides a draft or finished session from the normal list. It is in the More
-actions menu of the toolbar. Each draft and ended session in the list also has an
-archive button on its row. The button shows on pointer hover and on keyboard focus. On
-devices without hover, it always shows. Archive of the selected session first saves the
-launch choices and message editor. Then the welcome view opens. Archive of another
-session keeps the current view.
+actions menu of the toolbar. It is also in the row menu of each draft and ended session
+in the list. The ⋯ button of a row opens its row menu, so one click never archives a
+session. The button shows on pointer hover and on keyboard focus. On devices without
+hover, it always shows. The row menu has **New sub-session** for a top-level session,
+and **Archive**, or **Restore** in Archived. A row without such an item has no ⋯
+button. While a row menu is open, a list refresh keeps the buttons of the list. The list
+then changes after the menu closes. Escape, a choice, or a click outside the menu closes
+it. The Up and Down arrow keys move between the items. Archive of a top-level session with sub-sessions
+archives the whole family. See [session families](#session-families). Archive of the
+selected session first saves the launch choices and message editor. Then the welcome
+view opens. A family archive does the same when the selected session is in the family.
+Archive of another session keeps the current view.
 
 **Archived** shows the archived sessions in place of the normal list, with the same
 search and groups. **Back** above the list, or a second click on **Archived**, returns
 to the normal list. A new project also returns to the normal list and clears the
-search. **Restore** in the More actions menu or on a row returns an item to its
+search. **Restore** in the More actions menu or in a row menu returns an item to its
 project, or Standalone if that project was removed, without launching it. A restore of
 the selected session opens it in the normal list. A restore of another session keeps
 the archived list.
 
-While Settings is open, an archive or restore from a row keeps Settings open. When the
+While Settings is open, an archive or restore from a row menu keeps Settings open. When the
 row is the session behind Settings, **Back to session** then opens the welcome view
 after an archive, or the restored session. After an archive or restore with the
 keyboard, focus moves to the nearest later session row that shows, or else the nearest
@@ -614,6 +624,77 @@ and all session history.
 External processes and concurrent edits outside bbflow are not coordinated. Git manages
 its locks and linked-worktree metadata. Missing or moved repositories cause explicit
 errors.
+
+### Session families
+
+A session can have sub-sessions. A sub-session belongs to one top-level session, its
+parent. A parent and its sub-sessions form a family. A family has one level: a
+sub-session cannot have sub-sessions. `sessions.parent_id` keeps the parent, or NULL for
+a top-level session. The parent is set when the sub-session draft is created, and it
+does not change. Thus families form only through **New sub-session**. Sessions from
+before families stay top-level sessions. The link only organizes the list. A sub-session inherits no
+history, draft, or settings from its parent. Each session keeps its own terminal, status,
+and lifecycle. **Stop session** stops one session only.
+
+The sidebar shows a family as the row of the top-level session, then the rows of its
+sub-sessions in creation order. A family is always open. A guide line goes from the
+parent to each sub-session and ends at the last one. A family shows its first 5
+sub-sessions. Then **Show N more** ends the guide line. It shows the other sub-sessions
+in this view until reload, and the keyboard focus moves to the first of them. A search
+shows every matching sub-session, and a selected sub-session always shows. The latest
+activity of any member in the list gives the position of the family.
+
+The tooltip of the status icon of a sub-session tells where it works: **parent
+workspace**, **own worktree**, **own folder**, or, for a draft, **new worktree**. A ⑂
+mark after the title shows an own worktree or a draft for a new worktree. A context row shows a top-level session that is not in
+the list itself, at reduced contrast. It is the parent of a match, or a session from the
+other collection, such as a parent that is not archived in Archived.
+
+**New sub-session** in the row menu of a top-level session, or in the More actions menu,
+creates a sub-session draft. The draft takes the project of its parent. On a
+sub-session, the menu item is **New sub-session in this family**: it adds a draft to the
+same parent. A session without a saved project cannot get a sub-session. The draft
+offers two workspaces:
+
+- **Parent workspace** starts the sub-session in the current workspace of its parent.
+  Both sessions then change the same files. This choice needs a parent whose first
+  terminal started. Before that, the parent has no launch workspace, also after a launch
+  that stopped early. The sub-session gets no worktree record.
+- **New worktree** creates a managed worktree from the project folder. The default base
+  is the current branch of the managed worktree of the parent, or its commit when that
+  checkout is detached. Thus the base has the commits of the parent, also after it
+  switched branches. Without a parent worktree, the default is the default Git base.
+  Uncommitted changes of the parent are not copied.
+
+In a Git project, the Settings worktree default selects **New worktree**. Otherwise the
+draft selects **Parent workspace**. A review-loop reviewer runs
+`gh pr checkout --detach`. In the parent workspace, that command would change the
+checkout of the implementer, so the draft form recommends a new worktree for it.
+
+A request for a sub-session draft names a session. For a top-level session, that session
+becomes the parent. For a sub-session, the parent of that sub-session becomes the parent,
+so the new draft is a sibling. The draft takes the project of the family. The request
+fails for a missing session, for a family without a saved project, and for an archived
+parent. The store also keeps the storage rule: the parent of a sub-session is a
+top-level session of the same project that is not archived. Removal of a project moves
+the whole family to Standalone.
+
+Archive and restore follow the family:
+
+- Archive of a top-level session with sub-sessions first shows the members in a dialog.
+  It then archives the whole family. Every member must be stopped first. The view sends
+  the sub-sessions that it listed. If the family has other sub-sessions at that time,
+  bbflow archives nothing, and the dialog shows the new members. An archive without the
+  dialog confirms no sub-sessions, so a new sub-session also stops it. The view then
+  shows the dialog with the current members.
+- Archive of a sub-session archives only that session. Archived then shows it under its
+  parent as a context row.
+- Restore of a top-level session also restores all of its archived sub-sessions, also a
+  sub-session that was archived alone before.
+- Restore of a sub-session also restores its archived parent.
+
+The sidebar is the only place that shows the family of a session. The toolbar of a
+sub-session is the same as the toolbar of a top-level session.
 
 ### Projects and launches
 
@@ -1430,8 +1511,11 @@ application redraw. An ended view never starts another process or invokes native
 provider resume. Only an explicit `session-continue` starts a new terminal in an ended
 session.
 
-The UI requests 101 to display 100 entries and detect another page. Normal listing
-excludes archived sessions. Archived listing includes only archived sessions. Ordering
+The server orders families by the most recent member in the collection, with the rules
+below. A family lists its top-level session first, then its sub-sessions in creation
+order. The UI requests 101 to display 100 entries and detect another page. Normal listing
+excludes archived sessions. Archived listing includes only archived sessions, and the
+parents of archived sub-sessions as context. Ordering
 follows the latest terminal input, output, or run lifecycle event (`start`, `run`, or
 interruption `notice`), newest first. Sessions without these events use their creation
 time.
@@ -1444,7 +1528,8 @@ pages do not overlap while the list is unchanged.
 Viewing, resizing, renaming, saving drafts, attachments, terminal replies, and saved
 screens do not change recency. Fresh application output still counts, including output
 while detached or after a real size change. Summaries contain ID, title, project ID
-(empty for standalone), workspace, update time, status, archive flag, and view count.
+(empty for standalone), parent ID (empty for a top-level session), workspace, update
+time, status, archive flag, view count, and a context flag.
 
 ### Session status
 
@@ -1471,15 +1556,30 @@ repeated output shows as `running`, also without progress. No completion, readin
 message boundaries are inferred from silence. bbflow never sends input because of a
 status.
 
-The sidebar shows the status of each session with a dot: filled for `running`, a ring
-for `idle`, and gray for `draft` and `ended`. Each page keeps one `status-watch` stream
+Each sidebar row has one line: a status icon, then the title. Standalone sessions add
+their workspace on a second line. The icon has a different shape for each status:
+
+| Icon | Status |
+| --- | --- |
+| A green dot with a slow pulse | `running`. With the reduced motion setting, the dot does not move. |
+| A green ring | `idle` |
+| A gray dashed ring | `draft` |
+| A gray dot | `ended`, after an exit or a stop |
+| An amber dot | `ended`, when the latest run `failed` or was `interrupted` |
+
+The tooltip of the icon gives the status text, for example **Idle: live, with no output
+in the last 3 seconds** or **Ended · stopped**. It adds **Archived**, the view count, and
+the place of a sub-session. The tooltip of the row adds the same text to the title,
+workspace, ID, and update time. A label for screen readers gives the short status, for
+example **idle, 1 view**. Each page keeps one `status-watch` stream
 open. The server pushes the statuses of all live terminals on it, at most 200
 milliseconds after a change. Thus the sidebar shows brief activity of each session,
 also without a view of that session. The `session-list` refresh every five seconds
 supplies all other session data. It also supplies the statuses while the watch
 reconnects. When a terminal starts or ends, the page reads the list at once.
 
-A status change updates the dot and the status text of a session button in place. The
+A status change updates the icon, the tooltips, and the label of a session button in
+place. The
 button stays, so the keyboard focus stays on it. Other list changes replace the buttons
 of the list. The page then moves the keyboard focus to the new button of the same
 session or project control.
@@ -1509,6 +1609,8 @@ When the session ends, **Continue in new terminal** shows there in the latest te
 - **Rename** shows for started sessions. The field shows the user title, or the derived
   title as a placeholder. An empty field removes the user title.
 - **Copy session ID** copies the ID of a started session to the clipboard.
+- **New sub-session** shows for a session that is not archived and has a saved project.
+  See [session families](#session-families).
 - **Archive** shows for `draft` and `ended` sessions. It changes to **Restore** for an
   archived session.
 - **Reload output** shows for an ended session, in a view of its latest terminal.
@@ -1587,7 +1689,7 @@ as one transaction after column, index, and foreign-key checks. Any failure roll
 the entire upgrade and stops startup. A failed SQL step reports its migration number.
 WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4 through 12. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 13. In the same
   transaction, a new database sets `worktree` to true in the settings JSON. Thus new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -1615,7 +1717,9 @@ WAL is enabled after the schema transaction commits.
 - Format 11 gains `updateCheck: true` in the settings JSON through migration 12. Thus
   the daily release check starts on, also after an upgrade. The settings revision and
   the other values stay.
-- Format 12 opens without running scripts or rewriting history, settings, or metadata.
+- Format 12 gains the nullable `sessions.parent_id` column and its index through
+  migration 13. Existing sessions stay top-level sessions.
+- Format 13 opens without running scripts or rewriting history, settings, or metadata.
 
 The upgrade preserves IDs, timestamps, event sequences, original blobs, text, drafts,
 and attachments. It also preserves the highest allocated event sequence. Migration
@@ -1624,7 +1728,7 @@ afterward. Repeated or concurrent opens see the committed version and skip compl
 steps.
 
 Formats 1 and 2 have no known migration path in this repository. They, nonempty
-unversioned databases, and formats newer than 12 are rejected without changing their
+unversioned databases, and formats newer than 13 are rejected without changing their
 schema or records. A newer format error asks for a newer executable. There is no
 downgrade path, external migration command, or automatic backup.
 
@@ -1937,7 +2041,7 @@ launch in a worktree, and separate drafts for subsequent sessions.
 
 No real agent CLI was used for these project checks.
 
-Frozen schemas from repository history test upgrades from formats 3–11 to format 12 and
+Frozen schemas from repository history test upgrades from formats 3–12 to format 13 and
 verify that reopen preserves the upgraded data. Fixtures compare original blobs, archive
 flags, metadata, and event allocation state. They test rollback of the entire upgrade
 after SQL, schema, or foreign-key failures. They also cover repeated opens, concurrent
@@ -1970,6 +2074,22 @@ that a new offer closes the dialog, that the view confirms the revision of the s
 offer, and that a lost status watch hides the offer. A lost watch during a pending start
 that then fails allows no other attempt. A failed start without a change allows one. A failed settings
 update in migration 12 rolls back and keeps format 11.
+
+Family fixtures verify family order by the latest member, paging by family, an included
+sub-session that brings its family, search context, and context parents in Archived.
+They verify family archive and restore, live members that block an archive, and the
+rules of a sub-session draft. Server fixtures create sub-session drafts with a Git repository. They
+verify the base from the parent branch, a start in the parent worktree, a new worktree
+from the parent commit, and the rejection of a parent draft workspace. A failed index
+creation in migration 13 rolls back and keeps the earlier format. Web fixtures verify
+the families of the list, context families, the place labels, and the merge of pages
+without a repeated family. A browser check of a demo instance with the Demo agent
+verified a start in the parent workspace, the family archive dialog, the welcome view after the archive of a selected sub-session,
+restore of the family, and search context. No real agent CLI was used. Web fixtures also
+verify the status icons and texts and the first 5 sub-sessions of a family. Family
+fixtures verify a rejected archive when the confirmed sub-sessions differ. Server fixtures verify the base from a parent worktree
+after a branch switch and on a detached commit, and the rejection of a parent workspace
+before the first terminal of the parent.
 
 Title fixtures verify the separate user and derived titles, search on both, and the
 title tool values. A failed settings update in migration 10 rolls back the new column

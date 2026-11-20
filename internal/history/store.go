@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	sessionColumns = "id,title,auto_title,workspace,created,COALESCE(project_id,''),archived"
+	sessionColumns = "id,title,auto_title,workspace,created,COALESCE(project_id,''),archived,COALESCE(parent_id,'')"
 	runColumns     = "id,session_id,status,started,ended,pid,detail"
 	eventColumns   = "seq,session_id,run_id,kind,data,text,created"
 )
@@ -26,10 +26,12 @@ var ErrRunNotFound = errors.New("terminal not found in this session")
 
 // Title is the title that the user set, or empty. AutoTitle is derived: the tool name
 // and folder at launch, then a summary from the title tool. It is empty for a session
-// from before format 10. Use DisplayTitle to show.
+// from before format 10. Use DisplayTitle to show. ParentID is the top-level session of
+// a sub-session, or empty for a top-level session.
 type Session struct {
 	Archived    bool         `json:"archived"`
 	ProjectID   string       `json:"projectId"`
+	ParentID    string       `json:"parentId"`
 	ID          string       `json:"id"`
 	Title       string       `json:"title"`
 	AutoTitle   string       `json:"autoTitle"`
@@ -160,6 +162,7 @@ func checkSchema(ctx context.Context, conn *sql.Conn) error {
 		"SELECT seq FROM events INDEXED BY events_run WHERE run_id='' LIMIT 0",
 		"SELECT seq FROM events INDEXED BY events_output_run WHERE run_id='' AND kind='output' AND text<>'' LIMIT 0",
 		"SELECT seq FROM events INDEXED BY events_start_run WHERE run_id='' AND kind='start' LIMIT 0",
+		"SELECT id FROM sessions INDEXED BY sessions_parent WHERE parent_id='' LIMIT 0",
 	} {
 		rows, err := conn.QueryContext(ctx, query)
 		if err != nil {
@@ -176,7 +179,7 @@ type scanner interface{ Scan(...any) error }
 
 func scanSession(row scanner) (Session, error) {
 	var s Session
-	err := row.Scan(&s.ID, &s.Title, &s.AutoTitle, &s.Workspace, &s.Created, &s.ProjectID, &s.Archived)
+	err := row.Scan(&s.ID, &s.Title, &s.AutoTitle, &s.Workspace, &s.Created, &s.ProjectID, &s.Archived, &s.ParentID)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}

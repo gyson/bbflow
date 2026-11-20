@@ -153,6 +153,20 @@ func revisionChanged(result sql.Result, err error) error {
 }
 
 func (s *Store) CreatePreparation(title, workspace, project string, p Preparation) (Session, error) {
+	return s.createPreparation(title, workspace, project, "", p)
+}
+
+// CreateSubPreparation creates a sub-session draft of a top-level session. The draft has
+// the project of its parent. Its workspace is the source of a new worktree. Without a
+// worktree, the launch uses the workspace of the parent.
+func (s *Store) CreateSubPreparation(parent, workspace, project string, p Preparation) (Session, error) {
+	if parent == "" {
+		return Session{}, errors.New("choose a parent session")
+	}
+	return s.createPreparation("", workspace, project, parent, p)
+}
+
+func (s *Store) createPreparation(title, workspace, project, parent string, p Preparation) (Session, error) {
 	if project == "" {
 		return Session{}, errors.New("choose a project before preparing a session")
 	}
@@ -171,13 +185,19 @@ func (s *Store) CreatePreparation(title, workspace, project string, p Preparatio
 		return Session{}, err
 	}
 	defer tx.Rollback()
-	session := Session{ID: ID(), Title: title, Workspace: workspace, ProjectID: project, Created: Now()}
+	if parent != "" {
+		if err = checkParent(tx, parent, sql.NullString{String: project, Valid: true}); err != nil {
+			return Session{}, err
+		}
+	}
+	session := Session{ID: ID(), Title: title, Workspace: workspace, ProjectID: project, ParentID: parent, Created: Now()}
 	p.Revision, p.State = 1, "draft"
 	data, err := json.Marshal(p)
 	if err != nil {
 		return session, err
 	}
-	_, err = tx.Exec("INSERT INTO sessions(id,title,workspace,created,project_id) VALUES(?,?,?,?,NULLIF(?,''))", session.ID, title, workspace, session.Created, project)
+	_, err = tx.Exec("INSERT INTO sessions(id,title,workspace,created,project_id,parent_id) VALUES(?,?,?,?,NULLIF(?,''),NULLIF(?,''))",
+		session.ID, title, workspace, session.Created, project, parent)
 	if err == nil {
 		_, err = tx.Exec("INSERT INTO preparations VALUES(?,1,'draft',?)", session.ID, string(data))
 	}

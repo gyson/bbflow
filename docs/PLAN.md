@@ -116,8 +116,10 @@ and can continue independently.
 
 ### Expected behavior
 
-- Give the fork its own bbflow session ID. Store its parent and fixed history cutoff in
-  SQLite, with stable references to the original evidence.
+- Give the fork its own bbflow session ID. Store its source session and fixed history
+  cutoff in SQLite, with stable references to the original evidence. Keep this source
+  separate from `sessions.parent_id`. A parent only organizes the sidebar and gives no
+  history. A sub-session keeps the parent that it gets at creation.
 - Inherit history through the selected point. Later parent messages and sibling branches
   must not enter the fork's inherited view, even if the parent continues.
 - Apply the cutoff consistently to future session-aware reads, search, attachments, and

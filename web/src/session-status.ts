@@ -17,10 +17,35 @@ export function listStatus(session: { id: string; status: string }, pushed: Reco
   return pushed[session.id] ?? session.status;
 }
 
-// Return the status line of a session in the list.
-export function listStatusText(status: string, session: { archived?: boolean; viewers?: number }): string {
+// Return the icon of a status in the list: running, idle, draft, ended, or failed. A
+// failed or interrupted latest run has its own icon.
+export function statusIcon(status: string, runStatus = ''): string {
+  return status === 'ended' && (runStatus === 'failed' || runStatus === 'interrupted') ? 'failed' : status;
+}
+
+const meanings: Record<string, string> = {
+  running: 'Running: output in the last 3 seconds',
+  idle: 'Idle: live, with no output in the last 3 seconds',
+  draft: 'Draft: not started',
+};
+
+type ListedStatus = { archived?: boolean; viewers?: number; runStatus?: string };
+
+function extras(session: ListedStatus, place: string): string {
   const views = session.viewers ? ` · ${session.viewers} view${session.viewers === 1 ? '' : 's'}` : '';
-  return status + (session.archived ? ' · Archived' : '') + views;
+  return (session.archived ? ' · Archived' : '') + views + (place ? ` · ${place}` : '');
+}
+
+// Return the status text of a session in the list. The list shows it when the pointer is
+// on the status icon. place tells where a sub-session works.
+export function listStatusText(status: string, session: ListedStatus, place = ''): string {
+  const text = meanings[status] ?? (status === 'ended' ? `Ended${session.runStatus ? ` · ${session.runStatus}` : ''}` : status);
+  return text + extras(session, place);
+}
+
+// Return the short status of a session in the list for screen readers.
+export function listStatusLabel(status: string, session: ListedStatus, place = ''): string {
+  return (statusIcon(status, session.runStatus) === 'failed' ? `ended, ${session.runStatus}` : status) + extras(session, place).replaceAll(' · ', ', ');
 }
 
 // Report whether a pushed set of statuses has a different set of live terminals.

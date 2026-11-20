@@ -67,6 +67,13 @@ func (d *demo) addData() {
 	d.output(t, prompt, 4)
 	t.close()
 
+	// A sub-session draft of the worktree session: a reviewer in a new worktree from the
+	// branch of its parent.
+	review := d.subDraft(refactor, "Review the refactor", demoAgent, func(config *protocol.PreparationConfig) {
+		config.Worktree = true
+	})
+	d.saveDraft(review.ID, "Review the commits of demo/refactor-orbit.")
+
 	// A live session that waits for input, with a message that is not sent.
 	t = d.launch(d.draft(orbit, "Review test failures", demoAgent, nil))
 	d.output(t, prompt, 1)
@@ -127,6 +134,20 @@ func (d *demo) draft(project, name, tool string, change func(*protocol.Preparati
 	session := call[protocol.SessionDetail](d.target, protocol.Request{Operation: "project-draft", Project: project})
 	if session.Preparation == nil {
 		fail("draft %s has no preparation", session.ID)
+	}
+	config := protocol.PreparationConfig{Revision: session.Preparation.Revision, ToolID: tool, Base: session.Preparation.Base}
+	if change != nil {
+		change(&config)
+	}
+	return call[protocol.SessionDetail](d.target, protocol.Request{Operation: "session-config", Session: session.ID, Name: name, Preparation: &config})
+}
+
+// subDraft creates a sub-session draft of a session and saves its launch choices. tool
+// is a tool ID, or empty for Shell.
+func (d *demo) subDraft(parent, name, tool string, change func(*protocol.PreparationConfig)) protocol.SessionDetail {
+	session := call[protocol.SessionDetail](d.target, protocol.Request{Operation: "project-draft", Parent: parent})
+	if session.Preparation == nil || session.ParentID != parent {
+		fail("sub-session draft %s has no preparation or another parent", session.ID)
 	}
 	config := protocol.PreparationConfig{Revision: session.Preparation.Revision, ToolID: tool, Base: session.Preparation.Base}
 	if change != nil {
