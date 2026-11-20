@@ -38,7 +38,6 @@ const elements = {
   'archives-open': element('archives-open', HTMLButtonElement),
   'archived-heading': element('archived-heading', HTMLElement),
   'archive-session': element('archive-session', HTMLButtonElement),
-  'launch-summary': element('launch-summary', HTMLElement),
   'settings-open': element('settings-open', HTMLButtonElement),
   'settings-close': element('settings-close', HTMLButtonElement),
   'remove-worktree': element('remove-worktree', HTMLButtonElement),
@@ -98,7 +97,6 @@ const elements = {
   'workspace-path': element('workspace-path', HTMLElement),
   'workspace-removed': element('workspace-removed', HTMLElement),
   'terminal': element('terminal', HTMLElement),
-  'dimensions': element('dimensions', HTMLElement),
   'status': element('status', HTMLElement),
   'terminal-hint': element('terminal-hint', HTMLElement),
   'welcome': element('welcome', HTMLElement),
@@ -291,21 +289,35 @@ function heading(title: string, tab = title) {
   document.title = tab;
 }
 
+// Return the tool of the shown terminal. Each terminal records its own tool, so a new
+// terminal can show another tool than the first one. A draft has no terminal yet.
+function shownTool(): string {
+  if (!selected || showingSettings || selected.status === 'draft') return '';
+  return terminalPicker.shown()?.tool || selected.preparation?.toolName || '';
+}
+
+// Show the tool of the shown terminal, the worktree branch, and the workspace path. An
+// empty path hides the line.
 function showWorkspace(path: string, worktree?: Worktree) {
+  const tool = shownTool();
   const branch = worktree ? `⑂ ${worktree.branch}` : '';
-  const label = branch ? `${branch} · ${path}` : path;
   const removed = worktree?.state === 'removed';
-  $('workspace-path').textContent = removed ? path : label;
+  const label = [tool, removed ? '' : branch, path].filter(Boolean).join(' · ');
+  $('workspace').hidden = !path;
+  $('workspace-path').textContent = label;
   $('workspace-removed').hidden = !removed;
-  $('workspace').title = removed ? `${path} · ${branch}` : label;
+  $('workspace').title = removed ? `${label} · ${branch}` : label;
+}
+
+// The hint below the terminal tells why this view cannot send input. A view of the live
+// terminal has no hint.
+function hint(text = '') {
+  $('terminal-hint').textContent = text;
+  $('terminal-hint').hidden = !text;
 }
 
 function controls() {
   $('history-open').disabled = busy || !server;
-  const launch = selected?.preparation;
-  $('launch-summary').hidden = showingSettings || !launch || selected?.status === 'draft';
-  $('launch-summary').textContent = launch ? `${launch.toolName} · ${launch.command || 'Interactive shell'}` : '';
-  $('launch-summary').title = $('launch-summary').textContent;
   preparation.controls(busy, !!selected?.archived);
   $('sessions-open').disabled = $('archives-open').disabled = busy || !server;
   $('archive-session').hidden = showingSettings || !selected?.id || live(selected.status);
@@ -783,7 +795,7 @@ function makeTerminal(): Terminal {
   $('terminal').append(host);
   terminal.open(host);
   fit.fit();
-  $('dimensions').textContent = `${terminal.cols} × ${terminal.rows}`;
+  hint();
   terminal.onData(data => {
     if (!connection?.ready || !connection.peer?.active) return;
     const bytes = new TextEncoder().encode(data);
@@ -793,9 +805,6 @@ function makeTerminal(): Terminal {
   });
   terminal.onBinary(data => {
     if (connection?.ready && connection.peer?.active) connection.peer.send({ type: 'input', data: btoa(data) });
-  });
-  terminal.onResize(({ rows, cols }) => {
-    $('dimensions').textContent = `${cols} × ${rows}`;
   });
   return view;
 }
@@ -885,8 +894,8 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           if (message.active) { if (!live(selected.status)) selected.status = 'running'; }
           else if (!terminalPicker.shownRun) selected.status = 'ended';
           $('status').textContent = 'Restoring';
-          $('terminal-hint').textContent = message.active ? 'Click the terminal to type. Ctrl+C reaches the application.' :
-            terminalPicker.shownRun ? earlierHint(terminalPicker.shown()) : 'Recorded output of the latest terminal. No process was started.';
+          hint(message.active ? '' : terminalPicker.shownRun ? earlierHint(terminalPicker.shown()) :
+            'Recorded output of the latest terminal. No process was started.');
           void loadTerminals(message.session);
           view.options.disableStdin = true;
           history.replaceState(null, '', sessionURL(message.session));
@@ -907,7 +916,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           endReason = { run: message.run ?? '', text: exitReason(message.code, message.status) };
           view.options.disableStdin = true;
           showStatus();
-          $('terminal-hint').textContent = 'Process ended. Showing saved terminal output.';
+          hint('Process ended. Showing saved terminal output.');
           if (message.error) notice(message.error);
           refreshSessions();
           void loadTerminals(selected.id ?? '');
@@ -919,7 +928,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
     disconnected(error, retrying) {
       view.options.disableStdin = true;
       $('status').textContent = retrying ? 'Reconnecting' : 'Disconnected';
-      $('terminal-hint').textContent = 'Connection lost. Showing the last screen; input is disabled until reconnection.';
+      hint('Connection lost. Showing the last screen. Input is off until this view connects again.');
       notice(errorMessage(error), 'stream');
       controls();
       refreshSessions();
@@ -955,7 +964,9 @@ async function loadTerminals(id: string): Promise<void> {
   try { terminals = await call(server, { operation: 'session-terminals', session: id }); } catch { /* Hide the selector. */ }
   if (generation !== terminalsGeneration || selected?.id !== id) return;
   terminalPicker.update(terminals);
-  if (terminalPicker.shownRun && connection?.ready) $('terminal-hint').textContent = earlierHint(terminalPicker.shown());
+  if (terminalPicker.shownRun && connection?.ready) hint(earlierHint(terminalPicker.shown()));
+  // The tool on the workspace line comes from the shown terminal.
+  if (selected && !showingSettings && !preparation.visible) showWorkspace(selected.workspace, selected.worktree);
   controls();
 }
 
@@ -1021,8 +1032,8 @@ async function showWelcome(): Promise<void> {
   sessionSplit.setEnabled(false);
   $('session-view').hidden = true;
   $('welcome').hidden = false;
-  heading('Your workspace', 'bbflow');
-  showWorkspace('A home for your terminal sessions.');
+  heading('Home', 'bbflow');
+  showWorkspace('');
   $('status').hidden = true;
   history.replaceState(null, '', homePath);
   renderSessions();
@@ -1035,7 +1046,7 @@ async function showSettings(): Promise<void> {
   workspacePane.select('');
   $('session-view').hidden = $('welcome').hidden = true;
   heading('Settings');
-  showWorkspace('Defaults and tools for this instance');
+  showWorkspace('');
   $('status').hidden = true;
   history.replaceState(null, '', settingsPath);
 }

@@ -13,8 +13,6 @@ const result = await build({
   target: 'es2022',
   minify: true,
   metafile: true,
-  loader: { '.svg': 'file' },
-  assetNames: '[name]',
   outfile: fileURLToPath(new URL('assets/app.js', output)),
 });
 await copyFile(new URL('index.html', import.meta.url), new URL('index.html', output));

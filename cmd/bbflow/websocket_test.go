@@ -131,7 +131,7 @@ func TestEmbeddedWebUI(t *testing.T) {
 	port := startTestServer(t, t.TempDir())
 	address := "127.0.0.1:" + port
 	client := &http.Client{Timeout: 3 * time.Second}
-	for _, path := range []string{"/", "/assets/app.js", "/assets/app.css", "/assets/bbflow.svg", "/assets/favicon.svg", "/assets/menubar.png", "/assets/licenses.txt", "/client-config"} {
+	for _, path := range []string{"/", "/assets/app.js", "/assets/app.css", "/assets/favicon.svg", "/assets/menubar.png", "/assets/licenses.txt", "/client-config"} {
 		response, err := client.Get("http://" + address + path)
 		if err != nil {
 			t.Fatal(err)
