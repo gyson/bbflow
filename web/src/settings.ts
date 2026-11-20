@@ -1,10 +1,8 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { mergeToolEdit, parsePort, portStatus, portText, sameSettings, sameTools, titleControls } from './settings-model.js';
-
-type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool' | 'updateCheck' | 'port'>;
-type SettingsChange = (settings: Settings) => Settings;
+import { mergeToolEdit, parsePort, portStatus, portText, sameTools, SettingsSaves, titleControls } from './settings-model.js';
+import type { Defaults, SettingsChange } from './settings-model.js';
 
 // Test sends this message to the title tool in place of a real first message.
 const titleSample = 'The login page redirects to a blank page after sign-in. Find the cause and fix it.';
@@ -48,8 +46,7 @@ export class SettingsView {
   private readonly testOutcome = element('title-test-outcome', HTMLElement);
   private readonly testDetail = element('title-test-detail', HTMLElement);
 
-  private saved: Settings | null = null;
-  private defaults: Partial<Defaults> = {};
+  private readonly saves: SettingsSaves;
   private renderedBase = '';
   private renderedPort = '';
   // The title tools and their commands come from the server.
@@ -63,10 +60,18 @@ export class SettingsView {
   private newToolId = '';
   private toolBusy = false;
   private renderedTools: Tool[] | null = null;
-  private queue = Promise.resolve();
-  private writes = 0;
 
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void) {
+    const connected = (): ServerInfo => {
+      const server = this.server();
+      if (!server) throw new Error('Settings are unavailable.');
+      return server;
+    };
+    this.saves = new SettingsSaves({
+      save: settings => call(connected(), { operation: 'settings-save', settings }),
+      get: () => call(connected(), { operation: 'settings-get' }),
+      conflict: error => error instanceof ConnectionError && error.fromServer,
+    }, () => this.render(), () => this.showStatus());
     this.appearance.onchange = () => {
       this.applyAppearance(this.appearance.value);
       this.saveDefault('appearance', this.appearance.value);
@@ -100,6 +105,8 @@ export class SettingsView {
 
   get unsaved(): boolean { return this.pending(); }
 
+  private get saved(): Settings | null { return this.saves.saved; }
+
   async open(): Promise<void> {
     const server = this.server();
     if (!server) return;
@@ -110,7 +117,7 @@ export class SettingsView {
     if (!this.pending() && !this.editing) {
       const settings = await call(server, { operation: 'settings-get' });
       if (!this.pending() && !this.editing) {
-        this.saved = settings;
+        this.saves.saved = settings;
         this.render();
       }
     }
@@ -120,14 +127,14 @@ export class SettingsView {
   close(): void { this.panel.hidden = true; }
 
   private pending(): boolean {
-    return this.writes > 0 || Object.keys(this.defaults).length > 0 || this.base.value !== this.renderedBase ||
+    return this.saves.writes > 0 || Object.keys(this.saves.defaults).length > 0 || this.base.value !== this.renderedBase ||
       this.port.value !== this.renderedPort ||
       !!(this.addTool.name.value || this.addTool.command.value) ||
       !!this.editing && (this.editTool.name.value !== this.editing.name || this.editTool.command.value !== this.editing.command);
   }
 
   private showStatus(): void {
-    this.status.textContent = this.writes ? 'Saving…' : this.pending() ? 'Changes not saved' : 'All settings saved';
+    this.status.textContent = this.saves.writes ? 'Saving…' : this.pending() ? 'Changes not saved' : 'All settings saved';
   }
 
   private applyAppearance(appearance: string): void {
@@ -139,27 +146,28 @@ export class SettingsView {
   private render(): void {
     const saved = this.saved;
     if (!saved) return;
-    this.applyAppearance(this.defaults.appearance ?? saved.appearance);
-    this.worktree.checked = this.defaults.worktree ?? saved.worktree;
-    this.updateCheck.checked = this.defaults.updateCheck ?? saved.updateCheck;
+    const defaults = this.saves.defaults;
+    this.applyAppearance(defaults.appearance ?? saved.appearance);
+    this.worktree.checked = defaults.worktree ?? saved.worktree;
+    this.updateCheck.checked = defaults.updateCheck ?? saved.updateCheck;
     // Keep any text entered since the last blur or submit.
     if (this.base.value === this.renderedBase) {
-      this.renderedBase = this.defaults.base ?? saved.base;
+      this.renderedBase = defaults.base ?? saved.base;
       this.base.value = this.renderedBase;
     }
     if (this.port.value === this.renderedPort) {
-      this.renderedPort = portText(this.defaults.port ?? saved.port);
+      this.renderedPort = portText(saved.port);
       this.port.value = this.renderedPort;
     }
     const server = this.server();
     this.portStatus.textContent = server ? portStatus(saved.port, server.port) : '';
-    this.titleTool.value = this.defaults.titleTool ?? saved.titleTool ?? 'none';
+    this.titleTool.value = defaults.titleTool ?? saved.titleTool ?? 'none';
     this.showTitleTool();
     if (!this.renderedTools || !sameTools(saved.tools, this.renderedTools)) {
       this.tool.replaceChildren(new Option('Shell', ''), ...saved.tools.map(tool => new Option(tool.name, tool.id)));
       this.renderTools();
     }
-    const defaultTool = this.defaults.defaultTool ?? saved.defaultTool;
+    const defaultTool = defaults.defaultTool ?? saved.defaultTool;
     this.tool.value = !defaultTool || saved.tools.some(tool => tool.id === defaultTool) ? defaultTool : saved.defaultTool;
     this.showStatus();
   }
@@ -296,7 +304,7 @@ export class SettingsView {
     this.renderTools();
     let saved = false;
     try {
-      await this.enqueue(() => this.save(change));
+      await this.saves.enqueue(() => this.saves.save(change));
       saved = true;
     } catch (cause) {
       error.textContent = errorMessage(cause);
@@ -378,72 +386,35 @@ export class SettingsView {
   }
 
   // An empty Port field selects the automatic port. Other text must be a whole number.
+  // The port saves alone. Its error shows below the field.
   private savePort(): void {
-    const port = parsePort(this.port.value);
+    const text = this.port.value;
+    const port = parsePort(text);
     if (port === null) {
       this.portError.textContent = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
       this.portError.hidden = false;
       return;
     }
-    this.renderedPort = this.port.value;
-    this.saveDefault('port', port, this.portError);
-  }
-
-  // error shows the reason for a failed save. The Port field has its own error below it.
-  private saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K], error = this.error): void {
     if (!this.saved) return;
-    this.defaults[key] = value;
-    void this.enqueue(async () => {
-      const defaults = { ...this.defaults };
-      try {
-        await this.save(settings => {
-          const next = { ...settings, ...defaults };
-          if (next.defaultTool && !next.tools.some(tool => tool.id === next.defaultTool)) next.defaultTool = settings.defaultTool;
-          return next;
-        });
-        for (const key of Object.keys(defaults) as (keyof Defaults)[]) {
-          if (this.defaults[key] === defaults[key]) delete this.defaults[key];
-        }
-        this.error.hidden = this.portError.hidden = true;
-        this.render();
-      } catch (cause) {
-        error.textContent = errorMessage(cause);
-        error.hidden = false;
-      }
+    void this.saves.savePort(port).then(() => {
+      this.portError.hidden = true;
+      // Keep any text entered during the save.
+      if (this.port.value === text) this.renderedPort = text;
+      this.render();
+    }, (error: unknown) => {
+      this.portError.textContent = errorMessage(error);
+      this.portError.hidden = false;
     });
   }
 
-  // Serialize writes from the defaults and the Tools card.
-  private enqueue(write: () => Promise<void>): Promise<void> {
-    this.writes++;
-    this.showStatus();
-    const result = this.queue.then(write).finally(() => {
-      this.writes--;
-      this.showStatus();
+  private saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K]): void {
+    if (!this.saved) return;
+    void this.saves.saveDefault(key, value).then(() => {
+      this.error.hidden = true;
+      this.render();
+    }, (error: unknown) => {
+      this.error.textContent = errorMessage(error);
+      this.error.hidden = false;
     });
-    this.queue = result.catch(() => {});
-    return result;
-  }
-
-  // Reapply the requested change to the latest settings after a revision conflict.
-  private async save(change: SettingsChange): Promise<void> {
-    const server = this.server();
-    if (!server || !this.saved) throw new Error('Settings are unavailable.');
-    for (let attempt = 0; ; attempt++) {
-      const saved = this.saved;
-      const next = change(saved);
-      if (sameSettings(next, saved)) return;
-      try {
-        this.saved = await call(server, { operation: 'settings-save', settings: next });
-        this.render();
-        return;
-      } catch (error) {
-        if (!(error instanceof ConnectionError && error.fromServer) || attempt === 2) throw error;
-        const latest = await call(server, { operation: 'settings-get' }).catch(() => null);
-        if (!latest || latest.revision === saved.revision) throw error;
-        this.saved = latest;
-        this.render();
-      }
-    }
   }
 }

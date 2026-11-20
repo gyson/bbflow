@@ -83,8 +83,9 @@ To share a tool set with a team, write a setup script with `bbflow tool add` and
   Workspace files and agent credentials stay outside this database.
 - The recording includes all terminal input and output, including secrets that you
   type. bbflow does not redact or encrypt it.
-- The server listens only on `127.0.0.1` and uses no authentication token. It does not
-  protect the data from other processes that run as you.
+- The server listens only on loopback, `127.0.0.1` and `::1`, and uses no
+  authentication token. It does not protect the data from other processes that run as
+  you.
 - The server asks GitHub for the latest release when it starts and then once a day. The
   request sends no history or settings. Turn it off with **Check for a new version
   every day** in Settings.

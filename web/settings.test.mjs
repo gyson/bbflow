@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeToolEdit, parsePort, portStatus, portText, sameSettings, titleControls } from './dist/settings-model.js';
+import { readFileSync } from 'node:fs';
+import { mergeToolEdit, parsePort, portStatus, portText, sameSettings, SettingsSaves, titleControls } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -68,4 +69,77 @@ test('the port status tells when a saved port applies', () => {
   assert.match(portStatus(0, 50000), /^Automatic\. The server uses port 50000 now\./);
   assert.equal(portStatus(50000, 50000), 'The server uses port 50000.');
   assert.match(portStatus(50001, 50000), /uses port 50000 now\. It uses port 50001 after the next server start/);
+});
+
+test('the Port field gives all of its text to the parser', () => {
+  const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  const input = html.match(/<input id="settings-port"[^>]*>/)?.[0];
+  assert.ok(input, 'the Port field is missing');
+  // A maxlength of 5 cuts 123456 to 12345, another valid port, before the parser sees it.
+  assert.doesNotMatch(input, /maxlength/);
+  assert.equal(parsePort('123456'), null);
+});
+
+// A save service that rejects port 80 and records each save.
+function service() {
+  const sent = [];
+  return {
+    sent,
+    async save(next) {
+      sent.push(next);
+      if (next.port === 80) throw new Error('port must be from 1024 to 65535');
+      return { ...next, revision: next.revision + 1 };
+    },
+    async get() { throw new Error('no conflict in this test'); },
+    conflict: () => false,
+  };
+}
+
+test('a rejected port does not join a later save of another setting', async () => {
+  const server = service();
+  const saves = new SettingsSaves(server, () => {}, () => {});
+  saves.saved = { ...settings, appearance: 'system', titleTool: 'none', updateCheck: true, port: 0 };
+  await assert.rejects(saves.savePort(80), /port must be/);
+  await saves.saveDefault('appearance', 'dark');
+  assert.equal(server.sent.length, 2);
+  assert.equal(server.sent[1].appearance, 'dark');
+  assert.equal(server.sent[1].port, 0);
+  assert.equal(saves.saved.appearance, 'dark');
+  assert.equal(saves.saved.port, 0);
+  assert.deepEqual(saves.defaults, {});
+  assert.equal(saves.writes, 0);
+});
+
+test('a rejected default stays pending and saves with the next default', async () => {
+  const server = service();
+  server.save = async next => {
+    server.sent.push(next);
+    if (next.base === 'bad') throw new Error('invalid default Git base');
+    return { ...next, revision: next.revision + 1 };
+  };
+  const saves = new SettingsSaves(server, () => {}, () => {});
+  saves.saved = { ...settings, port: 0 };
+  await assert.rejects(saves.saveDefault('base', 'bad'), /invalid/);
+  assert.deepEqual(saves.defaults, { base: 'bad' });
+  await saves.saveDefault('base', 'main');
+  assert.equal(saves.saved.base, 'main');
+  assert.deepEqual(saves.defaults, {});
+});
+
+test('a save after a revision conflict applies the change to the latest settings', async () => {
+  const latest = { ...settings, revision: 9, worktree: true, port: 0 };
+  let first = true;
+  const saves = new SettingsSaves({
+    async save(next) {
+      if (first) { first = false; throw new Error('settings changed'); }
+      return { ...next, revision: next.revision + 1 };
+    },
+    async get() { return latest; },
+    conflict: () => true,
+  }, () => {}, () => {});
+  saves.saved = { ...settings, port: 0 };
+  await saves.savePort(50001);
+  assert.equal(saves.saved.revision, 10);
+  assert.equal(saves.saved.port, 50001);
+  assert.equal(saves.saved.worktree, true);
 });

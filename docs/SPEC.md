@@ -37,7 +37,7 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
   than the scrollback holds (gitpod-io/xterm-go issue 61). The reflow drops the oldest
   rows.
 - A detached Go server owns pseudo-terminals (PTYs) and SQLite. Clients use JSON text
-  messages over WebSocket at `/ws`, on an HTTP server bound to IPv4 loopback. The Go
+  messages over WebSocket at `/ws`, on an HTTP server bound to loopback. The Go
   transport uses `github.com/gorilla/websocket`. Byte blobs use base64 encoding. The CLI
   and browser clients share the same protocol. See [PROTOCOL.md](PROTOCOL.md).
 - Every new session starts an interactive shell with `-i`, using the server environment.
@@ -73,14 +73,24 @@ no session operations, terminal attachment, or `history` command group.
 compare its tables and columns with the migrated schema. They also run each example
 through a shell against a test server.
 
-The server listens only on `127.0.0.1`. It does not support remote access. At start,
-it tries the `port` from Settings, then the last port in the `server` table. Port `0` in
-Settings skips the first step. When other programs hold both ports, the server uses a
-free port from the operating system. It saves the port that it uses in the `server`
-table. Settings keeps its port, so the next start tries that port again.
+The server listens only on the loopback addresses `127.0.0.1` and `::1`. It does not
+support remote access. The UI URL uses `localhost`, and a browser can resolve
+`localhost` to either address. Thus the server holds its port at both addresses, and no
+other program can take the requests for `localhost` while bbflow runs. A system without
+IPv6 loopback uses `127.0.0.1` only. The CLI connects to `127.0.0.1`.
+
+At start, the server tries the `port` from Settings, then the last port in the `server`
+table. Port `0` in Settings skips the first step. A port is usable only when it is free
+at both addresses. When other programs hold both ports, the server uses a free port from
+the operating system. It saves the port that it uses in the `server` table. Settings
+keeps its port, so the next start tries that port again.
 
 A save of a new port in Settings fails when another program holds that port at that
-time. A saved port does not move the running server. A local program that takes the port while bbflow is stopped gets the requests of
+time. Settings also rejects the ports from 1024 that browsers refuse to open, such as
+6000 and 10080. These are the bad ports of the Fetch Standard. A saved port does not
+move the running server.
+
+A local program that takes the port while bbflow is stopped gets the requests of
 open tabs. The greeting check cannot authenticate that program. The directory in a
 greeting is only what the program claims. A program that gives another directory, or
 an incomplete greeting, fails the check, and the tab does not reload.
@@ -505,7 +515,9 @@ In **Server**, **Port** sets the port of the next server start. An empty field s
 the automatic port. The field saves when it loses focus or on Enter. The card shows the
 port that the server uses now and when a saved port applies. Text that is not a whole
 number, a port outside 1024 to 65535, and a new port that another program holds fail to
-save. The error shows below the field. Open tabs do not move to a new port.
+save. A port that browsers refuse to open also fails. The error shows below the
+field. A failed port save does not join a later save of another setting. Open tabs do
+not move to a new port.
 
 In **Tools**, enter a name and command in the blank row at the bottom. Click **Add tool**
 to save the new tool. Click **Edit** beside a saved tool to edit it in its row. Click

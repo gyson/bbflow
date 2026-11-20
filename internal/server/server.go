@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -330,7 +329,7 @@ func (s *Server) checkPort(port int) error {
 	if err != nil || port == saved.Port {
 		return err
 	}
-	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	listener, err := ListenLoopback(port)
 	if errors.Is(err, syscall.EADDRINUSE) {
 		return fmt.Errorf("another program uses port %d; choose another port", port)
 	}

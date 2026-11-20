@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -127,7 +126,8 @@ func serve(target client.Target) error {
 // this instance last used, so open browser tabs can reconnect after a restart or an
 // update. When other programs hold these ports, the server uses a free port. It saves the
 // port that it uses as the last port. Settings keeps its port, so the next start tries
-// that port again.
+// that port again. The server holds each port at 127.0.0.1 and ::1, because the UI URL
+// uses localhost.
 func listen(store *history.Store) (net.Listener, error) {
 	settings, err := store.Settings()
 	if err != nil {
@@ -141,7 +141,7 @@ func listen(store *history.Store) (net.Listener, error) {
 		if port == 0 {
 			return nil
 		}
-		listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		listener, err := server.ListenLoopback(port)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "bbflow cannot use %s (%v).\n", name, err)
 			return nil
@@ -153,7 +153,7 @@ func listen(store *history.Store) (net.Listener, error) {
 		listener = try(last, fmt.Sprintf("its earlier port %d", last))
 	}
 	if listener == nil {
-		if listener, err = net.Listen("tcp4", "127.0.0.1:0"); err != nil {
+		if listener, err = server.ListenLoopback(0); err != nil {
 			return nil, err
 		}
 		if settings.Port != 0 || last != 0 {

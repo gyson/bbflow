@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -245,9 +247,15 @@ func TestServerUsesThePortFromSettings(t *testing.T) {
 		}
 	}
 
-	// A save rejects a port that another program holds now.
+	// A save rejects a port that another program holds now. Browsers can resolve localhost
+	// to ::1, so a port that another program holds only there is held too.
 	held := free()
 	holder := hold(held)
+	if ipv6, err := net.Listen("tcp6", "[::1]:0"); err == nil {
+		holder.Close()
+		held = strconv.Itoa(ipv6.Addr().(*net.TCPAddr).Port)
+		holder = ipv6
+	}
 	if output, err := testCommand("--dir", directory, "settings", "set", "port", held).CombinedOutput(); err == nil || !strings.Contains(string(output), "another program uses port "+held) {
 		t.Fatalf("saved a held port: %s %v", output, err)
 	}
@@ -263,6 +271,24 @@ func TestServerUsesThePortFromSettings(t *testing.T) {
 	cli("server", "restart")
 	if got := port(); got != chosen {
 		t.Fatalf("restart used port %s, expected the port %s from Settings", got, chosen)
+	}
+	// The server holds the IPv6 side of its port too. A browser that resolves localhost
+	// to ::1 reaches the server.
+	if other, err := net.Listen("tcp6", "[::1]:"+chosen); err == nil {
+		other.Close()
+		t.Fatal("another program can take the IPv6 side of the server port")
+	} else if !errors.Is(err, syscall.EADDRNOTAVAIL) {
+		ipv6 := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "tcp6", "[::1]:"+chosen)
+		}}}
+		response, err := ipv6.Get("http://localhost:" + chosen + "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatal("the home page through ::1 returned", response.Status)
+		}
 	}
 
 	// The server keeps the earlier port when another program holds the new port.

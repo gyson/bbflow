@@ -2,9 +2,10 @@
 
 The CLI selects an instance directory with global `--dir`, `BBFLOW_DIR`, or its build
 default. It reads the assigned port from `<instance>/server.json` and connects to
-`ws://127.0.0.1:PORT/ws`. The server uses the IPv4 loopback port from Settings, or else
-the port that it saved at its last start. When neither port is free, the operating system
-assigns a new one. HTTP also serves the embedded web UI and its connection information.
+`ws://127.0.0.1:PORT/ws`. The server uses the loopback port from Settings, or else the
+port that it saved at its last start. When neither port is free, the operating system
+assigns a new one. The server holds the port at `127.0.0.1` and `::1`, because browsers
+open the UI at `localhost`. HTTP also serves the embedded web UI and its connection information.
 
 The transport uses [Gorilla WebSocket](https://github.com/gorilla/websocket). Each
 WebSocket text message contains one JSON object. There is no bbflow length prefix or
@@ -499,8 +500,9 @@ Settings contain revision, defaultTool (empty means Shell), worktree, base (defa
 HEAD), and an ordered tools array. Each tool has a stable client-generated id, name, and
 command. updateCheck turns the daily [release check](SPEC.md#release-check) on or off.
 port is the loopback port of the next server start, from 1024 to 65535. Port 0 selects
-the automatic port. A save of a new port fails when another program holds it. A saved
-port does not move the running server.
+the automatic port. A save of a new port fails when another program holds it at
+`127.0.0.1` or `::1`. A save also fails for a bad port of the Fetch Standard, such as
+6000. A saved port does not move the running server.
 Saving requires the current revision. Removing a default tool requires selecting
 another default in the same save. These operations do not install or authenticate
 tools.

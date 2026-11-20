@@ -15,6 +15,82 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
   return updated;
 }
 
+export type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool' | 'updateCheck'>;
+export type SettingsChange = (settings: Settings) => Settings;
+
+// The server calls of the Settings saves. conflict tells a rejected save that another
+// save can cause, such as a revision change.
+export interface SettingsService {
+  save(settings: Settings): Promise<Settings>;
+  get(): Promise<Settings>;
+  conflict(error: unknown): boolean;
+}
+
+// SettingsSaves runs the saves of one Settings view one at a time. Each save applies its
+// change to the latest saved settings. After a conflict, it applies the change again to
+// the latest settings. Pending defaults save together. The port saves alone, so a
+// rejected port never joins a save of another setting.
+export class SettingsSaves {
+  saved: Settings | null = null;
+  // A default stays pending until a save with its value succeeds.
+  readonly defaults: Partial<Defaults> = {};
+  writes = 0;
+  private queue = Promise.resolve();
+
+  // changed runs after a change of saved. status runs when writes changes.
+  constructor(private readonly service: SettingsService, private readonly changed: () => void, private readonly status: () => void) {}
+
+  enqueue(write: () => Promise<void>): Promise<void> {
+    this.writes++;
+    this.status();
+    const result = this.queue.then(write).finally(() => {
+      this.writes--;
+      this.status();
+    });
+    this.queue = result.catch(() => {});
+    return result;
+  }
+
+  async save(change: SettingsChange): Promise<void> {
+    if (!this.saved) throw new Error('Settings are unavailable.');
+    for (let attempt = 0; ; attempt++) {
+      const saved = this.saved;
+      const next = change(saved);
+      if (sameSettings(next, saved)) return;
+      try {
+        this.saved = await this.service.save(next);
+        this.changed();
+        return;
+      } catch (error) {
+        if (!this.service.conflict(error) || attempt === 2) throw error;
+        const latest = await this.service.get().catch(() => null);
+        if (!latest || latest.revision === saved.revision) throw error;
+        this.saved = latest;
+        this.changed();
+      }
+    }
+  }
+
+  saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K]): Promise<void> {
+    this.defaults[key] = value;
+    return this.enqueue(async () => {
+      const defaults = { ...this.defaults };
+      await this.save(settings => {
+        const next = { ...settings, ...defaults };
+        if (next.defaultTool && !next.tools.some(tool => tool.id === next.defaultTool)) next.defaultTool = settings.defaultTool;
+        return next;
+      });
+      for (const key of Object.keys(defaults) as (keyof Defaults)[]) {
+        if (this.defaults[key] === defaults[key]) delete this.defaults[key];
+      }
+    });
+  }
+
+  savePort(port: number): Promise<void> {
+    return this.enqueue(() => this.save(settings => ({ ...settings, port })));
+  }
+}
+
 // The revision tracks saves. The other fields determine if a save is necessary.
 export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&

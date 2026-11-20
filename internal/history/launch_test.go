@@ -28,13 +28,14 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 		t.Fatal("accepted invalid appearance")
 	}
 	settings.Appearance = "dark"
-	for _, port := range []int{-1, 1, MinPort - 1, 65536} {
+	for _, port := range []int{-1, 1, MinPort - 1, 65536, 6000, 10080} {
 		settings.Port = port
 		if _, err := store.SaveSettings(settings); err == nil {
 			t.Fatal("accepted invalid port", port)
 		}
 	}
-	settings.Port = 50001
+	// Browsers open the neighbors of a blocked port.
+	settings.Port = 6001
 	saved, err := store.SaveSettings(settings)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +60,7 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 	}
 	defer store.Close()
 	got, err := store.Settings()
-	if err != nil || got.Revision != saved.Revision || got.Tools[0].Command != "codex --model=gpt-6-astra" || got.Worktree || got.Appearance != "dark" || got.UpdateCheck || got.Port != 50001 {
+	if err != nil || got.Revision != saved.Revision || got.Tools[0].Command != "codex --model=gpt-6-astra" || got.Worktree || got.Appearance != "dark" || got.UpdateCheck || got.Port != 6001 {
 		t.Fatal(got, err)
 	}
 	restored, err := store.Session(session.ID)

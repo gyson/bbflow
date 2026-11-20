@@ -45,10 +45,10 @@ does not change its default. All commands select one instance in this order:
 2. `BBFLOW_DIR`, if set to a nonempty value.
 3. The build's default directory.
 
-Each server listens on a port on `127.0.0.1`. To keep one address for bookmarks, set
-`port` with [settings set](#manage-settings) or in Settings. The default, `0`, selects
-the automatic port. The first server of a directory then gets a free port from the
-operating system. The server saves the port that it uses in `history.sqlite`.
+Each server listens on a port at `127.0.0.1` and `::1`. To keep one address for
+bookmarks, set `port` with [settings set](#manage-settings) or in Settings. The default,
+`0`, selects the automatic port. The first server of a directory then gets a free port
+from the operating system. The server saves the port that it uses in `history.sqlite`.
 
 At each start, restart, and update, the server tries the port from Settings first. Then
 it tries the saved port, so open browser tabs keep their address. When other programs
@@ -538,7 +538,7 @@ bbflow settings set port 50000
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
 | `title-tool` | `none`, `claude`, `codex`, or `code-puppy`. It selects the agent CLI that makes automatic session titles. `none` turns them off. A new installation and an upgrade start with `none`. See [session titles](SPEC.md#session-titles) for the commands. |
 | `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
-| `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port. See [Instance directory](#instance-directory). |
+| `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port, or when browsers refuse the port, such as 6000 and 10080. See [Instance directory](#instance-directory). |
 
 **Impact:** the same as `tool add`. A rejected value changes nothing. A `port` change does
 not move the running server. The command tells you that the port applies at the next
