@@ -154,14 +154,14 @@ One row for each session that has launch choices.
 
 ### `settings`
 
-One row with the appearance, tool list, launch defaults, and update check of the
+One row with the appearance, tool list, launch defaults, update check, and port of the
 instance.
 
 | Column | Meaning |
 | --- | --- |
 | `id` | Always `1`. |
 | `revision` | Revision of the settings. |
-| `data` | JSON with the appearance, launch defaults, tools, title tool, and `updateCheck`. Each tool has an ID, name, and startup command. |
+| `data` | JSON with the appearance, launch defaults, tools, title tool, `updateCheck`, and `port`. Each tool has an ID, name, and startup command. `port` is the port of the next server start, or `0` for the automatic port. |
 
 ### `server`
 

@@ -181,6 +181,15 @@
           <label class="checkbox"><input id="settings-update-check" type="checkbox">Check for a new version every day</label>
           <p class="form-help">The server asks GitHub for the latest release when it starts, then once a day. The request sends no history or settings. A new version shows above Settings in the sidebar. bbflow updates only after you confirm. Development builds never check.</p>
         </section>
+        <form id="settings-port-form">
+          <section class="settings-card">
+            <h3>Server</h3>
+            <label>Port<input id="settings-port" inputmode="numeric" placeholder="Automatic" spellcheck="false" autocomplete="off"></label>
+            <p id="settings-port-error" class="form-error" role="alert" hidden></p>
+            <p id="settings-port-status" class="form-help" role="status"></p>
+            <p class="form-help">Enter a port from 1024 to 65535 to keep the same address for bookmarks. Leave the field empty for an automatic port. A new port applies after a server restart, and a restart stops all sessions. Open tabs do not move to the new port. The server listens only on this computer.</p>
+          </section>
+        </form>
       </div>
     </section>
   </main>

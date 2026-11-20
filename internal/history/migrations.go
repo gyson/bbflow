@@ -11,7 +11,7 @@ import (
 const (
 	// Format 3 shipped in v0.0.1 and is the oldest schema in repository history.
 	oldestSchemaVersion = 3
-	schemaVersion       = 13
+	schemaVersion       = 14
 )
 
 // Keep released scripts unchanged. For each schema or durable data format change, add

@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -123,28 +122,49 @@ func serve(target client.Target) error {
 	return err
 }
 
-// listen uses the port that the server of this instance last used, so open browser tabs
-// can reconnect after a restart or an update. When another program holds that port, the
-// server uses a new port and saves it.
+// listen tries the port from Settings first. Then it tries the port that the server of
+// this instance last used, so open browser tabs can reconnect after a restart or an
+// update. When other programs hold these ports, the server uses a free port. It saves the
+// port that it uses as the last port. Settings keeps its port, so the next start tries
+// that port again. The server holds each port at 127.0.0.1 and ::1, because the UI URL
+// uses localhost.
 func listen(store *history.Store) (net.Listener, error) {
-	port, err := store.Port()
+	settings, err := store.Settings()
 	if err != nil {
 		return nil, err
 	}
-	if port != 0 {
-		listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-		if err == nil {
-			return listener, nil
+	last, err := store.Port()
+	if err != nil {
+		return nil, err
+	}
+	try := func(port int, name string) net.Listener {
+		if port == 0 {
+			return nil
 		}
-		fmt.Fprintf(os.Stderr, "bbflow cannot use its earlier port %d (%v). It uses a new port. Open tabs must open the new address.\n", port, err)
+		listener, err := server.ListenLoopback(port)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bbflow cannot use %s (%v).\n", name, err)
+			return nil
+		}
+		return listener
 	}
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		return nil, err
+	listener := try(settings.Port, fmt.Sprintf("port %d from Settings", settings.Port))
+	if listener == nil && last != settings.Port {
+		listener = try(last, fmt.Sprintf("its earlier port %d", last))
 	}
-	if err = store.SavePort(listener.Addr().(*net.TCPAddr).Port); err != nil {
-		listener.Close()
-		return nil, err
+	if listener == nil {
+		if listener, err = server.ListenLoopback(0); err != nil {
+			return nil, err
+		}
+		if settings.Port != 0 || last != 0 {
+			fmt.Fprintf(os.Stderr, "bbflow uses the new port %d. Open tabs must open the new address.\n", listener.Addr().(*net.TCPAddr).Port)
+		}
+	}
+	if port := listener.Addr().(*net.TCPAddr).Port; port != last {
+		if err = store.SavePort(port); err != nil {
+			listener.Close()
+			return nil, err
+		}
 	}
 	return listener, nil
 }
@@ -168,7 +188,7 @@ func startServer(target client.Target) error {
 		if err != nil {
 			return fmt.Errorf("a server owns %s but cannot be verified: %w", target.Dir, err)
 		}
-		fmt.Printf("bbflow is already running at http://127.0.0.1:%d/ (PID %d).\n", info.Port, info.PID)
+		fmt.Printf("bbflow is already running at %s (PID %d).\n", homeURL(info.Port), info.PID)
 		return nil
 	}
 	if err != nil {
@@ -206,7 +226,7 @@ func startServer(target client.Target) error {
 		default:
 		}
 		if info, err := target.Health(); err == nil && info.PID == cmd.Process.Pid && info.DataDir == target.Dir {
-			fmt.Printf("bbflow is running at http://127.0.0.1:%d/ (PID %d).\nHistory: %s\nLogs: %s\n", info.Port, info.PID, target.Dir, logPath)
+			fmt.Printf("bbflow is running at %s (PID %d).\nHistory: %s\nLogs: %s\n", homeURL(info.Port), info.PID, target.Dir, logPath)
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)

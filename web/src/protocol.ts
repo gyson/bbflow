@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/31';
+export const VERSION = 'bbflow/32';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -28,7 +28,8 @@ export interface Update { revision: number; version: string; available: string; 
 export interface Project { id: string; name: string; workspace: string; created: string }
 
 export interface Tool { id: string; name: string; command: string }
-export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[]; titleTool: string; updateCheck: boolean }
+// port 0 selects the automatic port. A saved port applies at the next server start.
+export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[]; titleTool: string; updateCheck: boolean; port: number }
 // The server owns the command of each title tool. Settings.titleTool is none or a tool ID.
 export interface TitleTool { id: string; name: string; command: string }
 export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }

@@ -37,7 +37,7 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
   than the scrollback holds (gitpod-io/xterm-go issue 61). The reflow drops the oldest
   rows.
 - A detached Go server owns pseudo-terminals (PTYs) and SQLite. Clients use JSON text
-  messages over WebSocket at `/ws`, on an HTTP server bound to IPv4 loopback. The Go
+  messages over WebSocket at `/ws`, on an HTTP server bound to loopback. The Go
   transport uses `github.com/gorilla/websocket`. Byte blobs use base64 encoding. The CLI
   and browser clients share the same protocol. See [PROTOCOL.md](PROTOCOL.md).
 - Every new session starts an interactive shell with `-i`, using the server environment.
@@ -73,10 +73,24 @@ no session operations, terminal attachment, or `history` command group.
 compare its tables and columns with the migrated schema. They also run each example
 through a shell against a test server.
 
-The server listens only on `127.0.0.1`. It does not support remote access. It saves
-its port in the `server` table and uses that port again at the next start. When another
-program holds the port, the server uses a free port from the operating system and saves
-it. A local program that takes the port while bbflow is stopped gets the requests of
+The server listens only on the loopback addresses `127.0.0.1` and `::1`. It does not
+support remote access. The UI URL uses `localhost`, and a browser can resolve
+`localhost` to either address. Thus the server holds its port at both addresses, and no
+other program can take the requests for `localhost` while bbflow runs. A system without
+IPv6 loopback uses `127.0.0.1` only. The CLI connects to `127.0.0.1`.
+
+At start, the server tries the `port` from Settings, then the last port in the `server`
+table. Port `0` in Settings skips the first step. A port is usable only when it is free
+at both addresses. When other programs hold both ports, the server uses a free port from
+the operating system. It saves the port that it uses in the `server` table. Settings
+keeps its port, so the next start tries that port again.
+
+A save of a new port in Settings fails when another program holds that port at that
+time. Settings also rejects the ports from 1024 that browsers refuse to open, such as
+6000 and 10080. These are the bad ports of the Fetch Standard. A saved port does not
+move the running server.
+
+A local program that takes the port while bbflow is stopped gets the requests of
 open tabs. The greeting check cannot authenticate that program. The directory in a
 greeting is only what the program claims. A program that gives another directory, or
 an incomplete greeting, fails the check, and the tab does not reload.
@@ -313,7 +327,7 @@ If the lock is held, lifecycle commands require a verified server connection. Mi
 malformed, or mismatched connection information causes an error instead of starting a
 duplicate or stopping an unrelated server. A failed stop does not start a replacement.
 
-The server binds `127.0.0.1:0` and atomically publishes its connection information in
+The server binds its loopback port and atomically publishes its connection information in
 `server.json`, with private permissions. The file is disposable. The server removes it
 as the last shutdown step, after handlers, agents, SQLite, and the menu companion stop,
 immediately before it releases the archive lock. Until then, a lifecycle command finds a
@@ -384,8 +398,9 @@ The sidebar and browser favicon use the same pixel logo as the macOS menu bar, i
 rainbow bands from violet to red. The visible product name is bbflow. The logo selects
 brighter band colors when the browser uses dark appearance.
 
-Server start and repeated start print a clickable HTTP URL without opening a browser.
-`bbflow ui` opens the home page of the verified server. See
+Server start and repeated start print a clickable `http://localhost:PORT/` URL without
+opening a browser. `bbflow ui` and the **Open UI** menu item open the home page of the
+verified server at the same URL. See
 [COMMANDS.md](COMMANDS.md#open-the-web-ui).
 
 The UI checks every WebSocket greeting against `/client-config`. A changed server
@@ -495,6 +510,15 @@ If the server cannot read the settings, the page uses System.
 
 Appearance and session defaults save to SQLite automatically. The default starting
 branch or commit saves when the field loses focus.
+
+In **Server**, **Port** sets the port of the next server start. An empty field selects
+the automatic port. The field saves when it loses focus or on Enter. The card shows the
+port that the server uses now and when a saved port applies. Text that is not a whole
+number, a port outside 1024 to 65535, and a new port that another program holds fail to
+save. A port that browsers refuse to open also fails. The error shows below the
+field. A failed port save does not join a later save of another setting. An edit made
+during a port save stays in the field after the reply, with its own error. Open tabs do
+not move to a new port.
 
 In **Tools**, enter a name and command in the blank row at the bottom. Click **Add tool**
 to save the new tool. Click **Edit** beside a saved tool to edit it in its row. Click
@@ -1689,7 +1713,7 @@ as one transaction after column, index, and foreign-key checks. Any failure roll
 the entire upgrade and stops startup. A failed SQL step reports its migration number.
 WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4 through 13. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 14. In the same
   transaction, a new database sets `worktree` to true in the settings JSON. Thus new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -1719,7 +1743,10 @@ WAL is enabled after the schema transaction commits.
   the other values stay.
 - Format 12 gains the nullable `sessions.parent_id` column and its index through
   migration 13. Existing sessions stay top-level sessions.
-- Format 13 opens without running scripts or rewriting history, settings, or metadata.
+- Format 13 gains `port: 0` in the settings JSON through migration 14. Port `0` selects
+  the automatic port, so the server keeps its last port. The settings revision and the
+  other values stay.
+- Format 14 opens without running scripts or rewriting history, settings, or metadata.
 
 The upgrade preserves IDs, timestamps, event sequences, original blobs, text, drafts,
 and attachments. It also preserves the highest allocated event sequence. Migration
@@ -2041,7 +2068,7 @@ launch in a worktree, and separate drafts for subsequent sessions.
 
 No real agent CLI was used for these project checks.
 
-Frozen schemas from repository history test upgrades from formats 3–12 to format 13 and
+Frozen schemas from repository history test upgrades from formats 3–13 to format 14 and
 verify that reopen preserves the upgraded data. Fixtures compare original blobs, archive
 flags, metadata, and event allocation state. They test rollback of the entire upgrade
 after SQL, schema, or foreign-key failures. They also cover repeated opens, concurrent

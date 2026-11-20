@@ -30,7 +30,17 @@ type Settings struct {
 	TitleTool string `json:"titleTool"`
 	// UpdateCheck lets the server read the latest release from GitHub once a day.
 	UpdateCheck bool `json:"updateCheck"`
+	// Port is the loopback port that the server uses at its next start. 0 selects the
+	// automatic port. A change applies only after a server restart.
+	Port int `json:"port"`
 }
+
+// The lowest port that Settings accepts. Lower ports are for system services.
+const MinPort = 1024
+
+// blockedPorts lists the ports from MinPort that web browsers refuse to open. They are
+// the "bad ports" of the port blocking section of the Fetch Standard.
+var blockedPorts = []int{1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080}
 
 // TitleTools lists the values of Settings.TitleTool. The server owns the command of each
 // agent CLI.
@@ -119,6 +129,12 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	}
 	if !seen[settings.DefaultTool] {
 		return settings, errors.New("default tool does not exist")
+	}
+	if settings.Port != 0 && (settings.Port < MinPort || settings.Port > 65535) {
+		return settings, fmt.Errorf("port must be from %d to 65535, or 0 for an automatic port", MinPort)
+	}
+	if slices.Contains(blockedPorts, settings.Port) {
+		return settings, fmt.Errorf("web browsers do not open port %d; choose another port", settings.Port)
 	}
 	if len(settings.Base) > 250 || strings.ContainsAny(settings.Base, "\x00\r\n") {
 		return settings, errors.New("invalid default Git base")

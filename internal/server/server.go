@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"bbflow/internal/history"
@@ -170,7 +171,11 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 			s.reply(conn, nil, errors.New("missing settings"))
 			return
 		}
-		result, err := s.store.SaveSettings(*request.Settings)
+		err := s.checkPort(request.Settings.Port)
+		var result history.Settings
+		if err == nil {
+			result, err = s.store.SaveSettings(*request.Settings)
+		}
 		if err == nil {
 			s.updates.saved(result)
 		}
@@ -310,6 +315,28 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	default:
 		s.reply(conn, nil, errors.New("unknown request"))
 	}
+}
+
+// checkPort rejects a new port for Settings when another program holds it now. A port
+// that is free now can still be held at the next start. The check skips the saved port,
+// so other settings can save while another program holds that port. SaveSettings checks
+// the range.
+func (s *Server) checkPort(port int) error {
+	if port < history.MinPort || port > 65535 || port == s.info.Port {
+		return nil
+	}
+	saved, err := s.store.Settings()
+	if err != nil || port == saved.Port {
+		return err
+	}
+	listener, err := ListenLoopback(port)
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return fmt.Errorf("another program uses port %d; choose another port", port)
+	}
+	if err != nil {
+		return fmt.Errorf("cannot use port %d: %w", port, err)
+	}
+	return listener.Close()
 }
 
 func (s *Server) reply(conn *protocol.Conn, result any, err error) {

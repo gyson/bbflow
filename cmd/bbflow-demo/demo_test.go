@@ -138,7 +138,7 @@ func TestDemo(t *testing.T) {
 	added := 0
 	for i, output := range outputs {
 		switch {
-		case errs[i] == nil && regexp.MustCompile(`Added the demo data to .*\nURL: http://127\.0\.0\.1:\d+/\n`).MatchString(output):
+		case errs[i] == nil && regexp.MustCompile(`Added the demo data to .*\nURL: http://localhost:\d+/\n`).MatchString(output):
 			added++
 		case errs[i] == nil && strings.Contains(output, "already has the demo data"):
 		case errs[i] != nil && strings.Contains(output, "another seed or clean of"):

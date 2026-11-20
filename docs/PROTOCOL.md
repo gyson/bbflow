@@ -2,8 +2,10 @@
 
 The CLI selects an instance directory with global `--dir`, `BBFLOW_DIR`, or its build
 default. It reads the assigned port from `<instance>/server.json` and connects to
-`ws://127.0.0.1:PORT/ws`. The server uses the IPv4 loopback port that it saved at its
-last start. When that port is not free, the operating system assigns a new one. HTTP also serves the embedded web UI and its connection information.
+`ws://127.0.0.1:PORT/ws`. The server uses the loopback port from Settings, or else the
+port that it saved at its last start. When neither port is free, the operating system
+assigns a new one. The server holds the port at `127.0.0.1` and `::1`, because browsers
+open the UI at `localhost`. HTTP also serves the embedded web UI and its connection information.
 
 The transport uses [Gorilla WebSocket](https://github.com/gorilla/websocket). Each
 WebSocket text message contains one JSON object. There is no bbflow length prefix or
@@ -14,7 +16,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/31`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/32`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +33,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/31",
+    "protocol": "bbflow/32",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -66,7 +68,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/31",
+    "protocol": "bbflow/32",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -199,6 +201,9 @@ Protocol 31 adds session families. `project-draft` accepts `parent`. Session sum
 add `parentId`, `context`, and `runStatus`. `session-list` limits and offsets count
 families. `session-archive` archives and restores families. SQLite format 13 adds
 the `sessions.parent_id` column.
+
+Protocol 32 adds `port` to settings. `settings-save` rejects a new port that another
+program holds. SQLite format 14 adds `port: 0`.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -494,6 +499,10 @@ Request such a folder alone before you replace its shown entries.
 Settings contain revision, defaultTool (empty means Shell), worktree, base (default
 HEAD), and an ordered tools array. Each tool has a stable client-generated id, name, and
 command. updateCheck turns the daily [release check](SPEC.md#release-check) on or off.
+port is the loopback port of the next server start, from 1024 to 65535. Port 0 selects
+the automatic port. A save of a new port fails when another program holds it at
+`127.0.0.1` or `::1`. A save also fails for a bad port of the Fetch Standard, such as
+6000. A saved port does not move the running server.
 Saving requires the current revision. Removing a default tool requires selecting
 another default in the same save. These operations do not install or authenticate
 tools.
@@ -825,13 +834,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/31") {
+    if (message.server.protocol !== "bbflow/32") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/31", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/32", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);

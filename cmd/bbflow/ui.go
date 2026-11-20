@@ -11,6 +11,13 @@ import (
 	"bbflow/internal/client"
 )
 
+// homeURL is the address of the home page. Browsers resolve localhost to the loopback
+// interface. The server accepts this host name and 127.0.0.1.
+func homeURL(port int) string {
+	return fmt.Sprintf("http://localhost:%d/", port)
+}
+
+// ui also runs the Open UI item of the menu companion.
 func ui(target client.Target, args []string) error {
 	flags := flag.NewFlagSet("ui", flag.ContinueOnError)
 	flags.Usage = func() {
@@ -26,7 +33,7 @@ func ui(target client.Target, args []string) error {
 	if err != nil {
 		return fmt.Errorf("cannot open the UI: %w\nStart the server with bbflow --dir %q server start", err, target.Dir)
 	}
-	url := fmt.Sprintf("http://127.0.0.1:%d/", info.Port)
+	url := homeURL(info.Port)
 	var opener string
 	switch runtime.GOOS {
 	case "darwin":
