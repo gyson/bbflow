@@ -273,11 +273,16 @@ func TestServerUsesThePortFromSettings(t *testing.T) {
 		t.Fatalf("restart used port %s, expected the port %s from Settings", got, chosen)
 	}
 	// The server holds the IPv6 side of its port too. A browser that resolves localhost
-	// to ::1 reaches the server.
-	if other, err := net.Listen("tcp6", "[::1]:"+chosen); err == nil {
+	// to ::1 reaches the server. A system without IPv6 loopback has no IPv6 side.
+	other, err := net.Listen("tcp6", "[::1]:"+chosen)
+	switch {
+	case err == nil:
 		other.Close()
 		t.Fatal("another program can take the IPv6 side of the server port")
-	} else if !errors.Is(err, syscall.EADDRNOTAVAIL) {
+	case errors.Is(err, syscall.EADDRNOTAVAIL), errors.Is(err, syscall.EAFNOSUPPORT):
+	case !errors.Is(err, syscall.EADDRINUSE):
+		t.Fatal("unexpected IPv6 listen error:", err)
+	default:
 		ipv6 := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "tcp6", "[::1]:"+chosen)
 		}}}

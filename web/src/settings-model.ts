@@ -111,6 +111,39 @@ export function portText(port: number): string {
   return port ? String(port) : '';
 }
 
+// PortField keeps the state of the Port field. A render shows the saved port only when
+// the field has no edit. During a port save, each input is an edit, also when its text
+// is the same as the earlier port. A save clears the edit only when no input came after
+// the save started.
+export class PortField {
+  text = '';
+  edited = false;
+  private inputs = 0;
+  private saving = 0;
+
+  input(text: string, saved: number): void {
+    this.inputs++;
+    this.text = text;
+    this.edited = this.saving > 0 || text !== portText(saved);
+  }
+
+  render(saved: number): string {
+    if (!this.edited) this.text = portText(saved);
+    return this.text;
+  }
+
+  // begin returns the token for done.
+  begin(): number {
+    this.saving++;
+    return this.inputs;
+  }
+
+  done(token: number, saved: boolean): void {
+    this.saving--;
+    if (saved && token === this.inputs) this.edited = false;
+  }
+}
+
 // portStatus tells which port the server uses now and when the saved port applies.
 export function portStatus(saved: number, current: number): string {
   if (!saved) return `Automatic. The server uses port ${current} now. Later starts use it again when it is free.`;

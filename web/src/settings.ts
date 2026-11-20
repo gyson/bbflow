@@ -1,7 +1,7 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { mergeToolEdit, parsePort, portStatus, portText, sameTools, SettingsSaves, titleControls } from './settings-model.js';
+import { mergeToolEdit, parsePort, PortField, portStatus, sameTools, SettingsSaves, titleControls } from './settings-model.js';
 import type { Defaults, SettingsChange } from './settings-model.js';
 
 // Test sends this message to the title tool in place of a real first message.
@@ -48,7 +48,7 @@ export class SettingsView {
 
   private readonly saves: SettingsSaves;
   private renderedBase = '';
-  private renderedPort = '';
+  private readonly portField = new PortField();
   // The title tools and their commands come from the server.
   private titleTools: TitleTool[] = [];
   // The number of the latest title test. A result shows only for the latest test.
@@ -83,7 +83,10 @@ export class SettingsView {
     this.base.oninput = () => this.showStatus();
     this.form.onsubmit = event => { event.preventDefault(); this.saveBase(); };
     this.port.onchange = () => this.savePort();
-    this.port.oninput = () => this.showStatus();
+    this.port.oninput = () => {
+      this.portField.input(this.port.value, this.saved?.port ?? 0);
+      this.showStatus();
+    };
     this.portForm.onsubmit = event => { event.preventDefault(); this.savePort(); };
     this.addTool.cancel.onclick = () => this.resetAddTool();
     this.editTool.cancel.onclick = () => this.closeEditor();
@@ -128,7 +131,7 @@ export class SettingsView {
 
   private pending(): boolean {
     return this.saves.writes > 0 || Object.keys(this.saves.defaults).length > 0 || this.base.value !== this.renderedBase ||
-      this.port.value !== this.renderedPort ||
+      this.portField.edited ||
       !!(this.addTool.name.value || this.addTool.command.value) ||
       !!this.editing && (this.editTool.name.value !== this.editing.name || this.editTool.command.value !== this.editing.command);
   }
@@ -155,10 +158,8 @@ export class SettingsView {
       this.renderedBase = defaults.base ?? saved.base;
       this.base.value = this.renderedBase;
     }
-    if (this.port.value === this.renderedPort) {
-      this.renderedPort = portText(saved.port);
-      this.port.value = this.renderedPort;
-    }
+    const port = this.portField.render(saved.port);
+    if (this.port.value !== port) this.port.value = port;
     const server = this.server();
     this.portStatus.textContent = server ? portStatus(saved.port, server.port) : '';
     this.titleTool.value = defaults.titleTool ?? saved.titleTool ?? 'none';
@@ -388,20 +389,20 @@ export class SettingsView {
   // An empty Port field selects the automatic port. Other text must be a whole number.
   // The port saves alone. Its error shows below the field.
   private savePort(): void {
-    const text = this.port.value;
-    const port = parsePort(text);
+    const port = parsePort(this.port.value);
     if (port === null) {
       this.portError.textContent = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
       this.portError.hidden = false;
       return;
     }
     if (!this.saved) return;
+    const token = this.portField.begin();
     void this.saves.savePort(port).then(() => {
+      this.portField.done(token, true);
       this.portError.hidden = true;
-      // Keep any text entered during the save.
-      if (this.port.value === text) this.renderedPort = text;
       this.render();
     }, (error: unknown) => {
+      this.portField.done(token, false);
       this.portError.textContent = errorMessage(error);
       this.portError.hidden = false;
     });

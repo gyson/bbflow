@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mergeToolEdit, parsePort, portStatus, portText, sameSettings, SettingsSaves, titleControls } from './dist/settings-model.js';
+import { mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, titleControls } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -142,4 +142,56 @@ test('a save after a revision conflict applies the change to the latest settings
   assert.equal(saves.saved.revision, 10);
   assert.equal(saves.saved.port, 50001);
   assert.equal(saves.saved.worktree, true);
+});
+
+test('an edit during a port save stays when the save reply comes later', async () => {
+  // request() gives the next save request. Its release() sends the reply.
+  let asked;
+  const request = () => new Promise(resolve => { asked = resolve; });
+  const saves = new SettingsSaves({
+    save: next => new Promise(resolve => asked(() => resolve({ ...next, revision: next.revision + 1 }))),
+    async get() { throw new Error('no conflict in this test'); },
+    conflict: () => false,
+  }, () => field.render(saves.saved.port), () => {});
+  const field = new PortField();
+  saves.saved = { ...settings, port: 0 };
+  assert.equal(field.render(0), '');
+  field.input('50001', 0);
+  let token = field.begin();
+  let reply = request();
+  const saved = saves.savePort(50001);
+  // The user clears the field before the reply. The text is the same as the earlier port.
+  field.input('', 0);
+  (await reply)();
+  await saved;
+  field.done(token, true);
+  assert.equal(saves.saved.port, 50001);
+  assert.equal(field.render(saves.saved.port), '');
+  assert.ok(field.edited, 'the newer edit was discarded');
+  // A save of the newer edit with no later input clears the edit.
+  token = field.begin();
+  reply = request();
+  const automatic = saves.savePort(0);
+  (await reply)();
+  await automatic;
+  field.done(token, true);
+  assert.ok(!field.edited);
+  assert.equal(field.render(saves.saved.port), '');
+  assert.equal(saves.saved.port, 0);
+});
+
+test('a Port field with the saved text has no edit, and a failed save keeps the edit', () => {
+  const field = new PortField();
+  field.input('5', 50001);
+  assert.ok(field.edited);
+  field.input('50001', 50001);
+  assert.ok(!field.edited);
+  field.input('6000', 50001);
+  const token = field.begin();
+  field.done(token, false);
+  assert.ok(field.edited);
+  assert.equal(field.render(50001), '6000');
+  const again = field.begin();
+  field.done(again, true);
+  assert.equal(field.render(50001), '50001');
 });

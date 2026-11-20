@@ -33,9 +33,11 @@ func TestListenLoopbackHoldsBothAddresses(t *testing.T) {
 	}
 	for _, network := range []string{"tcp4", "tcp6"} {
 		host := map[string]string{"tcp4": "127.0.0.1", "tcp6": "::1"}[network]
-		if other, err := net.Listen(network, net.JoinHostPort(host, port)); err == nil {
-			other.Close()
-			t.Fatalf("another program can take %s at port %s", host, port)
+		if other, err := net.Listen(network, net.JoinHostPort(host, port)); !errors.Is(err, syscall.EADDRINUSE) {
+			if other != nil {
+				other.Close()
+			}
+			t.Fatalf("another program can take %s at port %s: %v", host, port, err)
 		}
 		conn, err := net.Dial(network, net.JoinHostPort(host, port))
 		if err != nil {
