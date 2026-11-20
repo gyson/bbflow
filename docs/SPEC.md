@@ -422,20 +422,35 @@ treats wildcard characters literally. This UI does not search message or termina
 contents. Each refresh reads the most recent sessions again, so activity changes can
 move a session into or out of the shown part of a group.
 
-The list refreshes every five seconds while visible. Project names are plain text. The
-small arrow expands or collapses a group. Each project's **＋** creates and selects a new
-draft entry. A click on an existing entry reopens it by session ID. The URL keeps that
+The list refreshes every five seconds while visible. It also refreshes when the status
+watch reports a terminal start or end, or a title change. There is no manual refresh
+control. Project names are plain text. The small arrow expands or collapses a group.
+Each project's **＋** creates and selects a new draft entry. A click on an existing
+entry reopens it by session ID. The URL keeps that
 ID as `/sessions/<id>` through reload and launch. The welcome view is the home page at
 `/`. The bbflow logo in the sidebar returns to it.
 
 The browser tab title shows the session or draft name. Settings shows `Settings`, and
 the home page shows `bbflow`.
 
-**Archive** saves the current launch choices and message editor. It hides a draft or
-finished session from the normal list and returns to the welcome view. **Archived**
-provides the same search and groups across all archived sessions. **Restore**
-returns an item to its project, or Standalone if that project was removed, without
-launching it.
+Below the list, a row holds **＋ Project**, **Archived**, and **Settings**. A newer
+release shows above this row. The instance directory shows below the row, except below
+a window width of 620 pixels. The sidebar shows the server connection only while the
+server is unavailable.
+
+**Archive** hides a draft or finished session from the normal list. It is in the More
+actions menu of the toolbar. Each draft and ended session in the list also has an
+archive button on its row. The button shows on pointer hover and on keyboard focus. On
+devices without hover, it always shows. Archive of the selected session first saves the
+launch choices and message editor. Then the welcome view opens. Archive of another
+session keeps the current view.
+
+**Archived** shows the archived sessions in place of the normal list, with the same
+search and groups. **Back** above the list, or a second click on **Archived**, returns
+to the normal list. A new project also returns to the normal list. **Restore** in the
+More actions menu or on a row returns an item to its project, or Standalone if that
+project was removed, without launching it. A restore of the selected session opens it
+in the normal list. A restore of another session keeps the archived list.
 
 The archive flag is separate from draft/run status. Archiving preserves all SQLite
 records, draft revisions, attachments, workspace files, and worktree metadata. bbflow
@@ -594,10 +609,10 @@ errors.
 
 ### Projects and launches
 
-**Add project** in the sidebar opens a dialog for a folder and an optional name.
-`project-add` saves an existing canonical directory and a name, defaulting to the folder
-basename. Git is not required. Canonical paths are unique across saved projects. Parent
-and child folders remain allowed. Project IDs are independent of their names and paths.
+**＋ Project** at the bottom of the sidebar opens the Add project dialog for a folder and
+an optional name. `project-add` saves an existing canonical directory and a name,
+defaulting to the folder basename. Git is not required. Canonical paths are unique
+across saved projects. Parent and child folders remain allowed. Project IDs are independent of their names and paths.
 
 Names contain 1–200 characters without control characters. Custom projects can be
 renamed and removed. Removal sets their sessions' `project_id` to NULL. The UI shows
