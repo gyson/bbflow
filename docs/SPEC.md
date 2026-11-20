@@ -447,10 +447,18 @@ session keeps the current view.
 
 **Archived** shows the archived sessions in place of the normal list, with the same
 search and groups. **Back** above the list, or a second click on **Archived**, returns
-to the normal list. A new project also returns to the normal list. **Restore** in the
-More actions menu or on a row returns an item to its project, or Standalone if that
-project was removed, without launching it. A restore of the selected session opens it
-in the normal list. A restore of another session keeps the archived list.
+to the normal list. A new project also returns to the normal list and clears the
+search. **Restore** in the More actions menu or on a row returns an item to its
+project, or Standalone if that project was removed, without launching it. A restore of
+the selected session opens it in the normal list. A restore of another session keeps
+the archived list.
+
+While Settings is open, an archive or restore from a row keeps Settings open. When the
+row is the session behind Settings, **Back to session** then opens the welcome view
+after an archive, or the restored session. After an archive or restore with the
+keyboard, focus moves to the nearest later session row that shows, or else the nearest
+earlier one. Rows of a collapsed group do not count. Without such a row, focus moves to
+the search box, or to **Back** in the archived list.
 
 The archive flag is separate from draft/run status. Archiving preserves all SQLite
 records, draft revisions, attachments, workspace files, and worktree metadata. bbflow

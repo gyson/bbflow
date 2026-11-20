@@ -17,7 +17,7 @@ import { element } from './dom.js';
 import { Composer } from './composer.js';
 import { SessionMenu } from './session-menu.js';
 import { SessionSplit } from './session-split.js';
-import { Sidebar } from './sidebar.js';
+import { Sidebar, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
 import { mergeSessions, sessionGroups, sessionWindow } from './projects.js';
 import { SessionConnection } from './session-connection.js';
@@ -380,20 +380,30 @@ function sessionRow(session: SessionInfo, showWorkspace: boolean): HTMLElement {
   archive.title = `${session.archived ? 'Restore' : 'Archive'} ${title.textContent}`;
   archive.setAttribute('aria-label', archive.title);
   archive.innerHTML = session.archived ? restoreIcon : archiveIcon;
+  archive.dataset.focus = `archive:${session.id}`;
   archive.onclick = async () => {
-    // The row leaves the list. A keyboard user then gets the next session, or the previous one.
+    // The row leaves the list. A keyboard user then gets the nearest session row that
+    // shows, or else a sidebar control.
     const keyboard = document.activeElement === archive;
-    const items = [...$('sessions').querySelectorAll<HTMLElement>('.session-item')];
-    const index = items.indexOf(button);
-    const next = (items[index + 1] ?? items[index - 1])?.dataset.focus;
+    const before = shownSessionKeys();
     await action(() => setArchived(session.id, !session.archived));
-    if (keyboard && next && (document.activeElement === document.body || !document.activeElement)) focusSidebar(next);
+    if (!keyboard || (document.activeElement && document.activeElement !== document.body)) return;
+    const key = nearestRow(before, button.dataset.focus!, shownSessionKeys());
+    if (key) focusSidebar(key);
+    else (archivedList ? $('sessions-open') : $('filter')).focus();
   };
   statusMarks.push({ session, dot, text, archive });
   const row = document.createElement('div');
   row.className = 'session-row';
   row.append(button, archive);
   return row;
+}
+
+// Return the focus keys of the session rows that show. A collapsed group hides its rows.
+function shownSessionKeys(): string[] {
+  return [...$('sessions').querySelectorAll<HTMLElement>('.session-item')]
+    .filter(item => item.getClientRects().length)
+    .map(item => item.dataset.focus!);
 }
 
 // Show the current status of each session in the list, without new buttons.
@@ -924,6 +934,7 @@ function showProject(project: Project | null = null) {
 
 // Archive or restore a session. The selected session first saves its launch choices and
 // message editor. Its view then closes, or opens in the normal list after a restore.
+// Settings stays open. Back to session then opens the welcome view or the restored session.
 async function setArchived(id: string, archived: boolean): Promise<void> {
   if (!server) return;
   const current = selected?.id === id ? selected : null;
@@ -934,7 +945,9 @@ async function setArchived(id: string, archived: boolean): Promise<void> {
   await call(server, { operation: 'session-archive', session: id, archived });
   if (current) {
     current.archived = archived;
-    if (archived) await showWelcome();
+    if (showingSettings) {
+      if (archived) selected = null;
+    } else if (archived) await showWelcome();
     else {
       archivedList = false; $('filter').value = '';
       collapsedProjects.delete(current.projectId ?? '');
@@ -989,7 +1002,7 @@ async function initialize() {
         else {
           await call(server, { operation: 'project-add', name: $('project-name').value, workspace: $('project-workspace').value.trim() });
           // The archived list shows only groups with archived sessions. Show the new project.
-          archivedList = false;
+          if (archivedList) { archivedList = false; $('filter').value = ''; }
         }
         $('project-dialog').close();
         await refreshSessions();

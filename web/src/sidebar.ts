@@ -9,6 +9,16 @@ export function sidebarBounds(windowWidth: number): { min: number; max: number }
   return { min: minWidth, max: Math.max(minWidth, Math.min(maxWidth, windowWidth - mainMinWidth)) };
 }
 
+// Return the key of the row that gets the keyboard focus after a row leaves the list.
+// before has the keys of the shown rows before the change, and after has them after the
+// change. The nearest later row comes first, then the nearest earlier row.
+export function nearestRow(before: string[], removed: string, after: string[]): string | undefined {
+  const index = before.indexOf(removed);
+  const shown = new Set(after);
+  const order = index < 0 ? before : [...before.slice(index + 1), ...before.slice(0, index).reverse()];
+  return order.find(key => key !== removed && shown.has(key));
+}
+
 export class Sidebar {
   private readonly sidebar = element('sidebar', HTMLElement);
   private readonly divider = element('sidebar-divider', HTMLElement);
