@@ -14,7 +14,7 @@ trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 output=$("$binary" --dir "$instance" server start)
 printf '%s\n' "$output"
-url=$(printf '%s\n' "$output" | grep -Eo 'http://127\.0\.0\.1:[0-9]+' | head -1)
+url=$(printf '%s\n' "$output" | grep -Eo 'http://localhost:[0-9]+' | head -1)
 [ -n "$url" ]
 curl -fsS "$url/" > "$instance/index.html"
 grep -q '<title>bbflow</title>' "$instance/index.html"
