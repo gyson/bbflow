@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeToolEdit, sameSettings, titleControls } from './dist/settings-model.js';
+import { mergeToolEdit, parsePort, portStatus, portText, sameSettings, titleControls } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -44,4 +44,28 @@ test('a title tool change needs a save', () => {
 test('an update check change needs a save', () => {
   const checked = { ...settings, updateCheck: true };
   assert.ok(!sameSettings(checked, { ...checked, updateCheck: false }));
+});
+
+test('a port change needs a save', () => {
+  const automatic = { ...settings, port: 0 };
+  assert.ok(sameSettings(automatic, { ...automatic }));
+  assert.ok(!sameSettings(automatic, { ...automatic, port: 50001 }));
+});
+
+test('the Port field reads a whole number or an empty field', () => {
+  assert.equal(parsePort(''), 0);
+  assert.equal(parsePort('  '), 0);
+  assert.equal(parsePort(' 50001 '), 50001);
+  assert.equal(parsePort('0'), 0);
+  // The server rejects a port outside the range.
+  assert.equal(parsePort('80'), 80);
+  for (const text of ['auto', '50 001', '5e4', '-1', '1.5', '123456']) assert.equal(parsePort(text), null, text);
+  assert.equal(portText(0), '');
+  assert.equal(portText(50001), '50001');
+});
+
+test('the port status tells when a saved port applies', () => {
+  assert.match(portStatus(0, 50000), /^Automatic\. The server uses port 50000 now\./);
+  assert.equal(portStatus(50000, 50000), 'The server uses port 50000.');
+  assert.match(portStatus(50001, 50000), /uses port 50000 now\. It uses port 50001 after the next server start/);
 });

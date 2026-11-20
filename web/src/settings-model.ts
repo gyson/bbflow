@@ -19,7 +19,27 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
 export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&
     a.worktree === b.worktree && a.base === b.base && a.titleTool === b.titleTool &&
-    a.updateCheck === b.updateCheck && sameTools(a.tools, b.tools);
+    a.updateCheck === b.updateCheck && a.port === b.port && sameTools(a.tools, b.tools);
+}
+
+// parsePort reads the Port field. An empty field selects the automatic port, 0. Text
+// that is not a whole number gives null. The server checks the range.
+export function parsePort(text: string): number | null {
+  const value = text.trim();
+  if (!value) return 0;
+  return /^\d{1,5}$/.test(value) ? Number(value) : null;
+}
+
+// portText shows a saved port in the Port field. The automatic port shows an empty field.
+export function portText(port: number): string {
+  return port ? String(port) : '';
+}
+
+// portStatus tells which port the server uses now and when the saved port applies.
+export function portStatus(saved: number, current: number): string {
+  if (!saved) return `Automatic. The server uses port ${current} now. Later starts use it again when it is free.`;
+  if (saved === current) return `The server uses port ${current}.`;
+  return `The server uses port ${current} now. It uses port ${saved} after the next server start, when no other program uses that port.`;
 }
 
 export function sameTools(a: Tool[], b: Tool[]): boolean {

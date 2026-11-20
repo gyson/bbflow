@@ -201,6 +201,107 @@ func TestServerReusesItsPortOrSavesANewOne(t *testing.T) {
 	}
 }
 
+// A port from Settings applies at the next start. When another program holds it, the
+// server uses its earlier port, so open tabs keep their address. Settings keeps the port
+// for the next start.
+func TestServerUsesThePortFromSettings(t *testing.T) {
+	directory := t.TempDir()
+	target := client.Target{Dir: directory}
+	first := startTestServer(t, directory)
+	cli := func(args ...string) string {
+		t.Helper()
+		output, err := testCommand(append([]string{"--dir", directory}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%v: %s %v", args, output, err)
+		}
+		return string(output)
+	}
+	port := func() string {
+		t.Helper()
+		info, err := target.Health()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strconv.Itoa(info.Port)
+	}
+	hold := func(port string) net.Listener {
+		t.Helper()
+		listener, err := net.Listen("tcp4", "127.0.0.1:"+port)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return listener
+	}
+	free := func() string {
+		t.Helper()
+		listener := hold("0")
+		defer listener.Close()
+		return strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	}
+	logged := func(want string) {
+		t.Helper()
+		if log, _ := os.ReadFile(filepath.Join(directory, "server.log")); !strings.Contains(string(log), want) {
+			t.Fatalf("the log does not contain %q:\n%s", want, log)
+		}
+	}
+
+	// A save rejects a port that another program holds now.
+	held := free()
+	holder := hold(held)
+	if output, err := testCommand("--dir", directory, "settings", "set", "port", held).CombinedOutput(); err == nil || !strings.Contains(string(output), "another program uses port "+held) {
+		t.Fatalf("saved a held port: %s %v", output, err)
+	}
+	holder.Close()
+
+	chosen := free()
+	if output := cli("settings", "set", "port", chosen); !strings.Contains(output, "applies at the next server start") {
+		t.Fatal(output)
+	}
+	if got := port(); got != first {
+		t.Fatalf("the save moved the running server to port %s", got)
+	}
+	cli("server", "restart")
+	if got := port(); got != chosen {
+		t.Fatalf("restart used port %s, expected the port %s from Settings", got, chosen)
+	}
+
+	// The server keeps the earlier port when another program holds the new port.
+	next := free()
+	cli("settings", "set", "port", next)
+	holder = hold(next)
+	cli("server", "restart")
+	if got := port(); got != chosen {
+		t.Fatalf("restart used port %s, expected the earlier port %s", got, chosen)
+	}
+	logged("cannot use port " + next + " from Settings")
+	holder.Close()
+	cli("server", "restart")
+	if got := port(); got != next {
+		t.Fatalf("restart used port %s, expected the port %s from Settings", got, next)
+	}
+
+	// With no usable port, the server uses a free port. Settings keeps its port.
+	cli("server", "stop")
+	holder = hold(next)
+	cli("server", "start")
+	moved := port()
+	if moved == next {
+		t.Fatal("restart used a held port")
+	}
+	logged("uses the new port " + moved)
+	if output := cli("settings", "get"); !strings.Contains(output, `"port": `+next) {
+		t.Fatalf("the fallback changed Settings:\n%s", output)
+	}
+	holder.Close()
+
+	// The automatic port keeps the last port.
+	cli("settings", "set", "port", "0")
+	cli("server", "restart")
+	if got := port(); got != moved {
+		t.Fatalf("restart used port %s, expected the last port %s", got, moved)
+	}
+}
+
 func TestServerRefusesTamperedMetadata(t *testing.T) {
 	directory, other := t.TempDir(), t.TempDir()
 	startTestServer(t, directory)

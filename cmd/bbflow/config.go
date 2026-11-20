@@ -32,7 +32,8 @@ Keys:
   worktree      true or false
   base          the default Git branch or commit, such as HEAD
   title-tool    none, claude, codex, or code-puppy for automatic session titles
-  update-check  true or false: read the latest release from GitHub once a day`
+  update-check  true or false: read the latest release from GitHub once a day
+  port          1024 to 65535, or 0 for an automatic port; applies at the next server start`
 
 func toolCommand(target client.Target, args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
@@ -134,7 +135,7 @@ func settingsCommand(target client.Target, args []string) error {
 		return errors.New("settings get takes no arguments")
 	case args[0] == "set" && len(args) == 3:
 		key, value := args[1], args[2]
-		return changeSettings(target, func(settings *history.Settings) error {
+		err := changeSettings(target, func(settings *history.Settings) error {
 			switch key {
 			case "appearance":
 				settings.Appearance = value
@@ -169,11 +170,21 @@ func settingsCommand(target client.Target, args []string) error {
 					return errors.New("update-check must be true or false")
 				}
 				settings.UpdateCheck = enabled
+			case "port":
+				port, err := strconv.Atoi(strings.TrimSpace(value))
+				if err != nil {
+					return fmt.Errorf("port must be from %d to 65535, or 0 for an automatic port", history.MinPort)
+				}
+				settings.Port = port
 			default:
-				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, title-tool, or update-check", key)
+				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, title-tool, update-check, or port", key)
 			}
 			return nil
 		})
+		if err == nil && key == "port" {
+			fmt.Println("The port applies at the next server start. A server restart stops all sessions.")
+		}
+		return err
 	case args[0] == "set":
 		return errors.New("provide one key and one value, for example: bbflow settings set appearance dark")
 	default:

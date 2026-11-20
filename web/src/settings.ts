@@ -1,9 +1,9 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { mergeToolEdit, sameSettings, sameTools, titleControls } from './settings-model.js';
+import { mergeToolEdit, parsePort, portStatus, portText, sameSettings, sameTools, titleControls } from './settings-model.js';
 
-type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool' | 'updateCheck'>;
+type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool' | 'updateCheck' | 'port'>;
 type SettingsChange = (settings: Settings) => Settings;
 
 // Test sends this message to the title tool in place of a real first message.
@@ -30,6 +30,10 @@ export class SettingsView {
   private readonly worktree = element('settings-worktree', HTMLInputElement);
   private readonly base = element('settings-base', HTMLInputElement);
   private readonly updateCheck = element('settings-update-check', HTMLInputElement);
+  private readonly portForm = element('settings-port-form', HTMLFormElement);
+  private readonly port = element('settings-port', HTMLInputElement);
+  private readonly portError = element('settings-port-error', HTMLElement);
+  private readonly portStatus = element('settings-port-status', HTMLElement);
   private readonly error = element('settings-error', HTMLElement);
   private readonly status = element('settings-status', HTMLElement);
   private readonly tools = element('settings-tools', HTMLElement);
@@ -47,6 +51,7 @@ export class SettingsView {
   private saved: Settings | null = null;
   private defaults: Partial<Defaults> = {};
   private renderedBase = '';
+  private renderedPort = '';
   // The title tools and their commands come from the server.
   private titleTools: TitleTool[] = [];
   // The number of the latest title test. A result shows only for the latest test.
@@ -72,6 +77,9 @@ export class SettingsView {
     this.base.onchange = () => this.saveBase();
     this.base.oninput = () => this.showStatus();
     this.form.onsubmit = event => { event.preventDefault(); this.saveBase(); };
+    this.port.onchange = () => this.savePort();
+    this.port.oninput = () => this.showStatus();
+    this.portForm.onsubmit = event => { event.preventDefault(); this.savePort(); };
     this.addTool.cancel.onclick = () => this.resetAddTool();
     this.editTool.cancel.onclick = () => this.closeEditor();
     this.addTool.form.oninput = this.editTool.form.oninput = () => this.showStatus();
@@ -113,6 +121,7 @@ export class SettingsView {
 
   private pending(): boolean {
     return this.writes > 0 || Object.keys(this.defaults).length > 0 || this.base.value !== this.renderedBase ||
+      this.port.value !== this.renderedPort ||
       !!(this.addTool.name.value || this.addTool.command.value) ||
       !!this.editing && (this.editTool.name.value !== this.editing.name || this.editTool.command.value !== this.editing.command);
   }
@@ -138,6 +147,12 @@ export class SettingsView {
       this.renderedBase = this.defaults.base ?? saved.base;
       this.base.value = this.renderedBase;
     }
+    if (this.port.value === this.renderedPort) {
+      this.renderedPort = portText(this.defaults.port ?? saved.port);
+      this.port.value = this.renderedPort;
+    }
+    const server = this.server();
+    this.portStatus.textContent = server ? portStatus(saved.port, server.port) : '';
     this.titleTool.value = this.defaults.titleTool ?? saved.titleTool ?? 'none';
     this.showTitleTool();
     if (!this.renderedTools || !sameTools(saved.tools, this.renderedTools)) {
@@ -362,7 +377,20 @@ export class SettingsView {
     this.saveDefault('base', this.base.value || 'HEAD');
   }
 
-  private saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K]): void {
+  // An empty Port field selects the automatic port. Other text must be a whole number.
+  private savePort(): void {
+    const port = parsePort(this.port.value);
+    if (port === null) {
+      this.portError.textContent = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
+      this.portError.hidden = false;
+      return;
+    }
+    this.renderedPort = this.port.value;
+    this.saveDefault('port', port, this.portError);
+  }
+
+  // error shows the reason for a failed save. The Port field has its own error below it.
+  private saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K], error = this.error): void {
     if (!this.saved) return;
     this.defaults[key] = value;
     void this.enqueue(async () => {
@@ -376,11 +404,11 @@ export class SettingsView {
         for (const key of Object.keys(defaults) as (keyof Defaults)[]) {
           if (this.defaults[key] === defaults[key]) delete this.defaults[key];
         }
-        this.error.hidden = true;
+        this.error.hidden = this.portError.hidden = true;
         this.render();
-      } catch (error) {
-        this.error.textContent = errorMessage(error);
-        this.error.hidden = false;
+      } catch (cause) {
+        error.textContent = errorMessage(cause);
+        error.hidden = false;
       }
     });
   }

@@ -37,7 +37,7 @@ func TestUIOpensSelectedInstanceHome(t *testing.T) {
 	argsPath := browserFixture(t)
 	directory := t.TempDir()
 	port := startTestServer(t, directory)
-	url := "http://127.0.0.1:" + port + "/"
+	url := "http://localhost:" + port + "/"
 	// The explicit instance takes priority over an unrelated environment selection.
 	t.Setenv("BBFLOW_DIR", filepath.Join(t.TempDir(), "missing"))
 	if output, err := testCommand("--dir", directory, "ui").CombinedOutput(); err != nil || !strings.Contains(string(output), url) {

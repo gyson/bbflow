@@ -23,7 +23,7 @@ lines identify an optional argument. Do not type the brackets.
 | `bbflow query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
 | `bbflow storage [--redact]` | See which projects, sessions, and event kinds use the most space. | Reads the archive. Prints a Markdown report. |
 | `bbflow tool list\|add\|remove` | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
-| `bbflow settings get\|set` | Show or change appearance, session defaults, and the update check. | Changes saved settings. Starts no session. |
+| `bbflow settings get\|set` | Show or change appearance, session defaults, the update check, and the server port. | Changes saved settings. Starts no session. |
 | `bbflow skill` | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
 
 Create, browse, reopen, and stop sessions in the web UI. The CLI has no session
@@ -45,14 +45,19 @@ does not change its default. All commands select one instance in this order:
 2. `BBFLOW_DIR`, if set to a nonempty value.
 3. The build's default directory.
 
-Each server listens on a port on `127.0.0.1`. The first server of a directory gets a
-free port from the operating system and saves it in `history.sqlite`. Later starts,
-restarts, and updates use that port again, so open browser tabs keep their address.
-When another program holds the saved port, the server gets a new port, saves it, and
-writes a message to `server.log`. Clients read the port from `server.json` in the
-selected directory. Before a command, they verify the server's directory and instance
-ID on the same WebSocket connection. You do not configure a port. There are no `--port`
-or `--data-dir` options.
+Each server listens on a port on `127.0.0.1`. To keep one address for bookmarks, set
+`port` with [settings set](#manage-settings) or in Settings. The default, `0`, selects
+the automatic port. The first server of a directory then gets a free port from the
+operating system. The server saves the port that it uses in `history.sqlite`.
+
+At each start, restart, and update, the server tries the port from Settings first. Then
+it tries the saved port, so open browser tabs keep their address. When other programs
+hold these ports, the server gets a free port, saves it, and writes a message to
+`server.log`. Settings keeps its port, so the next start tries that port again.
+
+Clients read the port from `server.json` in the selected directory. Before a command,
+they verify the server's directory and instance ID on the same WebSocket connection.
+There are no `--port` or `--data-dir` options.
 
 Query, UI, tool, and settings commands require a running server and do not start one
 automatically. The web UI uses the same server at its printed HTTP URL. There is no
@@ -234,8 +239,8 @@ requests, it upgrades supported older database formats using SQL embedded in the
 All pending migrations commit together. A failure rolls them back and stops startup.
 
 The command starts no shell or agent. Create sessions in the UI. The server uses the
-saved port of the directory when it is free. Otherwise, it uses a free port from the
-operating system. A second server cannot own the same directory. If startup fails,
+port from Settings or the saved port of the directory when it is free. Otherwise, it
+uses a free port from the operating system. See [Instance directory](#instance-directory). A second server cannot own the same directory. If startup fails,
 inspect the printed log path.
 
 On macOS, a new server also launches a menu bar companion from this same executable.
@@ -268,7 +273,7 @@ bbflow --dir ~/bbflow-experiment ui
 ```
 
 The command reads the selected instance's connection information and verifies the server
-through the shared WebSocket greeting. It opens `http://127.0.0.1:PORT/` in the default
+through the shared WebSocket greeting. It opens `http://localhost:PORT/` in the default
 browser, with no session selected. It accepts no positional arguments. It uses `open` on
 macOS and `xdg-open` on Linux. A graphical browser launcher must be available. Launcher
 failures report an error and include the URL for manual opening.
@@ -325,7 +330,8 @@ replacement.
 
 **Impact:** the command ends all active agent runs and preserves their history. It opens
 the same archive in a new server process. The new server has a new instance ID. It uses the
-same port when that port is free.
+same port when that port is free. When Settings names another port, the new server
+tries that port first.
 
 The new server applies pending database migrations before accepting requests. Clients
 discover the new endpoint on their next command. It does not resume agents or replay
@@ -371,7 +377,7 @@ The tables are:
 | `projects` | `id`, `name`, `workspace`, `created` |
 | `sessions` | `id`, `title` (user title, or empty), `auto_title` (derived title), `workspace`, `created`, `project_id` (NULL for standalone), `archived` (0 or 1) |
 | `runs` | `id`, `session_id`, `status`, `started`, `ended`, `pid`, `detail` |
-| `settings` | `id`, `revision`, `data` (JSON appearance, defaults, and tool presets) |
+| `settings` | `id`, `revision`, `data` (JSON appearance, defaults, tool presets, and port) |
 | `preparations` | `session_id`, `revision`, `state`, `data` (JSON launch choices) |
 | `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
@@ -517,6 +523,7 @@ bbflow settings set worktree true
 bbflow settings set base main
 bbflow settings set title-tool codex
 bbflow settings set update-check false
+bbflow settings set port 50000
 ```
 
 `settings get` prints the saved settings as JSON, including the revision and the tools.
@@ -531,8 +538,11 @@ bbflow settings set update-check false
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
 | `title-tool` | `none`, `claude`, `codex`, or `code-puppy`. It selects the agent CLI that makes automatic session titles. `none` turns them off. A new installation and an upgrade start with `none`. See [session titles](SPEC.md#session-titles) for the commands. |
 | `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
+| `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port. See [Instance directory](#instance-directory). |
 
-**Impact:** the same as `tool add`. A rejected value changes nothing.
+**Impact:** the same as `tool add`. A rejected value changes nothing. A `port` change does
+not move the running server. The command tells you that the port applies at the next
+server start. A restart stops all sessions.
 
 ## Agent guide
 

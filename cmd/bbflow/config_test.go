@@ -74,6 +74,8 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	fails("tool command is required", "tool", "add", "Other", " ")
 	fails("worktree must be true or false", "settings", "set", "worktree", "maybe")
 	fails("update-check must be true or false", "settings", "set", "update-check", "daily")
+	fails("port must be from 1024 to 65535", "settings", "set", "port", "80")
+	fails("port must be from 1024 to 65535", "settings", "set", "port", "auto")
 	fails("unknown settings key", "settings", "set", "theme", "dark")
 	fails("title tool must be one of none, claude, codex, code-puppy", "settings", "set", "title-tool", "claude -p")
 	fails(`tool "Absent" does not exist`, "tool", "remove", "Absent")

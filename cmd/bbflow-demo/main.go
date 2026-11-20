@@ -233,7 +233,7 @@ func (d *demo) requireNew() {
 
 // sessions prints the URL of each session.
 func (d *demo) sessions(port int) {
-	address := fmt.Sprintf("http://127.0.0.1:%d", port)
+	address := fmt.Sprintf("http://localhost:%d", port)
 	fmt.Printf("URL: %s/\n", address)
 	// One request lists 100 sessions at most, so each group gets its own request.
 	groups := []string{""}

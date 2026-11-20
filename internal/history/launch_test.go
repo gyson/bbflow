@@ -14,9 +14,9 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings, err := store.Settings()
-	// A new database selects Use worktree and the update check. Upgrades keep the saved
-	// worktree choice.
-	if err != nil || len(settings.Tools) != 0 || !settings.Worktree || settings.Base != "HEAD" || settings.Appearance != "system" || !settings.UpdateCheck {
+	// A new database selects Use worktree, the update check, and the automatic port.
+	// Upgrades keep the saved worktree choice.
+	if err != nil || len(settings.Tools) != 0 || !settings.Worktree || settings.Base != "HEAD" || settings.Appearance != "system" || !settings.UpdateCheck || settings.Port != 0 {
 		t.Fatal(settings, err)
 	}
 	settings.Tools = []Tool{{ID: "astra", Name: "Codex 6 Astra", Command: "codex --model=gpt-6-astra"}, {ID: "default", Name: "Codex", Command: "codex"}}
@@ -28,6 +28,13 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 		t.Fatal("accepted invalid appearance")
 	}
 	settings.Appearance = "dark"
+	for _, port := range []int{-1, 1, MinPort - 1, 65536} {
+		settings.Port = port
+		if _, err := store.SaveSettings(settings); err == nil {
+			t.Fatal("accepted invalid port", port)
+		}
+	}
+	settings.Port = 50001
 	saved, err := store.SaveSettings(settings)
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +59,7 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 	}
 	defer store.Close()
 	got, err := store.Settings()
-	if err != nil || got.Revision != saved.Revision || got.Tools[0].Command != "codex --model=gpt-6-astra" || got.Worktree || got.Appearance != "dark" || got.UpdateCheck {
+	if err != nil || got.Revision != saved.Revision || got.Tools[0].Command != "codex --model=gpt-6-astra" || got.Worktree || got.Appearance != "dark" || got.UpdateCheck || got.Port != 50001 {
 		t.Fatal(got, err)
 	}
 	restored, err := store.Session(session.ID)

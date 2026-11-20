@@ -143,9 +143,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   companion lifecycle. Keep menu code in macOS-specific Go files and retain
   `CGO_ENABLED=0` builds.
 - Local builds use `~/.bbflow-dev`. `make release` produces `bin/release/bbflow`, which
-  uses `~/.bbflow`. Each instance gets an automatically allocated loopback port. Keep
-  development and production data separate by default. Tests must use temporary data
-  directories.
+  uses `~/.bbflow`. Each instance gets an automatically allocated loopback port, unless
+  its Settings name a port. Keep development and production data separate by default.
+  Tests must use temporary data directories.
 - Package tagged macOS releases with `make release-assets VERSION=X.Y.Z`. Keep the
   installer and checksums with the release assets. Include the project and dependency
   license notices in the archives and embedded binary. Use the patched Go version

@@ -30,7 +30,13 @@ type Settings struct {
 	TitleTool string `json:"titleTool"`
 	// UpdateCheck lets the server read the latest release from GitHub once a day.
 	UpdateCheck bool `json:"updateCheck"`
+	// Port is the loopback port that the server uses at its next start. 0 selects the
+	// automatic port. A change applies only after a server restart.
+	Port int `json:"port"`
 }
+
+// The lowest port that Settings accepts. Lower ports are for system services.
+const MinPort = 1024
 
 // TitleTools lists the values of Settings.TitleTool. The server owns the command of each
 // agent CLI.
@@ -119,6 +125,9 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	}
 	if !seen[settings.DefaultTool] {
 		return settings, errors.New("default tool does not exist")
+	}
+	if settings.Port != 0 && (settings.Port < MinPort || settings.Port > 65535) {
+		return settings, fmt.Errorf("port must be from %d to 65535, or 0 for an automatic port", MinPort)
 	}
 	if len(settings.Base) > 250 || strings.ContainsAny(settings.Base, "\x00\r\n") {
 		return settings, errors.New("invalid default Git base")
