@@ -67,6 +67,7 @@ const baselines = {
 const changes = (baseline, extra = {}) => ({ repository: true, baseline, commits: [{ id: commit, subject: 'Fix', files: 1 }],
   files: [{ path: 'a.txt', status: 'M', added: 1, removed: 1 }], truncated: false, ...extra });
 const file = baseline => ({ path: 'a.txt', baseline, old: { state: 'text', text: 'a\n', size: 2 }, new: { state: 'text', text: 'b\n', size: 2 } });
+const htmlFile = (path, baseline) => ({ path, baseline, old: { state: 'missing', size: 0 }, new: { state: 'text', text: '<p>Hi</p>\n', size: 10 } });
 
 function setup() {
   const nodes = Object.fromEntries(ids.map(id => [id, new Node(id.startsWith('diff-scope') && id !== 'diff-scope-menu' ? 'span' : 'div')]));
@@ -360,7 +361,7 @@ test('Open in browser asks the server to open the selected HTML file', async () 
   pending[0].resolve(changes(baselines.head, { files: [report] }));
   await settle();
   assert.deepEqual(pending[1].request.diff, { baseline: 'head', path: 'reports/coverage.html' });
-  pending[1].resolve({ path: 'reports/coverage.html', baseline: baselines.head, old: { state: 'missing', size: 0 }, new: { state: 'text', text: '<p>Hi</p>\n', size: 10 } });
+  pending[1].resolve(htmlFile('reports/coverage.html', baselines.head));
   await settle();
   const button = nodes['diff-open'];
   assert.equal(button.hidden, false);
@@ -379,14 +380,74 @@ test('Open in browser asks the server to open the selected HTML file', async () 
   assert.equal(button.textContent, 'Open failed');
   assert.equal(button.title, 'the file is not in the session workspace now');
 
-  // A file reply that ends at a commit is not the current file. The button goes away.
-  nodes['diff-refresh'].onclick();
-  pending[4].resolve(changes(baselines.commit, { files: [report] }));
+  // Only the reply of the latest click changes the button.
+  button.onclick();
+  button.onclick();
+  pending[5].resolve({ opened: true });
   await settle();
-  pending[5].resolve({ path: 'reports/coverage.html', baseline: baselines.commit, old: { state: 'missing', size: 0 }, new: { state: 'text', text: '<p>Hi</p>\n', size: 10 } });
+  assert.equal(button.textContent, 'Opened');
+  pending[4].reject(new Error('late failure'));
+  await settle();
+  assert.equal(button.textContent, 'Opened');
+  await new Promise(resolve => setTimeout(resolve, 1600));
+  assert.equal(button.textContent, 'Open in browser');
+  assert.equal(button.title, 'Open the current file in your default browser');
+});
+
+test('Open in browser goes away when Changes selects a scope that ends at a commit', async () => {
+  const { nodes, pending } = setup();
+  const report = { path: 'report.html', status: 'M', added: 1, removed: 1 };
+  pending[0].resolve(changes(baselines.head, { files: [report] }));
+  await settle();
+  pending[1].resolve(htmlFile('report.html', baselines.head));
+  await settle();
+  const button = nodes['diff-open'];
+  assert.equal(button.hidden, false);
+
+  // The commit row changes the scope at once. The old file reply is still loaded, but it
+  // is not the file of the new scope.
+  nodes['diff-scope'].onclick();
+  row(nodes, 1).onclick();
+  assert.equal(pending.length, 3);
+  assert.equal(button.hidden, true);
+  button.onclick();
+  assert.equal(pending.length, 3, 'a click before the file reply sent a request');
+
+  // The file reply of the commit keeps the button away.
+  pending[2].resolve(changes(baselines.commit, { files: [report] }));
+  await settle();
+  pending[3].resolve(htmlFile('report.html', baselines.commit));
   await settle();
   assert.equal(button.hidden, true);
-  await new Promise(resolve => setTimeout(resolve, 1600));
+});
+
+test('a reply for an earlier file does not change the button of the selected file', async () => {
+  const { nodes, pending } = setup();
+  const files = [{ path: 'a.html', status: 'M', added: 1, removed: 1 }, { path: 'b.html', status: 'M', added: 1, removed: 1 }];
+  pending[0].resolve(changes(baselines.head, { files }));
+  await settle();
+  pending[1].resolve(htmlFile('a.html', baselines.head));
+  await settle();
+  const button = nodes['diff-open'];
+  button.onclick();
+  assert.deepEqual(pending[2].request.diff, { path: 'a.html' });
+
+  const list = node => [node, ...node.children.flatMap(list)];
+  list(nodes['diff-list']).find(node => node.dataset.file === 'b.html').onclick();
+  pending[3].resolve(htmlFile('b.html', baselines.head));
+  await settle();
+  pending[2].reject(new Error('cannot open a.html'));
+  await settle();
+  assert.equal(button.hidden, false);
+  assert.equal(button.textContent, 'Open in browser');
+  assert.equal(button.title, 'Open the current file in your default browser');
+
+  // A result that shows goes away when the selection changes.
+  button.onclick();
+  pending[4].reject(new Error('cannot open b.html'));
+  await settle();
+  assert.equal(button.textContent, 'Open failed');
+  list(nodes['diff-list']).find(node => node.dataset.file === 'a.html').onclick();
   assert.equal(button.textContent, 'Open in browser');
   assert.equal(button.title, 'Open the current file in your default browser');
 });

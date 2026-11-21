@@ -1327,18 +1327,23 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   binary file, a file above 1 MiB, or a symlink. The dialog keeps its text while it is
   open. Use **Refresh**, then **Preview** again, to see a later change.
 - For an HTML file (`.html` or `.htm`), **Open in browser** shows to the right of the
-  path in both views. A click asks the server to open the current file with the
-  default application of the user. The server runs `open` on macOS and `xdg-open` on
-  Linux. For an HTML file, this application is normally the default browser. It can be
-  a different browser from the browser of the bbflow tab.
+  path in both views. A click asks the server to open the current file in the default
+  browser of the user. The server asks macOS for the application that opens `https`
+  links. Then it runs `open -a` with that browser and the file. Thus an editor that
+  owns HTML files does not open the file. The default browser can be different from
+  the browser of the bbflow tab.
+- Only macOS has this opener now. On other systems, a click shows **Open failed**.
 - The browser loads the file from the disk as a `file:` page. Thus relative styles,
   images, and scripts load, and external scripts load too. To see a later change, reload
   the page in the browser. A `file:` page has an opaque origin. The server rejects its
   WebSocket connections, so a report cannot control bbflow.
 - **Open in browser** is not shown for a deleted file, a folder, a symlink, or a diff
-  that ends at a commit. A file above 1 MiB can open. The server also rejects a path
-  through a symlink. After a click, the button shows **Opened** or **Open failed** for
-  1.5 seconds. The tooltip of **Open failed** gives the reason.
+  that ends at a commit. It goes away when Changes selects such a scope, before the
+  file reply. A file above 1 MiB can open. The server also rejects a path through a
+  symlink.
+- After a click, the button shows **Opened** or **Open failed** for 1.5 seconds. The
+  tooltip of **Open failed** gives the reason. Only the reply of the latest click shows.
+  A change of the file or of the scope removes the result.
 - In a narrow pane, the line counts, **View source**, **View file**, and **Copy path**
   go to a second row of the file header. The path and **Preview** or
   **Open in browser** keep at least 200 pixels.
@@ -2034,15 +2039,23 @@ Open in browser fixtures cover `.html` and `.htm` in any case, a Markdown file, 
 script file, a symlink to a script, and a path through a symlink. They also cover a
 path outside the workspace, a folder, a missing file, `..` and absolute paths, an
 unknown session, a failed opener, and a server without an opener. A WebSocket fixture
-sends `workspace-open`. The tests replace the opener, so they open no browser. Web
-fixtures cover the files that the button accepts, the request, **Opened**, **Open
-failed** with its tooltip, and a diff that ends at a commit.
+sends `workspace-open`. The tests replace the opener, so they open no browser. Opener
+fixtures replace `open`, `xdg-open`, and `osascript`. They cover a child that keeps the
+output pipes open after a successful exit, a failed exit with its output, and a
+cancellation. They also cover the arguments of `open -a`, a relative path, and an
+empty or failed browser lookup. Web fixtures cover the files that the button accepts,
+the request, **Opened**, and **Open failed** with its tooltip. They also cover a scope
+change before the file reply, a late reply of an earlier click, and a late reply after
+a change of the file.
 
 A browser check of Open in browser used a demo instance with a synthetic HTML report.
 It checked an added file in Changes, an unchanged file in Files, and no button for a
 commit scope. The server ran `open` on macOS, and the button showed **Opened**. A
 WebSocket upgrade with `Origin: null`, as a `file:` page sends, got status 403. The
-check did not examine the browser window that opened.
+check did not examine the browser window that opened. A later check used `open -a`
+with the default browser. After the click, Chrome, the default browser, was the front
+application. On that computer, Chrome also owns HTML files, so this check cannot show
+the difference from the file type. The `open -a` fixture covers it.
 
 A browser check of the Files tree used a temporary instance, a fixture repository, and
 a folder outside Git, each with a shell session. It checked open and closed folders,
@@ -2480,11 +2493,13 @@ find ignored files. The tree has no arrow key navigation. Use Tab and Enter. Git
 between tracked files with similar content. An untracked new file and its deleted
 original show as two changes.
 
-**Open in browser** needs the browser and the server on the same computer. It uses the
-default application for HTML files, which can be a different browser from the bbflow
-tab. Browsers can block module scripts and `fetch()` in a `file:` page. A report that
-must work in all browsers keeps its scripts and data in the HTML file or in classic
-`<script>` files.
+**Open in browser** needs the browser and the server on the same computer. It works
+only on macOS now. It uses the default browser, which can be different from the
+browser of the bbflow tab. The server checks the path, and then the browser reads the
+path again. A process that changes the file between these steps changes only the page
+that the browser shows. The browser does not run the file as a program. Browsers can
+block module scripts and `fetch()` in a `file:` page. A report that must work in all
+browsers keeps its scripts and data in the HTML file or in classic `<script>` files.
 
 Each session has one shared draft. Other views update after each save, about half a
 second after typing stops. They do not show each keystroke. When two views edit at the

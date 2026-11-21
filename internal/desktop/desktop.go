@@ -1,11 +1,14 @@
-// Package desktop opens a file or a URL with the default application of the user.
+// Package desktop opens a URL with the default application of the user, or a file in
+// the default web browser.
 package desktop
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -30,15 +33,58 @@ func Open(ctx context.Context, target string) error {
 	if strings.HasPrefix(target, "-") {
 		return fmt.Errorf("invalid target %q", target)
 	}
-	cmd := exec.CommandContext(ctx, name, target)
-	// An application that the opener starts can keep the output pipe open. Do not wait
-	// for it after the opener exits.
+	_, err := run(ctx, name, target)
+	return err
+}
+
+// browserScript prints the path of the application that opens https URLs. This is the
+// default browser that the user selected in System Settings. It prints nothing when
+// there is no such application.
+const browserScript = `ObjC.import("AppKit"); ` +
+	`const app = $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL($.NSURL.URLWithString("https://example.invalid/")); ` +
+	`app.isNil() ? "" : app.path.js`
+
+// OpenInBrowser opens a local file in the default web browser. The browser and not the
+// file type selects the application. Thus an editor that owns HTML files does not open
+// the file, and a file of another type does not run as a program. Only macOS has this
+// opener now.
+func OpenInBrowser(ctx context.Context, path string) error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("%w: a file opens in the browser only on macOS", ErrUnsupported)
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("the file path %q is not absolute", path)
+	}
+	output, err := run(ctx, "osascript", "-l", "JavaScript", "-e", browserScript)
+	if err != nil {
+		return fmt.Errorf("find the default browser: %w", err)
+	}
+	browser := strings.TrimSpace(output)
+	if !filepath.IsAbs(browser) || !strings.HasSuffix(browser, ".app") {
+		return errors.New("no default browser is set")
+	}
+	_, err = run(ctx, "open", "-a", browser, path)
+	return err
+}
+
+// run runs a command and returns its standard output. An error includes the output of
+// the command. An opener can start an application that keeps the output pipes open
+// after the opener exits with success. WaitDelay then ends the wait, and the run is a
+// success.
+func run(ctx context.Context, name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	cmd.WaitDelay = time.Second
-	if output, err := cmd.CombinedOutput(); err != nil {
-		if detail := strings.TrimSpace(string(output)); detail != "" {
+	err := cmd.Run()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if err != nil {
+		if detail := strings.TrimSpace(stderr.String() + "\n" + stdout.String()); detail != "" {
 			err = fmt.Errorf("%w: %s", err, detail)
 		}
-		return err
+		return "", err
 	}
-	return nil
+	return stdout.String(), nil
 }

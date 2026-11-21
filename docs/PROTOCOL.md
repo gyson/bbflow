@@ -531,11 +531,12 @@ The folders of one reply share this limit, in request order. Thus a folder can b
 Request such a folder alone before you replace its shown entries.
 
 Protocol 35 adds `workspace-open`. It opens a current HTML file of the session
-workspace with the default application of the server user. `diff.path` names the file,
+workspace in the default browser of the server user. `diff.path` names the file,
 with the same rules as `path`. The extension must be `.html` or `.htm`, in any case.
-The path must name a regular file, and no part of it can be a symlink. The server then
-runs `open` on macOS or `xdg-open` on Linux with the absolute path. It waits up to 10
-seconds and returns `{ "opened": true }`.
+The path must name a regular file, and no part of it can be a symlink. On macOS, the
+server then finds the default browser, the application that opens `https` URLs. It
+runs `open -a` with that browser and the absolute path. It waits up to 10 seconds and
+returns `{ "opened": true }`. On other systems, the operation gives an error.
 
 A path that does not obey these rules, a missing file, or a failed opener gives an
 error. The operation does not change files. A browser loads the file as a `file:` page.

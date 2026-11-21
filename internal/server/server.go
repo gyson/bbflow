@@ -43,8 +43,8 @@ type Server struct {
 	// releases is nil for a build that cannot update, such as a development build.
 	releases Releases
 	updates  updates
-	// open opens a file with the default application of the user. Tests replace it.
-	// A nil open rejects workspace-open.
+	// open opens a file in the default browser of the user. Tests replace it. A nil
+	// open rejects workspace-open.
 	open func(ctx context.Context, path string) error
 }
 
@@ -62,7 +62,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		Protocol: protocol.Version, Instance: history.ID(), PID: os.Getpid(),
 		DataDir: filepath.Dir(store.Path), Port: listener.Addr().(*net.TCPAddr).Port,
 		Executable: executable,
-	}, releases: releases, open: desktop.Open}
+	}, releases: releases, open: desktop.OpenInBrowser}
 	s.updates.load(store)
 	if err := s.ensureGeneral(); err != nil {
 		return protocol.ServerInfo{}, err
