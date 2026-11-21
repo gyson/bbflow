@@ -19,6 +19,7 @@ import { SessionMenu } from './session-menu.js';
 import { RowMenus } from './row-menu.js';
 import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
+import { terminalSize } from './terminal-size.js';
 import { Sidebar, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
 import { mergeSessions, placeText, sessionGroups, sessionWindow, shownChildren } from './projects.js';
@@ -747,15 +748,12 @@ async function refreshSessions() {
   }
 }
 
-function boundedSize(value: { rows: number; cols: number }) {
-  return { rows: Math.max(1, Math.min(256, value.rows)), cols: Math.max(2, Math.min(512, value.cols)) };
-}
-function size(view: Terminal) { return boundedSize(view); }
+function size(view: Terminal) { return terminalSize(view); }
 
 function requestFit() {
   if (!terminal || !connection?.ready || !connection?.peer?.active || connection?.resizing) return;
   const proposed = fit?.proposeDimensions();
-  const dimensions = proposed ? boundedSize(proposed) : undefined;
+  const dimensions = proposed ? terminalSize(proposed) : undefined;
   if (dimensions && (dimensions.cols !== terminal.cols || dimensions.rows !== terminal.rows)) {
     // Apply the server's size event in stream order, after output at the old size.
     connection.peer.send({ type: 'resize', size: dimensions });

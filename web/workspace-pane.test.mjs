@@ -6,15 +6,17 @@ import { WorkspacePane } from './dist/workspace-pane.js';
 class Node {
   hidden = false;
   dataset = {};
-  style = {};
+  style = { setProperty(key, value) { this[key] = value; } };
   attributes = new Map();
-  clientWidth = 1200;
+  // The shown width and the CSS minimum width.
+  width = 400;
+  minWidth = '0px';
   setAttribute(key, value) { this.attributes.set(key, value); }
-  getBoundingClientRect() { return { width: 400 }; }
+  getBoundingClientRect() { return { width: this.width }; }
 }
 
 const views = ['changes', 'files', 'terminal'];
-const ids = ['session-row', 'workspace-pane', 'workspace-divider', 'diff-pane', 'side-terminal', 'side-close',
+const ids = ['session-view', 'workspace-pane', 'workspace-divider', 'diff-pane', 'side-terminal', 'side-close',
   ...views.map(view => `pane-${view}`)];
 
 function setup() {
@@ -22,6 +24,7 @@ function setup() {
   globalThis.HTMLElement = globalThis.HTMLButtonElement = Node;
   globalThis.window = { addEventListener() {} };
   globalThis.document = { getElementById: id => nodes[id] };
+  globalThis.getComputedStyle = node => ({ minWidth: node.minWidth });
   // Fake views. Each one keeps its session and its last shown state. A real view that is
   // shown when it selects a session can load data or join a shell for the wrong session.
   // Thus each fake records the sessions that it selected while shown.
@@ -138,4 +141,32 @@ test('the views hide before they select the next session, then show the view of 
 
   assert.deepEqual(changes.selectedWhileShown, [], 'the Changes and Files view was shown when it selected a session');
   assert.deepEqual(terminal.selectedWhileShown, [], 'the Terminal view was shown when it selected a session');
+});
+
+test('the arrow keys change the preferred width inside the widths that the row can show', () => {
+  const { nodes } = setup();
+  const pane = nodes['workspace-pane'];
+  const session = nodes['session-view'];
+  const divider = nodes['workspace-divider'];
+  pane.minWidth = '320px';
+  session.minWidth = '360px';
+  const key = name => {
+    let prevented = false;
+    divider.onkeydown({ key: name, preventDefault() { prevented = true; } });
+    return prevented;
+  };
+
+  // The session has 40 px more than its minimum width. The pane can take all of it.
+  session.width = 400;
+  assert.equal(key('ArrowLeft'), true);
+  assert.equal(pane.style['--pane-width'], '420px');
+  // The session has only 10 px to spare. The pane stops at 410 px.
+  session.width = 370;
+  key('ArrowLeft');
+  assert.equal(pane.style['--pane-width'], '410px');
+  // A step to the right stops at the minimum width of the pane.
+  pane.width = 330;
+  key('ArrowRight');
+  assert.equal(pane.style['--pane-width'], '320px');
+  assert.equal(key('Enter'), false, 'other keys keep their default action');
 });

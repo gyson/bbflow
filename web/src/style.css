@@ -183,7 +183,8 @@ body.resizing-sidebar, body.resizing-sidebar * { cursor: col-resize !important; 
 [data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transition-delay: .35s; }
 [data-tip]:disabled::after, #session-menu-open[aria-expanded="true"]::after { display: none; }
 .toolbar-title [data-tip]::after { right: auto; left: 0; }
-main { min-width: 0; flex: 1; display: flex; flex-direction: column; overflow: auto; }
+/* A container query on the width of the main area puts the workspace pane below the session. */
+main { min-width: 0; flex: 1; display: flex; flex-direction: column; overflow: auto; container: main / inline-size; }
 .toolbar { min-height: 96px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 22px 30px; border-bottom: 1px solid var(--divider); }
 /* The title takes the space that the actions leave. A long title or path shortens
    before the actions wrap. */
@@ -442,17 +443,19 @@ form.tool-row .tool-actions button { grid-column: span 2; }
   .history-context { flex: none; overflow: visible; padding: 16px; }
   .history-help { padding: 12px 16px; }
 }
-/* The session row holds the session and the workspace pane with its Changes and Terminal tabs. */
+/* The session row holds the session and the workspace pane with its Changes and Terminal tabs.
+   The session keeps its minimum width, so that the PTY keeps a usable size. The pane
+   becomes narrower first. --pane-width is the preferred width from a drag. */
 #session-row { flex: 1; min-height: 480px; display: flex; min-width: 0; }
 #session-row:not(:has(> #session-view:not([hidden]))) { display: none; }
-#session-row > #session-view { min-width: 0; }
+#session-row > #session-view { min-width: 360px; }
 #pane-changes[aria-pressed="true"], #pane-files[aria-pressed="true"], #pane-terminal[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); }
 #workspace-divider { flex: 0 0 9px; margin: 20px -4px 18px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; user-select: none; }
 #workspace-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; transition: background-color .1s; }
 #workspace-divider:hover::after, #workspace-divider:focus-visible::after, .resizing-diff #workspace-divider::after { background: var(--accent); }
 #workspace-divider:focus-visible { outline: none; }
 body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-select: none !important; }
-#workspace-pane { flex: 0 0 46%; min-width: 320px; display: flex; flex-direction: column; margin: 20px 26px 18px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+#workspace-pane { flex: 0 1 var(--pane-width, 46%); min-width: 320px; display: flex; flex-direction: column; margin: 20px 26px 18px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
 #workspace-pane[hidden], #workspace-divider[hidden], #diff-pane[hidden], #side-terminal[hidden] { display: none; }
 .pane-title { flex: none; color: var(--text-muted); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
 #diff-controls { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -534,10 +537,18 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .hl-monospace { color: var(--code-string); }
 .hl-marker { color: var(--code-meta); }
 @media (max-width: 950px) { #workspace-pane { margin: 16px 16px 16px 0; } #workspace-divider { margin: 16px -4px; } }
-@media (max-width: 620px) {
+/* The main area cannot hold the session and the pane at their minimum widths:
+   360 px + 1 px of divider + 320 px + 26 px of pane margin = 707 px. The pane goes below
+   the session, and the main area scrolls. */
+@container main (width < 707px) {
   #session-row { flex-direction: column; }
+  #session-row > #session-view { min-width: 0; }
+  #session-row:has(> #workspace-pane:not([hidden])) { flex: none; }
+  #session-row:has(> #workspace-pane:not([hidden])) > #session-view { flex: none; height: 650px; }
   #workspace-divider { display: none; }
   #workspace-pane { flex: none; height: 600px; min-width: 0; margin: 0 16px 16px; }
+}
+@media (max-width: 620px) {
   .diff-body { grid-template-columns: 1fr; grid-template-rows: 180px minmax(0, 1fr); }
   .diff-files { border-right: 0; border-bottom: 1px solid var(--divider); }
   #diff-files-divider { display: none; }
@@ -547,7 +558,7 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .side-toolbar { display: flex; align-items: center; gap: 10px; min-height: 45px; padding: 6px 10px; border-bottom: 1px solid var(--divider); color: var(--text-muted); font-size: 11px; }
 #side-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-toolbar button:not(.icon-button) { padding: 3px 9px; font-size: 11px; }
-#side-screen { flex: 1; min-height: 0; padding: 8px 12px; background: var(--terminal-background); overflow: hidden; }
+#side-screen { flex: 1; min-height: 0; padding: 8px 12px; background: var(--terminal-background); overflow: auto; }
 
 .preview-dialog { width: 880px; padding: 0; }
 .preview-dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 40px); }

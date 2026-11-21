@@ -1178,6 +1178,14 @@ Each view has a header with its name and only its own controls.
 Drafts have no workspace pane. Ended sessions keep it while their workspace exists. A
 drag on the divider or the Left and Right arrow keys change the pane width.
 
+The session keeps a width of at least 360 pixels, so that its terminal keeps a usable
+size. The pane keeps at least 320 pixels. When the window becomes narrower, the pane
+becomes narrower first. When the window becomes wider again, the pane goes back to the
+width that the user set. A drag cannot make the pane wider than the session allows.
+When the main area is narrower than 707 pixels, it cannot hold both minimum widths.
+Then the pane is below the session, the divider is not available, and the main area
+scrolls.
+
 Each session has its own open state and view in the browser tab. A session that the
 browser tab has not shown yet starts with a closed pane. A session that you start from a
 draft also starts with a closed pane. When you select a session again, its pane shows
@@ -1524,6 +1532,11 @@ ends work for all views. There is no Detach button.
 
 Each view has its own viewport size. Smaller views crop columns and show the bottom
 screen rows, putting clipped top rows in scrollback. Larger views pad unused space.
+
+A web view asks for at least 20 columns and 5 rows, for the session terminal and the
+side terminal. When the terminal area of the view is smaller, the terminal scrolls in
+the view. Thus a narrow view does not make an agent redraw and hard-wrap its output at
+a few columns.
 
 Only a size owner resize reaches the shared emulator and PTY. The server orders accepted
 input with size owner changes. A size change reaches the PTY before the input that caused
