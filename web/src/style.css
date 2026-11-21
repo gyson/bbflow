@@ -558,7 +558,7 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .side-toolbar { display: flex; align-items: center; gap: 10px; min-height: 45px; padding: 6px 10px; border-bottom: 1px solid var(--divider); color: var(--text-muted); font-size: 11px; }
 #side-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-toolbar button:not(.icon-button) { padding: 3px 9px; font-size: 11px; }
-#side-screen { flex: 1; min-height: 0; padding: 8px 12px; background: var(--terminal-background); overflow: hidden; }
+#side-screen { flex: 1; min-height: 0; padding: 8px 12px; background: var(--terminal-background); overflow: auto; }
 
 .preview-dialog { width: 880px; padding: 0; }
 .preview-dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 40px); }
