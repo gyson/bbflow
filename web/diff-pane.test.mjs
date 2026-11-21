@@ -60,7 +60,7 @@ function setup() {
   const editor = {
     showDiff: (parent, path, old, now) => { shown.push(`${path}: ${old}->${now}`); return view; },
     showFile: (parent, path, text) => { shown.push(`${path}: ${text}`); return view; },
-    showImages: (parent, sides, layout) => { shown.push(`${layout}: ${sides.map(side => [side.label, side.format || side.note].filter(Boolean).join(' ')).join(', ')}`); return view; },
+    showImages: (parent, sides, layout) => { shown.push(`${layout}: ${sides.map(side => [side.label, side.format || (side.text !== undefined ? `text ${side.text}` : side.note)].filter(Boolean).join(' ')).join(', ')}`); return view; },
   };
   const pane = new DiffPane(() => server, send, editor);
   pane.select('session');
@@ -294,4 +294,28 @@ test('an image diff shows the image view, and Source shows the text of an SVG fi
   assert.equal(shown.at(-1), 'b.svg: <svg/>');
   nodes['diff-source'].onclick();
   assert.equal(shown.at(-1), 'unified: SVG');
+});
+
+test('Source shows SVG text next to a raster image, and a rename uses the old path for the old side', async () => {
+  const { nodes, pending, shown } = setup();
+  const files = [{ path: 'icon.svg', status: 'M', added: -1, removed: -1, binary: true }, { path: 'renamed.txt', oldPath: 'rename-me.svg', status: 'R', added: 0, removed: 0 }];
+  pending[0].resolve(changes(baselines.head, { files }));
+  await settle();
+  // The SVG file became a PNG file.
+  const svg = { state: 'text', text: '<svg/>', size: 6 };
+  pending[1].resolve({ path: 'icon.svg', baseline: baselines.head, old: svg, new: { state: 'image', mediaType: 'image/png', data: 'AA==', size: 1 } });
+  await settle();
+  assert.equal(shown.at(-1), 'split: Old SVG, New PNG');
+  nodes['diff-source'].onclick();
+  assert.equal(shown.at(-1), 'split: Old text <svg/>, New PNG');
+  nodes['diff-source'].onclick();
+
+  // A rename from an SVG path to a text path shows the old image and the new text.
+  const list = node => [node, ...node.children.flatMap(list)];
+  list(nodes['diff-list']).find(node => node.dataset.file === 'renamed.txt').onclick();
+  assert.deepEqual(pending[2].request.diff, { baseline: 'head', path: 'renamed.txt', oldPath: 'rename-me.svg' });
+  pending[2].resolve({ path: 'renamed.txt', baseline: baselines.head, old: svg, new: svg });
+  await settle();
+  assert.equal(shown.at(-1), 'split: Old SVG, New text <svg/>');
+  assert.equal(nodes['diff-source'].hidden, false);
 });

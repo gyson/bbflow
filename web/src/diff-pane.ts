@@ -764,7 +764,7 @@ export class DiffPane {
     this.copyButton.hidden = !this.selected;
     this.previewButton.hidden = !this.previewFile();
     const file = this.file;
-    this.sourceButton.hidden = !file || file.path !== this.selected || !hasSVG(file, this.mode(file) === 'diff');
+    this.sourceButton.hidden = !file || file.path !== this.selected || !hasSVG(file, this.mode(file) === 'diff', this.change(file.path)?.oldPath);
     this.sourceButton.textContent = this.svgSource ? 'View image' : 'View source';
     this.sourceButton.title = this.svgSource ? 'Show the SVG file as an image' : 'Show the text of the SVG file';
   }
@@ -811,8 +811,8 @@ export class DiffPane {
       this.view = this.editor.showFile(this.editorParent, file.path, side.text ?? '');
       return;
     }
-    // A side that is not an image shows its note in its place.
-    const images = imageSides(file, true, !this.svgSource);
+    // A side that is not an image shows its text or a note in its place.
+    const images = imageSides(file, true, !this.svgSource, this.change(file.path)?.oldPath);
     if (images) {
       this.showNote('');
       this.view = this.editor.showImages(this.editorParent, images, layout);

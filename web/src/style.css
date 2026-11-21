@@ -566,6 +566,7 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .image-side figcaption { display: flex; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--divider); background: var(--inset); color: var(--text-muted); font-size: 11px; }
 .image-label { font-weight: 600; color: var(--text); }
 .image-note { padding: 12px; color: var(--text-muted); font-size: 12px; }
+.image-text { flex: 1 1 0; min-height: 0; margin: 0; padding: 10px 12px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; color: var(--text); }
 .image-frame { flex: 1 1 0; min-height: 0; position: relative; display: grid; padding: 12px; border: 0; border-radius: 0; background: transparent; overflow: hidden; cursor: zoom-in; }
 .image-frame:hover:not(:disabled) { background: transparent; }
 .image-frame:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

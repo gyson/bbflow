@@ -288,37 +288,51 @@ export function isSVG(path: string): boolean {
   return name.length > 4 && name.endsWith('.svg');
 }
 
+// SVG text has an svg element. Other text of an SVG path, such as the pointer text of Git
+// LFS, is not an image.
+function svgText(path: string, side: FileSide): boolean {
+  return side.state === 'text' && !side.symlink && isSVG(path) && /<svg[\s/>]/i.test(side.text ?? '');
+}
+
 // The image of a side, or null. The server sends a raster image as base64. An SVG file
 // is text, and svg selects its image in place of its text. A symlink is never an image.
 export function sideImage(path: string, side: FileSide, svg: boolean): { url: string; format: string } | null {
   const format = imageFormats.get(side.mediaType ?? '');
   if (side.state === 'image' && format && side.data) return { url: `data:${side.mediaType};base64,${side.data}`, format };
-  if (svg && side.state === 'text' && !side.symlink && isSVG(path)) {
+  if (svg && svgText(path, side)) {
     return { url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(side.text ?? '')}`, format: 'SVG' };
   }
   return null;
 }
 
-// One side of the image view. A side without an image has a note in place of the image.
-export interface ImageSide { label: string; alt: string; url: string; format: string; size: number; note: string }
+// One side of the image view. A text side without an image shows its text in place of
+// the image. Another side without an image shows a note.
+export interface ImageSide { label: string; alt: string; url: string; format: string; size: number; note: string; text?: string }
 
-// The sides of the image view, or null when no shown side is an image. The file view
-// shows the new side. A diff shows the old and the new side, without a missing side.
-export function imageSides(file: WorkspaceFile, diff: boolean, svg: boolean): ImageSide[] | null {
-  const shown: [string, FileSide][] = diff ? [['Old', file.old], ['New', file.new]] : [['', file.new]];
-  const name = file.path.slice(file.path.lastIndexOf('/') + 1);
-  const sides = shown.filter(([, side]) => side.state !== 'missing').map(([label, side]): ImageSide => {
-    const image = sideImage(file.path, side, svg);
+// The shown sides of a file with their paths. The file view shows the new side. A diff
+// shows the old and the new side. The old side of a rename uses its old path.
+function shownSides(file: WorkspaceFile, diff: boolean, oldPath: string): [string, string, FileSide][] {
+  return diff ? [['Old', oldPath, file.old], ['New', file.path, file.new]] : [['', file.path, file.new]];
+}
+
+// The sides of the image view, or null when no shown side is an image. A missing side
+// is not shown.
+export function imageSides(file: WorkspaceFile, diff: boolean, svg: boolean, oldPath = file.path): ImageSide[] | null {
+  const sides = shownSides(file, diff, oldPath).filter(([, , side]) => side.state !== 'missing').map(([label, path, side]): ImageSide => {
+    const image = sideImage(path, side, svg);
+    const name = path.slice(path.lastIndexOf('/') + 1);
     const alt = label ? `${label} ${name}` : name;
     if (image) return { label, alt, url: image.url, format: image.format, size: side.size, note: '' };
-    return { label, alt, url: '', format: '', size: side.size, note: sideNote(side) || 'This version is not an image.' };
+    const blank = { label, alt, url: '', format: '', size: side.size };
+    if (side.state === 'text') return { ...blank, note: side.symlink ? 'Symbolic link. The text is the link target.' : '', text: side.text ?? '' };
+    return { ...blank, note: sideNote(side) || 'This version is not an image.' };
   });
   return sides.some(side => side.url) ? sides : null;
 }
 
 // Report that a shown side is SVG text, which can show as an image or as text.
-export function hasSVG(file: WorkspaceFile, diff: boolean): boolean {
-  return (diff ? [file.old, file.new] : [file.new]).some(side => sideImage(file.path, side, true)?.format === 'SVG');
+export function hasSVG(file: WorkspaceFile, diff: boolean, oldPath = file.path): boolean {
+  return shownSides(file, diff, oldPath).some(([, path, side]) => svgText(path, side));
 }
 
 // The format, the pixel size, and the file size of an image. A pixel size of 0 is not

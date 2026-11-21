@@ -362,6 +362,8 @@ test('a raster image side and SVG text give an image', () => {
   assert.equal(sideImage('logo.svg', svg, false), null);
   assert.equal(sideImage('logo.svg', { ...svg, symlink: true }, true), null);
   assert.equal(sideImage('logo.svg.txt', svg, true), null);
+  assert.equal(sideImage('logo.svg', { ...svg, text: 'not svg' }, true), null);
+  assert.equal(sideImage('logo.svg', { ...svg, text: '<?xml version="1.0"?>\n<SVG\nviewBox="0 0 1 1"/>' }, true).format, 'SVG');
   assert.equal(isSVG('.svg'), false);
   assert.equal(isSVG('web/src/bbflow.svg'), true);
 });
@@ -376,19 +378,33 @@ test('the image view shows the sides that are present, and a note for a side tha
   ]);
   assert.deepEqual(imageSides(file(png, missing), false, true), null);
   assert.deepEqual(imageSides(file(png, png), false, true).map(side => side.label), ['']);
-  // A type change from text to an image has a note on the text side.
+  // A type change from text to an image shows the text in place of the old image.
   const sides = imageSides(file({ state: 'text', text: 'x', size: 1 }, png), true, true);
-  assert.deepEqual(sides.map(side => [side.label, side.url !== '', side.note]), [['Old', false, 'This version is not an image.'], ['New', true, '']]);
+  assert.deepEqual(sides.map(side => [side.label, side.url !== '', side.note, side.text]), [['Old', false, '', 'x'], ['New', true, '', undefined]]);
+  const link = imageSides(file({ state: 'text', text: 'a.png', size: 5, symlink: true }, png), true, true)[0];
+  assert.deepEqual([link.note, link.text], ['Symbolic link. The text is the link target.', 'a.png']);
   assert.match(imageSides(file({ state: 'tooLarge', size: 9 << 20 }, png), true, true)[0].note, /too large/);
   // Without an image on a shown side, the file shows as text or with a note.
   assert.equal(imageSides(file({ state: 'binary', size: 1 }, { state: 'tooLarge', size: 9 << 20 }), true, true), null);
-  // Source shows SVG text as text.
+  // Source shows SVG text as text. Next to a raster image, the SVG text shows in place
+  // of the SVG image.
   const svg = { state: 'text', text: '<svg/>', size: 6 };
   assert.equal(imageSides(file(svg, svg, 'a.svg'), true, true).length, 2);
   assert.equal(imageSides(file(svg, svg, 'a.svg'), true, false), null);
+  assert.deepEqual(imageSides(file(svg, png, 'a.svg'), true, false).map(side => [side.format, side.text]), [['', '<svg/>'], ['PNG', undefined]]);
   assert.equal(hasSVG(file(svg, missing, 'a.svg'), true), true);
   assert.equal(hasSVG(file(svg, missing, 'a.svg'), false), false);
   assert.equal(hasSVG(file(png, png), true), false);
+  // The old side of a rename uses its old path.
+  const renamed = file(svg, svg, 'renamed.txt');
+  assert.deepEqual(imageSides(renamed, true, true, 'rename-me.svg').map(side => [side.alt, side.format, side.text]), [['Old rename-me.svg', 'SVG', undefined], ['New renamed.txt', '', '<svg/>']]);
+  assert.equal(imageSides(renamed, true, true), null);
+  assert.equal(hasSVG(renamed, true, 'rename-me.svg'), true);
+  assert.equal(hasSVG(renamed, false, 'rename-me.svg'), false);
+  // The pointer text of Git LFS in an SVG path is text, not an image.
+  const pointer = { state: 'text', text: 'version https://git-lfs.github.com/spec/v1\noid sha256:0\nsize 9\n', size: 60 };
+  assert.deepEqual(imageSides(file(pointer, svg, 'pointer.svg'), true, true).map(side => [side.format, side.text === pointer.text]), [['', true], ['SVG', false]]);
+  assert.equal(hasSVG(file(pointer, missing, 'pointer.svg'), true), false);
 });
 
 test('image details name the format, the pixel size, and the file size', () => {

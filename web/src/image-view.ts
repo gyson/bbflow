@@ -1,5 +1,5 @@
 import type { CodeView } from './diff-editor.js';
-import { imageDetails } from './diff-model.js';
+import { imageDetails, sizeText } from './diff-model.js';
 import type { DiffLayout, ImageSide } from './diff-model.js';
 
 // The image view shows one image, or the old and new images of a diff. Split puts the
@@ -7,7 +7,8 @@ import type { DiffLayout, ImageSide } from './diff-model.js';
 //
 // An image shows only in an img element. There, an SVG file cannot run scripts or load
 // other files. Each image fits in its side. A click on an image shows all images at
-// their actual size, and the next click fits them again.
+// their actual size, and the next click fits them again. A text side without an image
+// shows its text as DOM text, never as HTML.
 export function showImages(parent: HTMLElement, sides: ImageSide[], layout: DiffLayout): CodeView {
   const view = document.createElement('div');
   view.className = `image-view ${layout}`;
@@ -25,12 +26,18 @@ export function showImages(parent: HTMLElement, sides: ImageSide[], layout: Diff
     figure.className = 'image-side';
     const caption = document.createElement('figcaption');
     if (side.label) caption.append(textSpan('image-label', side.label));
-    const details = textSpan('image-details', side.url ? imageDetails(side) : '');
+    const details = textSpan('image-details', side.url ? imageDetails(side) : side.text !== undefined ? `Text · ${sizeText(side.size)}` : '');
     caption.append(details);
     figure.append(caption);
     view.append(figure);
     if (!side.url) {
-      figure.append(textSpan('image-note', side.note));
+      if (side.note) figure.append(textSpan('image-note', side.note));
+      if (side.text !== undefined) {
+        const text = document.createElement('pre');
+        text.className = 'image-text';
+        text.textContent = side.text;
+        figure.append(text);
+      }
       continue;
     }
     const frame = document.createElement('button');

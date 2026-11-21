@@ -1280,8 +1280,13 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   the raster format from the first bytes of the file, not from its extension. The file
   view shows one image. The diff shows the old and the new image. **Split** puts them
   side by side, and **Unified** puts the old image above the new image. An added file
-  shows only its new image, and a deleted file only its old image. A side that is not
-  an image, for example the text side of a type change, shows a note in its place.
+  shows only its new image, and a deleted file only its old image. A text side without
+  an image, for example the text side of a type change, shows its text in place of the
+  image. Another side without an image shows a note.
+- An SVG file shows as an image only when its text has an `svg` element. Other text in
+  an SVG file, such as the pointer text of Git LFS, shows as text. The old side of a
+  rename uses its old path. Thus a rename from an SVG file to another file type shows
+  the old image.
 - Each image fits in its side and never gets larger than its actual size. A click on
   an image shows all images at their actual size, with scroll bars when necessary. The
   next click fits them again. An SVG file without its own width and height has no
@@ -1290,8 +1295,9 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   each image shows **Old** or **New** in a diff, the format, the pixel size, and the
   file size. An SVG file shows no pixel size. An image that the browser cannot decode
   shows "The browser cannot show this image."
-- For an SVG file, **View source** shows its text, or the diff of its text. **View
-  image** shows the image again. The choice applies to all SVG files in both views of
+- For an SVG file, **View source** shows its text, or the diff of its text. Next to a
+  raster image, the SVG side shows its text in place of its image. **View image** shows
+  the image again. The choice applies to all SVG files in both views of
   the browser tab. A reload resets it.
 - Images show only in `img` elements, from `data:` URLs. There, an SVG file cannot run
   scripts or load other files. The page policy also allows images only from the page
@@ -1378,8 +1384,8 @@ Limits:
   fit in one 16 MiB protocol message. A larger side shows a note instead of its content.
 - A side with a NUL byte in its first 8000 bytes, or with invalid UTF-8, is binary. A
   binary side that starts with the signature of a PNG, JPEG, GIF, or WebP file is an
-  image. Text stays text, also when it starts like an image. The pane shows a note
-  instead of the content of other binary sides.
+  image. Text stays text, also when it starts like an image. Thus text above 1 MiB is
+  too large. The pane shows a note instead of the content of other binary sides.
 - The changed list holds at most 5,000 files, and the filter list of **Files** at most
   20,000 paths. A longer list shows a note.
 - One reply of folder lists holds at most 20,000 entries. A folder with more entries
@@ -1397,7 +1403,9 @@ Limits:
 - When the first read of the workspace folder fails, the tree shows "Cannot read this
   folder. Click Refresh to try again." in place of "Reading…".
 - Line counts of untracked files use at most 32 MiB of reads for each list. Later
-  untracked files show no count.
+  untracked files show no count. An untracked file above 1 MiB has no line count. When
+  its first 512 bytes are binary data with a PNG, JPEG, GIF, or WebP signature, it
+  counts as binary.
 - A folder that is not a Git repository has no changes and no filter.
 
 ### Side terminal
@@ -1961,10 +1969,13 @@ range of every row, the focus after a row, the keys, a base that is gone, and th
 notice of omitted commits with an empty list. Image fixtures cover PNG, JPEG, GIF, and
 WebP sides from Git and from the workspace, a format change, an image above 1 MiB, an
 image and other binary data above the limits, text with an image extension or an image
-signature, and an SVG symlink. A WebSocket fixture sends two 5 MiB image sides in one
+signature, text above 1 MiB with an image signature, and an SVG symlink. A change list
+fixture counts an untracked image above 1 MiB as binary. It also counts text above 1 MiB
+with an image signature as text, also when the read of its first bytes cuts a character. A WebSocket fixture sends two 5 MiB image sides in one
 reply. Web fixtures cover the image URLs, SVG text in a URL, the shown sides and their
-notes, the captions, and the size text. Pane fixtures cover an image diff in both
-layouts and **View source** with an SVG file. Markdown fixtures cover raw HTML, script links,
+text or notes, a rename from an SVG path, Git LFS pointer text in an SVG path, the
+captions, and the size text. Pane fixtures cover an image diff in both layouts,
+**View source** with an SVG file and next to a PNG file, and a rename from an SVG path. Markdown fixtures cover raw HTML, script links,
 relative and allowed links, images, tables, task lists, escaped task markers, syntax
 colors and escaped text in fenced code, and the files that Preview accepts.
 
@@ -2424,7 +2435,7 @@ shows one file at a time. A diff that ends at a commit has no untracked files, a
 Files always shows the current files. Its commit list has at most 30 commits since the
 base, and it omits the last commit of a shallow clone, whose parent is not available.
 **All changes** needs a base. A session without `origin/HEAD` and `main`, and a session
-whose `HEAD` has no commit that the default branch does not have, have none. The **Uncommitted changes** row has no file count. Other image formats, such as AVIF, HEIC, TIFF, BMP, and ICO, show as binary files. In a Git LFS repository, Git gives the LFS pointer text for a committed side. Then the diff shows a note in place of the old image. It cannot show changes in a folder that is
+whose `HEAD` has no commit that the default branch does not have, have none. The **Uncommitted changes** row has no file count. Other image formats, such as AVIF, HEIC, TIFF, BMP, and ICO, show as binary files. In a Git LFS repository, Git gives the LFS pointer text for a committed side. Then the diff shows that text in place of the old image. It cannot show changes in a folder that is
 not a Git repository. The filter of **Files** needs a Git repository, and it does not
 find ignored files. The tree has no arrow key navigation. Use Tab and Enter. Git detects a rename only
 between tracked files with similar content. An untracked new file and its deleted

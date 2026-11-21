@@ -95,7 +95,9 @@ func TestWorkspaceChangesListsEachStatusAgainstHead(t *testing.T) {
 		"image.bin": "\x00\x01\x02", "ignored.log": "",
 	})
 	writeFiles(t, repo, map[string]string{".gitignore": "*.log\n", "edit.txt": "one\n2\nthree\nfour\n", "image.bin": "\x00\x01\x03",
-		"café ü.txt": "a\nb", "line\nbreak.txt": "x\n", "debug.log": "ignored\n", "new.png": pngData})
+		"café ü.txt": "a\nb", "line\nbreak.txt": "x\n", "debug.log": "ignored\n", "new.png": pngData,
+		"large.png": pngData + strings.Repeat("\x00", maxFileSide), "large.txt": strings.Repeat("x\n", maxFileSide),
+		"large.gif": "GIF89a" + strings.Repeat("x", sniffLength-7) + "é\n" + strings.Repeat("x\n", maxFileSide/2)})
 	os.Remove(filepath.Join(repo, "delete.txt"))
 	fixtureGit(t, repo, "mv", "old name.txt", "new name.txt")
 	changes, err := s.workspaceChanges(context.Background(), diffSession(t, s, repo), nil)
@@ -119,6 +121,12 @@ func TestWorkspaceChangesListsEachStatusAgainstHead(t *testing.T) {
 		"café ü.txt":      {Path: "café ü.txt", Status: "A", Added: 2, Untracked: true},
 		"line\nbreak.txt": {Path: "line\nbreak.txt", Status: "A", Added: 1, Untracked: true},
 		"new.png":         {Path: "new.png", Status: "A", Added: -1, Binary: true, Untracked: true},
+		// An image above the text limit is binary. Other large files have no count.
+		"large.png": {Path: "large.png", Status: "A", Added: -1, Binary: true, Untracked: true},
+		"large.txt": {Path: "large.txt", Status: "A", Added: -1, Untracked: true},
+		// Text with an image signature is not binary. The read of its first 512 bytes
+		// cuts é after its first byte.
+		"large.gif": {Path: "large.gif", Status: "A", Added: -1, Untracked: true},
 	}
 	if !reflect.DeepEqual(files, want) {
 		t.Fatalf("files:\n got %+v\nwant %+v", files, want)
@@ -188,10 +196,11 @@ func TestWorkspaceFileReadsImages(t *testing.T) {
 	jpeg := "\xff\xd8\xff\xe0\x00\x10JFIF\x00"
 	large := pngData + strings.Repeat("\x00", maxFileSide)
 	blob := "\x00" + strings.Repeat("x", maxFileSide+100)
+	longText := strings.Repeat("GIF89a is a format.\n", maxFileSide/20+1)
 	repo := diffRepository(t, map[string]string{"icon.png": pngData, "large.png": large, "blob.bin": blob, "photo.jpg": jpeg})
 	writeFiles(t, repo, map[string]string{
 		"icon.png": gif, "anim.webp": webp, "huge.png": pngData + strings.Repeat("\x00", maxImageSide),
-		"notes.png": "not an image\n", "header.gif": "GIF89a is a format.\n",
+		"notes.png": "not an image\n", "header.gif": "GIF89a is a format.\n", "long.gif": longText,
 	})
 	if err := os.Symlink("icon.png", filepath.Join(repo, "link.png")); err != nil {
 		t.Fatal(err)
@@ -217,6 +226,8 @@ func TestWorkspaceFileReadsImages(t *testing.T) {
 		// Text stays text, also with an image extension or the start of an image.
 		{"notes.png", missing, text("not an image\n")},
 		{"header.gif", missing, text("GIF89a is a format.\n")},
+		// Text above the text limit is too large, also with the start of an image.
+		{"long.gif", missing, protocol.FileSide{State: "tooLarge", Size: int64(len(longText))}},
 		{"link.png", missing, protocol.FileSide{State: "text", Text: "icon.png", Size: 8, Symlink: true}},
 	}
 	for _, c := range cases {
