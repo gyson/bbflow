@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"maps"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -276,8 +281,67 @@ var step = lines(
 	"}",
 )
 
+// orbitPNG draws a planet on a circular orbit, with a transparent background. The
+// working files change the color of the planet and add a moon.
+func orbitPNG(planet color.NRGBA, moon bool) string {
+	const size = 96
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	for y := range size {
+		for x := range size {
+			switch d := math.Hypot(float64(x)-47.5, float64(y)-47.5); {
+			case d < 14:
+				img.SetNRGBA(x, y, planet)
+			case d > 38 && d < 41:
+				img.SetNRGBA(x, y, color.NRGBA{0x46, 0x85, 0x65, 0xff})
+			}
+			if moon && math.Hypot(float64(x)-77.5, float64(y)-25.5) < 7 {
+				img.SetNRGBA(x, y, color.NRGBA{0xb0, 0xb0, 0xb8, 0xff})
+			}
+		}
+	}
+	var out bytes.Buffer
+	check(png.Encode(&out, img))
+	return out.String()
+}
+
+// largePNG draws a 1400 × 900 color gradient with noise. The noise keeps the PNG file
+// above 1 MiB, the text limit of the file views. Its fixed values give the same file
+// for each seed.
+func largePNG() string {
+	img := image.NewRGBA(image.Rect(0, 0, 1400, 900))
+	noise := uint32(1)
+	for y := range 900 {
+		for x := range 1400 {
+			noise ^= noise << 13
+			noise ^= noise >> 17
+			noise ^= noise << 5
+			img.SetRGBA(x, y, color.RGBA{uint8(x * 255 / 1400), uint8(noise), uint8(y * 255 / 900), 0xff})
+		}
+	}
+	var out bytes.Buffer
+	check(png.Encode(&out, img))
+	return out.String()
+}
+
+// orbitSVG has only a viewBox, as many icon files do.
+func orbitSVG(shapes ...string) string {
+	return lines(append(append([]string{`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">`}, shapes...), "</svg>")...)
+}
+
+// unsafeSVG tries to change the page title and to load an external image. In the image
+// view, it shows only a red rectangle and the placeholder of the external image. The
+// .invalid domain never resolves.
+var unsafeSVG = lines(
+	`<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120" onload="parent.document.title='onload ran'">`,
+	`  <script>parent.document.title = 'script ran'</script>`,
+	`  <rect width="200" height="120" fill="#c33"/>`,
+	`  <image href="https://example.invalid/tracker.png" width="50" height="50"/>`,
+	`</svg>`,
+)
+
 // orbitProject has three commits and one change of each kind in its working files. A
-// file in a deep folder has a long path.
+// file in a deep folder has a long path. A PNG and an SVG file change too. Two added
+// files are a PNG file above 1 MiB and an SVG file with a script.
 func (d *demo) orbitProject() string {
 	folder := d.repository("orbit-api")
 	commit(folder, "Add the orbit service skeleton", map[string]string{
@@ -285,6 +349,9 @@ func (d *demo) orbitProject() string {
 		"go.mod":                   lines("module example.invalid/orbit", "", "go 1.27"),
 		"cmd/server/main.go":       lines("package main", "", `import "fmt"`, "", "func main() {", "\tfmt.Println(\"orbit api\")", "}"),
 		"internal/orbit/period.go": period,
+		"docs/orbit.png":           orbitPNG(color.NRGBA{0x4a, 0x64, 0xa8, 0xff}, false),
+		"docs/orbit.svg": orbitSVG(`  <circle cx="48" cy="48" r="39" fill="none" stroke="#468565" stroke-width="3"/>`,
+			`  <circle cx="48" cy="48" r="14" fill="#4a64a8"/>`),
 	})
 	commit(folder, "Add period tests and the design note", map[string]string{
 		"internal/orbit/period_test.go": lines("package orbit", "", `import "testing"`, "", "func TestPeriod(t *testing.T) {",
@@ -301,7 +368,12 @@ func (d *demo) orbitProject() string {
 			"func Minutes(axis, mu float64) float64 {", "\treturn Period(axis, mu) / 60", "}"),
 		"internal/orbit/transfer.go": lines("package orbit", "", "// Transfer is not implemented.",
 			"func Transfer(from, to float64) float64 {", "\treturn 0", "}"),
-		controller: step + lines("", "// MinStep is the smallest step size in seconds.", "const MinStep = 1e-3"),
+		controller:       step + lines("", "// MinStep is the smallest step size in seconds.", "const MinStep = 1e-3"),
+		"docs/orbit.png": orbitPNG(color.NRGBA{0xd9, 0x82, 0x2b, 0xff}, true),
+		"docs/orbit.svg": orbitSVG(`  <ellipse cx="48" cy="48" rx="42" ry="26" fill="none" stroke="#468565" stroke-width="3"/>`,
+			`  <circle cx="48" cy="48" r="14" fill="#d9822b"/>`, `  <circle cx="84" cy="36" r="6" fill="#b0b0b8"/>`),
+		"docs/large.png":  largePNG(),
+		"docs/unsafe.svg": unsafeSVG,
 	})
 	check(os.Remove(filepath.Join(folder, "docs", "design.md")))
 	git(folder, "mv", "docs/api.md", "docs/http-api.md")

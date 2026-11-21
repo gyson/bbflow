@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, languageName, openFolders, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, sideNote, statusTitle, stepScope, timelineHeading, treeRows } from './dist/diff-model.js';
+import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, hasSVG, imageDetails, imageSides, isSVG, languageName, openFolders, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, sideImage, sideNote, sizeText, statusTitle, stepScope, timelineHeading, treeRows } from './dist/diff-model.js';
 
 const change = (path, status = 'M', extra = {}) => ({ path, status, added: 1, removed: 2, ...extra });
 
@@ -255,7 +255,7 @@ test('only text and missing sides have no note', () => {
   assert.equal(sideNote({ state: 'text', text: 'x', size: 1 }), '');
   assert.equal(sideNote({ state: 'missing', size: 0 }), '');
   assert.match(sideNote({ state: 'binary', size: 3 }), /Binary/);
-  assert.match(sideNote({ state: 'tooLarge', size: 5 << 20 }), /1 MiB/);
+  assert.match(sideNote({ state: 'tooLarge', size: 5 << 20 }), /1 MiB for text and 5 MiB for PNG, JPEG, GIF, and WebP images/);
   assert.match(sideNote({ state: 'other', size: 0 }), /folder/);
 });
 
@@ -342,4 +342,63 @@ test('a file reply moved when the server did not use the requested commit', () =
   assert.equal(baselineMoved({ baseline: 'head' }, { kind: 'head', label: '', commit: 'h' }), false);
   assert.equal(baselineMoved({}, { kind: 'head', label: '', commit: 'h' }), false);
   assert.equal(baselineMoved({}, { kind: '', label: '', commit: '' }), false);
+});
+
+test('a raster image side and SVG text give an image', () => {
+  const png = { state: 'image', mediaType: 'image/png', data: 'iVBORw0K', size: 6 };
+  assert.deepEqual(sideImage('a.png', png, true), { url: 'data:image/png;base64,iVBORw0K', format: 'PNG' });
+  // The server names the format. The file extension does not matter.
+  assert.deepEqual(sideImage('a.txt', { ...png, mediaType: 'image/webp' }, false), { url: 'data:image/webp;base64,iVBORw0K', format: 'WebP' });
+  assert.equal(sideImage('a.png', { ...png, mediaType: 'image/svg+xml' }, true), null);
+  assert.equal(sideImage('a.png', { ...png, mediaType: 'constructor' }, true), null);
+  assert.equal(sideImage('a.png', { state: 'binary', size: 6 }, true), null);
+  // SVG text shows only as an image URL. Its text cannot end the URL or add markup.
+  const svg = { state: 'text', text: '<svg xmlns="http://www.w3.org/2000/svg"><a href="#">"x"</a></svg>', size: 9 };
+  const image = sideImage('icons/Logo.SVG', svg, true);
+  assert.equal(image.format, 'SVG');
+  assert.ok(image.url.startsWith('data:image/svg+xml;charset=utf-8,%3Csvg%20'));
+  assert.doesNotMatch(image.url.slice(5), /[<>"# ]/);
+  assert.equal(decodeURIComponent(image.url.slice(image.url.indexOf(',') + 1)), svg.text);
+  assert.equal(sideImage('logo.svg', svg, false), null);
+  assert.equal(sideImage('logo.svg', { ...svg, symlink: true }, true), null);
+  assert.equal(sideImage('logo.svg.txt', svg, true), null);
+  assert.equal(isSVG('.svg'), false);
+  assert.equal(isSVG('web/src/bbflow.svg'), true);
+});
+
+test('the image view shows the sides that are present, and a note for a side that is not an image', () => {
+  const baseline = { kind: 'head', label: '', commit: 'h' };
+  const png = { state: 'image', mediaType: 'image/png', data: 'AA==', size: 1 };
+  const missing = { state: 'missing', size: 0 };
+  const file = (old, now, path = 'img/a.png') => ({ path, baseline, old, new: now });
+  assert.deepEqual(imageSides(file(missing, png), true, true), [
+    { label: 'New', alt: 'New a.png', url: 'data:image/png;base64,AA==', format: 'PNG', size: 1, note: '' },
+  ]);
+  assert.deepEqual(imageSides(file(png, missing), false, true), null);
+  assert.deepEqual(imageSides(file(png, png), false, true).map(side => side.label), ['']);
+  // A type change from text to an image has a note on the text side.
+  const sides = imageSides(file({ state: 'text', text: 'x', size: 1 }, png), true, true);
+  assert.deepEqual(sides.map(side => [side.label, side.url !== '', side.note]), [['Old', false, 'This version is not an image.'], ['New', true, '']]);
+  assert.match(imageSides(file({ state: 'tooLarge', size: 9 << 20 }, png), true, true)[0].note, /too large/);
+  // Without an image on a shown side, the file shows as text or with a note.
+  assert.equal(imageSides(file({ state: 'binary', size: 1 }, { state: 'tooLarge', size: 9 << 20 }), true, true), null);
+  // Source shows SVG text as text.
+  const svg = { state: 'text', text: '<svg/>', size: 6 };
+  assert.equal(imageSides(file(svg, svg, 'a.svg'), true, true).length, 2);
+  assert.equal(imageSides(file(svg, svg, 'a.svg'), true, false), null);
+  assert.equal(hasSVG(file(svg, missing, 'a.svg'), true), true);
+  assert.equal(hasSVG(file(svg, missing, 'a.svg'), false), false);
+  assert.equal(hasSVG(file(png, png), true), false);
+});
+
+test('image details name the format, the pixel size, and the file size', () => {
+  const side = { label: '', alt: '', url: 'data:', format: 'PNG', size: 34 * 1024, note: '' };
+  assert.equal(imageDetails(side), 'PNG · 34 KiB');
+  assert.equal(imageDetails(side, 512, 256), 'PNG · 512 × 256 · 34 KiB');
+  // An SVG file has no pixel size.
+  assert.equal(imageDetails({ ...side, format: 'SVG', size: 1 }, 300, 150), 'SVG · 1 byte');
+  assert.equal(sizeText(1023), '1023 bytes');
+  assert.equal(sizeText(1536), '1.5 KiB');
+  assert.equal(sizeText(5 << 20), '5.0 MiB');
+  assert.equal(sizeText(12 << 20), '12 MiB');
 });

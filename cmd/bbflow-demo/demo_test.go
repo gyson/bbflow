@@ -153,8 +153,17 @@ func TestDemo(t *testing.T) {
 		t.Fatalf("seed changed the repository of GIT_DIR: commits %s, status %q, config:\n%s", count, status, config)
 	}
 	// The Changes and Files views show a long path in a deep folder.
-	if status := git(filepath.Join(demo, "demo", "projects", "orbit-api"), "status", "--porcelain"); !strings.Contains(status, " M "+controller) {
-		t.Fatalf("seed did not change %s:\n%s", controller, status)
+	// They also show the old and new images of a PNG and an SVG file, an added PNG file
+	// above the text limit of 1 MiB, and an added SVG file with a script.
+	orbit := filepath.Join(demo, "demo", "projects", "orbit-api")
+	status := git(orbit, "status", "--porcelain")
+	for _, change := range []string{" M " + controller, " M docs/orbit.png", " M docs/orbit.svg", "?? docs/large.png", "?? docs/unsafe.svg"} {
+		if !strings.Contains(status, change) {
+			t.Fatalf("seed did not make the change %q:\n%s", change, status)
+		}
+	}
+	if info, err := os.Stat(filepath.Join(orbit, "docs", "large.png")); err != nil || info.Size() <= 1<<20 || info.Size() > 5<<20 {
+		t.Fatalf("docs/large.png must be above 1 MiB and at most 5 MiB: %v, %v", info, err)
 	}
 	expect("SELECT name FROM projects ORDER BY name", "[[General] [Orbit API] [Tide Web]]")
 	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 7] [1 1]]")

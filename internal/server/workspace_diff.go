@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,8 @@ const (
 	maxFolderRequest  = 200      // Folders in one request.
 	maxWorkspaceFiles = 20000    // Paths in the list that the Files filter searches.
 	maxFileSide       = 1 << 20  // Bytes of one side of one file.
+	maxImageSide      = 5 << 20  // Bytes of one image side. Two sides in base64 fit in one message.
+	sniffLength       = 512      // Bytes that identify the format of a file.
 	maxGitList        = 16 << 20 // Bytes of one Git list output.
 	maxCountBudget    = 32 << 20 // Bytes read to count lines of untracked files.
 	gitReadTimeout    = 10 * time.Second
@@ -596,9 +599,9 @@ func applyNumstat(files []protocol.ChangedFile, counts map[string]lineCount) {
 // countLines counts the lines of an untracked file. It reads at most budget bytes over
 // all calls. It returns -1 for an unknown count.
 func countLines(root *os.Root, path string, budget *int) (int, bool) {
-	side := readSide(root, path, min(*budget, maxFileSide))
+	side := readSide(root, path, min(*budget, maxFileSide), 0)
 	switch side.State {
-	case "binary":
+	case "binary", "image":
 		*budget -= int(side.Size)
 		return -1, true
 	case "text":
@@ -682,7 +685,7 @@ func (s *Server) workspaceFile(ctx context.Context, id string, request *protocol
 		return result, err
 	}
 	defer root.Close()
-	result.New = readSide(root, request.Path, maxFileSide)
+	result.New = readSide(root, request.Path, maxFileSide, maxImageSide)
 	return result, nil
 }
 
@@ -861,22 +864,37 @@ func treeSide(ctx context.Context, workspace, commit, path string) (protocol.Fil
 	}
 	side := protocol.FileSide{Symlink: fields[0] == "120000"}
 	side.Size, _ = strconv.ParseInt(fields[3], 10, 64)
-	if side.Size > maxFileSide {
+	limit := maxFileSide
+	if side.Size > maxFileSide && side.Size <= maxImageSide && !side.Symlink {
+		// Only an image can be larger than a text side. Its first bytes identify it.
+		head, _, err := gitRead(ctx, workspace, sniffLength, "cat-file", "blob", fields[2])
+		if err != nil {
+			return missing, err
+		}
+		if imageType(head) != "" {
+			limit = maxImageSide
+		}
+	}
+	if side.Size > int64(limit) {
 		side.State = "tooLarge"
 		return side, nil
 	}
-	data, _, err := gitRead(ctx, workspace, maxFileSide, "cat-file", "blob", fields[2])
+	data, _, err := gitRead(ctx, workspace, limit, "cat-file", "blob", fields[2])
 	if err != nil {
 		return missing, err
 	}
-	setText(&side, data)
+	if side.Symlink {
+		setText(&side, data)
+	} else {
+		setContent(&side, data, maxFileSide)
+	}
 	return side, nil
 }
 
-// readSide reads one path of the current workspace. os.Root refuses paths and
-// symlinks that leave the workspace. A symlink holds its target text and is not
-// followed.
-func readSide(root *os.Root, path string, limit int) protocol.FileSide {
+// readSide reads one path of the current workspace. Text and binary data hold at most
+// limit bytes, and an image at most imageLimit bytes. os.Root refuses paths and symlinks
+// that leave the workspace. A symlink holds its target text and is not followed.
+func readSide(root *os.Root, path string, limit, imageLimit int) protocol.FileSide {
 	info, err := root.Lstat(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -899,7 +917,8 @@ func readSide(root *os.Root, path string, limit int) protocol.FileSide {
 		side.State = "other"
 		return side
 	}
-	if side.Size > int64(limit) {
+	most := max(limit, imageLimit)
+	if side.Size > int64(most) {
 		side.State = "tooLarge"
 		return side
 	}
@@ -913,15 +932,24 @@ func readSide(root *os.Root, path string, limit int) protocol.FileSide {
 		return protocol.FileSide{State: "other"}
 	}
 	data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
+	if err == nil && len(data) > limit && most > limit && imageType(data) != "" {
+		// Only an image can be larger than a text side. Its first bytes identify it.
+		var rest []byte
+		rest, err = io.ReadAll(io.LimitReader(file, int64(most-len(data))+1))
+		data = append(data, rest...)
+	}
 	if err != nil {
 		return protocol.FileSide{State: "other"}
 	}
+	stat := side.Size
 	side.Size = int64(len(data))
-	if len(data) > limit {
-		side.State = "tooLarge"
-		return side
+	if len(data) <= most {
+		setContent(&side, data, limit)
 	}
-	setText(&side, data)
+	if len(data) > most || side.State == "tooLarge" {
+		// The read can stop before the end. Report the larger size.
+		side.State, side.Size = "tooLarge", max(stat, side.Size)
+	}
 	return side
 }
 
@@ -933,4 +961,32 @@ func setText(side *protocol.FileSide, data []byte) {
 		return
 	}
 	side.State, side.Text = "text", string(data)
+}
+
+// setContent stores text, an image, or binary data. Text stays text, also when it starts
+// like an image. Text and binary data hold at most textLimit bytes. Larger data is too
+// large, unless it is an image.
+func setContent(side *protocol.FileSide, data []byte, textLimit int) {
+	if len(data) <= textLimit {
+		if setText(side, data); side.State == "text" {
+			return
+		}
+	}
+	switch media := imageType(data); {
+	case media != "":
+		side.State, side.MediaType, side.Data = "image", media, data
+	case len(data) > textLimit:
+		side.State = "tooLarge"
+	}
+}
+
+// imageType returns the media type of data in an image format that the file views show.
+// It reads only the first bytes, not the file extension. Other data gives an empty
+// string. SVG is text, so the client shows it from its text.
+func imageType(data []byte) string {
+	switch media := http.DetectContentType(data); media {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		return media
+	}
+	return ""
 }

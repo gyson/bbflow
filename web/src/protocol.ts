@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/33';
+export const VERSION = 'bbflow/34';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -119,7 +119,8 @@ export interface WorkspaceFiles { repository: boolean; reason?: string; paths: s
 export interface FolderEntry { name: string; kind: 'folder' | 'file' | 'symlink' | 'other'; ignored?: boolean }
 export interface WorkspaceFolder { path: string; missing?: boolean; entries: FolderEntry[]; truncated?: boolean }
 export interface WorkspaceFolders { folders: WorkspaceFolder[]; ignoreError?: string }
-export interface FileSide { state: 'text' | 'missing' | 'binary' | 'tooLarge' | 'other'; text?: string; size: number; symlink?: boolean }
+// An image side has its media type and its bytes in base64.
+export interface FileSide { state: 'text' | 'missing' | 'binary' | 'image' | 'tooLarge' | 'other'; text?: string; mediaType?: string; data?: string; size: number; symlink?: boolean }
 export interface WorkspaceFile { path: string; baseline: Baseline; old: FileSide; new: FileSide }
 type ChangesRequest = { operation: 'workspace-changes'; session: string; diff: DiffRequest };
 type FilesRequest = { operation: 'workspace-files'; session: string };

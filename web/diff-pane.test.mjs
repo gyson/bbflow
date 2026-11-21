@@ -33,7 +33,7 @@ class Node {
 
 const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-scope-id', 'diff-scope-label', 'diff-scope-menu',
   'diff-split', 'diff-unified', 'diff-summary', 'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts',
-  'diff-toggle', 'diff-copy', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
+  'diff-toggle', 'diff-source', 'diff-copy', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
   'diff-refresh', 'diff-close', 'preview-close'];
 const server = { protocol: 'test', instance: 'test', port: 1234, dataDir: '/fixture' };
 const commit = '0123456789abcdef0123456789abcdef01234567';
@@ -57,7 +57,11 @@ function setup() {
   const send = (server, request, signal) => new Promise((resolve, reject) => pending.push({ request, signal, resolve, reject }));
   const shown = [];
   const view = { destroy() {} };
-  const editor = { showDiff: (parent, path, old, now) => { shown.push(`${path}: ${old}->${now}`); return view; }, showFile: () => view };
+  const editor = {
+    showDiff: (parent, path, old, now) => { shown.push(`${path}: ${old}->${now}`); return view; },
+    showFile: (parent, path, text) => { shown.push(`${path}: ${text}`); return view; },
+    showImages: (parent, sides, layout) => { shown.push(`${layout}: ${sides.map(side => [side.label, side.format || side.note].filter(Boolean).join(' ')).join(', ')}`); return view; },
+  };
   const pane = new DiffPane(() => server, send, editor);
   pane.select('session');
   pane.setShown(true, 'changed');
@@ -257,4 +261,37 @@ test('the menu shows the notice of omitted commits also with an empty list', asy
   await settle();
   assert.equal(button.disabled, true);
   assert.equal(nodes['diff-scope-menu'].hidden, true);
+});
+
+test('an image diff shows the image view, and Source shows the text of an SVG file', async () => {
+  const { nodes, pending, shown } = setup();
+  const files = [{ path: 'a.png', status: 'M', added: -1, removed: -1, binary: true }, { path: 'b.svg', status: 'A', added: 1, removed: 0 }];
+  pending[0].resolve(changes(baselines.head, { files }));
+  await settle();
+  const png = { state: 'image', mediaType: 'image/png', data: 'AA==', size: 1 };
+  pending[1].resolve({ path: 'a.png', baseline: baselines.head, old: png, new: { ...png, mediaType: 'image/gif' } });
+  await settle();
+  assert.deepEqual(shown, ['split: Old PNG, New GIF']);
+  assert.equal(nodes['diff-source'].hidden, true);
+  // Unified puts the sides in one column.
+  nodes['diff-unified'].onclick();
+  assert.equal(shown.at(-1), 'unified: Old PNG, New GIF');
+
+  // An added SVG file shows its new side as an image. Source shows its text diff, and
+  // the next file keeps that choice.
+  const list = node => [node, ...node.children.flatMap(list)];
+  list(nodes['diff-list']).find(node => node.dataset.file === 'b.svg').onclick();
+  pending[2].resolve({ path: 'b.svg', baseline: baselines.head, old: { state: 'missing', size: 0 }, new: { state: 'text', text: '<svg/>', size: 6 } });
+  await settle();
+  assert.equal(shown.at(-1), 'unified: New SVG');
+  assert.equal(nodes['diff-source'].hidden, false);
+  assert.equal(nodes['diff-source'].textContent, 'View source');
+  nodes['diff-source'].onclick();
+  assert.equal(shown.at(-1), 'b.svg: -><svg/>');
+  assert.equal(nodes['diff-source'].textContent, 'View image');
+  // View file shows the text too, until Source changes back to the image.
+  nodes['diff-toggle'].onclick();
+  assert.equal(shown.at(-1), 'b.svg: <svg/>');
+  nodes['diff-source'].onclick();
+  assert.equal(shown.at(-1), 'unified: SVG');
 });

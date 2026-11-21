@@ -1,4 +1,4 @@
-import type { Base, Baseline, ChangedFile, Commit, DiffRequest, FileSide, FolderEntry, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
+import type { Base, Baseline, ChangedFile, Commit, DiffRequest, FileSide, FolderEntry, WorkspaceFile, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
 
 export type DiffLayout = 'split' | 'unified';
 export type FileScope = 'changed' | 'files';
@@ -274,10 +274,64 @@ export function countText(change: ChangedFile): { added: string; removed: string
 export function sideNote(side: FileSide): string {
   switch (side.state) {
     case 'binary': return 'Binary file. bbflow does not show its content.';
-    case 'tooLarge': return 'This file is larger than 1 MiB. bbflow does not show its content.';
+    case 'tooLarge': return 'This file is too large to show. The limit is 1 MiB for text and 5 MiB for PNG, JPEG, GIF, and WebP images.';
     case 'other': return 'This path is a folder, a submodule, or a special file.';
     default: return '';
   }
+}
+
+// The formats of the image sides that the server sends.
+const imageFormats = new Map([['image/png', 'PNG'], ['image/jpeg', 'JPEG'], ['image/gif', 'GIF'], ['image/webp', 'WebP']]);
+
+export function isSVG(path: string): boolean {
+  const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
+  return name.length > 4 && name.endsWith('.svg');
+}
+
+// The image of a side, or null. The server sends a raster image as base64. An SVG file
+// is text, and svg selects its image in place of its text. A symlink is never an image.
+export function sideImage(path: string, side: FileSide, svg: boolean): { url: string; format: string } | null {
+  const format = imageFormats.get(side.mediaType ?? '');
+  if (side.state === 'image' && format && side.data) return { url: `data:${side.mediaType};base64,${side.data}`, format };
+  if (svg && side.state === 'text' && !side.symlink && isSVG(path)) {
+    return { url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(side.text ?? '')}`, format: 'SVG' };
+  }
+  return null;
+}
+
+// One side of the image view. A side without an image has a note in place of the image.
+export interface ImageSide { label: string; alt: string; url: string; format: string; size: number; note: string }
+
+// The sides of the image view, or null when no shown side is an image. The file view
+// shows the new side. A diff shows the old and the new side, without a missing side.
+export function imageSides(file: WorkspaceFile, diff: boolean, svg: boolean): ImageSide[] | null {
+  const shown: [string, FileSide][] = diff ? [['Old', file.old], ['New', file.new]] : [['', file.new]];
+  const name = file.path.slice(file.path.lastIndexOf('/') + 1);
+  const sides = shown.filter(([, side]) => side.state !== 'missing').map(([label, side]): ImageSide => {
+    const image = sideImage(file.path, side, svg);
+    const alt = label ? `${label} ${name}` : name;
+    if (image) return { label, alt, url: image.url, format: image.format, size: side.size, note: '' };
+    return { label, alt, url: '', format: '', size: side.size, note: sideNote(side) || 'This version is not an image.' };
+  });
+  return sides.some(side => side.url) ? sides : null;
+}
+
+// Report that a shown side is SVG text, which can show as an image or as text.
+export function hasSVG(file: WorkspaceFile, diff: boolean): boolean {
+  return (diff ? [file.old, file.new] : [file.new]).some(side => sideImage(file.path, side, true)?.format === 'SVG');
+}
+
+// The format, the pixel size, and the file size of an image. A pixel size of 0 is not
+// known. An SVG file has no pixel size.
+export function imageDetails(side: ImageSide, width = 0, height = 0): string {
+  const pixels = side.format !== 'SVG' && width > 0 && height > 0 ? `${width} × ${height}` : '';
+  return [side.format, pixels, sizeText(side.size)].filter(Boolean).join(' · ');
+}
+
+export function sizeText(bytes: number): string {
+  if (bytes < 1024) return `${bytes} ${bytes === 1 ? 'byte' : 'bytes'}`;
+  const [value, unit] = bytes < 1024 * 1024 ? [bytes / 1024, 'KiB'] : [bytes / (1024 * 1024), 'MiB'];
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${unit}`;
 }
 
 export type Language = 'javascript' | 'jsx' | 'typescript' | 'tsx' | 'go' | 'python' | 'json' | 'markdown' | 'css' | 'html' | 'yaml' | 'rust' | 'scala' | 'shell' | '';

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,7 +95,7 @@ func TestWorkspaceChangesListsEachStatusAgainstHead(t *testing.T) {
 		"image.bin": "\x00\x01\x02", "ignored.log": "",
 	})
 	writeFiles(t, repo, map[string]string{".gitignore": "*.log\n", "edit.txt": "one\n2\nthree\nfour\n", "image.bin": "\x00\x01\x03",
-		"café ü.txt": "a\nb", "line\nbreak.txt": "x\n", "debug.log": "ignored\n"})
+		"café ü.txt": "a\nb", "line\nbreak.txt": "x\n", "debug.log": "ignored\n", "new.png": pngData})
 	os.Remove(filepath.Join(repo, "delete.txt"))
 	fixtureGit(t, repo, "mv", "old name.txt", "new name.txt")
 	changes, err := s.workspaceChanges(context.Background(), diffSession(t, s, repo), nil)
@@ -117,6 +118,7 @@ func TestWorkspaceChangesListsEachStatusAgainstHead(t *testing.T) {
 		".gitignore":      {Path: ".gitignore", Status: "A", Added: 1, Untracked: true},
 		"café ü.txt":      {Path: "café ü.txt", Status: "A", Added: 2, Untracked: true},
 		"line\nbreak.txt": {Path: "line\nbreak.txt", Status: "A", Added: 1, Untracked: true},
+		"new.png":         {Path: "new.png", Status: "A", Added: -1, Binary: true, Untracked: true},
 	}
 	if !reflect.DeepEqual(files, want) {
 		t.Fatalf("files:\n got %+v\nwant %+v", files, want)
@@ -160,7 +162,7 @@ func TestWorkspaceFileReadsBothSides(t *testing.T) {
 	}
 	for _, c := range cases {
 		file := read(c.path, c.oldPath)
-		if file.Old != c.old || file.New != c.new || file.Path != c.path || file.Baseline.Kind != "head" {
+		if !reflect.DeepEqual(file.Old, c.old) || !reflect.DeepEqual(file.New, c.new) || file.Path != c.path || file.Baseline.Kind != "head" {
 			t.Errorf("%s:\n got old %+v new %+v\nwant old %+v new %+v", c.path, file.Old, file.New, c.old, c.new)
 		}
 	}
@@ -170,6 +172,67 @@ func TestWorkspaceFileReadsBothSides(t *testing.T) {
 	if file := read("folder", ""); file.New.State != "other" || file.Old.State != "other" {
 		t.Errorf("folder: %+v", file)
 	}
+}
+
+// The first bytes of a PNG file. The server reads the format from them.
+const pngData = "\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR"
+
+func imageSide(media, data string) protocol.FileSide {
+	return protocol.FileSide{State: "image", MediaType: media, Data: []byte(data), Size: int64(len(data))}
+}
+
+func TestWorkspaceFileReadsImages(t *testing.T) {
+	s := diffServer(t)
+	gif := "GIF89a\x01\x00\x01\x00\x80\x00\x00"
+	webp := "RIFF\x10\x00\x00\x00WEBPVP8 "
+	jpeg := "\xff\xd8\xff\xe0\x00\x10JFIF\x00"
+	large := pngData + strings.Repeat("\x00", maxFileSide)
+	blob := "\x00" + strings.Repeat("x", maxFileSide+100)
+	repo := diffRepository(t, map[string]string{"icon.png": pngData, "large.png": large, "blob.bin": blob, "photo.jpg": jpeg})
+	writeFiles(t, repo, map[string]string{
+		"icon.png": gif, "anim.webp": webp, "huge.png": pngData + strings.Repeat("\x00", maxImageSide),
+		"notes.png": "not an image\n", "header.gif": "GIF89a is a format.\n",
+	})
+	if err := os.Symlink("icon.png", filepath.Join(repo, "link.png")); err != nil {
+		t.Fatal(err)
+	}
+	id := diffSession(t, s, repo)
+	text := func(value string) protocol.FileSide {
+		return protocol.FileSide{State: "text", Text: value, Size: int64(len(value))}
+	}
+	missing := protocol.FileSide{State: "missing"}
+	cases := []struct {
+		path     string
+		old, new protocol.FileSide
+	}{
+		// The format comes from the bytes, not from the file extension.
+		{"icon.png", imageSide("image/png", pngData), imageSide("image/gif", gif)},
+		{"anim.webp", missing, imageSide("image/webp", webp)},
+		{"photo.jpg", imageSide("image/jpeg", jpeg), imageSide("image/jpeg", jpeg)},
+		// An image can be larger than a text side, from Git and from the workspace.
+		{"large.png", imageSide("image/png", large), imageSide("image/png", large)},
+		{"huge.png", missing, protocol.FileSide{State: "tooLarge", Size: int64(len(pngData) + maxImageSide)}},
+		// Other binary data keeps the text limit and reports its whole size.
+		{"blob.bin", protocol.FileSide{State: "tooLarge", Size: int64(len(blob))}, protocol.FileSide{State: "tooLarge", Size: int64(len(blob))}},
+		// Text stays text, also with an image extension or the start of an image.
+		{"notes.png", missing, text("not an image\n")},
+		{"header.gif", missing, text("GIF89a is a format.\n")},
+		{"link.png", missing, protocol.FileSide{State: "text", Text: "icon.png", Size: 8, Symlink: true}},
+	}
+	for _, c := range cases {
+		file, err := s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Path: c.path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(file.Old, c.old) || !reflect.DeepEqual(file.New, c.new) {
+			t.Errorf("%s:\n got old %s new %s\nwant old %s new %s", c.path, sideText(file.Old), sideText(file.New), sideText(c.old), sideText(c.new))
+		}
+	}
+}
+
+// sideText shows a side without the bytes of a large image.
+func sideText(side protocol.FileSide) string {
+	return fmt.Sprintf("{%s %q %s %d bytes, size %d}", side.State, side.Text[:min(len(side.Text), 40)], side.MediaType, len(side.Data), side.Size)
 }
 
 func TestWorkspaceFileStaysInsideWorkspace(t *testing.T) {
@@ -823,6 +886,17 @@ func TestWorkspaceRequestsOverWebSocket(t *testing.T) {
 	}
 	var folders protocol.WorkspaceFolders
 	requestResult(t, s, protocol.Request{Operation: "workspace-folders", Session: id, Diff: &protocol.DiffRequest{Folders: []string{""}}}, &folders)
+	// Two image sides at the limit fit in one message, with their bytes in base64.
+	old, now := pngData+strings.Repeat("\xff", maxImageSide-len(pngData)), pngData+strings.Repeat("\xfe", maxImageSide-len(pngData))
+	writeFiles(t, repo, map[string]string{"image.png": old})
+	fixtureGit(t, repo, "add", "image.png")
+	fixtureGit(t, repo, "commit", "-q", "-m", "image")
+	writeFiles(t, repo, map[string]string{"image.png": now})
+	var image protocol.WorkspaceFile
+	requestResult(t, s, protocol.Request{Operation: "workspace-file", Session: id, Diff: &protocol.DiffRequest{Baseline: "head", Path: "image.png"}}, &image)
+	if !reflect.DeepEqual(image.Old, imageSide("image/png", old)) || !reflect.DeepEqual(image.New, imageSide("image/png", now)) {
+		t.Fatalf("image reply: old %s new %s", sideText(image.Old), sideText(image.New))
+	}
 	if len(folders.Folders) != 1 || !reflect.DeepEqual(folders.Folders[0].Entries, []protocol.FolderEntry{{Name: "a b.txt", Kind: "file"}}) {
 		t.Fatalf("folders reply: %+v", folders)
 	}

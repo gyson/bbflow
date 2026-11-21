@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/33"
+const Version = "bbflow/34"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -189,14 +189,17 @@ type WorkspaceFile struct {
 	New      FileSide `json:"new"`
 }
 
-// FileSide is one version of a file. State is "text", "missing", "binary", "tooLarge",
-// or "other" for a directory, a submodule, or a special file. Text is set only for
-// "text". A symlink holds its target text, as in Git.
+// FileSide is one version of a file. State is "text", "missing", "binary", "image",
+// "tooLarge", or "other" for a directory, a submodule, or a special file. Text is set
+// only for "text". MediaType and Data are set only for "image", which is binary data in
+// a format that the file views show. A symlink holds its target text, as in Git.
 type FileSide struct {
-	State   string `json:"state"`
-	Text    string `json:"text,omitempty"`
-	Size    int64  `json:"size"`
-	Symlink bool   `json:"symlink,omitempty"`
+	State     string `json:"state"`
+	Text      string `json:"text,omitempty"`
+	MediaType string `json:"mediaType,omitempty"`
+	Data      []byte `json:"data,omitempty"`
+	Size      int64  `json:"size"`
+	Symlink   bool   `json:"symlink,omitempty"`
 }
 
 // Drafts contain editable text and attachments. They are not agent messages. Pending
