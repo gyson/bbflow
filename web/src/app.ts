@@ -29,6 +29,7 @@ import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
 import { UpdateNotice } from './update.js';
 import { ErrorToasts } from './toasts.js';
+import { pageBar } from './page-bar.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
 import { DialogEdits, lastReload, onServerReplaced, recordReload, reloadPlan, restartedMessage } from './restart.js';
@@ -105,6 +106,7 @@ const elements = {
   'terminal': element('terminal', HTMLElement),
   'status': element('status', HTMLElement),
   'terminal-hint': element('terminal-hint', HTMLElement),
+  'terminal-announce': element('terminal-announce', HTMLElement),
   'welcome': element('welcome', HTMLElement),
   'session-view': element('session-view', HTMLElement),
   'instance-dir': element('instance-dir', HTMLElement),
@@ -153,6 +155,8 @@ let renderedSidebar = '';
 const statusMarks: { session: SessionInfo; button: HTMLElement; icon: HTMLElement; label: HTMLElement; place: string; archive: HTMLButtonElement; menu: HTMLButtonElement; fixed: boolean }[] = [];
 let selected: SessionView | null = null;
 let continueRun: string | undefined;
+// The reason that the open Continue dialog shows for a session change, or empty.
+let continueProblem = '';
 // The handoff prompt of the selected session. It stays available after a new terminal
 // starts, so the user can copy or send it later.
 let handoff: { session: string; info: Handoff } | null = null;
@@ -223,7 +227,6 @@ const updateNotice = new UpdateNotice({
     await preparation.flush();
     await composer.flush();
     await call(server, { operation: 'update-start', version: offer.available, revision: offer.revision });
-    showPageState('update', `bbflow updates to ${offer.available}. This page reloads when the new server starts.`);
   },
 });
 
@@ -231,15 +234,15 @@ const updateNotice = new UpdateNotice({
 // error toast that names the action.
 const toasts = new ErrorToasts();
 
-// The page bar shows one state of the whole page: an update in progress, or a restart of
-// the server. A restart replaces an update.
-let pageState: '' | 'update' | 'restart' = '';
-function showPageState(state: typeof pageState, text = '') {
-  pageState = state;
-  $('page-bar').hidden = !state;
-  $('page-bar').className = state === 'restart' ? 'warning' : state ? 'info' : '';
-  $('page-bar-text').textContent = text;
-  $('page-bar-reload').hidden = state !== 'restart';
+// The page bar shows a restart of the server, or an update in progress from the status
+// watch. Call this after either one changes.
+let restarted = false;
+function showPageBar() {
+  const bar = pageBar(restarted, updateNotice.current);
+  $('page-bar').hidden = !bar.text;
+  $('page-bar').className = bar.kind;
+  $('page-bar-text').textContent = bar.text;
+  $('page-bar-reload').hidden = !bar.reload;
 }
 
 // The sidebar tells when the session list cannot load. An empty text removes the problem.
@@ -284,7 +287,8 @@ onServerReplaced(() => {
     location.reload();
     return;
   }
-  showPageState('restart', restartedMessage);
+  restarted = true;
+  showPageBar();
   // The page bar tells the user to reload, so the list does not repeat it.
   listProblem();
   // A modal dialog covers the page bar. Show the message in the dialog too.
@@ -350,6 +354,9 @@ function hint(text = '', kind: '' | 'error' | 'info' = '') {
   $('terminal-hint').textContent = text;
   $('terminal-hint').hidden = !text;
   $('terminal-hint').className = kind;
+  // The focus can stay in the terminal, so a screen reader also announces an error or
+  // information hint. The live region always exists, so that a change is announced.
+  $('terminal-announce').textContent = kind ? text : '';
 }
 
 function controls() {
@@ -389,13 +396,17 @@ function controls() {
     continueControl.removeAttribute('tabindex');
   }
   // The session changed while the dialog was open. The dialog then tells why it cannot
-  // start a terminal. Cancel closes it.
+  // start a terminal, and its start button stays off. When continuation is available
+  // again for the same run, the reason goes and the button comes back. Cancel closes it.
   if ($('continue-dialog').open) {
     const problem = continueDialogProblem(continuation, selected?.run?.id, continueRun);
     if (problem) {
-      $('continue-error').textContent = problem;
+      $('continue-error').textContent = continueProblem = problem;
       $('continue-error').hidden = false;
       $('continue-submit').disabled = true;
+    } else if (continueProblem) {
+      if ($('continue-error').textContent === continueProblem) $('continue-error').hidden = true;
+      continueProblem = '';
     }
   }
   $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
@@ -706,8 +717,7 @@ function watchStatuses(info: ServerInfo) {
       liveStatuses = next;
       // The update dialog counts the live sessions of the same message as the offer.
       updateNotice.show(message.update, Object.keys(next));
-      // The sidebar shows a failed update. The page then does not reload.
-      if (pageState === 'update' && message.update?.state === 'failed') showPageState('');
+      showPageBar();
       renderSessions();
       // A terminal started or ended, or a session title changed. Read the stored session
       // data again.
@@ -719,6 +729,7 @@ function watchStatuses(info: ServerInfo) {
     failed() {
       liveStatuses = {};
       updateNotice.lost();
+      showPageBar();
       renderSessions();
     },
   });
@@ -781,7 +792,7 @@ async function refreshSessions() {
   } catch (error) {
     if (generation !== refreshGeneration) return;
     showConnection(false);
-    if (pageState !== 'restart') listProblem(`Cannot load the session list. The list can be out of date. ${errorMessage(error)}`);
+    if (!restarted) listProblem(`Cannot load the session list. The list can be out of date. ${errorMessage(error)}`);
   } finally {
     if (generation === refreshGeneration) controls();
   }
@@ -1041,6 +1052,7 @@ async function showContinue(): Promise<void> {
   $('continue-workspace').textContent = selected.worktree ? `⑂ ${selected.worktree.branch} · ${selected.workspace}` : selected.workspace;
   $('continue-warning').hidden = selected.run?.status !== 'interrupted';
   $('continue-error').hidden = true;
+  continueProblem = '';
   $('continue-copy').textContent = 'Copy prompt';
   continueRun = selected.run?.id;
   showDialog($('continue-dialog'));
@@ -1314,7 +1326,7 @@ async function initialize() {
     if (!selected?.id) return;
     await navigator.clipboard.writeText(selected.id);
     sessionMenu.confirm('Session ID copied');
-  }, 'Could not copy the session ID.');
+  }, failed('copy the session ID of', selected));
   $('cancel-rename').onclick = () => $('rename-dialog').close();
   $('rename-form').onsubmit = event => {
     event.preventDefault();

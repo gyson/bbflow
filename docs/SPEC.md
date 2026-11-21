@@ -512,16 +512,20 @@ about:
   click also shows the text. The page keeps the warning of each session until the page
   reloads. bbflow does not record it.
 - A lost connection, an end with an error, and a stop without effect show in the hint
-  below the terminal. An error hint is red. **Reconnect** shows next to the hint.
+  below the terminal. An error hint is red. **Reconnect** shows next to the hint. A
+  screen reader announces these hints from a status region, because the focus can stay
+  in the terminal.
 - When the session changes while the Continue dialog is open, the dialog stays open. It
-  tells why it cannot start a terminal and disables its start button.
+  tells why it cannot start a terminal and disables its start button. When continuation
+  is available again for the same latest run, the reason goes and the button comes back.
 - A handoff folder that is not available shows in the status line of the message editor.
 - A failed list refresh shows above the session list, because the list can then be out
   of date. A failed connection at page load shows there too. After a server restart,
   the restart bar replaces it.
 - An update in progress and a server restart show in a bar at the top of the main area.
-  The restart bar has **Reload page**. A failed update removes the update bar, and the
-  sidebar shows the failure.
+  The update bar follows the update state of the status watch in each view. Thus a
+  failed update removes it, and the sidebar shows the failure. A restart replaces the
+  update bar. The restart bar has **Reload page**.
 - After **Copy session ID**, the More actions button shows **Session ID copied** as its
   tooltip for a short time.
 
@@ -1109,9 +1113,10 @@ button. The default tool is the session's original tool if it still exists, then
 default tool, then Shell. For an `interrupted` run, the dialog warns that an agent from
 a crashed server can still run in the workspace.
 
-If the session changes while the dialog opens, the UI explains why continuation is unavailable.
-If the latest run changes or continuation becomes unavailable while the dialog is open,
-the UI closes the dialog and shows the reason.
+If the session changes while the dialog opens, an error toast explains why continuation
+is unavailable. If the latest run changes or continuation becomes unavailable while the
+dialog is open, the dialog stays open, shows the reason, and disables its start button.
+See [page messages](#page-messages).
 
 `session-continue` carries the latest run ID that the view saw. The server holds the
 launch lock and rejects the request in these conditions:

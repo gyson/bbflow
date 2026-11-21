@@ -45,6 +45,13 @@ test('an open Continue dialog gives a reason when its session changes', () => {
   assert.match(continueDialogProblem(removed, 'run-1', 'run-1'), /Worktree removed/);
 });
 
+test('an open Continue dialog has no reason after the session is available again', () => {
+  // Another view archives the session, then restores it. The latest run stays the same.
+  const session = { status: 'ended', run: { id: 'run-1' } };
+  assert.match(continueDialogProblem(continueAction({ ...session, archived: true }, false), 'run-1', 'run-1'), /session changed/);
+  assert.equal(continueDialogProblem(continueAction(session, false), 'run-1', 'run-1'), '');
+});
+
 test('the form prefers the original tool, then the default tool, then Shell', () => {
   assert.equal(defaultContinueTool(tools, 'plain', 'codex'), 'plain');
   assert.equal(defaultContinueTool(tools, '', 'codex'), '', 'a session that started with Shell');
