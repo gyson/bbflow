@@ -298,7 +298,9 @@ func (target *diffTarget) commitBaseline(ctx context.Context, from, to string) (
 // branchBase finds the base of a session without a managed worktree. It is the merge
 // base of HEAD and the default branch: the target of origin/HEAD, or else main. It is
 // nil without such a branch, without a merge base, and when HEAD is the merge base.
-// Then no commit is after the base, for example on the default branch itself.
+// Then HEAD has no commit that the default branch does not have, for example on main
+// without local commits. Local commits on main that origin/main does not have get
+// origin/main as their base.
 func branchBase(ctx context.Context, dir, head string) (*protocol.Base, error) {
 	out, _, err := gitRead(ctx, dir, 4096, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
 	if err != nil && !isQuietMiss(err) {

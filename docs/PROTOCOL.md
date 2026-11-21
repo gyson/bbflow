@@ -442,7 +442,8 @@ is its recorded commit and `branch` is absent. For other sessions, `commit` is t
 merge base of `HEAD` and the default branch, and `branch` names that branch. The
 default branch is the target of `origin/HEAD`, for example `origin/main`, or else
 `main`. There is no base without such a branch, without a merge base, or when `HEAD` is
-the merge base.
+the merge base, because no commit of `HEAD` is missing from the default branch. Local
+commits on `main` that `origin/main` does not have get `origin/main` as their base.
 
 `commits` lists the commits since the base, newest first, at most 30. The list follows
 the first parent from `HEAD` and stops at the base. Without a base, it has the latest

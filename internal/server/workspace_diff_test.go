@@ -574,8 +574,8 @@ func TestWorkspaceChangesUseMergeBaseWithDefaultBranch(t *testing.T) {
 	if err != nil || changes.Commits[1].Files != 1 || !reflect.DeepEqual(changedPaths(changes), []string{"b.txt"}) {
 		t.Fatalf("subfolder commit: %+v, %v", changes, err)
 	}
-	// On the default branch, HEAD is the merge base. The session then has no base. A
-	// base request from before the switch uses the default baseline.
+	// On main without local commits, HEAD is the merge base. The session then has no
+	// base. A base request from before the switch uses the default baseline.
 	fixtureGit(t, repo, "switch", "-q", "main")
 	changes, err = s.workspaceChanges(context.Background(), id, nil)
 	if err != nil || changes.Base != nil || changes.Baseline.Kind != "head" || len(changes.Commits) != 2 {
@@ -596,9 +596,25 @@ func TestWorkspaceChangesUseMergeBaseWithDefaultBranch(t *testing.T) {
 	fixtureGit(t, clone, "switch", "-q", "-c", "work")
 	writeFiles(t, clone, map[string]string{"a.txt": "work\n"})
 	fixtureGit(t, clone, "commit", "-q", "-am", "Work")
-	changes, err = s.workspaceChanges(context.Background(), diffSession(t, s, clone), nil)
+	cloned := diffSession(t, s, clone)
+	changes, err = s.workspaceChanges(context.Background(), cloned, nil)
 	if err != nil || changes.Base == nil || changes.Base.Branch != "origin/main" || len(changes.Commits) != 1 || changes.Baseline.Kind != "base" {
 		t.Fatalf("clone: %+v, %v", changes, err)
+	}
+	// On main of the clone, a local commit that origin/main does not have gets
+	// origin/main as its base. Without it, the session has no base.
+	fixtureGit(t, clone, "switch", "-q", "main")
+	changes, err = s.workspaceChanges(context.Background(), cloned, nil)
+	if err != nil || changes.Base != nil || changes.Baseline.Kind != "head" {
+		t.Fatalf("main of the clone: %+v, %v", changes, err)
+	}
+	writeFiles(t, clone, map[string]string{"local.txt": "local\n"})
+	fixtureGit(t, clone, "add", "local.txt")
+	fixtureGit(t, clone, "commit", "-q", "-m", "Local")
+	changes, err = s.workspaceChanges(context.Background(), cloned, nil)
+	if err != nil || changes.Base == nil || changes.Base.Branch != "origin/main" || len(changes.Commits) != 1 || changes.Commits[0].Subject != "Local" ||
+		!reflect.DeepEqual(changedPaths(changes), []string{"local.txt"}) {
+		t.Fatalf("local commit on main of the clone: %+v, %v", changes, err)
 	}
 	// Without a common commit, the session has no base.
 	fixtureGit(t, repo, "switch", "-q", "--orphan", "lonely")

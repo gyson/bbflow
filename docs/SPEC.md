@@ -1206,8 +1206,10 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
 - The session base is the recorded commit of a ready managed worktree. Other sessions
   use the merge base of `HEAD` and the default branch. The default branch is the target
   of `origin/HEAD`, or else `main`. A session has no base without such a branch,
-  without a merge base, or when `HEAD` is the merge base, for example on the default
-  branch itself.
+  without a merge base, or when `HEAD` is the merge base. `HEAD` is the merge base
+  when it has no commit that the default branch does not have, for example on `main`
+  without local commits. Local commits on `main` that `origin/main` does not have, such
+  as commits that are not pushed, get `origin/main` as their base.
 - **All changes** is at the top of the menu when the session has a base. It compares
   the base with the current files, so it includes the commits since the base and the
   uncommitted changes. It is the default when the session has a base. The labels do not
@@ -1918,8 +1920,8 @@ cover the commit list with its file counts, a subject with a tab, the changes fr
 commit, one commit, a range of commits, the file at a commit, a rejected to commit, a
 root commit, file counts with `diff.renames` and `log.showRoot` off, the list and
 output limits, a shallow clone, unknown commits, and a rebase. Merge base fixtures cover a feature branch, a subfolder session, `origin/HEAD`
-of a clone, the default branch itself, a base request after the base is gone, and
-branches without a common commit. Folder list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
+of a clone, local commits on `main` of a clone, `main` without local commits, a base
+request after the base is gone, and branches without a common commit. Folder list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
 the workspace, missing folders, the entry limit, a folder outside Git, a missing Git
 executable, and a failed ignore check. A WebSocket fixture sends `workspace-file` and
 `workspace-folders` through the server. Web fixtures cover the file list, the filter,
@@ -2383,8 +2385,8 @@ The Changes pane reads files only when it opens, on Refresh, and on window focus
 shows one file at a time. A diff that ends at a commit has no untracked files, and
 Files always shows the current files. Its commit list has at most 30 commits since the
 base, and it omits the last commit of a shallow clone, whose parent is not available.
-**All changes** needs a base. A session on the default branch, or without `origin/HEAD`
-and `main`, has none. The **Uncommitted changes** row has no file count. It shows images as binary files. It cannot show changes in a folder that is
+**All changes** needs a base. A session without `origin/HEAD` and `main`, and a session
+whose `HEAD` has no commit that the default branch does not have, have none. The **Uncommitted changes** row has no file count. It shows images as binary files. It cannot show changes in a folder that is
 not a Git repository. The filter of **Files** needs a Git repository, and it does not
 find ignored files. The tree has no arrow key navigation. Use Tab and Enter. Git detects a rename only
 between tracked files with similar content. An untracked new file and its deleted
