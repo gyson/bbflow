@@ -1,5 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+
+// Node has no DOMParser. This test double reads the root element of the fixture text.
+// The browser check covers the real XML parser.
+class FixtureParser {
+  static types = [];
+  parseFromString(text, type) {
+    FixtureParser.types.push(type);
+    const broken = text.includes('<broken');
+    const tag = /<([^\s?!/>][^\s>/]*)([^>]*)>/.exec(text);
+    let root = null;
+    if (tag) {
+      const colon = tag[1].indexOf(':');
+      const prefix = colon < 0 ? '' : tag[1].slice(0, colon);
+      const namespace = new RegExp(`xmlns${prefix ? `:${prefix}` : ''}="([^"]*)"`).exec(tag[2]);
+      root = { localName: tag[1].slice(colon + 1), namespaceURI: namespace ? namespace[1] : null };
+    }
+    return { documentElement: root, getElementsByTagNameNS: (ns, name) => name === 'parsererror' && broken ? [{}] : [] };
+  }
+}
+globalThis.DOMParser = FixtureParser;
 import { DiffPane } from './dist/diff-pane.js';
 
 // A small fake DOM. It has only the parts that the pane uses.

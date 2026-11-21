@@ -1284,10 +1284,10 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   an image, for example the text side of a type change, shows its text in place of the
   image. Another side without an image shows a note.
 - An SVG file shows as an image only when its root element is `svg` in the SVG
-  namespace, `http://www.w3.org/2000/svg`. A prefix, as in `svg:svg`, needs its own
-  namespace declaration. Before the root, the check skips white space, the XML
-  declaration, processing instructions, comments, and a document type declaration.
-  Other text in an SVG file, such as the pointer text of Git LFS or an `svg` element in
+  namespace, `http://www.w3.org/2000/svg`. The XML parser of the browser reads the
+  text, as for an `img` element. Thus the text must be well-formed XML. The parsed
+  document stays detached, so it runs no scripts and loads no files. Other text in an
+  SVG file, such as the pointer text of Git LFS or an `svg` element in
   a comment, shows as text. The old side of a
   rename uses its old path. Thus a rename from an SVG file to another file type shows
   the old image.
@@ -1979,9 +1979,13 @@ fixture counts an untracked image above 1 MiB as binary. It also counts text abo
 with an image signature as text, also when the read of its first bytes cuts a character. A WebSocket fixture sends two 5 MiB image sides in one
 reply. Web fixtures cover the image URLs, SVG text in a URL, the shown sides and their
 text or notes, a rename from an SVG path, Git LFS pointer text in an SVG path, the
-captions, and the size text. SVG root fixtures cover a prefixed root, the prolog
-parts, an `svg` element in a comment before another root, and a root without the SVG
-namespace. Pane fixtures cover an image diff in both layouts, **View source** with an
+captions, and the size text. SVG root fixtures use a test double for the XML
+parser, because Node has no `DOMParser`. They cover the root name, the namespace, a
+parse error, and one parse for each side. A browser check compared the rule with the
+decoding of an `img` element for nine SVG texts. They had a prefix, a non-ASCII prefix,
+a character reference in the namespace, a comment in a document type declaration, an
+`svg` element in a comment before another root, no namespace, LFS pointer text, and
+malformed XML. Pane fixtures cover an image diff in both layouts, **View source** with an
 SVG file and next to a PNG file or a binary side, and a rename from an SVG path. Markdown fixtures cover raw HTML, script links,
 relative and allowed links, images, tables, task lists, escaped task markers, syntax
 colors and escaped text in fenced code, and the files that Preview accepts.

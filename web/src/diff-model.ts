@@ -289,61 +289,30 @@ export function isSVG(path: string): boolean {
 }
 
 const svgNamespace = 'http://www.w3.org/2000/svg';
-const xmlSpace = /[ \t\r\n]*/y;
-// The root start tag: its qualified name and its attributes.
-const rootTag = /<([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)((?:[ \t\r\n]+[^\s=/>]+[ \t\r\n]*=[ \t\r\n]*(?:"[^"]*"|'[^']*'))*)[ \t\r\n]*\/?>/y;
-const attribute = /([^\s=/>]+)[ \t\r\n]*=[ \t\r\n]*(?:"([^"]*)"|'([^']*)')/g;
+const svgRoots = new WeakMap<FileSide, boolean>();
 
-// The end of the document type declaration at this position, or -1. Its internal
-// subset and its quoted text can contain ">".
-function doctypeEnd(text: string, at: number): number {
-  let quote = '', subset = false;
-  for (let i = at; i < text.length; i++) {
-    const c = text[i];
-    if (quote) {
-      if (c === quote) quote = '';
-    } else if (c === '"' || c === "'") quote = c;
-    else if (c === '[') subset = true;
-    else if (c === ']') subset = false;
-    else if (c === '>' && !subset) return i + 1;
-  }
-  return -1;
-}
-
-// Report that the root element of XML text is svg in the SVG namespace, as an XML
-// parser reads it. Before the root, the check skips a byte order mark, white space, the
-// XML declaration, processing instructions, comments, and a document type declaration.
-// Without the SVG namespace, the browser does not show an svg element as an image.
+// Report that text is a well-formed XML document with an svg root element in the SVG
+// namespace. The XML parser of the browser reads it, as for an img element. The parsed
+// document stays detached, so it runs no scripts and loads no files. Without DOMParser,
+// as in Node, no text is SVG.
 export function svgRoot(text: string): boolean {
-  let at = text.startsWith('\uFEFF') ? 1 : 0;
-  for (;;) {
-    xmlSpace.lastIndex = at;
-    xmlSpace.exec(text);
-    at = xmlSpace.lastIndex;
-    let end = -1;
-    if (text.startsWith('<?', at)) end = text.indexOf('?>', at + 2) + 2;
-    else if (text.startsWith('<!--', at)) end = text.indexOf('-->', at + 4) + 3;
-    else if (text.startsWith('<!DOCTYPE', at)) end = doctypeEnd(text, at + 9);
-    else break;
-    if (end <= at) return false;
-    at = end;
-  }
-  rootTag.lastIndex = at;
-  const tag = rootTag.exec(text);
-  if (!tag) return false;
-  const name = tag[1] ?? '', colon = name.indexOf(':');
-  if (name.slice(colon + 1) !== 'svg') return false;
-  const declaration = colon < 0 ? 'xmlns' : `xmlns:${name.slice(0, colon)}`;
-  for (const [, key, double, single] of (tag[2] ?? '').matchAll(attribute)) {
-    if (key === declaration) return (double ?? single) === svgNamespace;
-  }
-  return false;
+  if (typeof DOMParser === 'undefined') return false;
+  const document = new DOMParser().parseFromString(text, 'image/svg+xml');
+  const root = document.documentElement;
+  return root?.localName === 'svg' && root.namespaceURI === svgNamespace && document.getElementsByTagNameNS('*', 'parsererror').length === 0;
 }
 
 // SVG text has an svg root element. Other text of an SVG path, such as the pointer text
-// of Git LFS, is not an image.
+// of Git LFS, is not an image. Each side keeps its result, so that a render parses its
+// text one time.
 function svgText(path: string, side: FileSide): boolean {
-  return side.state === 'text' && !side.symlink && isSVG(path) && svgRoot(side.text ?? '');
+  if (side.state !== 'text' || side.symlink || !isSVG(path)) return false;
+  let root = svgRoots.get(side);
+  if (root === undefined) {
+    root = svgRoot(side.text ?? '');
+    svgRoots.set(side, root);
+  }
+  return root;
 }
 
 // The image of a side, or null. The server sends a raster image as base64. An SVG file

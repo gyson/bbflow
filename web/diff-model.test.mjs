@@ -1,5 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+
+// Node has no DOMParser. This test double reads the root element of the fixture text.
+// The browser check covers the real XML parser.
+class FixtureParser {
+  static types = [];
+  parseFromString(text, type) {
+    FixtureParser.types.push(type);
+    const broken = text.includes('<broken');
+    const tag = /<([^\s?!/>][^\s>/]*)([^>]*)>/.exec(text);
+    let root = null;
+    if (tag) {
+      const colon = tag[1].indexOf(':');
+      const prefix = colon < 0 ? '' : tag[1].slice(0, colon);
+      const namespace = new RegExp(`xmlns${prefix ? `:${prefix}` : ''}="([^"]*)"`).exec(tag[2]);
+      root = { localName: tag[1].slice(colon + 1), namespaceURI: namespace ? namespace[1] : null };
+    }
+    return { documentElement: root, getElementsByTagNameNS: (ns, name) => name === 'parsererror' && broken ? [{}] : [] };
+  }
+}
+globalThis.DOMParser = FixtureParser;
 import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, hasSVG, imageDetails, imageSides, isSVG, svgRoot, languageName, openFolders, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, sideImage, sideNote, sizeText, statusTitle, stepScope, timelineHeading, treeRows } from './dist/diff-model.js';
 
 const change = (path, status = 'M', extra = {}) => ({ path, status, added: 1, removed: 2, ...extra });
@@ -366,33 +386,22 @@ test('a raster image side and SVG text give an image', () => {
   assert.equal(sideImage('logo.svg', { ...svg, text: '<html><svg xmlns="http://www.w3.org/2000/svg"/></html>' }, true), null);
 });
 
-test('SVG text has an svg root element in the SVG namespace', () => {
-  const ns = 'xmlns="http://www.w3.org/2000/svg"';
-  assert.equal(svgRoot(`<svg ${ns}/>`), true);
-  assert.equal(svgRoot(`<svg\n  viewBox="0 0 1 1"\n  ${ns}>\n</svg>`), true);
-  assert.equal(svgRoot(`<svg xmlns='http://www.w3.org/2000/svg'></svg>`), true);
-  // A prefix needs its own namespace declaration.
-  assert.equal(svgRoot('<svg:svg xmlns:svg="http://www.w3.org/2000/svg"/>'), true);
-  assert.equal(svgRoot(`<svg:svg ${ns}/>`), false);
-  assert.equal(svgRoot('<a:svg xmlns:svg="http://www.w3.org/2000/svg"/>'), false);
-  // The prolog can have a byte order mark, a declaration, comments, processing
-  // instructions, and a document type declaration with an internal subset.
-  const prolog = '\uFEFF<?xml version="1.0"?>\n<!-- <html> -->\n<?style href="a.css"?>\n' +
-    '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x>y.dtd" [ <!ENTITY e "a>b"> ]>\n';
-  assert.equal(svgRoot(`${prolog}<svg ${ns}/>`), true);
-  // A comment with an svg element before another root element is not SVG.
-  assert.equal(svgRoot(`<!-- <svg ${ns}> -->\n<html/>`), false);
-  // Without the SVG namespace, or with another one, the root is not SVG.
-  assert.equal(svgRoot('<svg viewBox="0 0 1 1"/>'), false);
+test('SVG text needs an svg root element in the SVG namespace and no parse error', () => {
+  FixtureParser.types.length = 0;
+  assert.equal(svgRoot('<svg xmlns="http://www.w3.org/2000/svg"/>'), true);
+  assert.deepEqual(FixtureParser.types, ['image/svg+xml']);
+  assert.equal(svgRoot('<é:svg xmlns:é="http://www.w3.org/2000/svg"/>'), true);
   assert.equal(svgRoot('<svg xmlns="http://www.w3.org/1999/xhtml"/>'), false);
-  assert.equal(svgRoot(`<SVG ${ns}/>`), false);
-  assert.equal(svgRoot(`<svgx ${ns}/>`), false);
-  // Text that is not complete XML before the root is not SVG.
-  assert.equal(svgRoot(`<!-- open <svg ${ns}/>`), false);
-  assert.equal(svgRoot(`<?xml <svg ${ns}/>`), false);
-  assert.equal(svgRoot(''), false);
-  assert.equal(isSVG('.svg'), false);
-  assert.equal(isSVG('web/src/bbflow.svg'), true);
+  assert.equal(svgRoot('<svg viewBox="0 0 1 1"/>'), false);
+  assert.equal(svgRoot('<html xmlns="http://www.w3.org/2000/svg"/>'), false);
+  assert.equal(svgRoot('<svg xmlns="http://www.w3.org/2000/svg"><broken'), false);
+  // A side parses its text one time.
+  const side = { state: 'text', text: '<svg xmlns="http://www.w3.org/2000/svg"/>', size: 42 };
+  const file = { path: 'a.svg', baseline: { kind: 'head', label: '', commit: 'h' }, old: side, new: side };
+  FixtureParser.types.length = 0;
+  hasSVG(file, true);
+  imageSides(file, true, true);
+  assert.equal(FixtureParser.types.length, 1);
 });
 
 test('the image view shows the sides that are present, and a note for a side that is not an image', () => {
