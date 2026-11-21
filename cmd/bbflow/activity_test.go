@@ -96,6 +96,10 @@ func TestSessionViewsDoNotChangeActivityOrder(t *testing.T) {
 	}
 }
 
+// idleWait is longer than the idle delay of the server. The server shows idle 10
+// seconds after the latest application output.
+const idleWait = 15 * time.Second
+
 func TestSessionStatusFollowsApplicationOutput(t *testing.T) {
 	startTestServer(t, t.TempDir())
 	trigger := filepath.Join(t.TempDir(), "emit")
@@ -103,7 +107,7 @@ func TestSessionStatusFollowsApplicationOutput(t *testing.T) {
 	waitFor(t, func() bool { return strings.Contains(view.text(), "READY") })
 	listed := func() string { return sessionInfos(t, 10)[0].Status }
 	// The fixture writes no more output. The session becomes idle without a view action.
-	waitFor(t, func() bool { return listed() == "idle" && view.status() == "running,idle" })
+	waitWithin(t, idleWait, func() bool { return listed() == "idle" && view.status() == "running,idle" })
 	id := sessionInfos(t, 10)[0].ID
 	watch := watchStatuses(t)
 	// The terminal echoes typed input. This echo is not application activity.
@@ -120,7 +124,7 @@ func TestSessionStatusFollowsApplicationOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return listed() == "running" && view.status() == "running,idle,running" })
-	waitFor(t, func() bool { return listed() == "idle" && view.status() == "running,idle,running,idle" })
+	waitWithin(t, idleWait, func() bool { return listed() == "idle" && view.status() == "running,idle,running,idle" })
 	// A view that joins later gets the current status.
 	second := resumeView(t, id)
 	waitFor(t, func() bool { return second.status() == "idle" })
@@ -142,7 +146,7 @@ func TestUnchangedResizeDoesNotHideApplicationOutput(t *testing.T) {
 	view := launchAgent(t, t.TempDir(), "activity", trigger)
 	waitFor(t, func() bool { return strings.Contains(view.text(), "READY") })
 	listed := func() string { return sessionInfos(t, 10)[0].Status }
-	waitFor(t, func() bool { return listed() == "idle" })
+	waitWithin(t, idleWait, func() bool { return listed() == "idle" })
 	if err := view.conn.Send(protocol.Message{Type: "resize", Size: protocol.Size{Rows: 24, Cols: 80}}); err != nil {
 		t.Fatal(err)
 	}

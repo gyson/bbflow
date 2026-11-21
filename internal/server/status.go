@@ -13,8 +13,9 @@ const (
 	// An application redraws after an input, a size change, or a signal from a view.
 	// Output in this time after one of them is not application activity.
 	echoWindow = 300 * time.Millisecond
-	// A live terminal without application output for this time is idle.
-	idleAfter = 3 * time.Second
+	// A live terminal without application output for this time is idle. Some agent CLIs
+	// write no output for several seconds while they work.
+	idleAfter = 10 * time.Second
 	// A status watch finds a change in this time.
 	watchInterval = 200 * time.Millisecond
 )

@@ -49,9 +49,9 @@ test('an exit shows its code, and other ends show the recorded run status', () =
 });
 
 test('the status line of a listed session shows its status, archive state, and views', () => {
-  assert.equal(listStatusText('running', {}), 'Running: output in the last 3 seconds');
+  assert.equal(listStatusText('running', {}), 'Running: output in the last 10 seconds');
   assert.equal(listStatusText('draft', { archived: true }), 'Draft: not started · Archived');
-  assert.equal(listStatusText('idle', { viewers: 1 }, 'own worktree'), 'Idle: live, with no output in the last 3 seconds · 1 view · own worktree');
+  assert.equal(listStatusText('idle', { viewers: 1 }, 'own worktree'), 'Idle: live, with no output in the last 10 seconds · 1 view · own worktree');
   assert.equal(listStatusText('ended', { archived: true, viewers: 2, runStatus: 'stopped' }), 'Ended · stopped · Archived · 2 views');
   assert.equal(listStatusText('ended', {}), 'Ended');
   assert.equal(listStatusLabel('idle', { viewers: 1 }, 'parent workspace'), 'idle, 1 view, parent workspace');

@@ -1657,8 +1657,8 @@ the preparation state without change, so `bbflow query` results do not change.
 | Status | Meaning |
 | --- | --- |
 | `draft` | The session did not start. |
-| `running` | The live terminal had application output in the last 3 seconds. Worktree creation and process start also show as `running`. |
-| `idle` | The live terminal had no application output in the last 3 seconds. |
+| `running` | The live terminal had application output in the last 10 seconds. Worktree creation and process start also show as `running`. |
+| `idle` | The live terminal had no application output in the last 10 seconds. |
 | `ended` | No terminal is live. The latest run `exited`, `stopped`, `failed`, or was `interrupted`. |
 
 The server records the time of each output of a live terminal in memory. It does this
@@ -1686,7 +1686,7 @@ their workspace on a second line. The icon has a different shape for each status
 | An amber dot | `ended`, when the latest run `failed` or was `interrupted` |
 
 The tooltip of the icon gives the status text, for example **Idle: live, with no output
-in the last 3 seconds** or **Ended · stopped**. It adds **Archived**, the view count, and
+in the last 10 seconds** or **Ended · stopped**. It adds **Archived**, the view count, and
 the place of a sub-session. The tooltip of the row adds the same text to the title,
 workspace, ID, and update time. A label for screen readers gives the short status, for
 example **idle, 1 view**. Each page keeps one `status-watch` stream
@@ -2364,6 +2364,8 @@ rule, the terminal rule for **Stop session**, the priority of a pushed status, t
 status line of a list entry, the end reason and its run, and the reconnection of a
 watch stream.
 
+The next three live checks used the earlier idle delay of 3 seconds.
+
 A live check used a temporary instance and a Shell session in the browser UI. A shell
 loop that wrote a line each half second showed `running` from 0.6 seconds after Send
 until 3 seconds after its last line. Claude Code 2.1.312 at its folder trust question
@@ -2406,11 +2408,11 @@ pointer, so tooltip display on hover is not verified.
 The session status uses output times only. It cannot tell a completed task from a
 permission question, and it shows `idle` for a command that works without output. An
 application that writes output while it waits shows as `running`. Typed input at short
-intervals for more than 3 seconds can show `idle` while the application works. While
+intervals for more than 10 seconds can show `idle` while the application works. While
 the status watch reconnects, the sidebar can show a status change up to five seconds
 late. A start
 screen that an application draws in the 300 milliseconds after its command does not
-show `running`. The 3 second and 300 millisecond values are not verified with an agent
+show `running`. The 10 second and 300 millisecond values are not verified with an agent
 that works on a task.
 
 Native session mapping/resume, forks, imports, native agent attachments, and Windows
