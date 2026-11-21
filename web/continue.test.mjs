@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { continueAction, continueDialogProblem, defaultContinueTool } from './dist/continue.js';
+import { continueAction, continueDialogError, continueDialogProblem, defaultContinueTool } from './dist/continue.js';
+import { restartedMessage } from './dist/restart.js';
 import { insertProblem } from './dist/composer.js';
 
 const tools = [
@@ -50,6 +51,34 @@ test('an open Continue dialog has no reason after the session is available again
   const session = { status: 'ended', run: { id: 'run-1' } };
   assert.match(continueDialogProblem(continueAction({ ...session, archived: true }, false), 'run-1', 'run-1'), /session changed/);
   assert.equal(continueDialogProblem(continueAction(session, false), 'run-1', 'run-1'), '');
+});
+
+test('an open Continue dialog keeps the restart message and a blocked start', () => {
+  const session = { status: 'ended', run: { id: 'run-1' } };
+  const changed = continueDialogProblem(continueAction({ ...session, archived: true }, false), 'run-1', 'run-1');
+  // Another view archives the session. The dialog shows the reason and blocks the start.
+  let state = continueDialogError({ text: '', hidden: true }, '', changed, false);
+  assert.deepEqual(state, { error: { text: changed, hidden: false }, shown: changed, blocked: true });
+  // The server restarts. The restart message replaces the reason, also after the next
+  // refresh, while the session change stays.
+  for (let refresh = 0; refresh < 2; refresh++) {
+    state = continueDialogError(state.error, state.shown, changed, true);
+    assert.deepEqual(state, { error: { text: restartedMessage, hidden: false }, shown: '', blocked: true });
+  }
+  // A restore does not remove the restart message, because the page must reload first.
+  state = continueDialogError(state.error, state.shown, '', true);
+  assert.deepEqual(state, { error: { text: restartedMessage, hidden: false }, shown: '', blocked: true });
+});
+
+test('an open Continue dialog removes only its own reason when the session is available again', () => {
+  const changed = 'This session changed. Open Continue in new terminal again when it is available.';
+  // A restore removes the reason and allows the start.
+  const shown = continueDialogError({ text: '', hidden: true }, '', changed, false);
+  assert.deepEqual(continueDialogError(shown.error, shown.shown, '', false), { error: { text: changed, hidden: true }, shown: '', blocked: false });
+  // A failed copy replaced the reason. That error stays.
+  const copy = { text: 'Cannot copy the prompt: denied', hidden: false };
+  assert.deepEqual(continueDialogError(copy, changed, '', false), { error: copy, shown: '', blocked: false });
+  assert.deepEqual(continueDialogError(copy, '', '', false), { error: copy, shown: '', blocked: false });
 });
 
 test('the form prefers the original tool, then the default tool, then Shell', () => {

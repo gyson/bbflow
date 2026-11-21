@@ -518,6 +518,8 @@ about:
 - When the session changes while the Continue dialog is open, the dialog stays open. It
   tells why it cannot start a terminal and disables its start button. When continuation
   is available again for the same latest run, the reason goes and the button comes back.
+  After a server restart, the dialog shows the restart message in place of the reason,
+  and the button stays off until the page reloads.
 - A handoff folder that is not available shows in the status line of the message editor.
 - A failed list refresh shows above the session list, because the list can then be out
   of date. A failed connection at page load shows there too. After a server restart,

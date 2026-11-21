@@ -5,7 +5,7 @@ import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
 import { SideTerminal } from './side-terminal.js';
 import { WorkspacePane } from './workspace-pane.js';
-import { continueAction, continueDialogProblem, defaultContinueTool } from './continue.js';
+import { continueAction, continueDialogError, continueDialogProblem, defaultContinueTool } from './continue.js';
 import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
 import { Watch } from './watch.js';
@@ -395,19 +395,15 @@ function controls() {
     delete continueControl.dataset.tip;
     continueControl.removeAttribute('tabindex');
   }
-  // The session changed while the dialog was open. The dialog then tells why it cannot
-  // start a terminal, and its start button stays off. When continuation is available
-  // again for the same run, the reason goes and the button comes back. Cancel closes it.
+  // The session or the server changed while the dialog was open. The dialog then tells
+  // why it cannot start a terminal, and its start button stays off. Cancel closes it.
   if ($('continue-dialog').open) {
-    const problem = continueDialogProblem(continuation, selected?.run?.id, continueRun);
-    if (problem) {
-      $('continue-error').textContent = continueProblem = problem;
-      $('continue-error').hidden = false;
-      $('continue-submit').disabled = true;
-    } else if (continueProblem) {
-      if ($('continue-error').textContent === continueProblem) $('continue-error').hidden = true;
-      continueProblem = '';
-    }
+    const next = continueDialogError({ text: $('continue-error').textContent ?? '', hidden: $('continue-error').hidden === true }, continueProblem,
+      continueDialogProblem(continuation, selected?.run?.id, continueRun), restarted);
+    $('continue-error').textContent = next.error.text;
+    $('continue-error').hidden = next.error.hidden;
+    continueProblem = next.shown;
+    if (next.blocked) $('continue-submit').disabled = true;
   }
   $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
   $('handoff-open').disabled = busy;
@@ -1383,9 +1379,10 @@ async function initialize() {
     event.preventDefault();
     action(async () => {
       if (!$('continue-dialog').open || !selected?.id) return;
-      // The session can change after the dialog opened. The dialog then shows the problem.
+      // The session or the server can change after the dialog opened. The dialog then
+      // shows the problem.
       const continuation = continueAction(selected, !!connection?.peer?.active, terminalPicker.shownRun);
-      if (continueDialogProblem(continuation, selected.run?.id, continueRun)) return;
+      if (restarted || continueDialogProblem(continuation, selected.run?.id, continueRun)) return;
       const tool = $('continue-tool').value;
       $('continue-dialog').close();
       await openSession(selected, { kind: 'continue', tool });
