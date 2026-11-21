@@ -32,6 +32,12 @@ export function composeInput(text: string, files: Attachment[], bracketed: boole
   return (bracketed ? `\x1b[200~${paste}\x1b[201~` : paste) + '\r';
 }
 
+// Command-Enter or Ctrl+Enter sends. Plain Enter adds a line. A key that completes an
+// input method composition does not send.
+export function sendShortcut(event: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }): boolean {
+  return event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && !event.isComposing;
+}
+
 // Text goes into the editor only when the editor is empty and no send is pending. This
 // never merges with or replaces a draft.
 export function insertProblem(state: { loaded: boolean; pending: boolean; text: string; files: number }): string | undefined {
@@ -79,6 +85,16 @@ export class Composer {
     this.text.oninput = () => {
       this.state.draft.text = this.text.value;
       this.changed();
+    };
+    this.text.onkeydown = event => {
+      if (!sendShortcut(event)) return;
+      event.preventDefault();
+      if (event.repeat || this.submit.disabled) return;
+      // The send disables the editor, so the browser moves the focus to the page. Then
+      // give the focus back to the editor, unless the user moved it to another control.
+      void this.host.action(() => this.send()).then(() => {
+        if (!document.activeElement || document.activeElement === document.body) this.text.focus();
+      });
     };
     this.attach.onclick = () => this.picker.click();
     this.picker.onchange = () => {

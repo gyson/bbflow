@@ -394,9 +394,10 @@ storage format change was needed.
 
 ## Web client
 
-The sidebar and browser favicon use the same pixel logo as the macOS menu bar, in six
-rainbow bands from violet to red. The visible product name is bbflow. The logo selects
-brighter band colors when the browser uses dark appearance.
+The browser favicon uses the same pixel logo as the macOS menu bar, in six rainbow
+bands from violet to red. The logo selects brighter band colors when the browser uses
+dark appearance. The visible product name is bbflow. The sidebar shows it as text at the
+top left, without the logo.
 
 Server start and repeated start print a clickable `http://localhost:PORT/` URL without
 opening a browser. `bbflow ui` and the **Open UI** menu item open the home page of the
@@ -446,7 +447,9 @@ control. Project names are plain text. The small arrow expands or collapses a gr
 Each project's **＋** creates and selects a new draft entry. A click on an existing
 entry reopens it by session ID. The URL keeps that
 ID as `/sessions/<id>` through reload and launch. The welcome view is the home page at
-`/`. The bbflow logo in the sidebar returns to it.
+`/`. Its toolbar title is **Home**, and it shows one line that tells how to start a
+session. The bbflow name in the sidebar returns to it. It also opens when no session is
+selected, for example after the archive of the selected session.
 
 The browser tab title shows the session or draft name. Settings shows `Settings`, and
 the home page shows `bbflow`.
@@ -510,6 +513,9 @@ If the server cannot read the settings, the page uses System.
 
 Appearance and session defaults save to SQLite automatically. The default starting
 branch or commit saves when the field loses focus.
+
+The toolbar title of Settings is **Settings**. **Back to session** is at the top right
+of the page.
 
 In **Server**, **Port** sets the port of the next server start. An empty field selects
 the automatic port. The field saves when it loses focus or on Enter. The card shows the
@@ -691,9 +697,10 @@ offers two workspaces:
   Uncommitted changes of the parent are not copied.
 
 In a Git project, the Settings worktree default selects **New worktree**. Otherwise the
-draft selects **Parent workspace**. A review-loop reviewer runs
+draft selects **Parent workspace**. The form says that, in the parent workspace, both
+sessions change the same files. For example, a review-loop reviewer runs
 `gh pr checkout --detach`. In the parent workspace, that command would change the
-checkout of the implementer, so the draft form recommends a new worktree for it.
+checkout of the implementer, so such a reviewer needs **New worktree**.
 
 A request for a sub-session draft names a session. For a top-level session, that session
 becomes the parent. For a sub-session, the parent of that sub-session becomes the parent,
@@ -1118,19 +1125,20 @@ bbflow records and submits the selected tool's startup command once. Shell start
 without a command. The user can copy the handoff prompt from the dialog.
 
 The prompt stays available after the new terminal starts. When the handoff folder of
-the selected session has its README, **Handoff prompt** appears in the message editor
-heading. Its dialog shows the folder and the prompt, with **Copy prompt** and **Put in
+the selected session has its README, **Handoff prompt** appears in the action row of
+the message editor. Its dialog shows the folder and the prompt, with **Copy prompt** and **Put in
 message editor**. Put in message editor works only when the editor has no text, no
 files, and no pending send. It never merges with or replaces a draft, and it sends
 nothing. The user sends the prompt with Send when the agent is ready.
 
 ### Earlier terminals
 
-When a session has more than one terminal, the terminal heading shows a selector. Its
+When a session has more than one terminal, a row above the terminal shows a selector. Its
 label names the shown terminal, for example `Terminal 2 of 3 · Codex · exited`. Click
 the label to see every terminal in start order. Each row has the number, tool, status,
 and start and end times. A live terminal has a green dot. ‹ and › step to the earlier
-or the later terminal. A session with one terminal shows no selector.
+or the later terminal. A session with one terminal shows no selector and no row, so
+the terminal starts at the top of the pane.
 
 An earlier terminal shows its saved final screen with its recorded dimensions, as an
 ended latest terminal does. The view is read-only, and the hint says that input and Send
@@ -1140,11 +1148,13 @@ Reload and the session link also open the latest terminal.
 
 A view of an earlier terminal leaves the live process, its capture, and its views active.
 Only views of the live terminal can change its size. The status badge applies to the whole
-session. The terminal header hides **Stop session** and **Continue in new terminal** while
+session. The session toolbar hides **Stop session** and **Continue in new terminal** while
 you view an earlier terminal.
 
 The UI reads the list with `session-terminals` when it opens a session, when a terminal
-starts or exits, and when the selector opens. The tool name comes from the start event
+starts or exits, and when the selector opens. A start or a continue first clears the list
+of the view, because the list then lacks the new terminal. The selector hides until the
+new list arrives. The tool name comes from the start event
 of each run. Start events from bbflow 0.0.4 and earlier have no tool, so the first run
 uses the tool of the preparation. A new terminal has no run record until its process
 starts. Until then, the list ends with a `starting` terminal without a run ID. The UI
@@ -1381,7 +1391,14 @@ and resets on reload. Size changes use the existing terminal viewport updates.
 
 A viewport change resizes the PTY only from the size owner view. Direct terminal
 interaction remains available.
-Enter inserts a newline. Send sends one `input` control to the attached PTY with the
+The editor has no visible label or help text. Its action row holds **＋ Attach files**,
+**Handoff prompt**, **Sent messages**, the draft status, and **Send ⌘↵**. The tooltips
+of these buttons explain them. The row wraps when the editor is narrow, for example
+while the workspace pane is open. **Send** stays at the right end of its line.
+
+Enter inserts a newline. Command-Enter or Ctrl+Enter in the editor does the same as
+Send. After such a send, the keyboard focus returns to the editor, unless the user
+moved it to another control. Send sends one `input` control to the attached PTY with the
 message followed by Enter. When the application enables bracketed paste, the message
 uses its paste delimiters. Newlines are normalized to carriage returns, matching
 terminal paste.
@@ -1421,7 +1438,7 @@ The user must check the terminal and explicitly unlock that draft before editing
 submitting again. Users can edit drafts before launch, while detached, or after the
 process ends. Send is disabled in these states.
 
-**Sent messages** in the editor heading opens a list of the session's sent messages.
+**Sent messages** in the editor action row opens a list of the session's sent messages.
 The oldest message is at the top and the newest is at the bottom. The list opens
 scrolled to the bottom and shows the newest 20 messages. **Show older messages** at the
 top loads 20 more and keeps the visible messages in place. The `composer-sent` operation
@@ -1619,14 +1636,26 @@ The `exit` message also carries the run ID. A view shows the reason from an `exi
 message only while that run is the latest run. After another view starts and ends a
 later terminal, each view shows the stored status of the later run.
 
-The session toolbar shows the status next to the session title. At the right, a search
+The session toolbar shows the status next to the session title. Below the title, a
+line shows the tool of the shown terminal, the worktree branch, and the workspace path,
+for example `Codex · ⑂ feature · /path/to/workspace`. Each terminal records its own tool,
+so the line changes when a view shows an earlier terminal with another tool. A draft
+shows only its path. Until the terminal list loads, or when it cannot load, the line
+shows no tool. A start or a continue clears the list of the view, so the line shows no
+tool until the list with the new terminal arrives. The toolbar does not show the startup command. The shell usually
+echoes it at the top of the terminal, and the start event records it. At the right, a search
 icon opens **Search history**. Three icons show the Changes, Files, and Terminal views of
 the workspace pane. **Reconnect** shows when a view of a live terminal has no connection.
 
-The terminal header shows **Stop session** at the right when you view the live terminal.
-During worktree creation, the session shows `running` before a terminal exists. When the
-server reports that it stopped no terminal, the page says so and leaves the status as is.
-When the session ends, **Continue in new terminal** shows there in the latest terminal view.
+The session toolbar shows **Stop session** to the left of the icons when you view the
+live terminal. During worktree creation, the session shows `running` before a terminal
+exists. When the server reports that it stopped no terminal, the page says so and leaves
+the status as is. When the session ends, **Continue in new terminal** shows there in the
+latest terminal view.
+
+A hint below the terminal shows only when the view cannot send input. This occurs when
+the process ended, when the view shows an earlier terminal, or when the connection is
+lost. A view of the live terminal has no hint.
 
 **More actions** (⋯) opens a menu that lists only the actions that apply:
 
@@ -2251,6 +2280,21 @@ In the same check, one tab showed **Ended · exit 3** for the first terminal. A 
 tab continued the session and stopped the new terminal. Both tabs then showed
 **Ended · stopped**.
 
+A web fixture covers the send shortcut of the message editor. A live check of the
+simplified layout used a demo instance and headless Chrome. A live view had no hint and
+no row above the terminal. Its toolbar line showed the tool before the workspace path.
+A Shell session that continued with the demo agent showed **Shell** for terminal 1 and
+the demo agent for terminal 2. Command-Enter sent the saved draft, and the terminal printed the
+reply of the demo agent. An earlier terminal showed the selector, the hint, and
+**Back to live terminal**. An ended session showed **Continue in new terminal** in the
+toolbar. The home page, a draft, Settings, and two dialogs also showed correctly. With the Files pane open in a window 1,152 pixels wide, the
+action row of the message editor wrapped, and **Send** stayed inside the editor. A
+dropped `session-terminals` request left the toolbar line without a tool. During a
+continue with another tool, a delayed list left the line without a tool until the new
+list arrived. Then the line showed the new tool. After
+Command-Enter, the keyboard focus was in the editor again. The check did not use a
+pointer, so tooltip display on hover is not verified.
+
 ## Limitations
 
 The session status uses output times only. It cannot tell a completed task from a
@@ -2288,9 +2332,8 @@ recording can delay other launches during this rebuild. A transcript keeps
 only the last screen of a program that uses the alternate screen, such as Codex CLI
 0.160.0 without `--no-alt-screen`.
 
-The session header shows the tool of the original launch, also after a continue with
-another tool. The prompt gives the new agent a record of earlier work. It does not
-restore the internal state of the earlier agent.
+The prompt gives the new agent a record of earlier work. It does not restore the
+internal state of the earlier agent.
 
 The Changes pane reads files only when it opens, on Refresh, and on window focus. It
 shows one file at a time. It cannot show one earlier commit alone or a range of

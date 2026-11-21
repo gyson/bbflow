@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { call, Peer, VERSION, encodeBytes, decodeBytes } from './dist/protocol.js';
-import { composeInput } from './dist/composer.js';
+import { composeInput, sendShortcut } from './dist/composer.js';
 
 class Socket {
   readyState = 1;
@@ -112,6 +112,17 @@ test('composer references files with quoted paths, preserving shell metacharacte
   assert.equal(composeInput('Read this', files, true), "\x1b[200~Read this\r\r'/cache/a'\\''b $(echo hello).txt'\x1b[201~\r");
   assert.throws(() => composeInput('Read this', files, false), /bracketed paste/);
   assert.throws(() => composeInput('', [{ path: '/cache/unsafe\x1bpath' }], true), /control characters/);
+});
+
+test('Command-Enter or Ctrl+Enter sends, and plain Enter adds a line', () => {
+  const key = (options) => ({ key: 'Enter', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, isComposing: false, ...options });
+  assert.equal(sendShortcut(key({ metaKey: true })), true);
+  assert.equal(sendShortcut(key({ ctrlKey: true })), true);
+  assert.equal(sendShortcut(key({})), false, 'plain Enter');
+  assert.equal(sendShortcut(key({ metaKey: true, shiftKey: true })), false, 'Shift');
+  assert.equal(sendShortcut(key({ ctrlKey: true, altKey: true })), false, 'Alt');
+  assert.equal(sendShortcut(key({ metaKey: true, isComposing: true })), false, 'input method composition');
+  assert.equal(sendShortcut(key({ key: 'a', metaKey: true })), false, 'another key');
 });
 
 test('input receipt is correlated and disconnect or exit never retries a submission', async () => {

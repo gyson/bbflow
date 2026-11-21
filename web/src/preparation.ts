@@ -9,7 +9,6 @@ export class PreparationEditor {
   private readonly tool = element('launch-tool', HTMLSelectElement);
   private readonly worktree = element('launch-worktree', HTMLInputElement);
   private readonly worktreeOption = element('launch-worktree-option', HTMLElement);
-  private readonly eyebrow = element('launch-eyebrow', HTMLElement);
   private readonly heading = element('launch-heading', HTMLElement);
   // A sub-session draft chooses the workspace of its parent or a new worktree. Both
   // choices set the worktree checkbox, which the save reads.
@@ -87,7 +86,6 @@ export class PreparationEditor {
     this.tool.onchange = () => this.changed();
     this.worktree.checked = p.worktree;
     const sub = !!session.parentId;
-    this.eyebrow.textContent = sub ? 'SUB-SESSION DRAFT' : 'PROJECT DRAFT';
     this.heading.textContent = sub ? 'Prepare a sub-session.' : 'Prepare a session.';
     this.worktreeOption.hidden = sub;
     this.place.hidden = !sub;
@@ -137,7 +135,7 @@ export class PreparationEditor {
       if (token !== this.inspecting) return;
       this.available = info.available;
       this.repository.textContent = info.available ?
-        `${info.branch || 'Detached HEAD'} · ${info.head.slice(0, 8)}. Worktrees include committed files only. Uncommitted changes and ignored files are not copied.` : info.reason;
+        `${info.branch || 'Detached HEAD'} · ${info.head.slice(0, 8)}. A worktree gets only committed files.` : info.reason;
     } catch (error) { if (token === this.inspecting) this.repository.textContent = errorMessage(error); }
     if (token === this.inspecting) { this.checking = false; this.controls(); }
   }
