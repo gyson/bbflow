@@ -642,8 +642,8 @@ The stored status of a run and the state of a preparation keep their values.
 | `status` | Meaning |
 | --- | --- |
 | `draft` | The session did not start. |
-| `running` | A live terminal had application output in the last 3 seconds. Worktree creation and process start also show as `running`. |
-| `idle` | A live terminal had no application output in the last 3 seconds. |
+| `running` | A live terminal had application output in the last 10 seconds. Worktree creation and process start also show as `running`. |
+| `idle` | A live terminal had no application output in the last 10 seconds. |
 | `ended` | No terminal is live. The latest run `exited`, `stopped`, `failed`, or was `interrupted`, or the launch made no process. |
 
 The server derives `running` and `idle` from output times only. It keeps the times in

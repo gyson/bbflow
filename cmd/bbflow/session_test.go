@@ -233,7 +233,12 @@ func fixtureInput(executable string, args ...string) []byte {
 
 func waitFor(t *testing.T, check func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(8 * time.Second); time.Now().Before(deadline); {
+	waitWithin(t, 8*time.Second, check)
+}
+
+func waitWithin(t *testing.T, limit time.Duration, check func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(limit); time.Now().Before(deadline); {
 		if check() {
 			return
 		}
