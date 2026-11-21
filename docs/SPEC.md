@@ -1283,8 +1283,12 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   shows only its new image, and a deleted file only its old image. A text side without
   an image, for example the text side of a type change, shows its text in place of the
   image. Another side without an image shows a note.
-- An SVG file shows as an image only when its text has an `svg` element. Other text in
-  an SVG file, such as the pointer text of Git LFS, shows as text. The old side of a
+- An SVG file shows as an image only when its root element is `svg` in the SVG
+  namespace, `http://www.w3.org/2000/svg`. A prefix, as in `svg:svg`, needs its own
+  namespace declaration. Before the root, the check skips white space, the XML
+  declaration, processing instructions, comments, and a document type declaration.
+  Other text in an SVG file, such as the pointer text of Git LFS or an `svg` element in
+  a comment, shows as text. The old side of a
   rename uses its old path. Thus a rename from an SVG file to another file type shows
   the old image.
 - Each image fits in its side and never gets larger than its actual size. A click on
@@ -1296,7 +1300,8 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   file size. An SVG file shows no pixel size. An image that the browser cannot decode
   shows "The browser cannot show this image."
 - For an SVG file, **View source** shows its text, or the diff of its text. Next to a
-  raster image, the SVG side shows its text in place of its image. **View image** shows
+  raster image or a side without text, such as a binary side, the SVG side shows its
+  text in place of its image. The other side keeps its image or its note. **View image** shows
   the image again. The choice applies to all SVG files in both views of
   the browser tab. A reload resets it.
 - Images show only in `img` elements, from `data:` URLs. There, an SVG file cannot run
@@ -1974,8 +1979,10 @@ fixture counts an untracked image above 1 MiB as binary. It also counts text abo
 with an image signature as text, also when the read of its first bytes cuts a character. A WebSocket fixture sends two 5 MiB image sides in one
 reply. Web fixtures cover the image URLs, SVG text in a URL, the shown sides and their
 text or notes, a rename from an SVG path, Git LFS pointer text in an SVG path, the
-captions, and the size text. Pane fixtures cover an image diff in both layouts,
-**View source** with an SVG file and next to a PNG file, and a rename from an SVG path. Markdown fixtures cover raw HTML, script links,
+captions, and the size text. SVG root fixtures cover a prefixed root, the prolog
+parts, an `svg` element in a comment before another root, and a root without the SVG
+namespace. Pane fixtures cover an image diff in both layouts, **View source** with an
+SVG file and next to a PNG file or a binary side, and a rename from an SVG path. Markdown fixtures cover raw HTML, script links,
 relative and allowed links, images, tables, task lists, escaped task markers, syntax
 colors and escaped text in fenced code, and the files that Preview accepts.
 

@@ -38,6 +38,7 @@ const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-sco
 const server = { protocol: 'test', instance: 'test', port: 1234, dataDir: '/fixture' };
 const commit = '0123456789abcdef0123456789abcdef01234567';
 const settle = () => new Promise(resolve => setImmediate(resolve));
+const svgText = '<svg xmlns="http://www.w3.org/2000/svg"/>';
 
 const baselines = {
   head: { kind: 'head', label: 'Uncommitted changes', commit: 'head' },
@@ -281,17 +282,17 @@ test('an image diff shows the image view, and Source shows the text of an SVG fi
   // the next file keeps that choice.
   const list = node => [node, ...node.children.flatMap(list)];
   list(nodes['diff-list']).find(node => node.dataset.file === 'b.svg').onclick();
-  pending[2].resolve({ path: 'b.svg', baseline: baselines.head, old: { state: 'missing', size: 0 }, new: { state: 'text', text: '<svg/>', size: 6 } });
+  pending[2].resolve({ path: 'b.svg', baseline: baselines.head, old: { state: 'missing', size: 0 }, new: { state: 'text', text: svgText, size: 42 } });
   await settle();
   assert.equal(shown.at(-1), 'unified: New SVG');
   assert.equal(nodes['diff-source'].hidden, false);
   assert.equal(nodes['diff-source'].textContent, 'View source');
   nodes['diff-source'].onclick();
-  assert.equal(shown.at(-1), 'b.svg: -><svg/>');
+  assert.equal(shown.at(-1), `b.svg: ->${svgText}`);
   assert.equal(nodes['diff-source'].textContent, 'View image');
   // View file shows the text too, until Source changes back to the image.
   nodes['diff-toggle'].onclick();
-  assert.equal(shown.at(-1), 'b.svg: <svg/>');
+  assert.equal(shown.at(-1), `b.svg: ${svgText}`);
   nodes['diff-source'].onclick();
   assert.equal(shown.at(-1), 'unified: SVG');
 });
@@ -302,12 +303,12 @@ test('Source shows SVG text next to a raster image, and a rename uses the old pa
   pending[0].resolve(changes(baselines.head, { files }));
   await settle();
   // The SVG file became a PNG file.
-  const svg = { state: 'text', text: '<svg/>', size: 6 };
+  const svg = { state: 'text', text: '<svg xmlns="http://www.w3.org/2000/svg"/>', size: 42 };
   pending[1].resolve({ path: 'icon.svg', baseline: baselines.head, old: svg, new: { state: 'image', mediaType: 'image/png', data: 'AA==', size: 1 } });
   await settle();
   assert.equal(shown.at(-1), 'split: Old SVG, New PNG');
   nodes['diff-source'].onclick();
-  assert.equal(shown.at(-1), 'split: Old text <svg/>, New PNG');
+  assert.equal(shown.at(-1), `split: Old text ${svg.text}, New PNG`);
   nodes['diff-source'].onclick();
 
   // A rename from an SVG path to a text path shows the old image and the new text.
@@ -316,6 +317,19 @@ test('Source shows SVG text next to a raster image, and a rename uses the old pa
   assert.deepEqual(pending[2].request.diff, { baseline: 'head', path: 'renamed.txt', oldPath: 'rename-me.svg' });
   pending[2].resolve({ path: 'renamed.txt', baseline: baselines.head, old: svg, new: svg });
   await settle();
-  assert.equal(shown.at(-1), 'split: Old SVG, New text <svg/>');
+  assert.equal(shown.at(-1), `split: Old SVG, New text ${svg.text}`);
   assert.equal(nodes['diff-source'].hidden, false);
+});
+
+test('Source keeps SVG text in view next to a binary side', async () => {
+  const { nodes, pending, shown } = setup();
+  pending[0].resolve(changes(baselines.head, { files: [{ path: 'icon.svg', status: 'M', added: -1, removed: -1, binary: true }] }));
+  await settle();
+  const svg = { state: 'text', text: svgText, size: 42 };
+  pending[1].resolve({ path: 'icon.svg', baseline: baselines.head, old: svg, new: { state: 'binary', size: 4 } });
+  await settle();
+  assert.equal(shown.at(-1), 'split: Old SVG, New Binary file. bbflow does not show its content.');
+  nodes['diff-source'].onclick();
+  assert.equal(shown.at(-1), `split: Old text ${svgText}, New Binary file. bbflow does not show its content.`);
+  assert.equal(nodes['diff-note'].hidden, true);
 });

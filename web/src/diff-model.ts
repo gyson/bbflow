@@ -288,10 +288,62 @@ export function isSVG(path: string): boolean {
   return name.length > 4 && name.endsWith('.svg');
 }
 
-// SVG text has an svg element. Other text of an SVG path, such as the pointer text of Git
-// LFS, is not an image.
+const svgNamespace = 'http://www.w3.org/2000/svg';
+const xmlSpace = /[ \t\r\n]*/y;
+// The root start tag: its qualified name and its attributes.
+const rootTag = /<([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)((?:[ \t\r\n]+[^\s=/>]+[ \t\r\n]*=[ \t\r\n]*(?:"[^"]*"|'[^']*'))*)[ \t\r\n]*\/?>/y;
+const attribute = /([^\s=/>]+)[ \t\r\n]*=[ \t\r\n]*(?:"([^"]*)"|'([^']*)')/g;
+
+// The end of the document type declaration at this position, or -1. Its internal
+// subset and its quoted text can contain ">".
+function doctypeEnd(text: string, at: number): number {
+  let quote = '', subset = false;
+  for (let i = at; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      if (c === quote) quote = '';
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '[') subset = true;
+    else if (c === ']') subset = false;
+    else if (c === '>' && !subset) return i + 1;
+  }
+  return -1;
+}
+
+// Report that the root element of XML text is svg in the SVG namespace, as an XML
+// parser reads it. Before the root, the check skips a byte order mark, white space, the
+// XML declaration, processing instructions, comments, and a document type declaration.
+// Without the SVG namespace, the browser does not show an svg element as an image.
+export function svgRoot(text: string): boolean {
+  let at = text.startsWith('\uFEFF') ? 1 : 0;
+  for (;;) {
+    xmlSpace.lastIndex = at;
+    xmlSpace.exec(text);
+    at = xmlSpace.lastIndex;
+    let end = -1;
+    if (text.startsWith('<?', at)) end = text.indexOf('?>', at + 2) + 2;
+    else if (text.startsWith('<!--', at)) end = text.indexOf('-->', at + 4) + 3;
+    else if (text.startsWith('<!DOCTYPE', at)) end = doctypeEnd(text, at + 9);
+    else break;
+    if (end <= at) return false;
+    at = end;
+  }
+  rootTag.lastIndex = at;
+  const tag = rootTag.exec(text);
+  if (!tag) return false;
+  const name = tag[1] ?? '', colon = name.indexOf(':');
+  if (name.slice(colon + 1) !== 'svg') return false;
+  const declaration = colon < 0 ? 'xmlns' : `xmlns:${name.slice(0, colon)}`;
+  for (const [, key, double, single] of (tag[2] ?? '').matchAll(attribute)) {
+    if (key === declaration) return (double ?? single) === svgNamespace;
+  }
+  return false;
+}
+
+// SVG text has an svg root element. Other text of an SVG path, such as the pointer text
+// of Git LFS, is not an image.
 function svgText(path: string, side: FileSide): boolean {
-  return side.state === 'text' && !side.symlink && isSVG(path) && /<svg[\s/>]/i.test(side.text ?? '');
+  return side.state === 'text' && !side.symlink && isSVG(path) && svgRoot(side.text ?? '');
 }
 
 // The image of a side, or null. The server sends a raster image as base64. An SVG file
@@ -315,10 +367,12 @@ function shownSides(file: WorkspaceFile, diff: boolean, oldPath: string): [strin
   return diff ? [['Old', oldPath, file.old], ['New', file.path, file.new]] : [['', file.path, file.new]];
 }
 
-// The sides of the image view, or null when no shown side is an image. A missing side
-// is not shown.
+// The sides of the image view, or null when the file shows as text or with a note. The
+// view shows a file with an image on a shown side. It also shows SVG text next to a side
+// without text, so that Source keeps the SVG text in view. A missing side is not shown.
 export function imageSides(file: WorkspaceFile, diff: boolean, svg: boolean, oldPath = file.path): ImageSide[] | null {
-  const sides = shownSides(file, diff, oldPath).filter(([, , side]) => side.state !== 'missing').map(([label, path, side]): ImageSide => {
+  const shown = shownSides(file, diff, oldPath).filter(([, , side]) => side.state !== 'missing');
+  const sides = shown.map(([label, path, side]): ImageSide => {
     const image = sideImage(path, side, svg);
     const name = path.slice(path.lastIndexOf('/') + 1);
     const alt = label ? `${label} ${name}` : name;
@@ -327,7 +381,8 @@ export function imageSides(file: WorkspaceFile, diff: boolean, svg: boolean, old
     if (side.state === 'text') return { ...blank, note: side.symlink ? 'Symbolic link. The text is the link target.' : '', text: side.text ?? '' };
     return { ...blank, note: sideNote(side) || 'This version is not an image.' };
   });
-  return sides.some(side => side.url) ? sides : null;
+  const svgBesideBinary = shown.some(([, path, side]) => svgText(path, side)) && sides.some(side => side.text === undefined && !side.url);
+  return sides.some(side => side.url) || svgBesideBinary ? sides : null;
 }
 
 // Report that a shown side is SVG text, which can show as an image or as text.

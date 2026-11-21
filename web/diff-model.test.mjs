@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, hasSVG, imageDetails, imageSides, isSVG, languageName, openFolders, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, sideImage, sideNote, sizeText, statusTitle, stepScope, timelineHeading, treeRows } from './dist/diff-model.js';
+import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, hasSVG, imageDetails, imageSides, isSVG, svgRoot, languageName, openFolders, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, sideImage, sideNote, sizeText, statusTitle, stepScope, timelineHeading, treeRows } from './dist/diff-model.js';
 
 const change = (path, status = 'M', extra = {}) => ({ path, status, added: 1, removed: 2, ...extra });
 
@@ -363,7 +363,34 @@ test('a raster image side and SVG text give an image', () => {
   assert.equal(sideImage('logo.svg', { ...svg, symlink: true }, true), null);
   assert.equal(sideImage('logo.svg.txt', svg, true), null);
   assert.equal(sideImage('logo.svg', { ...svg, text: 'not svg' }, true), null);
-  assert.equal(sideImage('logo.svg', { ...svg, text: '<?xml version="1.0"?>\n<SVG\nviewBox="0 0 1 1"/>' }, true).format, 'SVG');
+  assert.equal(sideImage('logo.svg', { ...svg, text: '<html><svg xmlns="http://www.w3.org/2000/svg"/></html>' }, true), null);
+});
+
+test('SVG text has an svg root element in the SVG namespace', () => {
+  const ns = 'xmlns="http://www.w3.org/2000/svg"';
+  assert.equal(svgRoot(`<svg ${ns}/>`), true);
+  assert.equal(svgRoot(`<svg\n  viewBox="0 0 1 1"\n  ${ns}>\n</svg>`), true);
+  assert.equal(svgRoot(`<svg xmlns='http://www.w3.org/2000/svg'></svg>`), true);
+  // A prefix needs its own namespace declaration.
+  assert.equal(svgRoot('<svg:svg xmlns:svg="http://www.w3.org/2000/svg"/>'), true);
+  assert.equal(svgRoot(`<svg:svg ${ns}/>`), false);
+  assert.equal(svgRoot('<a:svg xmlns:svg="http://www.w3.org/2000/svg"/>'), false);
+  // The prolog can have a byte order mark, a declaration, comments, processing
+  // instructions, and a document type declaration with an internal subset.
+  const prolog = '\uFEFF<?xml version="1.0"?>\n<!-- <html> -->\n<?style href="a.css"?>\n' +
+    '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x>y.dtd" [ <!ENTITY e "a>b"> ]>\n';
+  assert.equal(svgRoot(`${prolog}<svg ${ns}/>`), true);
+  // A comment with an svg element before another root element is not SVG.
+  assert.equal(svgRoot(`<!-- <svg ${ns}> -->\n<html/>`), false);
+  // Without the SVG namespace, or with another one, the root is not SVG.
+  assert.equal(svgRoot('<svg viewBox="0 0 1 1"/>'), false);
+  assert.equal(svgRoot('<svg xmlns="http://www.w3.org/1999/xhtml"/>'), false);
+  assert.equal(svgRoot(`<SVG ${ns}/>`), false);
+  assert.equal(svgRoot(`<svgx ${ns}/>`), false);
+  // Text that is not complete XML before the root is not SVG.
+  assert.equal(svgRoot(`<!-- open <svg ${ns}/>`), false);
+  assert.equal(svgRoot(`<?xml <svg ${ns}/>`), false);
+  assert.equal(svgRoot(''), false);
   assert.equal(isSVG('.svg'), false);
   assert.equal(isSVG('web/src/bbflow.svg'), true);
 });
@@ -388,16 +415,21 @@ test('the image view shows the sides that are present, and a note for a side tha
   assert.equal(imageSides(file({ state: 'binary', size: 1 }, { state: 'tooLarge', size: 9 << 20 }), true, true), null);
   // Source shows SVG text as text. Next to a raster image, the SVG text shows in place
   // of the SVG image.
-  const svg = { state: 'text', text: '<svg/>', size: 6 };
+  const svg = { state: 'text', text: '<svg xmlns="http://www.w3.org/2000/svg"/>', size: 42 };
   assert.equal(imageSides(file(svg, svg, 'a.svg'), true, true).length, 2);
   assert.equal(imageSides(file(svg, svg, 'a.svg'), true, false), null);
-  assert.deepEqual(imageSides(file(svg, png, 'a.svg'), true, false).map(side => [side.format, side.text]), [['', '<svg/>'], ['PNG', undefined]]);
+  assert.deepEqual(imageSides(file(svg, png, 'a.svg'), true, false).map(side => [side.format, side.text]), [['', svg.text], ['PNG', undefined]]);
+  // Source keeps SVG text in view next to a side without text.
+  const binary = { state: 'binary', size: 4 };
+  assert.deepEqual(imageSides(file(svg, binary, 'a.svg'), true, false).map(side => [side.text, side.note]), [[svg.text, ''], [undefined, sideNote(binary)]]);
+  assert.equal(imageSides(file(svg, binary, 'a.svg'), true, true)[0].format, 'SVG');
+  assert.equal(imageSides(file({ state: 'text', text: 'x', size: 1 }, binary, 'a.txt'), true, false), null);
   assert.equal(hasSVG(file(svg, missing, 'a.svg'), true), true);
   assert.equal(hasSVG(file(svg, missing, 'a.svg'), false), false);
   assert.equal(hasSVG(file(png, png), true), false);
   // The old side of a rename uses its old path.
   const renamed = file(svg, svg, 'renamed.txt');
-  assert.deepEqual(imageSides(renamed, true, true, 'rename-me.svg').map(side => [side.alt, side.format, side.text]), [['Old rename-me.svg', 'SVG', undefined], ['New renamed.txt', '', '<svg/>']]);
+  assert.deepEqual(imageSides(renamed, true, true, 'rename-me.svg').map(side => [side.alt, side.format, side.text]), [['Old rename-me.svg', 'SVG', undefined], ['New renamed.txt', '', svg.text]]);
   assert.equal(imageSides(renamed, true, true), null);
   assert.equal(hasSVG(renamed, true, 'rename-me.svg'), true);
   assert.equal(hasSVG(renamed, false, 'rename-me.svg'), false);
