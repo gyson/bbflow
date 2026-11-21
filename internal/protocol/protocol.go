@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/32"
+const Version = "bbflow/33"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -74,45 +74,58 @@ type Request struct {
 	Diff    *DiffRequest            `json:"diff,omitempty"`
 }
 
-// DiffRequest selects a baseline and a file in the workspace of the request session.
-// Baseline is "base" for the managed worktree commit, "head" for HEAD, or "commit"
-// for the changes from the From commit. An empty baseline selects "base" when it is
-// available. Path and OldPath are relative to the session workspace. OldPath names the
-// old side of a rename. Folders names the folders of a folder list. An empty folder
+// DiffRequest selects the changes and a file in the workspace of the request session.
+// Baseline is "base" for the changes since the session base, "head" for the
+// uncommitted changes, or "commit" for the commits from From to To. An empty To ends
+// the "commit" changes at the current files. An empty baseline selects "base" when it
+// is available. Path and OldPath are relative to the session workspace. OldPath names
+// the old side of a rename. Folders names the folders of a folder list. An empty folder
 // path names the workspace folder.
 type DiffRequest struct {
 	Baseline string   `json:"baseline,omitempty"`
 	From     string   `json:"from,omitempty"`
+	To       string   `json:"to,omitempty"`
 	Path     string   `json:"path,omitempty"`
 	OldPath  string   `json:"oldPath,omitempty"`
 	Folders  []string `json:"folders,omitempty"`
 }
 
-// Baseline identifies the commit that a diff compares with the current files. Commit
-// is the empty tree in a repository without commits. For the "commit" kind, From is
-// the first commit that the diff includes, and Commit is its first parent.
+// Baseline identifies the old side of a diff. Commit is the empty tree in a
+// repository without commits. For the "commit" kind, From is the oldest commit that
+// the diff includes, and Commit is its first parent. To is the newest commit that the
+// diff includes. Without To, the new side is the current files.
 type Baseline struct {
 	Kind   string `json:"kind"`
 	Label  string `json:"label"`
 	Commit string `json:"commit"`
 	From   string `json:"from,omitempty"`
+	To     string `json:"to,omitempty"`
 }
 
-// Commit is one commit that a "commit" baseline can start from.
+// Base is the start of the "base" baseline. Branch names the default branch for a
+// merge base. It is empty for the recorded commit of a managed worktree.
+type Base struct {
+	Commit string `json:"commit"`
+	Branch string `json:"branch,omitempty"`
+}
+
+// Commit is one commit of the list. Files counts the files that the commit changes in
+// the session workspace.
 type Commit struct {
 	ID      string `json:"id"`
 	Subject string `json:"subject"`
+	Files   int    `json:"files"`
 }
 
 // WorkspaceChanges lists the changed files of a session workspace. Repository is
-// false, with a reason, for a folder that Git does not manage. Base reports that the
-// "base" baseline is available. Commits lists the commits for a "commit" baseline,
-// newest first. MoreCommits reports that older commits are not in the list. Added and
-// Removed are -1 when they are unknown.
+// false, with a reason, for a folder that Git does not manage. Base is present when the
+// "base" baseline is available. Commits lists the commits since the base, newest
+// first. MoreCommits reports that older commits are not in the list. Added and Removed
+// are -1 when they are unknown.
 type WorkspaceChanges struct {
 	Repository  bool          `json:"repository"`
 	Reason      string        `json:"reason,omitempty"`
-	Base        bool          `json:"base"`
+	Base        *Base         `json:"base,omitempty"`
 	Baseline    Baseline      `json:"baseline"`
 	Commits     []Commit      `json:"commits"`
 	MoreCommits bool          `json:"moreCommits,omitempty"`
@@ -167,8 +180,8 @@ type FolderEntry struct {
 }
 
 // WorkspaceFile holds both sides of one file. Old comes from the baseline commit. New
-// comes from the current workspace files. Without Git, Baseline is empty and Old is
-// missing.
+// comes from the To commit of the baseline, or else from the current workspace files.
+// Without Git, Baseline is empty and Old is missing.
 type WorkspaceFile struct {
 	Path     string   `json:"path"`
 	Baseline Baseline `json:"baseline"`

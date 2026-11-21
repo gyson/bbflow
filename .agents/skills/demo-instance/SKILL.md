@@ -100,7 +100,7 @@ error of the shell.
 | Session | Project | State |
 | --- | --- | --- |
 | Add orbit period endpoint | Orbit API | Ended. It has two sent messages. |
-| Refactor orbit in a worktree | Orbit API | Live. It has a managed worktree with three commits after its base and one uncommitted new file. Thus **Compare with** offers **Uncommitted changes**, two commits, and **Since worktree base**. It has two terminals. The first terminal is stopped. The second terminal started from Continue in new terminal. |
+| Refactor orbit in a worktree | Orbit API | Live. It has a managed worktree with three commits after its base and one uncommitted new file. Thus the scope menu offers **All changes**, **Uncommitted changes**, and three commits. It has two terminals. The first terminal is stopped. The second terminal started from Continue in new terminal. |
 | Review the refactor | Orbit API | A sub-session draft of **Refactor orbit in a worktree**. It has **New worktree**, the base `demo/refactor-orbit`, and a saved message. |
 | Review test failures | Orbit API | Live, with no new output. It has one sent message and one saved message that is not sent. |
 | Build tide chart | Tide Web | Live, with continuous output. |

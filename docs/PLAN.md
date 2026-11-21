@@ -50,7 +50,6 @@ The read-only Changes pane is implemented. See [SPEC.md](SPEC.md#changes-pane). 
 following work remains.
 
 - Insert a file path and a line range into the message editor from the diff.
-- Show the list of commits since the worktree base.
 - Show image previews as blobs in `<img>` elements. Never put SVG inline.
 - Extend the Markdown preview. Open relative links in the Files view. Show workspace
   images after image previews exist.

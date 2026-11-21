@@ -144,9 +144,9 @@ func (w *limitedWriter) Write(data []byte) (int, error) {
 // diffTarget is the resolved workspace and baseline of a diff request.
 type diffTarget struct {
 	workspace   string
-	base        bool // The managed worktree baseline is available.
+	base        *protocol.Base // The start of the "base" baseline. Nil without a base.
 	baseline    protocol.Baseline
-	commits     []listedCommit // The commits that a "commit" baseline can start from.
+	commits     []listedCommit // The commits since the base, newest first.
 	moreCommits bool
 }
 
@@ -161,8 +161,8 @@ var errNotRepository = errors.New("not a Git repository")
 
 const notRepository = "Not a Git repository."
 
-// resolveDiff finds the session workspace, the baseline commit, and the commit list.
-// It never accepts a workspace path from the client.
+// resolveDiff finds the session workspace, the base, the commit list, and the baseline
+// of the request. It never accepts a workspace path from the client.
 func (s *Server) resolveDiff(ctx context.Context, id string, request *protocol.DiffRequest) (diffTarget, error) {
 	var target diffTarget
 	session, err := s.store.Session(id)
@@ -183,50 +183,66 @@ func (s *Server) resolveDiff(ctx context.Context, id string, request *protocol.D
 	if err != nil {
 		return target, err
 	}
+	// A ready managed worktree uses its recorded commit. Other sessions use the merge
+	// base with the default branch.
 	w := session.Worktree
-	target.base = w != nil && w.State == "ready" && w.Commit != "" && within(w.Path, target.workspace)
-	base, baseErr := "", error(nil)
-	if target.base {
-		base, baseErr = revision(ctx, target.workspace, w.Commit)
-		if baseErr == nil && base == "" {
-			baseErr = errors.New("Git has no such commit")
+	var baseErr error
+	switch {
+	case w != nil && w.State == "ready" && w.Commit != "" && within(w.Path, target.workspace):
+		commit, err := revision(ctx, target.workspace, w.Commit)
+		if err == nil && commit == "" {
+			err = errors.New("Git has no such commit")
+		}
+		if err != nil {
+			baseErr = fmt.Errorf("the worktree base commit is not available: %w", err)
+		} else {
+			target.base = &protocol.Base{Commit: commit}
+		}
+	case head != "":
+		if target.base, err = branchBase(ctx, target.workspace, head); err != nil {
+			return target, err
 		}
 	}
 	if head != "" {
+		base := ""
+		if target.base != nil {
+			base = target.base.Commit
+		}
 		if target.commits, target.moreCommits, err = listCommits(ctx, target.workspace, head, base); err != nil {
 			return target, err
 		}
 	}
-	kind := ""
+	var kind, from, to string
 	if request != nil {
-		kind = request.Baseline
+		kind, from, to = request.Baseline, request.From, request.To
+	}
+	if to != "" && kind != "commit" {
+		return target, errors.New("only the commit baseline accepts a to commit")
 	}
 	if kind == "commit" {
-		i := slices.IndexFunc(target.commits, func(c listedCommit) bool { return c.ID == request.From })
-		if i >= 0 {
-			from := target.commits[i]
-			parent := from.parent
-			if parent == "" {
-				if parent, err = emptyTree(ctx, target.workspace); err != nil {
-					return target, err
-				}
-			}
-			target.baseline = protocol.Baseline{Kind: "commit", Label: "Changes from commit " + from.ID[:min(7, len(from.ID))], Commit: parent, From: from.ID}
-			return target, nil
+		ok, err := target.commitBaseline(ctx, from, to)
+		if err != nil || ok {
+			return target, err
 		}
-		// The commit is not in the list now, for example after a rebase. Use the
-		// default baseline. The reply names the baseline that the diff uses.
+		// A commit is not in the list now, for example after a rebase. Use the default
+		// baseline. The reply names the baseline that the diff uses.
+		kind = ""
+	}
+	if kind == "base" && target.base == nil && baseErr == nil {
+		// The base can go away, for example when the session changes to the default
+		// branch. Use the default baseline, as for a commit that left the list.
 		kind = ""
 	}
 	switch {
-	case kind == "" && target.base, kind == "base":
-		if !target.base {
-			return target, errors.New("this session has no managed worktree baseline")
-		}
+	case kind == "base", kind == "" && (target.base != nil || baseErr != nil):
 		if baseErr != nil {
-			return target, fmt.Errorf("the worktree base commit is not available: %w", baseErr)
+			return target, baseErr
 		}
-		target.baseline = protocol.Baseline{Kind: "base", Label: "Since worktree base", Commit: base}
+		label := "Since worktree base"
+		if target.base.Branch != "" {
+			label = "Since the merge base with " + target.base.Branch
+		}
+		target.baseline = protocol.Baseline{Kind: "base", Label: label, Commit: target.base.Commit}
 	case kind == "" || kind == "head":
 		commit := head
 		if commit == "" {
@@ -242,22 +258,101 @@ func (s *Server) resolveDiff(ctx context.Context, id string, request *protocol.D
 	return target, nil
 }
 
-// maxCommits limits the commit list of the "commit" baseline. Tests make it smaller.
+// commitBaseline sets the baseline of the commits from the from commit to the to
+// commit. An empty to ends the diff at the current files. It reports false when a
+// commit is not in the list now.
+func (target *diffTarget) commitBaseline(ctx context.Context, from, to string) (bool, error) {
+	index := func(id string) int {
+		return slices.IndexFunc(target.commits, func(c listedCommit) bool { return c.ID == id })
+	}
+	oldest, newest := index(from), -1
+	if to != "" {
+		newest = index(to)
+	}
+	if oldest < 0 || (to != "" && newest < 0) {
+		return false, nil
+	}
+	// The list is newest first.
+	if newest > oldest {
+		return false, errors.New("the to commit is older than the from commit")
+	}
+	parent := target.commits[oldest].parent
+	if parent == "" {
+		var err error
+		if parent, err = emptyTree(ctx, target.workspace); err != nil {
+			return false, err
+		}
+	}
+	short := func(id string) string { return id[:min(7, len(id))] }
+	label := "Changes from commit " + short(from)
+	switch {
+	case from == to:
+		label = "Commit " + short(from)
+	case to != "":
+		label = "Commits " + short(from) + " to " + short(to)
+	}
+	target.baseline = protocol.Baseline{Kind: "commit", Label: label, Commit: parent, From: from, To: to}
+	return true, nil
+}
+
+// branchBase finds the base of a session without a managed worktree. It is the merge
+// base of HEAD and the default branch: the target of origin/HEAD, or else main. It is
+// nil without such a branch, without a merge base, and when HEAD is the merge base.
+// Then HEAD has no commit that the default branch does not have, for example on main
+// without local commits. Local commits on main that origin/main does not have get
+// origin/main as their base.
+func branchBase(ctx context.Context, dir, head string) (*protocol.Base, error) {
+	out, _, err := gitRead(ctx, dir, 4096, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+	if err != nil && !isQuietMiss(err) {
+		return nil, err
+	}
+	var names []string
+	if name := strings.TrimSpace(string(out)); name != "" {
+		names = append(names, name)
+	}
+	for _, name := range append(names, "refs/heads/main") {
+		tip, err := revision(ctx, dir, name)
+		if err != nil {
+			return nil, err
+		}
+		if tip == "" {
+			continue
+		}
+		out, _, err := gitRead(ctx, dir, 4096, "merge-base", head, tip)
+		if isQuietMiss(err) {
+			return nil, nil // The branches have no common commit.
+		}
+		if err != nil {
+			return nil, err
+		}
+		commit := strings.TrimSpace(string(out))
+		if commit == head {
+			return nil, nil
+		}
+		branch := strings.TrimPrefix(strings.TrimPrefix(name, "refs/remotes/"), "refs/heads/")
+		return &protocol.Base{Commit: commit, Branch: branch}, nil
+	}
+	return nil, nil
+}
+
+// maxCommits limits the commit list. Tests make it smaller.
 var maxCommits = 30
 
 // maxCommitList limits the bytes of the Git output of the commit list. Tests make it
 // smaller.
 var maxCommitList = 1 << 20
 
-// listCommits lists the commits that a "commit" baseline can start from, newest first.
-// It follows the first parent from HEAD. With a worktree base, it stops at the base and
-// omits the commit whose first parent is the base, because "base" shows the same
-// changes. Without a base, it lists the latest commits of HEAD. More reports that older
-// commits are not in the list.
+// listCommits lists the commits since the base, newest first. It follows the first
+// parent from HEAD and stops at the base. Without a base, it lists the latest commits
+// of HEAD. Each commit counts the files that it changes in the workspace folder. More
+// reports that older commits are not in the list.
 func listCommits(ctx context.Context, dir, head, base string) (commits []listedCommit, more bool, err error) {
-	// One more row than the limit detects more commits. A second extra row replaces
-	// the row that the list can omit for the base.
-	args := []string{"log", "--first-parent", "--no-show-signature", "--no-color", "--format=%H %P%x09%s", "-n", strconv.Itoa(maxCommits + 2), head}
+	// One more commit than the limit detects more commits. Each record starts with a
+	// record separator, so that the line with the file count stays with its commit. The
+	// count uses the rules of the file list: -M finds renames, and --root counts the
+	// files of a root commit. Thus diff.renames and log.showRoot have no effect.
+	args := []string{"log", "--first-parent", "--no-show-signature", "--no-color", "--no-ext-diff", "--no-textconv",
+		"--relative", "-M", "--root", "--shortstat", "--format=%x1e%H %P%x09%s", "-n", strconv.Itoa(maxCommits + 1), head}
 	if base != "" {
 		args = append(args, "^"+base)
 	}
@@ -266,22 +361,26 @@ func listCommits(ctx context.Context, dir, head, base string) (commits []listedC
 		return nil, false, err
 	}
 	commits = []listedCommit{}
-	lines := strings.Split(string(out), "\n")
-	// The text after the last newline is empty, or a partial row of truncated output.
-	lines = lines[:len(lines)-1]
+	records := strings.Split(string(out), "\x1e")[1:]
+	if truncated && len(records) > 0 {
+		records = records[:len(records)-1] // A partial record.
+	}
 	more = truncated
-	for _, line := range lines {
+	for _, record := range records {
+		line, stat, _ := strings.Cut(record, "\n")
 		ids, subject, found := strings.Cut(line, "\t")
 		fields := strings.Fields(ids)
 		if !found || len(fields) == 0 {
 			continue
 		}
 		commit := listedCommit{Commit: protocol.Commit{ID: fields[0], Subject: subject}}
+		// The file count starts the stat line, as in " 2 files changed, 3 insertions(+)".
+		// A commit without changes in the folder has no stat line.
+		if count, _, ok := strings.Cut(strings.TrimSpace(stat), " "); ok {
+			commit.Files, _ = strconv.Atoi(count)
+		}
 		if len(fields) > 1 {
 			commit.parent = fields[1]
-		}
-		if base != "" && commit.parent == base {
-			continue
 		}
 		if commit.parent == "" {
 			// Git shows no parent for the last commit of a shallow clone. Only a true
@@ -351,26 +450,36 @@ func (s *Server) workspaceChanges(ctx context.Context, id string, request *proto
 		result.Commits = append(result.Commits, commit.Commit)
 	}
 	result.MoreCommits = target.moreCommits
-	// --relative limits a repository subfolder session to its own folder.
+	// --relative limits a repository subfolder session to its own folder. Without a to
+	// commit, Git compares the baseline commit with the current files.
+	sides := []string{target.baseline.Commit}
+	if target.baseline.To != "" {
+		sides = append(sides, target.baseline.To)
+	}
 	diff := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--relative", "-M", "-z"}
-	names, moreNames, err := gitRead(ctx, target.workspace, maxGitList, append(diff, "--name-status", target.baseline.Commit, "--")...)
+	names, moreNames, err := gitRead(ctx, target.workspace, maxGitList, slices.Concat(diff, []string{"--name-status"}, sides, []string{"--"})...)
 	if err != nil {
 		return result, err
 	}
-	counts, moreCounts, err := gitRead(ctx, target.workspace, maxGitList, append(diff, "--numstat", target.baseline.Commit, "--")...)
-	if err != nil {
-		return result, err
-	}
-	untracked, moreUntracked, err := gitRead(ctx, target.workspace, maxGitList, "ls-files", "--others", "--exclude-standard", "-z")
+	counts, moreCounts, err := gitRead(ctx, target.workspace, maxGitList, slices.Concat(diff, []string{"--numstat"}, sides, []string{"--"})...)
 	if err != nil {
 		return result, err
 	}
 	result.Files = parseNameStatus(names)
 	applyNumstat(result.Files, parseNumstat(counts))
-	result.Truncated = moreNames || moreCounts || moreUntracked
+	result.Truncated = moreNames || moreCounts
 	if len(result.Files) > maxDiffFiles {
 		result.Files, result.Truncated = result.Files[:maxDiffFiles], true
 	}
+	// Untracked files are part of the current files only.
+	if target.baseline.To != "" {
+		return result, nil
+	}
+	untracked, moreUntracked, err := gitRead(ctx, target.workspace, maxGitList, "ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return result, err
+	}
+	result.Truncated = result.Truncated || moreUntracked
 	root, err := os.OpenRoot(target.workspace)
 	if err != nil {
 		return result, err
@@ -557,7 +666,11 @@ func (s *Server) workspaceFile(ctx context.Context, id string, request *protocol
 	switch {
 	case err == nil:
 		result.Baseline = target.baseline
-		if result.Old, err = baselineSide(ctx, target, oldPath); err != nil {
+		if result.Old, err = treeSide(ctx, target.workspace, target.baseline.Commit, oldPath); err != nil {
+			return result, err
+		}
+		if target.baseline.To != "" {
+			result.New, err = treeSide(ctx, target.workspace, target.baseline.To, request.Path)
 			return result, err
 		}
 	case withoutGit(err) && target.workspace != "":
@@ -723,11 +836,11 @@ func ignoredNames(ctx context.Context, dir string, entries []protocol.FolderEntr
 	return ignored, nil
 }
 
-// baselineSide reads one path from the baseline commit. The path is relative to the
+// treeSide reads one path from the tree of a commit. The path is relative to the
 // workspace, which can be a repository subfolder.
-func baselineSide(ctx context.Context, target diffTarget, path string) (protocol.FileSide, error) {
+func treeSide(ctx context.Context, workspace, commit, path string) (protocol.FileSide, error) {
 	missing := protocol.FileSide{State: "missing"}
-	out, _, err := gitRead(ctx, target.workspace, 64<<10, "ls-tree", "-l", "-z", target.baseline.Commit, "--", path)
+	out, _, err := gitRead(ctx, workspace, 64<<10, "ls-tree", "-l", "-z", commit, "--", path)
 	if err != nil {
 		return missing, err
 	}
@@ -752,7 +865,7 @@ func baselineSide(ctx context.Context, target diffTarget, path string) (protocol
 		side.State = "tooLarge"
 		return side, nil
 	}
-	data, _, err := gitRead(ctx, target.workspace, maxFileSide, "cat-file", "blob", fields[2])
+	data, _, err := gitRead(ctx, workspace, maxFileSide, "cat-file", "blob", fields[2])
 	if err != nil {
 		return missing, err
 	}

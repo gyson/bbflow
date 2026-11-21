@@ -165,7 +165,7 @@ func TestDemo(t *testing.T) {
 	expect("SELECT status, count(*) FROM runs GROUP BY status ORDER BY status", "[[exited 3] [running 3] [stopped 1]]")
 	expect("SELECT branch, state FROM worktrees", "[[demo/refactor-orbit ready]]")
 	// The worktree has three commits after its base and an uncommitted file, for each
-	// option of Compare with.
+	// kind of row in the scope menu.
 	worktrees, err := filepath.Glob(filepath.Join(demo, "worktrees", "*"))
 	if err != nil || len(worktrees) != 1 {
 		t.Fatalf("worktrees: %v, %v", worktrees, err)

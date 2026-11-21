@@ -1,8 +1,8 @@
 import { call, errorMessage } from './protocol.js';
 import type { ChangedFile, DiffRequest, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles } from './protocol.js';
 import { element } from './dom.js';
-import { baselineChoice, baselineMoved, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, FolderTree, Generation, sideNote, statusTitle } from './diff-model.js';
-import type { DiffLayout, FileEntry, FileScope, TreeRow } from './diff-model.js';
+import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, FolderTree, Generation, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, shortId, sideNote, statusTitle, stepScope, timelineHeading } from './diff-model.js';
+import type { DiffLayout, FileEntry, FileScope, Scope, TreeRow } from './diff-model.js';
 import { showDiff, showFile } from './diff-editor.js';
 import type { CodeView } from './diff-editor.js';
 import { previewable, renderMarkdown } from './markdown.js';
@@ -16,6 +16,9 @@ const listLimit = 'The file list is incomplete. bbflow limits the number of file
 // One selected file of a view. preview shows the current file, not its diff.
 interface Pick { path: string; preview: boolean }
 
+// The key of a scope menu item. Commit IDs are hexadecimal, so this key is unique.
+const uncommittedKey = ':uncommitted';
+
 // DiffPane fills the Changes and Files views of the workspace pane. They share the
 // change list and the folder tree. Changes shows the changed files and their diffs.
 // Files shows the folders of the workspace and the current files. Each view has its own
@@ -25,7 +28,10 @@ export class DiffPane {
   private readonly pane = element('diff-pane', HTMLElement);
   private readonly title = element('diff-title', HTMLElement);
   private readonly controls = element('diff-controls', HTMLElement);
-  private readonly baselineSelect = element('diff-baseline', HTMLSelectElement);
+  private readonly scopeButton = element('diff-scope', HTMLButtonElement);
+  private readonly scopeIdText = element('diff-scope-id', HTMLElement);
+  private readonly scopeText = element('diff-scope-label', HTMLElement);
+  private readonly scopeMenu = element('diff-scope-menu', HTMLElement);
   private readonly splitButton = element('diff-split', HTMLButtonElement);
   private readonly unifiedButton = element('diff-unified', HTMLButtonElement);
   private readonly summary = element('diff-summary', HTMLElement);
@@ -52,9 +58,9 @@ export class DiffPane {
   private scope: FileScope = 'changed';
   // The selected baseline. Without a choice, the server uses its default.
   private choice: DiffRequest | undefined;
-  // The worktree base commit from the latest reply that had it. The label keeps it when
-  // the user selects Uncommitted changes, so the menu text stays the same.
-  private baseCommit = '';
+  private menuOpen = false;
+  // The menu item whose dot starts a range. The next dot ends the range.
+  private pending: string | null = null;
   private changes: WorkspaceChanges | null = null;
   // A file reply showed that the commit of the list is not in the history of HEAD now.
   // The pane reads no file until a list read succeeds. Thus a failed list read does not
@@ -92,10 +98,16 @@ export class DiffPane {
       this.renderList();
       this.renderStatus();
     };
-    this.baselineSelect.onchange = () => {
-      this.choice = baselineChoice(this.baselineSelect.value);
-      void this.refresh();
-    };
+    this.scopeButton.onclick = () => this.setMenu(!this.menuOpen);
+    // A click outside the menu closes it. The capture phase sees the click before a
+    // handler can replace its target.
+    document.addEventListener('click', event => {
+      const target = event.target as Node | null;
+      if (this.menuOpen && !this.scopeMenu.contains(target) && !this.scopeButton.contains(target)) this.setMenu(false);
+    }, true);
+    this.scopeMenu.addEventListener('pointerover', event => this.preview(event.target));
+    this.scopeMenu.addEventListener('pointerleave', () => this.preview(null));
+    this.pane.addEventListener('keydown', event => this.onKey(event));
     this.toggleButton.onclick = () => {
       if (!this.selected) return;
       // Files shows no diffs. Its button opens the diff of the file in Changes.
@@ -147,7 +159,8 @@ export class DiffPane {
     this.listGeneration.next();
     this.fileGeneration.next();
     this.choice = undefined;
-    this.baseCommit = '';
+    this.menuOpen = false;
+    this.pending = null;
     this.changes = this.paths = this.file = null;
     this.staleList = false;
     this.changesError = this.filesError = this.ignoreError = '';
@@ -219,9 +232,9 @@ export class DiffPane {
     if (changes.status === 'fulfilled') {
       this.changes = changes.value;
       this.staleList = false;
-      // The server uses its default baseline when the selected commit left the history
-      // of HEAD, for example after a rebase. Keep that default after the next commit.
-      if (this.choice?.baseline === 'commit' && this.changes.baseline.from !== this.choice.from) this.choice = undefined;
+      // The server uses its default baseline when a selected commit left the history of
+      // HEAD, for example after a rebase. Keep that default after the next commit.
+      if (this.choice && baselineMoved(this.choice, this.changes.baseline)) this.choice = undefined;
     }
     if (files) {
       this.filesError = failure(folders) || failure(paths);
@@ -236,7 +249,7 @@ export class DiffPane {
         void this.readAlone(this.tree.unread(token), generation);
       }
     }
-    this.renderBaseline();
+    this.renderScope();
     this.show();
     this.renderStatus();
     if (!files) this.selectChanged();
@@ -360,44 +373,211 @@ export class DiffPane {
     if (this.shownLayout && this.shownLayout !== effectiveLayout(this.layout, this.editorParent.clientWidth)) this.renderFile();
   }
 
-  // The options go from the smallest to the largest set of changes: the uncommitted
-  // changes, the changes from each commit, newest first, and the worktree base.
-  private renderBaseline(): void {
+  // The selected scope. A pending choice shows before its reply arrives.
+  private currentScope(): Scope {
     const changes = this.changes;
-    const options: HTMLElement[] = [new Option('Uncommitted changes', 'head')];
-    let choices = 1;
-    if (changes?.baseline.kind === 'base') this.baseCommit = changes.baseline.commit.slice(0, 7);
+    if (!changes?.repository) return { newer: 0, older: 0 };
+    const source = this.choice ? { kind: this.choice.baseline, from: this.choice.from, to: this.choice.to } : changes.baseline;
+    return scopeOf(source.kind, source.from, source.to, changes.commits) ?? { newer: 0, older: 0 };
+  }
+
+  // Select a scope and read its changes. A range of every item stays a range. It can
+  // differ from All changes, for example when a commit merged the default branch.
+  private choose(scope: Scope): void {
+    const changes = this.changes;
+    if (!changes?.repository) return;
+    this.choice = scopeRequest(scope, changes.commits);
+    this.renderScope();
+    void this.refresh();
+  }
+
+  // The menu item of the pending dot, or -1.
+  private pendingItem(): number {
+    if (this.pending === uncommittedKey) return 0;
+    const index = this.changes?.commits.findIndex(commit => commit.id === this.pending) ?? -1;
+    return index < 0 ? -1 : index + 1;
+  }
+
+  private itemKey(item: number): string {
+    return item === 0 ? uncommittedKey : this.changes?.commits[item - 1]?.id ?? uncommittedKey;
+  }
+
+  private setMenu(open: boolean): void {
+    this.menuOpen = open;
+    this.pending = null;
+    this.renderMenu();
+  }
+
+  // The first dot selects its item and waits for a second dot. The second dot selects
+  // the items between the two dots. The same dot again cancels the range.
+  private clickDot(item: number): void {
+    const first = this.pendingItem();
+    if (first < 0) {
+      this.pending = this.itemKey(item);
+      this.choose({ newer: item, older: item });
+      return;
+    }
+    this.pending = null;
+    if (first === item) this.renderMenu();
+    else this.choose(scopeRange(first, item));
+  }
+
+  private onKey(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && this.menuOpen) {
+      event.preventDefault();
+      if (this.pending !== null) {
+        this.pending = null;
+        this.renderMenu();
+      } else {
+        this.setMenu(false);
+        this.scopeButton.focus();
+      }
+      return;
+    }
+    // [ and ] step to the older or the newer item. Typing in a field and other key
+    // combinations keep their usual effect. The read-only diff editor does not type.
+    if ((event.key !== '[' && event.key !== ']') || event.metaKey || event.ctrlKey || event.altKey) return;
+    const changes = this.changes;
+    const target = event.target as HTMLElement | null;
+    if (this.scope !== 'changed' || !changes?.repository || this.scopeButton.disabled) return;
+    if (target?.closest?.('input, textarea, select') || (target?.isContentEditable && !this.editorParent.contains(target))) return;
+    event.preventDefault();
+    const next = stepScope(this.currentScope(), event.key === '[', changes.commits.length + 1);
+    if (!next) return;
+    this.pending = null;
+    this.choose(next);
+  }
+
+  // While a dot waits for the second dot, the pointer over another dot shows the range
+  // that a click selects.
+  private preview(target: EventTarget | null): void {
+    for (const element of this.scopeMenu.querySelectorAll('.preview')) element.classList.remove('preview');
+    const dot = (target as HTMLElement | null)?.closest?.<HTMLElement>('.scope-dot');
+    const first = this.pendingItem();
+    const item = dot ? Number(dot.dataset.item) : first;
+    if (first < 0 || item === first) return;
+    const newer = Math.min(first, item), older = Math.max(first, item);
+    for (const row of this.scopeMenu.querySelectorAll<HTMLElement>('.scope-row')) {
+      const index = Number(row.dataset.item);
+      if (index < newer || index > older) continue;
+      row.classList.add('preview');
+      if (index > newer) row.querySelector('.rail-up')?.classList.add('preview');
+      if (index < older) row.querySelector('.rail-down')?.classList.add('preview');
+    }
+  }
+
+  // The scope button shows the selected changes. A single commit shows its short ID and
+  // its subject.
+  private renderScope(): void {
+    const changes = this.changes;
     const commits = changes?.repository ? changes.commits : [];
-    // A shallow clone or a long subject can leave an empty list with more commits.
-    const more = !!changes?.repository && !!changes.moreCommits;
-    if (commits.length > 0 || more) {
-      const group = document.createElement('optgroup');
-      group.label = 'Changes from a commit';
-      for (const commit of commits) {
-        const option = new Option(commitLabel(commit.id, commit.subject), `commit:${commit.id}`);
-        option.title = `From ${commit.id.slice(0, 7)} ${commit.subject}`;
-        group.append(option);
-      }
-      if (more) {
-        const more = new Option('Older commits are not listed.');
-        more.disabled = true;
-        group.append(more);
-      }
-      options.push(group);
-      choices += commits.length;
-    }
-    if (changes?.base) {
-      options.push(new Option(this.baseCommit ? `Since worktree base (${this.baseCommit})` : 'Since worktree base', 'base'));
-      choices++;
-    }
-    this.baselineSelect.replaceChildren(...options);
-    // A folder outside Git has an empty baseline.
-    this.baselineSelect.value = changes?.repository ? baselineValue(changes.baseline) : 'head';
-    this.baselineSelect.title = this.baselineSelect.selectedOptions[0]?.title ?? '';
+    const scope = this.currentScope();
+    const id = scopeId(scope, commits), label = scopeLabel(scope, commits);
+    this.scopeIdText.textContent = id;
+    this.scopeIdText.hidden = !id;
+    this.scopeText.textContent = label;
+    this.scopeButton.title = id ? `${id} ${label}` : label;
     // Keep the menu open to its notice of omitted commits.
-    this.baselineSelect.disabled = !changes?.repository || (choices < 2 && !more);
+    this.scopeButton.disabled = !changes?.repository || (commits.length === 0 && !changes.base && !changes.moreCommits);
+    if (this.scopeButton.disabled) this.menuOpen = false;
     const files = changes?.files ?? [];
     this.summary.textContent = changes?.repository ? `${files.length} ${files.length === 1 ? 'file' : 'files'}` : '';
+    this.renderMenu();
+  }
+
+  // The menu has All changes, then a timeline with the uncommitted changes and the
+  // commits, newest first. Item 0 is the uncommitted changes. Each row has a dot. Rails
+  // join the dots, and the rails of the selected items use the accent color.
+  private renderMenu(): void {
+    this.scopeButton.setAttribute('aria-expanded', String(this.menuOpen));
+    this.scopeMenu.hidden = !this.menuOpen;
+    const changes = this.changes;
+    if (!this.menuOpen || !changes?.repository) {
+      this.scopeMenu.replaceChildren();
+      return;
+    }
+    const active = document.activeElement as HTMLElement | null;
+    const focused = active && this.scopeMenu.contains(active) ? { kind: active.className, item: active.dataset.item } : null;
+    const commits = changes.commits, scope = this.currentScope(), all = scope === 'all';
+    const range = scope === 'all' ? { newer: 0, older: commits.length } : scope;
+    const pending = this.pendingItem();
+    // The dots fill only for a range or All changes. One selected item highlights only
+    // its row, because the dots select ranges.
+    const linked = all || range.newer !== range.older;
+    const parts: HTMLElement[] = [];
+    if (changes.base) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'scope-all';
+      button.setAttribute('aria-pressed', String(all));
+      button.append(textSpan('scope-subject', 'All changes'), textSpan('scope-meta', baseText(changes.base)));
+      button.onclick = () => {
+        this.pending = null;
+        this.choose('all');
+      };
+      parts.push(button);
+    }
+    parts.push(textSpan('scope-heading', timelineHeading(changes.base)));
+    const timeline = document.createElement('div');
+    timeline.className = 'scope-timeline';
+    const last = commits.length;
+    for (let item = 0; item <= last; item++) {
+      const commit = commits[item - 1];
+      const selected = item >= range.newer && item <= range.older;
+      const row = document.createElement('div');
+      row.className = 'scope-row' + (selected ? ' in' : '') + (selected && linked ? ' linked' : '') + (item === pending ? ' pending' : '');
+      row.dataset.item = String(item);
+      const gutter = textSpan('scope-gutter', '');
+      // The last rail continues to the notice of omitted commits. All changes includes
+      // those commits.
+      const up = textSpan('scope-rail rail-up' + (item === 0 ? ' none' : '') + (selected && item > range.newer ? ' on' : ''), '');
+      const down = textSpan('scope-rail rail-down' + (item === last && !changes.moreCommits ? ' none' : '') +
+        (selected && (item < range.older || (all && changes.moreCommits)) ? ' on' : ''), '');
+      const name = commit ? `${shortId(commit.id)} ${commit.subject}` : 'Uncommitted changes';
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'scope-dot' + (commit ? '' : ' uncommitted');
+      dot.dataset.item = String(item);
+      dot.title = pending < 0 ? `Start a range at ${name}` : pending === item ? 'Cancel the range' : `End the range at ${name}`;
+      dot.setAttribute('aria-label', dot.title);
+      dot.onclick = () => this.clickDot(item);
+      gutter.append(up, down, dot);
+      const text = document.createElement('button');
+      text.type = 'button';
+      text.className = 'scope-text';
+      text.dataset.item = String(item);
+      text.setAttribute('aria-pressed', String(selected && range.newer === range.older && !all));
+      text.title = commit ? `Show only commit ${name}` : 'Show only the uncommitted changes in the current files, with untracked files';
+      const subject = document.createElement('span');
+      subject.className = 'scope-subject';
+      if (commit) subject.append(textSpan('scope-id', shortId(commit.id)), ` ${commit.subject}`);
+      else subject.textContent = 'Uncommitted changes';
+      const count = textSpan('scope-count', commit ? String(commit.files) : '');
+      if (commit) count.title = `${commit.files} ${commit.files === 1 ? 'file' : 'files'} changed`;
+      text.append(subject, count);
+      // The row leaves the page when the menu closes. The focus goes to the scope button,
+      // so that [ and ] still step.
+      text.onclick = () => {
+        this.pending = null;
+        this.menuOpen = false;
+        this.choose({ newer: item, older: item });
+        this.scopeButton.focus();
+      };
+      row.append(gutter, text);
+      timeline.append(row);
+    }
+    parts.push(timeline);
+    if (changes.moreCommits) parts.push(textSpan('scope-note', 'Older commits are not listed.'));
+    parts.push(textSpan('scope-hint', pending >= 0
+      ? 'Click a second dot to show all changes between the two dots. Click the same dot, or press Escape, to cancel.'
+      : 'Click a row to show one change. Click two dots to show all changes between them. Press [ or ] to step.'));
+    this.scopeMenu.replaceChildren(...parts);
+    if (!focused) return;
+    for (const button of this.scopeMenu.querySelectorAll<HTMLElement>('button')) {
+      if (button.className !== focused.kind || button.dataset.item !== focused.item) continue;
+      button.focus({ preventScroll: true });
+      return;
+    }
   }
 
   private renderList(): void {
@@ -506,7 +686,7 @@ export class DiffPane {
     }
     if (this.staleList) {
       this.clearFile();
-      this.showNote('The selected commit is not in the history of HEAD now. Click Refresh to read the changes again.');
+      this.showNote('The selected changes are not in the history of HEAD now. Click Refresh to read the changes again.');
       return;
     }
     const path = this.selected;
@@ -520,13 +700,15 @@ export class DiffPane {
     this.renderHeader();
     const abort = this.fileAbort = new AbortController();
     try {
-      // The server reads a file outside Git without a baseline.
+      // The server reads a file outside Git without a baseline. Files shows the current
+      // files, so its file requests do not end at a commit.
       const baseline = this.changes?.repository ? baselineRequest(this.changes.baseline) : {};
+      if (this.scope === 'files') delete baseline.to;
       const diff = { ...baseline, path, ...(change?.oldPath ? { oldPath: change.oldPath } : {}) };
       const file = await this.send(server, { operation: 'workspace-file', session: this.session, diff }, abort.signal);
       if (!this.fileGeneration.current(generation)) return;
-      // The selected commit left the history of HEAD after the list was read. The server
-      // then used the default baseline. Read the list again, so that the menu, the
+      // A selected commit or the base left the history of HEAD after the list was read.
+      // The server then used the default baseline. Read the list again, so that the menu, the
       // counts, and the diff use the same baseline.
       if (baselineMoved(diff, file.baseline)) {
         this.staleList = true;
@@ -568,7 +750,9 @@ export class DiffPane {
     }
     this.toggleButton.hidden = !change;
     this.toggleButton.textContent = this.pick.preview ? 'View diff' : 'View file';
-    this.toggleButton.title = this.scope === 'files' ? 'Show the diff of this file in Changes' : '';
+    const to = this.changes?.repository ? this.changes.baseline.to : undefined;
+    this.toggleButton.title = this.scope === 'files' ? 'Show the diff of this file in Changes' :
+      this.pick.preview ? 'Show the diff' : to ? `Show the file at commit ${shortId(to)}` : 'Show the current file';
     this.copyButton.hidden = !this.selected;
     this.previewButton.hidden = !this.previewFile();
   }
@@ -600,9 +784,11 @@ export class DiffPane {
     this.shownMode = this.mode(file);
     if (this.shownMode === 'file') {
       const side = file.new;
-      if (side.state === 'missing') return this.showNote('This file is not in the workspace now.');
+      // In Changes, a scope that ends at a commit shows the file at that commit.
+      const to = this.scope === 'changed' && file.baseline.to ? shortId(file.baseline.to) : '';
+      if (side.state === 'missing') return this.showNote(to ? `This file is not in commit ${to}.` : 'This file is not in the workspace now.');
       if (side.state !== 'text') return this.showNote(sideNote(side));
-      this.showNote(side.symlink ? 'Symbolic link. The text is the link target.' : '');
+      this.showNote([to ? `The file at commit ${to}.` : '', side.symlink ? 'Symbolic link. The text is the link target.' : ''].filter(Boolean).join(' '));
       this.view = this.editor.showFile(this.editorParent, file.path, side.text ?? '');
       return;
     }
@@ -639,6 +825,13 @@ export class DiffPane {
     this.toggleButton.hidden = this.copyButton.hidden = this.previewButton.hidden = true;
     this.showNote('');
   }
+}
+
+function textSpan(className: string, text: string): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.className = className;
+  span.textContent = text;
+  return span;
 }
 
 // Show the file name in full and shorten its folder first. A long path then keeps its

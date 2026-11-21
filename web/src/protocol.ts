@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/32';
+export const VERSION = 'bbflow/33';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -100,14 +100,19 @@ export interface HistoryPage { matches: HistoryHit[]; more: boolean; incomplete:
 // baseline "base" uses the managed worktree commit. "head" uses HEAD. "commit" shows the
 // changes from the `from` commit: it uses the first parent of that commit.
 export type BaselineKind = 'base' | 'head' | 'commit';
-export interface DiffRequest { baseline?: BaselineKind; from?: string; path?: string; oldPath?: string; folders?: string[] }
-export interface Baseline { kind: BaselineKind; label: string; commit: string; from?: string }
-// A commit that a "commit" baseline can start from.
-export interface Commit { id: string; subject: string }
+// A "commit" baseline selects the commits from `from` to `to`. Without `to`, the new side
+// is the current files.
+export interface DiffRequest { baseline?: BaselineKind; from?: string; to?: string; path?: string; oldPath?: string; folders?: string[] }
+export interface Baseline { kind: BaselineKind; label: string; commit: string; from?: string; to?: string }
+// The start of the "base" baseline. branch names the default branch of a merge base. It
+// is empty for the recorded commit of a managed worktree.
+export interface Base { commit: string; branch?: string }
+// A commit since the base. files counts the files that it changes in the workspace.
+export interface Commit { id: string; subject: string; files: number }
 // added and removed are -1 when they are unknown. An untracked file has status A.
 export interface ChangedFile { path: string; oldPath?: string; status: string; added: number; removed: number; binary?: boolean; untracked?: boolean }
-// commits lists the commits of a "commit" baseline, newest first.
-export interface WorkspaceChanges { repository: boolean; reason?: string; base: boolean; baseline: Baseline; commits: Commit[]; moreCommits?: boolean; files: ChangedFile[]; truncated: boolean }
+// commits lists the commits since the base, newest first.
+export interface WorkspaceChanges { repository: boolean; reason?: string; base?: Base; baseline: Baseline; commits: Commit[]; moreCommits?: boolean; files: ChangedFile[]; truncated: boolean }
 export interface WorkspaceFiles { repository: boolean; reason?: string; paths: string[]; truncated: boolean }
 // A folder list. An empty path names the workspace folder. `missing` reports that the
 // path is not a folder now.

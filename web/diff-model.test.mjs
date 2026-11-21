@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { baselineChoice, baselineMoved, baselineRequest, baselineValue, commitLabel, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, languageName, openFolders, sideNote, statusTitle, treeRows } from './dist/diff-model.js';
+import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, languageName, openFolders, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, sideNote, statusTitle, stepScope, timelineHeading, treeRows } from './dist/diff-model.js';
 
 const change = (path, status = 'M', extra = {}) => ({ path, status, added: 1, removed: 2, ...extra });
 
@@ -267,21 +267,62 @@ test('a late reply is not current', () => {
   assert.equal(generation.current(second), true);
 });
 
-test('a baseline maps to one menu value and back to its request', () => {
-  const id = '0123456789abcdef0123456789abcdef01234567';
-  const commit = { kind: 'commit', label: 'Changes from commit 0123456', commit: 'parent', from: id };
-  assert.equal(baselineValue(commit), `commit:${id}`);
-  assert.deepEqual(baselineRequest(commit), { baseline: 'commit', from: id });
-  assert.deepEqual(baselineRequest({ kind: 'base', label: '', commit: 'base' }), { baseline: 'base' });
-  assert.deepEqual(baselineChoice('head'), { baseline: 'head' });
-  assert.deepEqual(baselineChoice('unknown'), { baseline: 'head' });
+const ids = ['c'.repeat(40), 'b'.repeat(40), 'a'.repeat(40)];
+const listed = [{ id: ids[0], subject: 'Newest', files: 2 }, { id: ids[1], subject: 'Middle', files: 1 }, { id: ids[2], subject: 'Oldest', files: 3 }];
+
+test('a scope maps to its request and back', () => {
+  // Item 0 is the uncommitted changes. Item k is commit k - 1 of the list, newest first.
+  const cases = [
+    ['all', { baseline: 'base' }],
+    [{ newer: 0, older: 0 }, { baseline: 'head' }],
+    [{ newer: 2, older: 2 }, { baseline: 'commit', from: ids[1], to: ids[1] }],
+    [{ newer: 1, older: 3 }, { baseline: 'commit', from: ids[2], to: ids[0] }],
+    [{ newer: 0, older: 2 }, { baseline: 'commit', from: ids[1] }],
+  ];
+  for (const [scope, request] of cases) {
+    assert.deepEqual(scopeRequest(scope, listed), request);
+    assert.deepEqual(scopeOf(request.baseline, request.from, request.to, listed), scope);
+    const baseline = { kind: request.baseline, label: '', commit: 'old', from: request.from, to: request.to };
+    assert.deepEqual(baselineRequest(baseline), request);
+  }
+  // A commit that left the list, or a to commit older than from, has no scope.
+  assert.equal(scopeOf('commit', 'gone', undefined, listed), null);
+  assert.equal(scopeOf('commit', ids[0], 'gone', listed), null);
+  assert.equal(scopeOf('commit', ids[0], ids[2], listed), null);
+  // A folder outside Git shows the uncommitted changes.
+  assert.deepEqual(scopeOf('', undefined, undefined, []), { newer: 0, older: 0 });
 });
 
-test('a commit label has the short ID and a shortened subject', () => {
-  const id = '0123456789abcdef0123456789abcdef01234567';
-  assert.equal(commitLabel(id, 'Fix resize crash'), 'From 0123456 Fix resize crash');
-  const label = commitLabel(id, 'x'.repeat(80));
-  assert.equal(label, `From 0123456 ${'x'.repeat(59)}…`);
+test('a range has the two items in either order, and a step leaves a range at its end', () => {
+  assert.deepEqual(scopeRange(3, 1), { newer: 1, older: 3 });
+  assert.deepEqual(scopeRange(0, 2), { newer: 0, older: 2 });
+  const one = item => ({ newer: item, older: item });
+  // [ steps to the older item, and ] to the newer item. The ends stop.
+  assert.deepEqual(stepScope(one(1), true, 4), one(2));
+  assert.deepEqual(stepScope(one(1), false, 4), one(0));
+  assert.equal(stepScope(one(3), true, 4), null);
+  assert.equal(stepScope(one(0), false, 4), null);
+  // A range, and All changes, go to the end in the step direction.
+  assert.deepEqual(stepScope({ newer: 1, older: 3 }, true, 4), one(3));
+  assert.deepEqual(stepScope({ newer: 1, older: 3 }, false, 4), one(1));
+  assert.deepEqual(stepScope('all', true, 4), one(3));
+  assert.deepEqual(stepScope('all', false, 4), one(0));
+  assert.deepEqual(stepScope('all', true, 1), one(0));
+});
+
+test('the scope button names the selected changes', () => {
+  assert.equal(scopeLabel('all', listed), 'All changes');
+  assert.equal(scopeLabel({ newer: 0, older: 0 }, listed), 'Uncommitted changes');
+  assert.equal(scopeLabel({ newer: 2, older: 2 }, listed), 'Middle');
+  assert.equal(scopeId({ newer: 2, older: 2 }, listed), 'bbbbbbb');
+  assert.equal(scopeId({ newer: 1, older: 2 }, listed), '');
+  assert.equal(scopeLabel({ newer: 1, older: 3 }, listed), '3 commits, aaaaaaa to ccccccc');
+  assert.equal(scopeLabel({ newer: 0, older: 1 }, listed), '1 commit and uncommitted changes');
+  assert.equal(scopeLabel({ newer: 0, older: 3 }, listed), '3 commits and uncommitted changes');
+  assert.equal(baseText({ commit: ids[2] }), 'Since the worktree base (aaaaaaa)');
+  assert.equal(baseText({ commit: ids[2], branch: 'origin/main' }), 'Since the merge base with origin/main (aaaaaaa)');
+  assert.equal(timelineHeading(undefined), 'Uncommitted changes and latest commits');
+  assert.equal(timelineHeading({ commit: ids[2], branch: 'main' }), 'Uncommitted changes and commits since main');
 });
 
 test('a file reply moved when the server did not use the requested commit', () => {
@@ -289,7 +330,16 @@ test('a file reply moved when the server did not use the requested commit', () =
   assert.equal(baselineMoved(request, { kind: 'commit', label: '', commit: 'p', from: 'abc' }), false);
   assert.equal(baselineMoved(request, { kind: 'base', label: '', commit: 'b' }), true);
   assert.equal(baselineMoved(request, { kind: 'commit', label: '', commit: 'p', from: 'def' }), true);
-  // Other baselines and a file outside Git never move.
+  // The to commit must match too.
+  const range = { baseline: 'commit', from: 'abc', to: 'def' };
+  assert.equal(baselineMoved(range, { kind: 'commit', label: '', commit: 'p', from: 'abc', to: 'def' }), false);
+  assert.equal(baselineMoved(range, { kind: 'commit', label: '', commit: 'p', from: 'abc' }), true);
+  assert.equal(baselineMoved(request, { kind: 'commit', label: '', commit: 'p', from: 'abc', to: 'def' }), true);
+  // A base request moves when the base is gone. The default request and a file outside
+  // Git never move.
+  assert.equal(baselineMoved({ baseline: 'base' }, { kind: 'head', label: '', commit: 'h' }), true);
+  assert.equal(baselineMoved({ baseline: 'base' }, { kind: 'base', label: '', commit: 'b' }), false);
   assert.equal(baselineMoved({ baseline: 'head' }, { kind: 'head', label: '', commit: 'h' }), false);
+  assert.equal(baselineMoved({}, { kind: 'head', label: '', commit: 'h' }), false);
   assert.equal(baselineMoved({}, { kind: '', label: '', commit: '' }), false);
 });

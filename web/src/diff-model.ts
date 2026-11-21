@@ -1,4 +1,4 @@
-import type { Baseline, ChangedFile, DiffRequest, FileSide, FolderEntry, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
+import type { Base, Baseline, ChangedFile, Commit, DiffRequest, FileSide, FolderEntry, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
 
 export type DiffLayout = 'split' | 'unified';
 export type FileScope = 'changed' | 'files';
@@ -6,34 +6,82 @@ export type FileScope = 'changed' | 'files';
 // One row of the file list. An unchanged file has no change.
 export interface FileEntry { path: string; change?: ChangedFile }
 
-// The value of a baseline in the Compare with menu. A commit baseline names its first
-// commit.
-export function baselineValue(baseline: Baseline): string {
-  return baseline.kind === 'commit' ? `commit:${baseline.from ?? ''}` : baseline.kind;
+// The changes that the scope menu selects. 'all' is the base baseline. A range selects
+// the menu items from newer to older. Item 0 is the uncommitted changes. Item k is the
+// commit at index k - 1 of the commit list, which is newest first.
+export type Scope = 'all' | { newer: number; older: number };
+
+// The scope of a baseline or a request. A commit that is not in the list gives null.
+export function scopeOf(kind: string | undefined, from: string | undefined, to: string | undefined, commits: Commit[]): Scope | null {
+  if (kind === 'base') return 'all';
+  if (kind !== 'commit') return { newer: 0, older: 0 };
+  const item = (id: string | undefined) => commits.findIndex(commit => commit.id === id) + 1;
+  const older = item(from), newer = to ? item(to) : 0;
+  return older > 0 && (newer > 0 || !to) && newer <= older ? { newer, older } : null;
 }
 
-// The request for a value of the Compare with menu.
-export function baselineChoice(value: string): DiffRequest {
-  if (value.startsWith('commit:')) return { baseline: 'commit', from: value.slice('commit:'.length) };
-  return { baseline: value === 'base' ? 'base' : 'head' };
+// The request for a scope.
+export function scopeRequest(scope: Scope, commits: Commit[]): DiffRequest {
+  if (scope === 'all') return { baseline: 'base' };
+  const from = commits[scope.older - 1], to = commits[scope.newer - 1];
+  if (!from) return { baseline: 'head' };
+  return to ? { baseline: 'commit', from: from.id, to: to.id } : { baseline: 'commit', from: from.id };
 }
 
 // The request for the baseline of a reply.
 export function baselineRequest(baseline: Baseline): DiffRequest {
-  return baselineChoice(baselineValue(baseline));
+  if (baseline.kind === 'commit') return { baseline: 'commit', from: baseline.from ?? '', ...(baseline.to ? { to: baseline.to } : {}) };
+  return { baseline: baseline.kind === 'base' ? 'base' : 'head' };
 }
 
-// A reply for a commit baseline uses another baseline when the server did not find the
-// commit. The server then used its default baseline.
+// A reply uses another baseline when the server did not find a requested commit or the
+// base. The server then used its default baseline.
 export function baselineMoved(request: DiffRequest, reply: Baseline): boolean {
-  return request.baseline === 'commit' && (reply.kind !== 'commit' || reply.from !== request.from);
+  if (!request.baseline) return false;
+  if (reply.kind !== request.baseline) return true;
+  return request.baseline === 'commit' && (reply.from !== request.from || (reply.to ?? '') !== (request.to ?? ''));
 }
 
-// The menu text of a commit. A long subject is shortened. The option title has the
-// full subject.
-export function commitLabel(id: string, subject: string): string {
-  const short = subject.length > 60 ? `${subject.slice(0, 59)}…` : subject;
-  return `From ${id.slice(0, 7)} ${short}`;
+// The scope from the anchor item to an item, in either order.
+export function scopeRange(anchor: number, item: number): Scope {
+  return { newer: Math.min(anchor, item), older: Math.max(anchor, item) };
+}
+
+// The scope after a step to the older or the newer item. A range, or all changes, goes
+// to its end in that direction. There is no step past the first or the last item.
+export function stepScope(scope: Scope, older: boolean, items: number): Scope | null {
+  const range = scope === 'all' ? { newer: 0, older: items - 1 } : scope;
+  let item = older ? range.older : range.newer;
+  if (scope !== 'all' && range.newer === range.older) item += older ? 1 : -1;
+  return item >= 0 && item < items ? { newer: item, older: item } : null;
+}
+
+// The button text of a scope. One commit shows its subject. scopeId gives its ID.
+export function scopeLabel(scope: Scope, commits: Commit[]): string {
+  if (scope === 'all') return 'All changes';
+  if (scope.older === 0) return 'Uncommitted changes';
+  if (scope.newer === scope.older) return commits[scope.older - 1]?.subject ?? '';
+  const count = scope.older - Math.max(scope.newer, 1) + 1;
+  const commitsText = `${count} ${count === 1 ? 'commit' : 'commits'}`;
+  return scope.newer === 0 ? `${commitsText} and uncommitted changes` : `${commitsText}, ${shortId(commits[scope.older - 1]?.id ?? '')} to ${shortId(commits[scope.newer - 1]?.id ?? '')}`;
+}
+
+// The short ID of the commit of a one-commit scope, or an empty text.
+export function scopeId(scope: Scope, commits: Commit[]): string {
+  return scope !== 'all' && scope.older > 0 && scope.newer === scope.older ? shortId(commits[scope.older - 1]?.id ?? '') : '';
+}
+
+export function shortId(id: string): string { return id.slice(0, 7); }
+
+// The text that names the base.
+export function baseText(base: Base): string {
+  return base.branch ? `Since the merge base with ${base.branch} (${shortId(base.commit)})` : `Since the worktree base (${shortId(base.commit)})`;
+}
+
+// The heading of the timeline in the scope menu.
+export function timelineHeading(base: Base | undefined): string {
+  if (!base) return 'Uncommitted changes and latest commits';
+  return base.branch ? `Uncommitted changes and commits since ${base.branch}` : 'Uncommitted changes and commits since the worktree base';
 }
 
 // Below this width of the editor area, the split layout is too narrow to read.

@@ -462,15 +462,55 @@ body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-s
 #diff-controls[hidden] { display: none; }
 #diff-refresh { margin-left: auto; }
 #diff-pane, #side-terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.diff-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid var(--divider); font-size: 12px; }
-/* A fixed width keeps the layout buttons in place when the selected baseline changes. */
-#diff-baseline { width: 19em; flex: none; padding: 5px 8px; font-size: 12px; text-overflow: ellipsis; }
+.diff-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid var(--divider); font-size: 12px; }
+/* The scope button gets its width from the pane, not from its label. Thus the layout
+   buttons stay in place when the selected changes change. */
+#diff-scope { flex: 1 1 0; min-width: 12em; max-width: 30em; display: flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: 12px; text-align: left; }
+#diff-scope[aria-expanded="true"] { background: var(--selected); border-color: var(--selected-border); }
+.scope-id { flex: none; font-family: Menlo, Monaco, monospace; font-size: 11px; color: var(--text-muted); }
+.scope-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.scope-arrow { flex: none; color: var(--text-muted); font-size: 10px; }
+/* The scope menu is a timeline. Each row has a dot. Rails join the dots. The rails of
+   the selected items are thick and use the accent color. */
+#diff-scope-menu { position: absolute; top: calc(100% - 4px); left: 10px; z-index: 400; width: min(420px, calc(100% - 20px)); max-height: min(480px, 70vh); overflow-y: auto; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px var(--shadow-overlay); }
+.scope-all { display: grid; gap: 2px; width: 100%; padding: 7px 10px; font-size: 12px; text-align: left; }
+.scope-all[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); }
+.scope-meta { color: var(--text-muted); font-size: 11px; }
+.scope-heading { display: block; padding: 10px 8px 4px; color: var(--text-muted); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+.scope-timeline { display: flex; flex-direction: column; }
+.scope-row { display: grid; grid-template-columns: 30px minmax(0, 1fr); }
+.scope-row.in { background: var(--selected); }
+.scope-row.preview:not(.in) { background: var(--hover); }
+.scope-gutter { position: relative; display: flex; align-items: center; justify-content: center; }
+.scope-rail { position: absolute; left: 50%; width: 2px; margin-left: -1px; background: var(--border); }
+.rail-up { top: 0; bottom: 50%; }
+.rail-down { top: 50%; bottom: 0; }
+.scope-rail.none { display: none; }
+.scope-rail.on, .scope-rail.preview { width: 4px; margin-left: -2px; background: var(--accent); }
+.scope-rail.preview:not(.on) { opacity: .45; }
+.scope-dot { position: relative; z-index: 1; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: transparent; }
+.scope-dot:hover:not(:disabled) { background: transparent; }
+.scope-dot::before { content: ""; position: absolute; inset: 7px; border: 2px solid var(--text-muted); border-radius: 50%; background: var(--surface); transition: transform .1s; }
+.scope-dot:hover::before, .scope-dot:focus-visible::before { transform: scale(1.3); border-color: var(--accent); }
+.scope-dot:focus-visible { outline-offset: -2px; }
+.scope-dot.uncommitted::before { border-style: dashed; }
+/* A hollow dot is not in a range. A ring starts a range. Filled dots are in a range. */
+.scope-row.linked .scope-dot::before { border-color: var(--accent); background: var(--accent); }
+.scope-row.preview .scope-dot::before { border-color: var(--accent); }
+.scope-row.pending .scope-dot::before { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
+.scope-text { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px 7px 2px; border: 0; border-radius: 0; background: transparent; font-size: 12px; text-align: left; }
+.scope-text:hover:not(:disabled) { background: var(--hover); }
+.scope-row.in .scope-text:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+.scope-subject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scope-count { flex: none; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.scope-note, .scope-hint { display: block; padding: 6px 8px 2px; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.scope-hint { margin-top: 4px; border-top: 1px solid var(--divider); }
 .segmented { display: inline-flex; }
 .segmented button { padding: 5px 10px; font-size: 12px; border-radius: 0; background: transparent; }
 .segmented button:first-child { border-radius: 7px 0 0 7px; }
 .segmented button:last-child { border-radius: 0 7px 7px 0; margin-left: -1px; }
 .segmented button[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); position: relative; }
-#diff-summary { margin-left: auto; color: var(--text-muted); }
+#diff-summary { margin-left: auto; min-width: 4.8em; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .icon-button { padding: 3px 8px; font-size: 15px; line-height: 1.2; }
 #diff-status { margin: 0; padding: 8px 12px; background: var(--warning-surface); color: var(--warning-text); font-size: 12px; line-height: 1.5; }
 /* A drag on the divider sets --file-list-width. The divider has a column without width
