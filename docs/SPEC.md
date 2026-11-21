@@ -502,6 +502,37 @@ The UI renders titles, errors, and recorded output as text. It never treats them
 HTML. Each tab has its own selected session. Tabs can share a session. Every tab can
 type and send messages. The PTY uses the size of the tab that most recently sent input.
 
+### Page messages
+
+The page has no general message banner. Each message shows next to the item that it is
+about:
+
+- A start warning from the server, such as a base fetch that failed, shows as
+  **⚠ Start warning** at the end of the workspace line. Its tooltip gives the text. A
+  click also shows the text. The page keeps the warning of each session until the page
+  reloads. bbflow does not record it.
+- A lost connection, an end with an error, and a stop without effect show in the hint
+  below the terminal. An error hint is red. **Reconnect** shows next to the hint.
+- When the session changes while the Continue dialog is open, the dialog stays open. It
+  tells why it cannot start a terminal and disables its start button.
+- A handoff folder that is not available shows in the status line of the message editor.
+- A failed list refresh shows above the session list, because the list can then be out
+  of date. A failed connection at page load shows there too. After a server restart,
+  the restart bar replaces it.
+- An update in progress and a server restart show in a bar at the top of the main area.
+  The restart bar has **Reload page**. A failed update removes the update bar, and the
+  sidebar shows the failure.
+- After **Copy session ID**, the More actions button shows **Session ID copied** as its
+  tooltip for a short time.
+
+A failed action that has no such place shows an error toast at the right, below the
+toolbar. The toast names the action and the session, for example
+`Could not archive “Fix links”.`, and gives the reason. It stays until the user closes
+it. The page keeps the three newest toasts.
+
+Archive, restore, stop, project removal, and worktree removal show no confirmation. The
+list, the status, and the workspace line show the result.
+
 ### Session preparation, settings, and worktrees
 
 Settings is an instance-wide page at `/settings`. Its URL has no session ID.
@@ -611,7 +642,7 @@ remote `main`. The most specific destination wins.
 Negative refspecs exclude a branch. The fetch updates only the selected tracking ref.
 Other matching refspecs, local branches, tags, and `FETCH_HEAD` do not change. If no
 refspec maps to an existing tracking ref, or two remotes map it equally, bbflow does not
-fetch. The launch then uses the local ref and shows a notice.
+fetch. The launch then uses the local ref and shows a start warning.
 
 The fetch runs before the launch lock, so a slow remote does not delay other launches.
 It stops after 15 seconds. The server then stops Git and its transport helpers, such as
@@ -624,8 +655,9 @@ helpers and SSH agents still work. A remote that needs a typed password or passp
 fails.
 
 If the fetch fails and a local copy of the branch exists, the launch uses that copy. The
-view that started the session then shows a notice with the Git error and the commit of
-the worktree record. bbflow does not record this notice. If no local copy exists, Start
+view that started the session then shows a start warning with the Git error and the
+commit of the worktree record. See [page messages](#page-messages). bbflow does not
+record this warning. If no local copy exists, Start
 fails and the preparation stays editable.
 
 bbflow creates a fresh branch (user-named or generated as bbflow/TIMESTAMP-SUFFIX) and
@@ -798,7 +830,7 @@ greeting with a new instance ID, the same directory, and the same port. Then it
 reloads once and keeps its path. An incomplete greeting, or a greeting with another
 directory or port, needs manual recovery. The reload loads
 the UI of the new server. A tab with an edit that the old server did not save does not
-reload. It tells the user to copy the edit and reload. The message editor, the project
+reload. The page bar tells the user to copy the edit and reload. The message editor, the project
 draft form, Settings, and the open Add project, Edit project, Rename, and Continue
 dialogs have this check. A dialog has an edit when a field differs from its value when
 the dialog opened. That dialog also shows the message, because it covers the page. A tab that reloaded automatically in the last
@@ -1742,23 +1774,25 @@ shows no tool. A start or a continue clears the list of the view, so the line sh
 tool until the list with the new terminal arrives. The toolbar does not show the startup command. The shell usually
 echoes it at the top of the terminal, and the start event records it. At the right, a search
 icon opens **Search history**. Three icons show the Changes, Files, and Terminal views of
-the workspace pane. **Reconnect** shows when a view of a live terminal has no connection.
+the workspace pane.
 
 The session toolbar shows **Stop session** to the left of the icons when you view the
 live terminal. During worktree creation, the session shows `running` before a terminal
-exists. When the server reports that it stopped no terminal, the page says so and leaves
-the status as is. When the session ends, **Continue in new terminal** shows there in the
+exists. When the server reports that it stopped no terminal, the hint below the
+terminal says so, and the status stays as is. When the session ends, **Continue in new terminal** shows there in the
 latest terminal view.
 
 A hint below the terminal shows only when the view cannot send input. This occurs when
 the process ended, when the view shows an earlier terminal, or when the connection is
-lost. A view of the live terminal has no hint.
+lost. A view of the live terminal has no hint. A lost connection of a live terminal
+also shows the reason, and **Reconnect** shows next to the hint.
 
 **More actions** (⋯) opens a menu that lists only the actions that apply:
 
 - **Rename** shows for started sessions. The field shows the user title, or the derived
   title as a placeholder. An empty field removes the user title.
-- **Copy session ID** copies the ID of a started session to the clipboard.
+- **Copy session ID** copies the ID of a started session to the clipboard. The menu
+  button then shows **Session ID copied** for a short time.
 - **New sub-session** shows for a session that is not archived and has a saved project.
   See [session families](#session-families).
 - **Archive** shows for `draft` and `ended` sessions. It changes to **Restore** for an

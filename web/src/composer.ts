@@ -151,6 +151,10 @@ export class Composer {
     return undefined;
   }
 
+  // Show a problem of a message editor action, such as a handoff prompt that is not
+  // available. The next edit replaces it.
+  problem(text: string): void { this.message(text, true); }
+
   private message(text: string, error = false): void {
     this.status.textContent = text;
     this.status.classList.toggle('form-error', error);

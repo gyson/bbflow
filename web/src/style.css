@@ -25,11 +25,13 @@
   --inactive: #b8bfb9;
   --running: #438d64;
   --danger: #a24139;
+  --danger-surface: #fbeceb;
   --positive: #2f7a4f;
   --warning: #87591c;
   --warning-text: #755823;
   --warning-surface: #fff5dd;
   --info: #4a64a8;
+  --info-surface: #edf1fa;
   --match: #f5e2a0;
   --match-text: #443b1c;
   --shadow-soft: #183c2510;
@@ -73,11 +75,13 @@
     --inactive: light-dark(#b8bfb9, #77777f);
     --running: light-dark(#438d64, #7ee787);
     --danger: light-dark(#a24139, #f2a49d);
+    --danger-surface: light-dark(#fbeceb, #3a2426);
     --positive: light-dark(#2f7a4f, #7ee787);
     --warning: light-dark(#87591c, #edc381);
     --warning-text: light-dark(#755823, #f0d098);
     --warning-surface: light-dark(#fff5dd, #3b3020);
     --info: light-dark(#4a64a8, #b0c4f5);
+    --info-surface: light-dark(#edf1fa, #232a3b);
     --match: light-dark(#f5e2a0, #5d4824);
     --match-text: light-dark(#443b1c, #ffe5a4);
     --shadow-soft: light-dark(#183c2510, #0002);
@@ -164,6 +168,8 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .sidebar-actions { display: flex; flex-wrap: wrap; gap: 4px; margin: -6px -4px -8px; }
 .sidebar-actions button { padding: 6px 8px; border-color: transparent; background: transparent; font-size: 12px; }
 .sidebar-actions button[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); }
+/* The sidebar tells when the session list cannot load. The list then can be out of date. */
+#list-problem { margin: 0; padding: 9px 11px; border-radius: 8px; background: var(--danger-surface); color: var(--danger); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .instance { padding: 12px 8px 0; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
 .instance span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.8; }
 #instance-dir { font-size: 10px; color: var(--text-muted); }
@@ -183,6 +189,8 @@ body.resizing-sidebar, body.resizing-sidebar * { cursor: col-resize !important; 
 [data-tip] { position: relative; }
 [data-tip]::after { content: attr(data-tip) / ""; position: absolute; top: calc(100% + 7px); right: 0; z-index: 20; width: max-content; max-width: min(300px, 70vw); padding: 5px 9px; border-radius: 6px; background: var(--text); color: var(--workspace); font-size: 11px; font-weight: 400; line-height: 1.45; letter-spacing: 0; text-align: left; white-space: normal; opacity: 0; pointer-events: none; transition: opacity .1s; }
 [data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transition-delay: .35s; }
+/* A short confirmation, such as after a copy, shows the tooltip at once. */
+[data-tip].tip-open::after { opacity: 1; transition-delay: 0s; }
 [data-tip]:disabled::after, #session-menu-open[aria-expanded="true"]::after { display: none; }
 .toolbar-title [data-tip]::after { right: auto; left: 0; }
 /* A container query on the width of the main area puts the workspace pane below the session. */
@@ -208,7 +216,15 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 #session-menu button:hover:not(:disabled), #session-menu button:focus-visible { background: var(--selected); border-color: var(--selected-border); }
 .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: var(--accent-text); background: var(--selected); border-radius: 5px; padding: 6px 9px; }
 .welcome { margin: auto; padding: 60px 40px; text-align: center; color: var(--text-muted); line-height: 1.7; }
-#notice { padding: 12px 30px; background: var(--warning-surface); color: var(--warning-text); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+/* The page bar shows a state of the whole page, such as a restart of the server. */
+#page-bar { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 10px 30px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+#page-bar.info { background: var(--info-surface); color: var(--info); }
+#page-bar.warning { background: var(--warning-surface); color: var(--warning-text); }
+#page-bar-text { flex: 1; min-width: 0; }
+#page-bar-reload { flex: none; padding: 4px 10px; font-size: 12px; }
+/* The start warning of a session shows on its workspace line. A click or keyboard focus shows the text. */
+#workspace-warning { flex: none; padding: 0 7px; border: 0; border-radius: 999px; background: var(--warning-surface); color: var(--warning-text); font-size: 11px; font-weight: 600; line-height: 1.6; }
+#workspace-warning:hover:not(:disabled) { background: var(--warning-surface); text-decoration: underline; }
 #session-view { flex: 1; min-height: 480px; display: flex; flex-direction: column; padding: 20px 26px 18px; }
 #terminal-pane { flex: 1; min-height: 180px; display: flex; flex-direction: column; }
 /* The row above the terminal holds the terminal selector. Without it, the row does not show. */
@@ -225,13 +241,15 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 .terminal-item .terminal-tool { overflow: hidden; text-overflow: ellipsis; }
 .terminal-item .terminal-status, .terminal-item .terminal-times { color: var(--text-muted); font-size: 11px; }
 .terminal-item .terminal-status.warning { color: var(--warning); }
-#terminal-latest { flex: none; padding: 4px 10px; font-size: 11px; }
+#reconnect, #terminal-latest { flex: none; padding: 4px 10px; font-size: 11px; }
 #terminal { flex: 1; min-height: 0; background: var(--terminal-background); border-radius: 9px; padding: 16px; overflow: auto; }
 .terminal-host { height: 100%; }
-/* The footer shows only while it has a hint or Back to live terminal. */
+/* The footer shows only while it has a hint, Reconnect, or Back to live terminal. */
 .terminal-footer { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 12px; color: var(--text-muted); font-size: 11px; padding: 10px 0 0; }
 .terminal-footer:not(:has(> :not([hidden]))) { display: none; }
 #terminal-hint { flex: 1; }
+#terminal-hint.error { color: var(--danger); }
+#terminal-hint.info { color: var(--info); }
 #session-divider { flex: 0 0 20px; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: row-resize; touch-action: none; user-select: none; }
 #session-divider > span { width: 40px; height: 4px; border-radius: 2px; background: var(--inactive); }
 #session-divider:hover > span, #session-divider:focus-visible > span, .resizing-session #session-divider > span { background: var(--accent); }
@@ -286,7 +304,7 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .form-error { color: var(--danger); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
-@media (max-width: 950px) { .sidebar { width: var(--sidebar-width, 240px); } .toolbar { padding: 18px; flex-wrap: wrap; } #session-view { padding: 16px; } .actions { flex-wrap: wrap; } }
+@media (max-width: 950px) { .sidebar { width: var(--sidebar-width, 240px); } .toolbar { padding: 18px; flex-wrap: wrap; } #page-bar { padding: 10px 18px; } #session-view { padding: 16px; } .actions { flex-wrap: wrap; } }
 @media (max-width: 620px) { body { flex-direction: column; overflow: auto; height: auto; min-height: 100dvh; } .sidebar { width: 100%; border-right: 0; padding: 14px; gap: 10px; } #sidebar-divider { display: none; } .brand { padding-bottom: 2px; } .instance { display: none; } #sessions { max-height: 145px; } main { overflow: visible; } #session-view { height: 650px; flex: none; } .welcome { padding: 36px 24px; } .toolbar { min-height: 90px; } }
 
 .project-group { margin-bottom: 16px; }
@@ -665,3 +683,15 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .markdown-body td { font-variant-numeric: tabular-nums; }
 .markdown-body tbody tr:nth-child(even) td { background: var(--inset); }
 @media (max-width: 620px) { .preview-dialog .dialog-heading { padding: 14px 16px; } .markdown-body { padding: 4px 16px 20px; } }
+/* Error toasts show a failed action that has no place of its own. They show at the right,
+   below the toolbar, where they cover no editor control. The stack takes no space in the
+   layout. Each toast stays until the user closes it. */
+#toasts { flex-shrink: 0; position: relative; z-index: 30; height: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding-right: 18px; pointer-events: none; }
+.toast:first-child { margin-top: 12px; }
+.toast { width: min(360px, calc(100% - 18px)); pointer-events: auto; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 11px 8px 11px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px var(--shadow-overlay); font-size: 12px; line-height: 1.5; }
+.toast-icon { display: inline-grid; place-items: center; width: 17px; height: 17px; margin-top: 1px; border-radius: 50%; background: var(--danger); color: var(--surface); font-size: 11px; font-weight: 700; line-height: 1; }
+.toast-text { min-width: 0; overflow-wrap: anywhere; }
+.toast-text strong { display: block; font-weight: 600; }
+.toast-close { padding: 0 6px; border-color: transparent; background: transparent; color: var(--text-muted); font-size: 16px; line-height: 1.2; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) { .toast { animation: toast-in .18s ease-out; } }

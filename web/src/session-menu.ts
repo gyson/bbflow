@@ -6,6 +6,9 @@ export class SessionMenu {
   private readonly box = element('session-menu-box', HTMLElement);
   private readonly button = element('session-menu-open', HTMLButtonElement);
   private readonly menu = element('session-menu', HTMLElement);
+  private readonly status = element('session-menu-status', HTMLElement);
+  private readonly tip = this.button.dataset.tip ?? '';
+  private confirmTimer: ReturnType<typeof setTimeout> | undefined;
   private expanded = false;
 
   constructor() {
@@ -43,6 +46,19 @@ export class SessionMenu {
     document.addEventListener('click', event => {
       if (this.expanded && event.target instanceof Node && !this.box.contains(event.target)) this.open(false);
     });
+  }
+
+  // Show a short confirmation of an item, such as a copy, as the tooltip of the menu
+  // button. A screen reader reads it from a status element.
+  confirm(text: string): void {
+    clearTimeout(this.confirmTimer);
+    this.button.dataset.tip = this.status.textContent = text;
+    this.button.classList.add('tip-open');
+    this.confirmTimer = setTimeout(() => {
+      this.button.dataset.tip = this.tip;
+      this.status.textContent = '';
+      this.button.classList.remove('tip-open');
+    }, 1800);
   }
 
   // Call this after the host changes the items.
