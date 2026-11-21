@@ -381,14 +381,12 @@ export class DiffPane {
     return scopeOf(source.kind, source.from, source.to, changes.commits) ?? { newer: 0, older: 0 };
   }
 
-  // Select a scope and read its changes. A range of every item, with the complete list
-  // since the base, has the same changes as All changes. It then shows as All changes.
+  // Select a scope and read its changes. A range of every item stays a range. It can
+  // differ from All changes, for example when a commit merged the default branch.
   private choose(scope: Scope): void {
     const changes = this.changes;
     if (!changes?.repository) return;
-    const count = changes.commits.length;
-    const whole = scope !== 'all' && scope.newer === 0 && scope.older === count && count > 0 && !!changes.base && !changes.moreCommits;
-    this.choice = scopeRequest(whole ? 'all' : scope, changes.commits);
+    this.choice = scopeRequest(scope, changes.commits);
     this.renderScope();
     void this.refresh();
   }
@@ -557,10 +555,13 @@ export class DiffPane {
       const count = textSpan('scope-count', commit ? String(commit.files) : '');
       if (commit) count.title = `${commit.files} ${commit.files === 1 ? 'file' : 'files'} changed`;
       text.append(subject, count);
+      // The row leaves the page when the menu closes. The focus goes to the scope button,
+      // so that [ and ] still step.
       text.onclick = () => {
         this.pending = null;
         this.menuOpen = false;
         this.choose({ newer: item, older: item });
+        this.scopeButton.focus();
       };
       row.append(gutter, text);
       timeline.append(row);
@@ -685,7 +686,7 @@ export class DiffPane {
     }
     if (this.staleList) {
       this.clearFile();
-      this.showNote('The selected commit is not in the history of HEAD now. Click Refresh to read the changes again.');
+      this.showNote('The selected changes are not in the history of HEAD now. Click Refresh to read the changes again.');
       return;
     }
     const path = this.selected;
@@ -706,8 +707,8 @@ export class DiffPane {
       const diff = { ...baseline, path, ...(change?.oldPath ? { oldPath: change.oldPath } : {}) };
       const file = await this.send(server, { operation: 'workspace-file', session: this.session, diff }, abort.signal);
       if (!this.fileGeneration.current(generation)) return;
-      // The selected commit left the history of HEAD after the list was read. The server
-      // then used the default baseline. Read the list again, so that the menu, the
+      // A selected commit or the base left the history of HEAD after the list was read.
+      // The server then used the default baseline. Read the list again, so that the menu, the
       // counts, and the diff use the same baseline.
       if (baselineMoved(diff, file.baseline)) {
         this.staleList = true;

@@ -28,7 +28,7 @@ class Node {
   querySelectorAll(tag) { return this.children.flatMap(child => [...(child.tag === tag ? [child] : []), ...child.querySelectorAll(tag)]); }
   showModal() {}
   close() {}
-  focus() {}
+  focus() { globalThis.document.activeElement = this; }
 }
 
 const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-scope-id', 'diff-scope-label', 'diff-scope-menu',
@@ -88,11 +88,13 @@ test('a file reply without the selected commit reads the list again, and a faile
   assert.equal(shown.length, 1);
   assert.equal(nodes['diff-scope-label'].textContent, 'Uncommitted changes');
 
-  // Select the commit. Its row closes the menu. The list and the file request use it.
+  // Select the commit. Its row closes the menu and gives the focus to the scope button.
+  // The list and the file request use the commit.
   nodes['diff-scope'].onclick();
   assert.equal(nodes['diff-scope-menu'].hidden, false);
   row(nodes, 1).onclick();
   assert.equal(nodes['diff-scope-menu'].hidden, true);
+  assert.equal(document.activeElement, nodes['diff-scope']);
   assert.deepEqual(pending[2].request.diff, { baseline: 'commit', from: commit, to: commit });
   assert.equal(nodes['diff-scope-id'].textContent, '0123456');
   assert.equal(nodes['diff-scope-label'].textContent, 'Fix');
@@ -195,13 +197,17 @@ test('two dots select a range, the same dot cancels, and the keys step', async (
   assert.equal(nodes['diff-scope-menu'].hidden, false);
   assert.deepEqual(rows(nodes).map(node => node.className), ['scope-row', 'scope-row in linked', 'scope-row in linked', 'scope-row in linked']);
 
-  // A range of every item has the same changes as All changes.
+  // A range of every item stays a range. A merge commit can make it differ from All
+  // changes.
   dot(nodes, 0).onclick();
   dot(nodes, 3).onclick();
-  assert.deepEqual(pending.at(-1).request.diff, { baseline: 'base' });
-  assert.equal(nodes['diff-scope-label'].textContent, 'All changes');
+  assert.deepEqual(pending.at(-1).request.diff, { baseline: 'commit', from: oldest });
+  assert.equal(nodes['diff-scope-label'].textContent, '3 commits and uncommitted changes');
 
   // ] steps from All changes to the newest item, and [ to an older item.
+  menuButtons(nodes).find(button => button.className === 'scope-all').onclick();
+  assert.deepEqual(pending.at(-1).request.diff, { baseline: 'base' });
+  assert.equal(nodes['diff-scope-label'].textContent, 'All changes');
   key(nodes, ']');
   assert.deepEqual(pending.at(-1).request.diff, { baseline: 'head' });
   key(nodes, '[');
@@ -210,6 +216,29 @@ test('two dots select a range, the same dot cancels, and the keys step', async (
   key(nodes, 'Escape');
   assert.equal(nodes['diff-scope-menu'].hidden, true);
   assert.equal(nodes['diff-scope'].getAttribute('aria-expanded'), 'false');
+});
+
+test('a selection of All changes goes back to the default when the base is gone', async () => {
+  const { nodes, pending } = setup();
+  const base = { kind: 'base', label: 'Since the merge base with main', commit: 'base' };
+  pending[0].resolve(changes(baselines.head, { base: { commit: 'base', branch: 'main' } }));
+  await settle();
+  nodes['diff-scope'].onclick();
+  menuButtons(nodes).find(button => button.className === 'scope-all').onclick();
+  assert.deepEqual(pending[2].request.diff, { baseline: 'base' });
+  pending[2].resolve(changes(base, { base: { commit: 'base', branch: 'main' } }));
+  await settle();
+  assert.equal(nodes['diff-scope-label'].textContent, 'All changes');
+
+  // The session changed to the default branch. The server uses the default baseline.
+  // The pane then shows it and sends the default request.
+  nodes['diff-refresh'].onclick();
+  assert.deepEqual(pending.at(-1).request.diff, { baseline: 'base' });
+  pending.at(-1).resolve(changes(baselines.head));
+  await settle();
+  assert.equal(nodes['diff-scope-label'].textContent, 'Uncommitted changes');
+  nodes['diff-refresh'].onclick();
+  assert.deepEqual(pending.at(-1).request.diff, {});
 });
 
 test('the menu shows the notice of omitted commits also with an empty list', async () => {

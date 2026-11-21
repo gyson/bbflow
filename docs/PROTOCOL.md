@@ -391,7 +391,9 @@ The `diff` object has these fields:
 
 - `baseline`: `base` for the changes since the session base, `head` for `HEAD`, or
   `commit` for the commits from `from` to `to`. An empty value selects `base` when it
-  is available, and `head` otherwise. `base` fails for a session without a base.
+  is available, and `head` otherwise. Without a base, `base` also selects `head`, for
+  example after the session changed to the default branch. The reply names the
+  baseline that it used.
 - `from`: the full ID of a commit from the `commits` list of `workspace-changes`. The
   `commit` baseline compares the first parent of this commit with the new side. A root
   commit compares with the empty tree.
@@ -446,11 +448,12 @@ the merge base.
 the first parent from `HEAD` and stops at the base. Without a base, it has the latest
 commits of `HEAD`. The list also omits the last commit of a shallow clone, because its
 parent is not available. A root commit stays in the list. `files` counts the files that
-the commit changes in the session workspace. `moreCommits` is true when older commits
+the commit changes in the session workspace. It finds renames and compares a root
+commit with the empty tree, as the file list does. `moreCommits` is true when older commits
 are not in the list. A repository without commits has an empty list. For a `commit`
 baseline, `baseline` also has `from`, an optional `to`, and `commit`, the first parent
-of `from`. A `workspace-file` reply can name the default baseline when `from` or `to`
-left the list after the `workspace-changes` reply. Read the changes again before you
+of `from`. A `workspace-file` reply can name the default baseline when `from`, `to`, or
+the base left the list after the `workspace-changes` reply. Read the changes again before you
 show such a file.
 
 `workspace-files` returns the sorted paths that Git tracks or does not ignore, at most

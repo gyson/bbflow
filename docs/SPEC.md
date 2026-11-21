@@ -1226,9 +1226,11 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   Their dots fill, and a thick line joins them. The diff then compares the first parent of the oldest selected
   commit with the newest selected commit, or with the current files when the range has
   **Uncommitted changes**. Before the second click, the pointer over a dot shows that
-  range. A click on the same dot, or Escape, cancels the range. A range of every row,
-  with the complete commit list, shows as **All changes**. The menu stays open after a
-  dot or **All changes**, so that the line stays in view.
+  range. A click on the same dot, or Escape, cancels the range. A range of every row
+  stays a range. It can differ from **All changes**, for example when a commit merged
+  the default branch. The menu stays open after a dot or **All changes**, so that the
+  line stays in view. After a click on the text of a row, the focus goes to the scope
+  button.
 - When the focus is in the Changes view, `[` steps to the older row and `]` to the newer
   row. From a range or **All changes**, a step goes to its end in that direction. A
   field, such as the filter box, keeps the keys.
@@ -1238,8 +1240,8 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   the base. Without a base, it lists the latest commits of `HEAD`. A shallow clone does
   not have the parent of its last commit. The list omits that commit. The menu shows
   "Older commits are not listed." when the list omits commits, also when the list is
-  empty. When a rebase or a reset removes a selected commit, the next refresh uses the
-  default changes. When a file read finds this first, the pane reads the list again. If
+  empty. When a rebase or a reset removes a selected commit, or the session loses its
+  base, the next refresh uses the default changes. When a file read finds this first, the pane reads the list again. If
   that read fails, the pane shows no file until a later refresh succeeds. A refresh
   cancels the file request of the earlier list, so a late file reply cannot change a
   newer choice.
@@ -1914,9 +1916,10 @@ sessions, repositories without commits, folders outside Git, missing workspaces,
 both baselines of a managed worktree after an agent commit. Commit baseline fixtures
 cover the commit list with its file counts, a subject with a tab, the changes from a
 commit, one commit, a range of commits, the file at a commit, a rejected to commit, a
-root commit, the list and output limits, a shallow clone, unknown commits, and a
-rebase. Merge base fixtures cover a feature branch, a subfolder session, `origin/HEAD`
-of a clone, the default branch itself, and branches without a common commit. Folder list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
+root commit, file counts with `diff.renames` and `log.showRoot` off, the list and
+output limits, a shallow clone, unknown commits, and a rebase. Merge base fixtures cover a feature branch, a subfolder session, `origin/HEAD`
+of a clone, the default branch itself, a base request after the base is gone, and
+branches without a common commit. Folder list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
 the workspace, missing folders, the entry limit, a folder outside Git, a missing Git
 executable, and a failed ignore check. A WebSocket fixture sends `workspace-file` and
 `workspace-folders` through the server. Web fixtures cover the file list, the filter,
@@ -1928,7 +1931,8 @@ first read of the workspace folder. Scope fixtures cover the requests and the la
 of each scope, ranges in either order, and the steps of `[` and `]`. Pane fixtures
 cover the requests after a file reply without the selected commit, a failed list read
 after it, a late file reply after a new choice, two dots, a cancel with the same dot, a
-range of every row, the keys, and the notice of omitted commits with an empty list. Markdown fixtures cover raw HTML, script links,
+range of every row, the focus after a row, the keys, a base that is gone, and the
+notice of omitted commits with an empty list. Markdown fixtures cover raw HTML, script links,
 relative and allowed links, images, tables, task lists, escaped task markers, syntax
 colors and escaped text in fenced code, and the files that Preview accepts.
 
@@ -2376,10 +2380,11 @@ The prompt gives the new agent a record of earlier work. It does not restore the
 internal state of the earlier agent.
 
 The Changes pane reads files only when it opens, on Refresh, and on window focus. It
-shows one file at a time. It cannot show one earlier commit alone or a range of
-commits: the new side is always the current files. Its commit list has at most 30
-commits, and it omits the last commit of a shallow clone, whose parent is not
-available. It shows images as binary files. It cannot show changes in a folder that is
+shows one file at a time. A diff that ends at a commit has no untracked files, and
+Files always shows the current files. Its commit list has at most 30 commits since the
+base, and it omits the last commit of a shallow clone, whose parent is not available.
+**All changes** needs a base. A session on the default branch, or without `origin/HEAD`
+and `main`, has none. The **Uncommitted changes** row has no file count. It shows images as binary files. It cannot show changes in a folder that is
 not a Git repository. The filter of **Files** needs a Git repository, and it does not
 find ignored files. The tree has no arrow key navigation. Use Tab and Enter. Git detects a rename only
 between tracked files with similar content. An untracked new file and its deleted

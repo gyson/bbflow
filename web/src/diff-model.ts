@@ -34,10 +34,12 @@ export function baselineRequest(baseline: Baseline): DiffRequest {
   return { baseline: baseline.kind === 'base' ? 'base' : 'head' };
 }
 
-// A reply for a commit baseline uses another baseline when the server did not find a
-// commit. The server then used its default baseline.
+// A reply uses another baseline when the server did not find a requested commit or the
+// base. The server then used its default baseline.
 export function baselineMoved(request: DiffRequest, reply: Baseline): boolean {
-  return request.baseline === 'commit' && (reply.kind !== 'commit' || reply.from !== request.from || (reply.to ?? '') !== (request.to ?? ''));
+  if (!request.baseline) return false;
+  if (reply.kind !== request.baseline) return true;
+  return request.baseline === 'commit' && (reply.from !== request.from || (reply.to ?? '') !== (request.to ?? ''));
 }
 
 // The scope from the anchor item to an item, in either order.

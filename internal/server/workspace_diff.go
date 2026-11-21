@@ -228,13 +228,15 @@ func (s *Server) resolveDiff(ctx context.Context, id string, request *protocol.D
 		// baseline. The reply names the baseline that the diff uses.
 		kind = ""
 	}
+	if kind == "base" && target.base == nil && baseErr == nil {
+		// The base can go away, for example when the session changes to the default
+		// branch. Use the default baseline, as for a commit that left the list.
+		kind = ""
+	}
 	switch {
 	case kind == "base", kind == "" && (target.base != nil || baseErr != nil):
 		if baseErr != nil {
 			return target, baseErr
-		}
-		if target.base == nil {
-			return target, errors.New("this session has no base commit")
 		}
 		label := "Since worktree base"
 		if target.base.Branch != "" {
@@ -344,9 +346,11 @@ var maxCommitList = 1 << 20
 // reports that older commits are not in the list.
 func listCommits(ctx context.Context, dir, head, base string) (commits []listedCommit, more bool, err error) {
 	// One more commit than the limit detects more commits. Each record starts with a
-	// record separator, so that the line with the file count stays with its commit.
-	args := []string{"log", "--first-parent", "--no-show-signature", "--no-color", "--relative", "--shortstat",
-		"--format=%x1e%H %P%x09%s", "-n", strconv.Itoa(maxCommits + 1), head}
+	// record separator, so that the line with the file count stays with its commit. The
+	// count uses the rules of the file list: -M finds renames, and --root counts the
+	// files of a root commit. Thus diff.renames and log.showRoot have no effect.
+	args := []string{"log", "--first-parent", "--no-show-signature", "--no-color", "--no-ext-diff", "--no-textconv",
+		"--relative", "-M", "--root", "--shortstat", "--format=%x1e%H %P%x09%s", "-n", strconv.Itoa(maxCommits + 1), head}
 	if base != "" {
 		args = append(args, "^"+base)
 	}

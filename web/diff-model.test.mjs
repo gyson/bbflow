@@ -335,7 +335,11 @@ test('a file reply moved when the server did not use the requested commit', () =
   assert.equal(baselineMoved(range, { kind: 'commit', label: '', commit: 'p', from: 'abc', to: 'def' }), false);
   assert.equal(baselineMoved(range, { kind: 'commit', label: '', commit: 'p', from: 'abc' }), true);
   assert.equal(baselineMoved(request, { kind: 'commit', label: '', commit: 'p', from: 'abc', to: 'def' }), true);
-  // Other baselines and a file outside Git never move.
+  // A base request moves when the base is gone. The default request and a file outside
+  // Git never move.
+  assert.equal(baselineMoved({ baseline: 'base' }, { kind: 'head', label: '', commit: 'h' }), true);
+  assert.equal(baselineMoved({ baseline: 'base' }, { kind: 'base', label: '', commit: 'b' }), false);
   assert.equal(baselineMoved({ baseline: 'head' }, { kind: 'head', label: '', commit: 'h' }), false);
+  assert.equal(baselineMoved({}, { kind: 'head', label: '', commit: 'h' }), false);
   assert.equal(baselineMoved({}, { kind: '', label: '', commit: '' }), false);
 });

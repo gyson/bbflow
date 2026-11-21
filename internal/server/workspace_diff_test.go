@@ -429,10 +429,12 @@ func TestWorkspaceChangesUseManagedWorktreeBase(t *testing.T) {
 	if err != nil || file.Old.Text != "a\n" || file.New.Text != "agent commit\n" {
 		t.Fatalf("base file: %+v, %v", file, err)
 	}
-	// A plain session on the default branch has no base.
+	// A plain session on the default branch has no base. A base request then uses the
+	// default baseline.
 	plain := diffSession(t, s, repo)
-	if _, err = s.workspaceChanges(context.Background(), plain, &protocol.DiffRequest{Baseline: "base"}); err == nil {
-		t.Fatal("base baseline without a base was accepted")
+	changes, err = s.workspaceChanges(context.Background(), plain, &protocol.DiffRequest{Baseline: "base"})
+	if err != nil || changes.Base != nil || changes.Baseline.Kind != "head" {
+		t.Fatalf("base request without a base: %+v, %v", changes, err)
 	}
 	if _, err = s.workspaceChanges(context.Background(), plain, &protocol.DiffRequest{Baseline: "other"}); err == nil {
 		t.Fatal("unknown baseline was accepted")
@@ -572,11 +574,20 @@ func TestWorkspaceChangesUseMergeBaseWithDefaultBranch(t *testing.T) {
 	if err != nil || changes.Commits[1].Files != 1 || !reflect.DeepEqual(changedPaths(changes), []string{"b.txt"}) {
 		t.Fatalf("subfolder commit: %+v, %v", changes, err)
 	}
-	// On the default branch, HEAD is the merge base. The session then has no base.
+	// On the default branch, HEAD is the merge base. The session then has no base. A
+	// base request from before the switch uses the default baseline.
 	fixtureGit(t, repo, "switch", "-q", "main")
 	changes, err = s.workspaceChanges(context.Background(), id, nil)
 	if err != nil || changes.Base != nil || changes.Baseline.Kind != "head" || len(changes.Commits) != 2 {
 		t.Fatalf("default branch: %+v, %v", changes, err)
+	}
+	changes, err = s.workspaceChanges(context.Background(), id, &protocol.DiffRequest{Baseline: "base"})
+	if err != nil || changes.Baseline.Kind != "head" {
+		t.Fatalf("base request on the default branch: %+v, %v", changes.Baseline, err)
+	}
+	file, err := s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Baseline: "base", Path: "a.txt"})
+	if err != nil || file.Baseline.Kind != "head" {
+		t.Fatalf("base file request on the default branch: %+v, %v", file.Baseline, err)
 	}
 	// A clone uses the branch of origin/HEAD, which is the branch of the cloned
 	// repository.
@@ -595,6 +606,32 @@ func TestWorkspaceChangesUseMergeBaseWithDefaultBranch(t *testing.T) {
 	changes, err = s.workspaceChanges(context.Background(), id, nil)
 	if err != nil || changes.Base != nil || changes.Baseline.Kind != "head" {
 		t.Fatalf("no merge base: %+v, %v", changes, err)
+	}
+}
+
+func TestCommitFileCountsUseTheRulesOfTheFileList(t *testing.T) {
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"old name.txt": "same text for a rename\n"})
+	// The repository settings must not change the count. The file list ignores them.
+	fixtureGit(t, repo, "config", "diff.renames", "false")
+	fixtureGit(t, repo, "config", "log.showRoot", "false")
+	root := fixtureGit(t, repo, "rev-parse", "HEAD")
+	fixtureGit(t, repo, "mv", "old name.txt", "new name.txt")
+	fixtureGit(t, repo, "commit", "-q", "-m", "Rename")
+	rename := fixtureGit(t, repo, "rev-parse", "HEAD")
+	id := diffSession(t, s, repo)
+	changes, err := s.workspaceChanges(context.Background(), id, nil)
+	if err != nil || len(changes.Commits) != 2 || changes.Commits[0].Files != 1 || changes.Commits[1].Files != 1 {
+		t.Fatalf("file counts: %+v, %v", changes.Commits, err)
+	}
+	for _, commit := range []string{rename, root} {
+		changes, err = s.workspaceChanges(context.Background(), id, &protocol.DiffRequest{Baseline: "commit", From: commit, To: commit})
+		if err != nil || len(changes.Files) != 1 {
+			t.Fatalf("files of commit %s: %+v, %v", commit[:7], changes.Files, err)
+		}
+	}
+	if changes.Files[0].Status != "A" {
+		t.Fatalf("root commit: %+v", changes.Files)
 	}
 }
 
