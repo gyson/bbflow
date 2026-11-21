@@ -1343,7 +1343,8 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   symlink.
 - After a click, the button shows **Opened** or **Open failed** for 1.5 seconds. The
   tooltip of **Open failed** gives the reason. Only the reply of the latest click shows.
-  A change of the file or of the scope removes the result.
+  The result goes away when the selected file changes or the button goes away, for
+  example after a selection of a scope that ends at a commit.
 - In a narrow pane, the line counts, **View source**, **View file**, and **Copy path**
   go to a second row of the file header. The path and **Preview** or
   **Open in browser** keep at least 200 pixels.
@@ -2055,7 +2056,9 @@ WebSocket upgrade with `Origin: null`, as a `file:` page sends, got status 403. 
 check did not examine the browser window that opened. A later check used `open -a`
 with the default browser. After the click, Chrome, the default browser, was the front
 application. On that computer, Chrome also owns HTML files, so this check cannot show
-the difference from the file type. The `open -a` fixture covers it.
+the difference from the file type. The `open -a` fixture covers it. A headless Chrome
+check of a `file:` page loaded a style sheet from a folder outside the folder of the
+page. In the same page, `fetch()` of that file failed, and `self.origin` was `null`.
 
 A browser check of the Files tree used a temporary instance, a fixture repository, and
 a folder outside Git, each with a shell session. It checked open and closed folders,
@@ -2495,11 +2498,16 @@ original show as two changes.
 
 **Open in browser** needs the browser and the server on the same computer. It works
 only on macOS now. It uses the default browser, which can be different from the
-browser of the bbflow tab. The server checks the path, and then the browser reads the
-path again. A process that changes the file between these steps changes only the page
-that the browser shows. The browser does not run the file as a program. Browsers can
-block module scripts and `fetch()` in a `file:` page. A report that must work in all
-browsers keeps its scripts and data in the HTML file or in classic `<script>` files.
+browser of the bbflow tab. Browsers can block module scripts and `fetch()` in a `file:`
+page. A report that must work in all browsers keeps its scripts and data in the HTML
+file or in classic `<script>` files.
+
+bbflow does not confine the browser to the session workspace. A `file:` page can load
+any local file that the browser can read, for example as a style sheet or an image.
+The server checks the path, and then the browser reads the path again. A process that
+changes the path between these steps can make the browser show another file, also a
+file outside the workspace. The browser does not run the file as a program. By
+default, a script in a `file:` page cannot read another local file.
 
 Each session has one shared draft. Other views update after each save, about half a
 second after typing stops. They do not show each keystroke. When two views edit at the
