@@ -545,11 +545,11 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .diff-view { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .diff-file-header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 40px; padding: 6px 10px; border-bottom: 1px solid var(--divider); font-size: 12px; }
 .diff-file-header button { padding: 4px 8px; font-size: 11px; }
-/* The path and Preview take the free space. In a narrow pane, the other controls go to
+/* The path, Preview, and Open in browser take the free space. In a narrow pane, the other controls go to
    the next row, so that the path keeps a part of its name in view. */
 .diff-path-group { flex: 1 1 0; min-width: min(200px, 100%); display: flex; align-items: center; gap: 8px; }
 #diff-path { flex: 0 1 auto; min-width: 0; display: flex; font-family: Menlo, Monaco, monospace; font-size: 11px; }
-#diff-preview { flex: none; }
+#diff-preview, #diff-open { flex: none; }
 #diff-counts { display: flex; gap: 6px; font-size: 11px; }
 #diff-counts .added { color: var(--positive); } #diff-counts .removed { color: var(--danger); }
 .diff-tag { padding: 1px 6px; border-radius: 5px; background: var(--inset); color: var(--text-muted); }

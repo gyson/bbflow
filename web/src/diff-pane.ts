@@ -1,7 +1,7 @@
 import { call, errorMessage } from './protocol.js';
 import type { ChangedFile, DiffRequest, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles } from './protocol.js';
 import { element } from './dom.js';
-import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, FolderTree, Generation, hasSVG, imageSides, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, shortId, sideNote, statusTitle, stepScope, timelineHeading } from './diff-model.js';
+import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, FolderTree, Generation, hasSVG, imageSides, openable, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, shortId, sideNote, statusTitle, stepScope, timelineHeading } from './diff-model.js';
 import type { DiffLayout, FileEntry, FileScope, Scope, TreeRow } from './diff-model.js';
 import { showDiff, showFile } from './diff-editor.js';
 import type { CodeView } from './diff-editor.js';
@@ -13,6 +13,7 @@ export interface Editor { showDiff: typeof showDiff; showFile: typeof showFile; 
 
 const maxFolderRequest = 200; // The server lists at most this number of folders in one request.
 const listLimit = 'The file list is incomplete. bbflow limits the number of files that it lists.';
+const openTitle = 'Open the current file in your default browser';
 
 // One selected file of a view. preview shows the current file, not its diff.
 interface Pick { path: string; preview: boolean }
@@ -45,6 +46,7 @@ export class DiffPane {
   private readonly sourceButton = element('diff-source', HTMLButtonElement);
   private readonly copyButton = element('diff-copy', HTMLButtonElement);
   private readonly previewButton = element('diff-preview', HTMLButtonElement);
+  private readonly openButton = element('diff-open', HTMLButtonElement);
   private readonly previewDialog = element('preview-dialog', HTMLDialogElement);
   private readonly previewTitle = element('preview-title', HTMLElement);
   private readonly previewBody = element('preview-body', HTMLElement);
@@ -85,6 +87,11 @@ export class DiffPane {
   private readonly fileGeneration = new Generation();
   private listAbort: AbortController | null = null;
   private fileAbort: AbortController | null = null;
+  private openTimer: ReturnType<typeof setTimeout> | undefined;
+  // Counts the clicks of Open in browser and the changes of its file. A reply changes the
+  // button only for the latest click on the same file.
+  private openRequest = 0;
+  private openPath = ''; // The file of the result that the button shows.
 
   constructor(
     private readonly server: () => ServerInfo | null,
@@ -139,6 +146,7 @@ export class DiffPane {
       setTimeout(() => { this.copyButton.textContent = 'Copy path'; this.copyButton.title = ''; }, 1500);
     };
     this.previewButton.onclick = () => this.openPreview();
+    this.openButton.onclick = () => void this.openInBrowser();
     element('preview-close', HTMLButtonElement).onclick = () => this.previewDialog.close();
     // The divider of the file list changes the editor width without a change of the pane.
     const observer = new ResizeObserver(() => this.relayout());
@@ -396,6 +404,7 @@ export class DiffPane {
     if (!changes?.repository) return;
     this.choice = scopeRequest(scope, changes.commits);
     this.renderScope();
+    this.renderOpen();
     void this.refresh();
   }
 
@@ -732,6 +741,7 @@ export class DiffPane {
       if (!this.fileGeneration.current(generation) || abort.signal.aborted) return;
       this.file = null;
       this.previewButton.hidden = this.sourceButton.hidden = true;
+      this.renderOpen();
       this.destroyView();
       this.showNote(`Cannot read this file: ${errorMessage(error)}`);
     }
@@ -767,6 +777,58 @@ export class DiffPane {
     this.sourceButton.hidden = !file || file.path !== this.selected || !hasSVG(file, this.mode(file) === 'diff', this.change(file.path)?.oldPath);
     this.sourceButton.textContent = this.svgSource ? 'View image' : 'View source';
     this.sourceButton.title = this.svgSource ? 'Show the SVG file as an image' : 'Show the text of the SVG file';
+    this.renderOpen();
+  }
+
+  // The loaded file of the selection, when it is a current HTML file that the browser can
+  // open. A scope that ends at a commit does not show the current file. Thus the button
+  // goes away when Changes selects such a scope, before the file reply.
+  private openFile(): WorkspaceFile | null {
+    if (this.scope === 'changed' && this.choice?.to) return null;
+    const file = this.file;
+    return file && file.path === this.selected && openable(file) ? file : null;
+  }
+
+  // Show Open in browser for the current HTML file. Another file, or no file, ends the
+  // result of an earlier click.
+  private renderOpen(): void {
+    const path = this.openFile()?.path ?? '';
+    if (path !== this.openPath) {
+      this.openPath = path;
+      this.resetOpen();
+    }
+    this.openButton.hidden = !path;
+  }
+
+  private resetOpen(): void {
+    this.openRequest++;
+    clearTimeout(this.openTimer);
+    this.openButton.textContent = 'Open in browser';
+    this.openButton.title = openTitle;
+  }
+
+  // Ask the server to open the current file in the default browser. The browser loads
+  // the file itself, so a later change shows after a reload in the browser. The label
+  // shows the result for a short time, like Copy path.
+  private async openInBrowser(): Promise<void> {
+    const server = this.server();
+    const file = this.openFile();
+    if (!server || !file) return;
+    const request = ++this.openRequest;
+    clearTimeout(this.openTimer);
+    let label = 'Opened';
+    let title = openTitle;
+    try {
+      await this.send(server, { operation: 'workspace-open', session: this.session, diff: { path: file.path } });
+    } catch (error) {
+      label = 'Open failed';
+      title = errorMessage(error);
+    }
+    // A later click or a change of the file makes this reply old.
+    if (request !== this.openRequest) return;
+    this.openButton.textContent = label;
+    this.openButton.title = title;
+    this.openTimer = setTimeout(() => this.resetOpen(), 1500);
   }
 
   // The loaded file of the selection, when it is a Markdown file that Preview can show.
@@ -849,6 +911,7 @@ export class DiffPane {
     this.path.replaceChildren();
     this.counts.replaceChildren();
     this.toggleButton.hidden = this.copyButton.hidden = this.previewButton.hidden = this.sourceButton.hidden = true;
+    this.renderOpen();
     this.showNote('');
   }
 }

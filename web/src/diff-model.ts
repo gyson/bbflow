@@ -372,6 +372,14 @@ export function sizeText(bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${unit}`;
 }
 
+// Open in browser opens the current file of an HTML file. The server rejects a path
+// through a symbolic link, so the button is not shown for a symbolic link. A file above
+// the size limit can open, because the browser reads the file and not the reply.
+export function openable(file: WorkspaceFile): boolean {
+  return languageName(file.path) === 'html' && !file.baseline.to && !file.new.symlink &&
+    (file.new.state === 'text' || file.new.state === 'binary' || file.new.state === 'tooLarge');
+}
+
 export type Language = 'javascript' | 'jsx' | 'typescript' | 'tsx' | 'go' | 'python' | 'json' | 'markdown' | 'css' | 'html' | 'yaml' | 'rust' | 'scala' | 'shell' | '';
 
 const extensions: Record<string, Language> = {

@@ -53,7 +53,7 @@ class Node {
 
 const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-scope-id', 'diff-scope-label', 'diff-scope-menu',
   'diff-split', 'diff-unified', 'diff-summary', 'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts',
-  'diff-toggle', 'diff-source', 'diff-copy', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
+  'diff-toggle', 'diff-source', 'diff-copy', 'diff-preview', 'diff-open', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
   'diff-refresh', 'diff-close', 'preview-close'];
 const server = { protocol: 'test', instance: 'test', port: 1234, dataDir: '/fixture' };
 const commit = '0123456789abcdef0123456789abcdef01234567';
@@ -67,6 +67,7 @@ const baselines = {
 const changes = (baseline, extra = {}) => ({ repository: true, baseline, commits: [{ id: commit, subject: 'Fix', files: 1 }],
   files: [{ path: 'a.txt', status: 'M', added: 1, removed: 1 }], truncated: false, ...extra });
 const file = baseline => ({ path: 'a.txt', baseline, old: { state: 'text', text: 'a\n', size: 2 }, new: { state: 'text', text: 'b\n', size: 2 } });
+const htmlFile = (path, baseline) => ({ path, baseline, old: { state: 'missing', size: 0 }, new: { state: 'text', text: '<p>Hi</p>\n', size: 10 } });
 
 function setup() {
   const nodes = Object.fromEntries(ids.map(id => [id, new Node(id.startsWith('diff-scope') && id !== 'diff-scope-menu' ? 'span' : 'div')]));
@@ -352,4 +353,101 @@ test('Source keeps SVG text in view next to a binary side', async () => {
   nodes['diff-source'].onclick();
   assert.equal(shown.at(-1), `split: Old text ${svgText}, New Binary file. bbflow does not show its content.`);
   assert.equal(nodes['diff-note'].hidden, true);
+});
+
+test('Open in browser asks the server to open the selected HTML file', async () => {
+  const { nodes, pending } = setup();
+  const report = { path: 'reports/coverage.html', status: 'A', added: 1, removed: 0, untracked: true };
+  pending[0].resolve(changes(baselines.head, { files: [report] }));
+  await settle();
+  assert.deepEqual(pending[1].request.diff, { baseline: 'head', path: 'reports/coverage.html' });
+  pending[1].resolve(htmlFile('reports/coverage.html', baselines.head));
+  await settle();
+  const button = nodes['diff-open'];
+  assert.equal(button.hidden, false);
+  assert.equal(nodes['diff-preview'].hidden, true);
+
+  button.onclick();
+  assert.deepEqual(pending[2].request, { operation: 'workspace-open', session: 'session', diff: { path: 'reports/coverage.html' } });
+  pending[2].resolve({ opened: true });
+  await settle();
+  assert.equal(button.textContent, 'Opened');
+
+  // A failure shows the reason of the server in the tooltip.
+  button.onclick();
+  pending[3].reject(new Error('the file is not in the session workspace now'));
+  await settle();
+  assert.equal(button.textContent, 'Open failed');
+  assert.equal(button.title, 'the file is not in the session workspace now');
+
+  // Only the reply of the latest click changes the button.
+  button.onclick();
+  button.onclick();
+  pending[5].resolve({ opened: true });
+  await settle();
+  assert.equal(button.textContent, 'Opened');
+  pending[4].reject(new Error('late failure'));
+  await settle();
+  assert.equal(button.textContent, 'Opened');
+  await new Promise(resolve => setTimeout(resolve, 1600));
+  assert.equal(button.textContent, 'Open in browser');
+  assert.equal(button.title, 'Open the current file in your default browser');
+});
+
+test('Open in browser goes away when Changes selects a scope that ends at a commit', async () => {
+  const { nodes, pending } = setup();
+  const report = { path: 'report.html', status: 'M', added: 1, removed: 1 };
+  pending[0].resolve(changes(baselines.head, { files: [report] }));
+  await settle();
+  pending[1].resolve(htmlFile('report.html', baselines.head));
+  await settle();
+  const button = nodes['diff-open'];
+  assert.equal(button.hidden, false);
+
+  // The commit row changes the scope at once. The old file reply is still loaded, but it
+  // is not the file of the new scope.
+  nodes['diff-scope'].onclick();
+  row(nodes, 1).onclick();
+  assert.equal(pending.length, 3);
+  assert.equal(button.hidden, true);
+  button.onclick();
+  assert.equal(pending.length, 3, 'a click before the file reply sent a request');
+
+  // The file reply of the commit keeps the button away.
+  pending[2].resolve(changes(baselines.commit, { files: [report] }));
+  await settle();
+  pending[3].resolve(htmlFile('report.html', baselines.commit));
+  await settle();
+  assert.equal(button.hidden, true);
+});
+
+test('a reply for an earlier file does not change the button of the selected file', async () => {
+  const { nodes, pending } = setup();
+  const files = [{ path: 'a.html', status: 'M', added: 1, removed: 1 }, { path: 'b.html', status: 'M', added: 1, removed: 1 }];
+  pending[0].resolve(changes(baselines.head, { files }));
+  await settle();
+  pending[1].resolve(htmlFile('a.html', baselines.head));
+  await settle();
+  const button = nodes['diff-open'];
+  button.onclick();
+  assert.deepEqual(pending[2].request.diff, { path: 'a.html' });
+
+  const list = node => [node, ...node.children.flatMap(list)];
+  list(nodes['diff-list']).find(node => node.dataset.file === 'b.html').onclick();
+  pending[3].resolve(htmlFile('b.html', baselines.head));
+  await settle();
+  pending[2].reject(new Error('cannot open a.html'));
+  await settle();
+  assert.equal(button.hidden, false);
+  assert.equal(button.textContent, 'Open in browser');
+  assert.equal(button.title, 'Open the current file in your default browser');
+
+  // A result that shows goes away when the selection changes.
+  button.onclick();
+  pending[4].reject(new Error('cannot open b.html'));
+  await settle();
+  assert.equal(button.textContent, 'Open failed');
+  list(nodes['diff-list']).find(node => node.dataset.file === 'a.html').onclick();
+  assert.equal(button.textContent, 'Open in browser');
+  assert.equal(button.title, 'Open the current file in your default browser');
 });

@@ -16,7 +16,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/34`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/35`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -33,7 +33,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/34",
+    "protocol": "bbflow/35",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -68,7 +68,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/34",
+    "protocol": "bbflow/35",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -214,6 +214,9 @@ not change.
 
 Protocol 34 adds the `image` side state to `workspace-file`. An image side has
 `mediaType` and `data`, and it holds at most 5 MiB. The SQLite format does not change.
+
+Protocol 35 adds `workspace-open` to the [workspace operations](#workspace-changes). The
+SQLite format does not change.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -526,6 +529,19 @@ then an arbitrary part of the folder.
 The folders of one reply share this limit, in request order. Thus a folder can be
 `truncated` in a reply for more than one folder and complete in a reply of its own.
 Request such a folder alone before you replace its shown entries.
+
+Protocol 35 adds `workspace-open`. It opens a current HTML file of the session
+workspace in the default browser of the server user. `diff.path` names the file,
+with the same rules as `path`. The extension must be `.html` or `.htm`, in any case.
+The path must name a regular file, and no part of it can be a symlink. On macOS, the
+server then finds the default browser, the application that opens `https` URLs. It
+runs `open -a` with that browser and the absolute path. It waits up to 10 seconds and
+returns `{ "opened": true }`. On other systems, the operation gives an error.
+
+A path that does not obey these rules, a missing file, or a failed opener gives an
+error. The operation does not change files. A browser loads the file as a `file:` page.
+Such a page has an opaque origin, so the server rejects its WebSocket connections. See
+[browser access](#browser-access).
 
 ## Settings and prepared launches
 
@@ -867,13 +883,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/34") {
+    if (message.server.protocol !== "bbflow/35") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/34", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/35", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
