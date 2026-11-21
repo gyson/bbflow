@@ -1326,8 +1326,22 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   (✕), and the rendered current text. The button is not shown for a deleted file, a
   binary file, a file above 1 MiB, or a symlink. The dialog keeps its text while it is
   open. Use **Refresh**, then **Preview** again, to see a later change.
+- For an HTML file (`.html` or `.htm`), **Open in browser** shows to the right of the
+  path in both views. A click asks the server to open the current file with the
+  default application of the user. The server runs `open` on macOS and `xdg-open` on
+  Linux. For an HTML file, this application is normally the default browser. It can be
+  a different browser from the browser of the bbflow tab.
+- The browser loads the file from the disk as a `file:` page. Thus relative styles,
+  images, and scripts load, and external scripts load too. To see a later change, reload
+  the page in the browser. A `file:` page has an opaque origin. The server rejects its
+  WebSocket connections, so a report cannot control bbflow.
+- **Open in browser** is not shown for a deleted file, a folder, a symlink, or a diff
+  that ends at a commit. A file above 1 MiB can open. The server also rejects a path
+  through a symlink. After a click, the button shows **Opened** or **Open failed** for
+  1.5 seconds. The tooltip of **Open failed** gives the reason.
 - In a narrow pane, the line counts, **View source**, **View file**, and **Copy path**
-  go to a second row of the file header. The path and **Preview** keep at least 200 pixels.
+  go to a second row of the file header. The path and **Preview** or
+  **Open in browser** keep at least 200 pixels.
 - Preview uses markdown-it with CommonMark, GitHub tables, strikethrough, and task
   lists. Raw HTML shows as text. Images do not load. The dialog shows "Image not
   loaded" with the alternative text and the source. Task list checkboxes are disabled.
@@ -2016,6 +2030,20 @@ view, fit and actual size with scroll bars, and light and dark Appearance. The s
 and `onload` did not run, and the browser sent no request for the external image. It
 also checked a phone width without horizontal scroll and an empty browser console.
 
+Open in browser fixtures cover `.html` and `.htm` in any case, a Markdown file, a
+script file, a symlink to a script, and a path through a symlink. They also cover a
+path outside the workspace, a folder, a missing file, `..` and absolute paths, an
+unknown session, a failed opener, and a server without an opener. A WebSocket fixture
+sends `workspace-open`. The tests replace the opener, so they open no browser. Web
+fixtures cover the files that the button accepts, the request, **Opened**, **Open
+failed** with its tooltip, and a diff that ends at a commit.
+
+A browser check of Open in browser used a demo instance with a synthetic HTML report.
+It checked an added file in Changes, an unchanged file in Files, and no button for a
+commit scope. The server ran `open` on macOS, and the button showed **Opened**. A
+WebSocket upgrade with `Origin: null`, as a `file:` page sends, got status 403. The
+check did not examine the browser window that opened.
+
 A browser check of the Files tree used a temporary instance, a fixture repository, and
 a folder outside Git, each with a shell session. It checked open and closed folders,
 ignored entries, status letters, folder dots, a symlink, a binary file, the file view
@@ -2451,6 +2479,12 @@ not a Git repository. The filter of **Files** needs a Git repository, and it doe
 find ignored files. The tree has no arrow key navigation. Use Tab and Enter. Git detects a rename only
 between tracked files with similar content. An untracked new file and its deleted
 original show as two changes.
+
+**Open in browser** needs the browser and the server on the same computer. It uses the
+default application for HTML files, which can be a different browser from the bbflow
+tab. Browsers can block module scripts and `fetch()` in a `file:` page. A report that
+must work in all browsers keeps its scripts and data in the HTML file or in classic
+`<script>` files.
 
 Each session has one shared draft. Other views update after each save, about half a
 second after typing stops. They do not show each keystroke. When two views edit at the

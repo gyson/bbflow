@@ -20,7 +20,7 @@ class FixtureParser {
   }
 }
 globalThis.DOMParser = FixtureParser;
-import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, hasSVG, imageDetails, imageSides, isSVG, svgRoot, languageName, openFolders, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, sideImage, sideNote, sizeText, statusTitle, stepScope, timelineHeading, treeRows } from './dist/diff-model.js';
+import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, fenceLanguage, FolderTree, Generation, hasSVG, imageDetails, imageSides, isSVG, svgRoot, languageName, openable, openFolders, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, sideImage, sideNote, sizeText, statusTitle, stepScope, timelineHeading, treeRows } from './dist/diff-model.js';
 
 const change = (path, status = 'M', extra = {}) => ({ path, status, added: 1, removed: 2, ...extra });
 
@@ -458,4 +458,21 @@ test('image details name the format, the pixel size, and the file size', () => {
   assert.equal(sizeText(1536), '1.5 KiB');
   assert.equal(sizeText(5 << 20), '5.0 MiB');
   assert.equal(sizeText(12 << 20), '12 MiB');
+});
+
+test('Open in browser is for a current HTML file that is not a symbolic link', () => {
+  const head = { kind: 'head', label: '', commit: 'h' };
+  const report = (path, side, baseline = head) => openable({ path, baseline, old: { state: 'missing', size: 0 }, new: side });
+  const text = { state: 'text', text: '<p>Hi</p>', size: 9 };
+  assert.equal(report('reports/coverage.html', text), true);
+  assert.equal(report('reports/WEEKLY.HTM', text), true);
+  // The browser reads the file, so the size limit of the reply does not apply.
+  assert.equal(report('big.html', { state: 'tooLarge', size: 2 << 20 }), true);
+  assert.equal(report('utf16.html', { state: 'binary', size: 40 }), true);
+  assert.equal(report('notes.md', text), false);
+  assert.equal(report('removed.html', { state: 'missing', size: 0 }), false);
+  assert.equal(report('folder.html', { state: 'other', size: 0 }), false);
+  assert.equal(report('link.html', { ...text, symlink: true }), false);
+  // A diff that ends at a commit shows the file of that commit, not the current file.
+  assert.equal(report('old.html', text, { kind: 'commit', label: '', commit: 'p', from: 'a', to: 'a' }), false);
 });

@@ -341,7 +341,9 @@ var unsafeSVG = lines(
 
 // orbitProject has three commits and one change of each kind in its working files. A
 // file in a deep folder has a long path. A PNG and an SVG file change too. Two added
-// files are a PNG file above 1 MiB and an SVG file with a script.
+// files are a PNG file above 1 MiB and an SVG file with a script. An untracked
+// HTML report with a style sheet is for Open in browser. Its script shows that it ran,
+// and it shows the page origin.
 func (d *demo) orbitProject() string {
 	folder := d.repository("orbit-api")
 	commit(folder, "Add the orbit service skeleton", map[string]string{
@@ -372,13 +374,38 @@ func (d *demo) orbitProject() string {
 		"docs/orbit.png": orbitPNG(color.NRGBA{0xd9, 0x82, 0x2b, 0xff}, true),
 		"docs/orbit.svg": orbitSVG(`  <ellipse cx="48" cy="48" rx="42" ry="26" fill="none" stroke="#468565" stroke-width="3"/>`,
 			`  <circle cx="48" cy="48" r="14" fill="#d9822b"/>`, `  <circle cx="84" cy="36" r="6" fill="#b0b0b8"/>`),
-		"docs/large.png":  largePNG(),
-		"docs/unsafe.svg": unsafeSVG,
+		"docs/large.png":           largePNG(),
+		"docs/unsafe.svg":          unsafeSVG,
+		"reports/test-report.html": testReport,
+		"reports/report.css": lines("body { font: 15px system-ui, sans-serif; margin: 2rem; max-width: 40rem; }",
+			"td { padding: 4px 16px 4px 0; }", ".pass { color: #2f7a4f; }", ".fail { color: #a24139; }",
+			"#script { color: #65736a; font-size: 13px; }"),
 	})
 	check(os.Remove(filepath.Join(folder, "docs", "design.md")))
 	git(folder, "mv", "docs/api.md", "docs/http-api.md")
 	return folder
 }
+
+// testReport is a simulated report of an agent. Its style sheet is a relative link.
+var testReport = lines(
+	"<!doctype html>",
+	`<html lang="en">`,
+	`<meta charset="utf-8">`,
+	"<title>Orbit API test report</title>",
+	`<link rel="stylesheet" href="report.css">`,
+	"<h1>Orbit API test report</h1>",
+	"<p>3 tests passed. 1 test failed.</p>",
+	"<table>",
+	`  <tr><td>TestPeriod</td><td class="pass">pass</td></tr>`,
+	`  <tr><td>TestMinutes</td><td class="pass">pass</td></tr>`,
+	`  <tr><td>TestNextStep</td><td class="pass">pass</td></tr>`,
+	`  <tr><td>TestTransfer</td><td class="fail">fail: Transfer is not implemented</td></tr>`,
+	"</table>",
+	`<p id="script">The script of this page did not run.</p>`,
+	"<script>",
+	"  document.getElementById('script').textContent = 'The script of this page ran. Its origin is ' + self.origin + '.';",
+	"</script>",
+)
 
 var kepler = lines(
 	"package orbit",

@@ -53,7 +53,7 @@ class Node {
 
 const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-scope-id', 'diff-scope-label', 'diff-scope-menu',
   'diff-split', 'diff-unified', 'diff-summary', 'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts',
-  'diff-toggle', 'diff-source', 'diff-copy', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
+  'diff-toggle', 'diff-source', 'diff-copy', 'diff-preview', 'diff-open', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
   'diff-refresh', 'diff-close', 'preview-close'];
 const server = { protocol: 'test', instance: 'test', port: 1234, dataDir: '/fixture' };
 const commit = '0123456789abcdef0123456789abcdef01234567';
@@ -352,4 +352,41 @@ test('Source keeps SVG text in view next to a binary side', async () => {
   nodes['diff-source'].onclick();
   assert.equal(shown.at(-1), `split: Old text ${svgText}, New Binary file. bbflow does not show its content.`);
   assert.equal(nodes['diff-note'].hidden, true);
+});
+
+test('Open in browser asks the server to open the selected HTML file', async () => {
+  const { nodes, pending } = setup();
+  const report = { path: 'reports/coverage.html', status: 'A', added: 1, removed: 0, untracked: true };
+  pending[0].resolve(changes(baselines.head, { files: [report] }));
+  await settle();
+  assert.deepEqual(pending[1].request.diff, { baseline: 'head', path: 'reports/coverage.html' });
+  pending[1].resolve({ path: 'reports/coverage.html', baseline: baselines.head, old: { state: 'missing', size: 0 }, new: { state: 'text', text: '<p>Hi</p>\n', size: 10 } });
+  await settle();
+  const button = nodes['diff-open'];
+  assert.equal(button.hidden, false);
+  assert.equal(nodes['diff-preview'].hidden, true);
+
+  button.onclick();
+  assert.deepEqual(pending[2].request, { operation: 'workspace-open', session: 'session', diff: { path: 'reports/coverage.html' } });
+  pending[2].resolve({ opened: true });
+  await settle();
+  assert.equal(button.textContent, 'Opened');
+
+  // A failure shows the reason of the server in the tooltip.
+  button.onclick();
+  pending[3].reject(new Error('the file is not in the session workspace now'));
+  await settle();
+  assert.equal(button.textContent, 'Open failed');
+  assert.equal(button.title, 'the file is not in the session workspace now');
+
+  // A file reply that ends at a commit is not the current file. The button goes away.
+  nodes['diff-refresh'].onclick();
+  pending[4].resolve(changes(baselines.commit, { files: [report] }));
+  await settle();
+  pending[5].resolve({ path: 'reports/coverage.html', baseline: baselines.commit, old: { state: 'missing', size: 0 }, new: { state: 'text', text: '<p>Hi</p>\n', size: 10 } });
+  await settle();
+  assert.equal(button.hidden, true);
+  await new Promise(resolve => setTimeout(resolve, 1600));
+  assert.equal(button.textContent, 'Open in browser');
+  assert.equal(button.title, 'Open the current file in your default browser');
 });

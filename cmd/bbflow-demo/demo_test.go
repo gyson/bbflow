@@ -154,10 +154,11 @@ func TestDemo(t *testing.T) {
 	}
 	// The Changes and Files views show a long path in a deep folder.
 	// They also show the old and new images of a PNG and an SVG file, an added PNG file
-	// above the text limit of 1 MiB, and an added SVG file with a script.
+	// above the text limit of 1 MiB, and an added SVG file with a script. The untracked
+	// report is for Open in browser.
 	orbit := filepath.Join(demo, "demo", "projects", "orbit-api")
 	status := git(orbit, "status", "--porcelain")
-	for _, change := range []string{" M " + controller, " M docs/orbit.png", " M docs/orbit.svg", "?? docs/large.png", "?? docs/unsafe.svg"} {
+	for _, change := range []string{" M " + controller, " M docs/orbit.png", " M docs/orbit.svg", "?? docs/large.png", "?? docs/unsafe.svg", "?? reports/"} {
 		if !strings.Contains(status, change) {
 			t.Fatalf("seed did not make the change %q:\n%s", change, status)
 		}

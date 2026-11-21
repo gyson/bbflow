@@ -1,14 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
-	"os/exec"
 	"runtime"
-	"strings"
 
 	"bbflow/internal/client"
+	"bbflow/internal/desktop"
 )
 
 // homeURL is the address of the home page. Browsers resolve localhost to the loopback
@@ -34,18 +34,9 @@ func ui(target client.Target, args []string) error {
 		return fmt.Errorf("cannot open the UI: %w\nStart the server with bbflow --dir %q server start", err, target.Dir)
 	}
 	url := homeURL(info.Port)
-	var opener string
-	switch runtime.GOOS {
-	case "darwin":
-		opener = "open"
-	case "linux":
-		opener = "xdg-open"
-	default:
-		return fmt.Errorf("opening a browser is unsupported on %s; open %s manually", runtime.GOOS, url)
-	}
-	if output, err := exec.Command(opener, url).CombinedOutput(); err != nil {
-		if detail := strings.TrimSpace(string(output)); detail != "" {
-			err = fmt.Errorf("%w: %s", err, detail)
+	if err := desktop.Open(context.Background(), url); err != nil {
+		if errors.Is(err, desktop.ErrUnsupported) {
+			return fmt.Errorf("opening a browser is unsupported on %s; open %s manually", runtime.GOOS, url)
 		}
 		return fmt.Errorf("open default browser: %w; open %s manually", err, url)
 	}

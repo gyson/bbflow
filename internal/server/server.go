@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"bbflow/internal/desktop"
 	"bbflow/internal/history"
 	"bbflow/internal/instance"
 	"bbflow/internal/protocol"
@@ -42,6 +43,9 @@ type Server struct {
 	// releases is nil for a build that cannot update, such as a development build.
 	releases Releases
 	updates  updates
+	// open opens a file with the default application of the user. Tests replace it.
+	// A nil open rejects workspace-open.
+	open func(ctx context.Context, path string) error
 }
 
 // On cancellation, Serve stops new requests and waits for agent cleanup. The caller
@@ -58,7 +62,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		Protocol: protocol.Version, Instance: history.ID(), PID: os.Getpid(),
 		DataDir: filepath.Dir(store.Path), Port: listener.Addr().(*net.TCPAddr).Port,
 		Executable: executable,
-	}, releases: releases}
+	}, releases: releases, open: desktop.Open}
 	s.updates.load(store)
 	if err := s.ensureGeneral(); err != nil {
 		return protocol.ServerInfo{}, err
@@ -301,6 +305,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.workspaceFolders(ctx, request.Session, request.Diff) })
 	case "workspace-file":
 		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) { return s.workspaceFile(ctx, request.Session, request.Diff) })
+	case "workspace-open":
+		err := s.workspaceOpen(ctx, request.Session, request.Diff)
+		s.reply(conn, map[string]bool{"opened": err == nil}, err)
 	case "composer-draft":
 		result, err := s.composer(request.Session, request.Draft)
 		s.reply(conn, result, err)
