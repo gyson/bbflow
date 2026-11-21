@@ -20,13 +20,15 @@ func TestActivityFollowsApplicationOutput(t *testing.T) {
 			t.Fatalf("%s: status after %v is %s, expected %s", reason, after, got, want)
 		}
 	}
+	// The idle delay is 10 seconds. The tooltip of the web client gives the same value.
 	check("a new terminal", 0, "running")
-	check("a new terminal", idleAfter-time.Millisecond, "running")
-	check("a terminal without output", idleAfter, "idle")
+	check("a new terminal", 10*time.Second-time.Millisecond, "running")
+	check("a terminal without output", 10*time.Second, "idle")
 
 	a.applicationOutput(start.Add(10 * time.Second))
 	check("background output", 10*time.Second, "running")
-	check("the last output", 10*time.Second+idleAfter, "idle")
+	check("the last output", 20*time.Second-time.Millisecond, "running")
+	check("the last output", 20*time.Second, "idle")
 
 	// The echo of typed input and the redraw after a size change are not activity.
 	for at := 20 * time.Second; at < 30*time.Second; at += 200 * time.Millisecond {
