@@ -1,7 +1,7 @@
 ---
 name: review-loop
 description: Run one role of a two-session pull request (PR) review loop on GitHub. The reviewer role reviews a PR, posts findings, waits for fixes, and reviews again until it posts LGTM. The implementer role reads the review findings, fixes or declines each one, pushes, and waits for the next review. Use when the user asks to review a PR again and again until LGTM, to watch a PR for new commits or review notes, or to fix review notes in a loop. Do not use for one review without a wait.
-argument-hint: review|fix <PR number or URL> [minutes]
+argument-hint: review|fix <PR number or URL> [minutes] [rounds]
 ---
 
 # Review loop
@@ -19,21 +19,26 @@ through PR comments.
 
 1. Get the role and the PR from the request. `review` selects the reviewer. `fix`
    selects the implementer. If the role or the PR is not clear, ask the user.
-2. Get the time limit from the request. The default is 60 minutes.
-3. Calculate the deadline one time. Keep the number for all later commands.
+2. Get the time limit from the request. The default is 180 minutes (3 hours).
+3. Calculate the deadline one time. Replace `MINUTES` with the time limit. Keep the
+   number for all later commands.
 
    ```sh
-   echo $(( $(date +%s) + 60 * 60 ))
+   echo $(( $(date +%s) + MINUTES * 60 ))
    ```
 
-4. Copy the wait script to a temporary folder one time. Keep the printed path. Use
+4. Get the round limit from the request. The default is 10 review rounds. The two
+   sessions must use the same round limit. If they do not, one role stops at its limit
+   and the other role waits until its deadline. If the request sets a round limit, tell
+   the user to give the same limit to the other session.
+5. Copy the wait script to a temporary folder one time. Keep the printed path. Use
    this copy for each wait. A checkout of a different commit can remove the script.
 
    ```sh
    copy=$(mktemp -d)/wait-for-pr.sh && cp .agents/skills/review-loop/scripts/wait-for-pr.sh "$copy" && echo "$copy"
    ```
 
-5. Read the file for your role before the first checkout. Do not read the other file.
+6. Read the file for your role before the first checkout. Do not read the other file.
    - Reviewer: [reviewer.md](reviewer.md)
    - Implementer: [implementer.md](implementer.md)
 
@@ -122,10 +127,11 @@ If the lookup gives no value, use the fallback in [Round comments](#round-commen
 ## Wait for the other role
 
 Use the wait script for each wait. Do not write a different polling loop. `COPY` is the
-path from [Start](#start) step 4.
+path from [Start](#start) step 5. `DEADLINE` is the number from step 3. `ROUNDS` is the
+round limit from step 4.
 
 ```sh
-sh COPY ROLE PR --until DEADLINE
+sh COPY ROLE PR --until DEADLINE --max-rounds ROUNDS
 ```
 
 `ROLE` is `review` or `fix`. The script examines the PR each minute. It stops when you
@@ -139,7 +145,7 @@ must do something. It prints one line and sets its exit status.
 | `event=done` | 10 | The reviewer posted LGTM for the head commit. | Stop. Report to the user. |
 | `event=closed` | 11 | The PR is merged or closed. | Stop. Report to the user. |
 | `event=timeout` | 12 | The deadline passed. | Stop. Report to the user. |
-| `event=limit` | 14 | Review round 5 ended without LGTM for the head commit. | Stop. Report to the user. |
+| `event=limit` | 14 | Review round `ROUNDS` ended without LGTM for the head commit. | Stop. Report to the user. |
 | An error message | 2 | The arguments or `gh` failed, or the first line of the latest round comment is incorrect. | Correct the cause. For a first line, post a new round comment with a correct first line. It replaces the incorrect one. If you cannot, tell the user. |
 
 One call waits for a maximum of 9 minutes, then prints `event=waiting`. Set the command

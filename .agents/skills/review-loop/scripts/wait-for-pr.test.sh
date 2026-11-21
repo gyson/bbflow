@@ -80,8 +80,9 @@ reply1_old="tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 1, com
 lgtm2="tester|2026-01-01T00:00:03Z|**[review-loop reviewer] round 2, commit $B: LGTM**\nTool: Claude Code. Model: Claude Opus 5.5. Reasoning effort: unknown.\n\nLGTM."
 review2="tester|2026-01-01T00:00:03Z|**[review-loop reviewer] round 2, commit $A: CHANGES REQUESTED**"
 review5="tester|2026-01-01T00:00:09Z|**[review-loop reviewer] round 5, commit $A: CHANGES REQUESTED**"
-reply5="tester|2026-01-01T00:00:10Z|**[review-loop implementer] round 5, commit $B: READY**"
-lgtm5="tester|2026-01-01T00:00:09Z|**[review-loop reviewer] round 5, commit $A: LGTM**"
+review10="tester|2026-01-01T00:00:19Z|**[review-loop reviewer] round 10, commit $A: CHANGES REQUESTED**"
+reply10="tester|2026-01-01T00:00:20Z|**[review-loop implementer] round 10, commit $B: READY**"
+lgtm10="tester|2026-01-01T00:00:19Z|**[review-loop reviewer] round 10, commit $A: LGTM**"
 
 fixture OPEN $A
 check 'review without a round comment' 0 "event=review reason=first round=1 head=$A" review --until "$(soon)"
@@ -196,19 +197,25 @@ check 'early READY does not answer the review' 0 'event=fix round=2' fix --until
 fixture MERGED $B "$review1"
 check 'merged' 11 'event=closed state=MERGED' fix --until "$(soon)"
 
-# The two roles stop together at the round limit.
+# The two roles stop together at the round limit. The default limit is 10 rounds.
+fixture OPEN $A "$review10"
+check 'review limit' 14 'event=limit round=10' review --until "$(soon)"
+check 'fix limit' 14 'event=limit round=10' fix --until "$(soon)"
+check 'larger limit, review' 13 'event=waiting' review --until "$(soon)" --max-rounds 11 --slice 1
+check 'larger limit, fix' 0 'event=fix round=10' fix --until "$(soon)" --max-rounds 11
+
 fixture OPEN $A "$review5"
-check 'review limit' 14 'event=limit round=5' review --until "$(soon)"
-check 'fix limit' 14 'event=limit round=5' fix --until "$(soon)"
-check 'larger limit, review' 13 'event=waiting' review --until "$(soon)" --max-rounds 6 --slice 1
-check 'larger limit, fix' 0 'event=fix round=5' fix --until "$(soon)" --max-rounds 6
+check 'round 5 below the default limit' 0 'event=fix round=5' fix --until "$(soon)"
+check 'smaller limit, review' 14 'event=limit round=5' review --until "$(soon)" --max-rounds 5
+check 'smaller limit, fix' 14 'event=limit round=5' fix --until "$(soon)" --max-rounds 5
+check 'round limit 0' 2 'Usage' review --until "$(soon)" --max-rounds 0
 
-fixture OPEN $B "$review5" "$reply5"
-check 'fix limit after READY' 14 'event=limit round=5' fix --until "$(soon)"
+fixture OPEN $B "$review10" "$reply10"
+check 'fix limit after READY' 14 'event=limit round=10' fix --until "$(soon)"
 
-fixture OPEN $B "$lgtm5"
-check 'review limit after LGTM for an earlier commit' 14 'event=limit round=5' review --until "$(soon)" --settle 1
-check 'fix limit after LGTM for an earlier commit' 14 'event=limit round=5' fix --until "$(soon)"
+fixture OPEN $B "$lgtm10"
+check 'review limit after LGTM for an earlier commit' 14 'event=limit round=10' review --until "$(soon)" --settle 1
+check 'fix limit after LGTM for an earlier commit' 14 'event=limit round=10' fix --until "$(soon)"
 
 fixture OPEN $A "other|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: LGTM**"
 check 'other account ignored' 0 'event=review reason=first' review --until "$(soon)"

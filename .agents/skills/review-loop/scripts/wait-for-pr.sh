@@ -19,7 +19,8 @@ Usage: wait-for-pr.sh review|fix PR --until EPOCH [options]
                       this time. Default: 180. Calls with the same PR, role,
                       account, and deadline share this observation through a
                       private folder in TMPDIR.
-  --max-rounds N      The largest number of review rounds. Default: 5.
+  --max-rounds N      The largest number of review rounds. Minimum: 1.
+                      Default: 10.
   --author LOGIN      The account that posts the round comments. Default: the
                       account of the gh command.
 
@@ -56,7 +57,7 @@ deadline=''
 slice=540
 interval=60
 settle=180
-max_rounds=5
+max_rounds=10
 author=''
 while [ $# -gt 0 ]; do
 	[ $# -ge 2 ] || usage
@@ -74,7 +75,7 @@ done
 for value in "$deadline" "$slice" "$interval" "$settle" "$max_rounds"; do
 	case $value in '' | *[!0-9]*) usage ;; esac
 done
-[ "$interval" -ge 1 ] || usage
+[ "$interval" -ge 1 ] && [ "$max_rounds" -ge 1 ] || usage
 
 if [ -z "$author" ]; then
 	author=$(gh api user --jq .login) || fail 'cannot read the gh account; run gh auth status'
