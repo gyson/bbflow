@@ -320,8 +320,8 @@ var kepler = lines(
 )
 
 // refactorCommits adds three commits to the worktree of the refactor session, as an
-// agent can do. The file from /edit stays uncommitted. Thus Compare with offers each
-// baseline: the uncommitted changes, the changes from a commit, and the worktree base.
+// agent can do. The file from /edit stays uncommitted. Thus the scope menu offers all
+// changes since the worktree base, the uncommitted changes, and each commit.
 func refactorCommits(worktree string) {
 	periodCall := lines(
 		"package orbit",

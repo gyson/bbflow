@@ -101,7 +101,7 @@ func TestWorkspaceChangesListsEachStatusAgainstHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !changes.Repository || changes.Base || changes.Baseline.Kind != "head" || changes.Truncated {
+	if !changes.Repository || changes.Base != nil || changes.Baseline.Kind != "head" || changes.Truncated {
 		t.Fatalf("changes: %+v", changes)
 	}
 	head := fixtureGit(t, repo, "rev-parse", "HEAD")
@@ -418,21 +418,21 @@ func TestWorkspaceChangesUseManagedWorktreeBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !changes.Base || changes.Baseline != (protocol.Baseline{Kind: "base", Label: "Since worktree base", Commit: base}) || len(changes.Files) != 2 {
+	if *changes.Base != (protocol.Base{Commit: base}) || changes.Baseline != (protocol.Baseline{Kind: "base", Label: "Since worktree base", Commit: base}) || len(changes.Files) != 2 {
 		t.Fatalf("base changes: %+v", changes)
 	}
 	changes, err = s.workspaceChanges(context.Background(), id, &protocol.DiffRequest{Baseline: "head"})
-	if err != nil || !changes.Base || changes.Baseline.Kind != "head" || len(changes.Files) != 1 || changes.Files[0].Path != "b.txt" {
+	if err != nil || changes.Base == nil || changes.Baseline.Kind != "head" || len(changes.Files) != 1 || changes.Files[0].Path != "b.txt" {
 		t.Fatalf("head changes: %+v, %v", changes, err)
 	}
 	file, err := s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Baseline: "base", Path: "a.txt"})
 	if err != nil || file.Old.Text != "a\n" || file.New.Text != "agent commit\n" {
 		t.Fatalf("base file: %+v, %v", file, err)
 	}
-	// A plain session has no worktree baseline.
+	// A plain session on the default branch has no base.
 	plain := diffSession(t, s, repo)
 	if _, err = s.workspaceChanges(context.Background(), plain, &protocol.DiffRequest{Baseline: "base"}); err == nil {
-		t.Fatal("base baseline without a managed worktree was accepted")
+		t.Fatal("base baseline without a base was accepted")
 	}
 	if _, err = s.workspaceChanges(context.Background(), plain, &protocol.DiffRequest{Baseline: "other"}); err == nil {
 		t.Fatal("unknown baseline was accepted")
@@ -463,8 +463,8 @@ func TestWorkspaceChangesFromCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The first commit after the base is not listed. "base" shows the same changes.
-	want := []protocol.Commit{{ID: third, Subject: "Third"}, {ID: second, Subject: "Second\tstep"}}
+	// The list has each commit since the base, with its file count.
+	want := []protocol.Commit{{ID: third, Subject: "Third", Files: 1}, {ID: second, Subject: "Second\tstep", Files: 1}, {ID: first, Subject: "First", Files: 1}}
 	if changes.Baseline.Kind != "base" || !reflect.DeepEqual(changes.Commits, want) || changes.MoreCommits {
 		t.Fatalf("commit list: %+v", changes)
 	}
@@ -485,19 +485,116 @@ func TestWorkspaceChangesFromCommit(t *testing.T) {
 	if err != nil || file.Baseline.Commit != second || file.Old.Text != "c\n" || file.New.Text != "third\n" {
 		t.Fatalf("file from the third commit: %+v, %v", file, err)
 	}
+	// One commit compares its first parent with its own tree. The untracked file is not
+	// part of a commit.
+	changes, err = s.workspaceChanges(context.Background(), id, &protocol.DiffRequest{Baseline: "commit", From: second, To: second})
+	if err != nil || changes.Baseline != (protocol.Baseline{Kind: "commit", Label: "Commit " + second[:7], Commit: first, From: second, To: second}) {
+		t.Fatalf("one commit: %+v, %v", changes.Baseline, err)
+	}
+	if paths := changedPaths(changes); !reflect.DeepEqual(paths, []string{"b.txt"}) || changes.Files[0].Added != 1 || changes.Files[0].Removed != 1 {
+		t.Fatalf("changes of one commit: %+v", changes.Files)
+	}
+	// A range of commits ends at the tree of its newest commit.
+	changes, err = s.workspaceChanges(context.Background(), id, &protocol.DiffRequest{Baseline: "commit", From: first, To: second})
+	if err != nil || changes.Baseline.Commit != base || changes.Baseline.Label != "Commits "+first[:7]+" to "+second[:7] {
+		t.Fatalf("commit range: %+v, %v", changes.Baseline, err)
+	}
+	if paths := changedPaths(changes); !reflect.DeepEqual(paths, []string{"a.txt", "b.txt"}) {
+		t.Fatalf("changes of a commit range: %v", paths)
+	}
+	// The new side of a file comes from the to commit, also when the file changed later
+	// or is not in the commit.
+	writeFiles(t, checkout, map[string]string{"b.txt": "uncommitted\n"})
+	file, err = s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Baseline: "commit", From: second, To: second, Path: "b.txt"})
+	if err != nil || file.Baseline.To != second || file.Old.Text != "b\n" || file.New.Text != "second\n" {
+		t.Fatalf("file of one commit: %+v, %v", file, err)
+	}
+	file, err = s.workspaceFile(context.Background(), id, &protocol.DiffRequest{Baseline: "commit", From: second, To: second, Path: "loose.txt"})
+	if err != nil || file.Old.State != "missing" || file.New.State != "missing" {
+		t.Fatalf("untracked file in one commit: %+v, %v", file, err)
+	}
+	// A to commit needs the commit baseline, and it must not be older than from.
+	for _, request := range []protocol.DiffRequest{{Baseline: "head", To: second}, {To: second}, {Baseline: "commit", From: second, To: first}} {
+		if _, err = s.workspaceChanges(context.Background(), id, &request); err == nil {
+			t.Fatalf("request %+v was accepted", request)
+		}
+	}
 	// A commit outside the list falls back to the default baseline.
-	for _, from := range []string{first, base, "", "HEAD", third[:7]} {
-		changes, err = s.workspaceChanges(context.Background(), id, &protocol.DiffRequest{Baseline: "commit", From: from})
+	for _, request := range []protocol.DiffRequest{{From: base}, {From: ""}, {From: "HEAD"}, {From: third[:7]}, {From: second, To: base}} {
+		request.Baseline = "commit"
+		changes, err = s.workspaceChanges(context.Background(), id, &request)
 		if err != nil || changes.Baseline.Kind != "base" {
-			t.Fatalf("commit %q: %+v, %v", from, changes.Baseline, err)
+			t.Fatalf("request %+v: %+v, %v", request, changes.Baseline, err)
 		}
 	}
 	// A rebase removes the listed commits. The old ID then uses the default too.
 	fixtureGit(t, checkout, "reset", "-q", "--soft", first)
 	fixtureGit(t, checkout, "commit", "-q", "-m", "Squashed")
-	changes, err = s.workspaceChanges(context.Background(), id, &protocol.DiffRequest{Baseline: "commit", From: third})
-	if err != nil || changes.Baseline.Kind != "base" || len(changes.Commits) != 1 || changes.Commits[0].Subject != "Squashed" {
+	changes, err = s.workspaceChanges(context.Background(), id, &protocol.DiffRequest{Baseline: "commit", From: third, To: third})
+	if err != nil || changes.Baseline.Kind != "base" || len(changes.Commits) != 2 || changes.Commits[0].Subject != "Squashed" || changes.Commits[0].Files != 2 {
 		t.Fatalf("after a rebase: %+v, %v", changes, err)
+	}
+}
+
+func TestWorkspaceChangesUseMergeBaseWithDefaultBranch(t *testing.T) {
+	s := diffServer(t)
+	repo := diffRepository(t, map[string]string{"a.txt": "a\n", "sub/b.txt": "b\n"})
+	fork := fixtureGit(t, repo, "rev-parse", "HEAD")
+	fixtureGit(t, repo, "switch", "-q", "-c", "feature")
+	writeFiles(t, repo, map[string]string{"a.txt": "feature\n", "sub/b.txt": "feature\n"})
+	fixtureGit(t, repo, "commit", "-q", "-am", "Feature")
+	feature := fixtureGit(t, repo, "rev-parse", "HEAD")
+	fixtureGit(t, repo, "commit", "-q", "--allow-empty", "-m", "Empty")
+	// main moves on after the fork. Its later commit is not part of the changes.
+	fixtureGit(t, repo, "switch", "-q", "main")
+	writeFiles(t, repo, map[string]string{"main.txt": "main\n"})
+	fixtureGit(t, repo, "add", "main.txt")
+	fixtureGit(t, repo, "commit", "-q", "-m", "Main")
+	fixtureGit(t, repo, "switch", "-q", "feature")
+	writeFiles(t, repo, map[string]string{"loose.txt": "loose\n"})
+	id := diffSession(t, s, repo)
+	changes, err := s.workspaceChanges(context.Background(), id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changes.Base == nil || *changes.Base != (protocol.Base{Commit: fork, Branch: "main"}) || changes.Baseline.Label != "Since the merge base with main" {
+		t.Fatalf("merge base: %+v, %+v", changes.Base, changes.Baseline)
+	}
+	if len(changes.Commits) != 2 || changes.Commits[0].Files != 0 || changes.Commits[1] != (protocol.Commit{ID: feature, Subject: "Feature", Files: 2}) || changes.MoreCommits {
+		t.Fatalf("commits since the merge base: %+v", changes.Commits)
+	}
+	if paths := changedPaths(changes); !reflect.DeepEqual(paths, []string{"a.txt", "loose.txt", "sub/b.txt"}) {
+		t.Fatalf("changes since the merge base: %v", paths)
+	}
+	// A subfolder session counts only the files in its folder.
+	sub := diffSession(t, s, filepath.Join(repo, "sub"))
+	changes, err = s.workspaceChanges(context.Background(), sub, &protocol.DiffRequest{Baseline: "commit", From: feature, To: feature})
+	if err != nil || changes.Commits[1].Files != 1 || !reflect.DeepEqual(changedPaths(changes), []string{"b.txt"}) {
+		t.Fatalf("subfolder commit: %+v, %v", changes, err)
+	}
+	// On the default branch, HEAD is the merge base. The session then has no base.
+	fixtureGit(t, repo, "switch", "-q", "main")
+	changes, err = s.workspaceChanges(context.Background(), id, nil)
+	if err != nil || changes.Base != nil || changes.Baseline.Kind != "head" || len(changes.Commits) != 2 {
+		t.Fatalf("default branch: %+v, %v", changes, err)
+	}
+	// A clone uses the branch of origin/HEAD, which is the branch of the cloned
+	// repository.
+	clone := filepath.Join(t.TempDir(), "clone")
+	fixtureGit(t, repo, "clone", "-q", "file://"+repo, clone)
+	fixtureGit(t, clone, "switch", "-q", "-c", "work")
+	writeFiles(t, clone, map[string]string{"a.txt": "work\n"})
+	fixtureGit(t, clone, "commit", "-q", "-am", "Work")
+	changes, err = s.workspaceChanges(context.Background(), diffSession(t, s, clone), nil)
+	if err != nil || changes.Base == nil || changes.Base.Branch != "origin/main" || len(changes.Commits) != 1 || changes.Baseline.Kind != "base" {
+		t.Fatalf("clone: %+v, %v", changes, err)
+	}
+	// Without a common commit, the session has no base.
+	fixtureGit(t, repo, "switch", "-q", "--orphan", "lonely")
+	fixtureGit(t, repo, "commit", "-q", "--allow-empty", "-m", "Lonely")
+	changes, err = s.workspaceChanges(context.Background(), id, nil)
+	if err != nil || changes.Base != nil || changes.Baseline.Kind != "head" {
+		t.Fatalf("no merge base: %+v, %v", changes, err)
 	}
 }
 
@@ -551,20 +648,20 @@ func TestWorkspaceChangesCommitListLimits(t *testing.T) {
 		}
 		return commits, more
 	}
-	// Three commits after the base give two commits for the list. The first commit
-	// after the base does not count.
-	for i, text := range []string{"1\n", "2\n", "3\n"} {
+	// The list stops at the base. Two commits fill the list.
+	for i, text := range []string{"1\n", "2\n"} {
 		next(text, "Commit "+strconv.Itoa(i+1))
 	}
-	if commits, more := list(base); len(commits) != 2 || more || commits[1].Subject != "Commit 2" {
+	if commits, more := list(base); len(commits) != 2 || more || commits[1].Subject != "Commit 1" {
+		t.Fatalf("two commits after the base: %+v, %v", commits, more)
+	}
+	next("3\n", "Commit 3")
+	if commits, more := list(base); len(commits) != 2 || !more || commits[0].Subject != "Commit 3" {
 		t.Fatalf("three commits after the base: %+v, %v", commits, more)
 	}
-	next("4\n", "Commit 4")
-	if commits, more := list(base); len(commits) != 2 || !more || commits[0].Subject != "Commit 4" {
-		t.Fatalf("four commits after the base: %+v, %v", commits, more)
-	}
-	// A row after the output limit is not in the list, and the list reports it.
-	maxCommits, maxCommitList = 30, 100
+	// A commit after the output limit is not in the list, and the list reports it. The
+	// record of the first commit, with its file count, takes 137 bytes.
+	maxCommits, maxCommitList = 30, 200
 	next("5\n", strings.Repeat("long ", 20))
 	next("6\n", "Short")
 	if commits, more := list(""); len(commits) != 1 || !more || commits[0].Subject != "Short" {

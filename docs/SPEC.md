@@ -1197,29 +1197,52 @@ views, and the width.
 
 The Changes and Files views of the [workspace pane](#workspace-pane) are read-only.
 They never change files, the Git index, or SQLite. Each view has its own selected file
-and its own filter text. **Compare with**, **Split**, **Unified**, and the file count
+and its own filter text. The scope button, **Split**, **Unified**, and the file count
 are only in the Changes header. The Files header has **Refresh** and **×** only.
 
-- **Compare with** selects the baseline. The options go from the smallest to the
-  largest set of changes. **Uncommitted changes** compares `HEAD` with the current
-  files. A repository without commits uses the empty tree. **Changes from a commit**
-  lists the commits, newest first. **From** a commit compares the first parent of that
-  commit with the current files. Thus it includes that commit, the later commits, and
-  the uncommitted changes. **Since worktree base** compares the recorded commit of a
-  ready managed worktree with the current files. It includes commits that the agent
-  made, and it is the default for a managed worktree. The labels do not claim that one
-  session made the changes, because other sessions and tools can share a workspace.
-- The commit list follows the first parent from `HEAD`, up to 30 commits. In a managed
-  worktree, it stops at the worktree base. It omits the first commit after the base,
-  because **Since worktree base** shows the same changes. Without a managed worktree, it
-  lists the latest commits of `HEAD`. A shallow clone does not have the parent of its
-  last commit. The list omits that commit. A long subject is shortened in the menu. The
-  tooltip has the full subject. The menu shows "Older commits are not listed." when
-  the list omits commits, also when the list is empty. When a rebase or a reset
-  removes the selected commit, the next refresh uses the default baseline. When a file
-  read finds this first, the pane reads the list again. If that read fails, the pane
-  shows no file until a later refresh succeeds. A refresh cancels the file request of
-  the earlier list, so a late file reply cannot change a newer choice.
+- The scope button shows the selected changes. Its width comes from the pane width and
+  not from its label, so the other controls do not move when the label changes. A
+  click opens the scope menu. A click outside the menu, or Escape, closes it.
+- The session base is the recorded commit of a ready managed worktree. Other sessions
+  use the merge base of `HEAD` and the default branch. The default branch is the target
+  of `origin/HEAD`, or else `main`. A session has no base without such a branch,
+  without a merge base, or when `HEAD` is the merge base, for example on the default
+  branch itself.
+- **All changes** is at the top of the menu when the session has a base. It compares
+  the base with the current files, so it includes the commits since the base and the
+  uncommitted changes. It is the default when the session has a base. The labels do not
+  claim that one session made the changes, because other sessions and tools can share a
+  workspace.
+- Below it, a timeline lists **Uncommitted changes** and the commits since the base,
+  newest first. **Uncommitted changes** compares `HEAD` with the current files. A
+  repository without commits uses the empty tree. A commit compares its first parent
+  with its own tree. A root commit compares with the empty tree. Each commit row shows
+  its short ID, its subject, and the number of files that it changes in the session
+  workspace. The tooltip has the full subject.
+- A click on the text of a row shows only that change and closes the menu. Each row also
+  has a dot. Rails join the dots. The dots are for ranges. One selected row is
+  highlighted, and its dot stays empty. A click on a dot selects its row and puts a
+  ring on the dot. A click on a second dot selects all changes between the two dots.
+  Their dots fill, and a thick line joins them. The diff then compares the first parent of the oldest selected
+  commit with the newest selected commit, or with the current files when the range has
+  **Uncommitted changes**. Before the second click, the pointer over a dot shows that
+  range. A click on the same dot, or Escape, cancels the range. A range of every row,
+  with the complete commit list, shows as **All changes**. The menu stays open after a
+  dot or **All changes**, so that the line stays in view.
+- When the focus is in the Changes view, `[` steps to the older row and `]` to the newer
+  row. From a range or **All changes**, a step goes to its end in that direction. A
+  field, such as the filter box, keeps the keys.
+- A diff that ends at a commit has no untracked files. In it, **View file** shows the
+  file at that commit. Files always shows the current files.
+- The commit list follows the first parent from `HEAD`, up to 30 commits. It stops at
+  the base. Without a base, it lists the latest commits of `HEAD`. A shallow clone does
+  not have the parent of its last commit. The list omits that commit. The menu shows
+  "Older commits are not listed." when the list omits commits, also when the list is
+  empty. When a rebase or a reset removes a selected commit, the next refresh uses the
+  default changes. When a file read finds this first, the pane reads the list again. If
+  that read fails, the pane shows no file until a later refresh succeeds. A refresh
+  cancels the file request of the earlier list, so a late file reply cannot change a
+  newer choice.
 - **Split** shows the old and new file side by side. **Unified** shows one column with
   removed and added lines. When the editor area is narrower than 520 pixels, the pane
   shows Unified and marks it as pressed. Split keeps a dashed border until the pane is
@@ -1289,12 +1312,12 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
 - The keyboard focus stays on its row when the list changes. Thus Tab moves from an
   opened folder to its entries.
 - In a folder that is not a Git repository, the Changes view shows "Not a Git
-  repository. Files shows the workspace." **Compare with** and the filter box are off
+  repository. Files shows the workspace." The scope button and the filter box are off
   there. The Files view shows the tree and the current files. When the server has no
   Git executable, Files works in the same way, and Changes shows the error.
 
-The baseline, the open folders, the filter text, and the selected file of each view
-belong to the browser tab.
+The selected changes, the open folders, the filter text, and the selected file of each
+view belong to the browser tab.
 Other browser tabs keep their own state. A visit to Settings or the home page keeps the
 state. A different session or a reload resets it.
 
@@ -1889,9 +1912,11 @@ newlines. They also cover files above 1 MiB, invalid UTF-8, symlinks inside and 
 the workspace, `..` and absolute paths, and folders. Other fixtures cover subfolder
 sessions, repositories without commits, folders outside Git, missing workspaces, and
 both baselines of a managed worktree after an agent commit. Commit baseline fixtures
-cover the commit list, the omitted first commit, a subject with a tab, the changes
-from a commit, a root commit, the list and output limits, a shallow clone, unknown
-commits, and a rebase. Folder list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
+cover the commit list with its file counts, a subject with a tab, the changes from a
+commit, one commit, a range of commits, the file at a commit, a rejected to commit, a
+root commit, the list and output limits, a shallow clone, unknown commits, and a
+rebase. Merge base fixtures cover a feature branch, a subfolder session, `origin/HEAD`
+of a clone, the default branch itself, and branches without a common commit. Folder list fixtures cover the entry order, ignore marks, a nested repository, `.git`, symlinks inside and outside
 the workspace, missing folders, the entry limit, a folder outside Git, a missing Git
 executable, and a failed ignore check. A WebSocket fixture sends `workspace-file` and
 `workspace-folders` through the server. Web fixtures cover the file list, the filter,
@@ -1899,9 +1924,11 @@ the tree rows and their notes and marks, the folders of a refresh, the language 
 the layout width rule, and late replies. They also cover replies for a folder that
 closed or opened again, a refresh at the shared entry limit, a folder that is gone, a
 failed request for one folder, the unread folders of a failed refresh, and a failed
-first read of the workspace folder. Pane fixtures cover the requests after a file
-reply without the selected commit, a failed list read after it, a late file reply
-after a new choice, and the notice of omitted commits with an empty list. Markdown fixtures cover raw HTML, script links,
+first read of the workspace folder. Scope fixtures cover the requests and the labels
+of each scope, ranges in either order, and the steps of `[` and `]`. Pane fixtures
+cover the requests after a file reply without the selected commit, a failed list read
+after it, a late file reply after a new choice, two dots, a cancel with the same dot, a
+range of every row, the keys, and the notice of omitted commits with an empty list. Markdown fixtures cover raw HTML, script links,
 relative and allowed links, images, tables, task lists, escaped task markers, syntax
 colors and escaped text in fenced code, and the files that Preview accepts.
 

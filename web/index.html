@@ -89,12 +89,13 @@
       <div class="diff-toolbar">
         <span id="diff-title" class="pane-title">Changes</span>
         <span id="diff-controls">
-          <select id="diff-baseline" aria-label="Compare with"></select>
+          <button id="diff-scope" type="button" class="scope-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="diff-scope-menu"><span id="diff-scope-id" class="scope-id"></span><span id="diff-scope-label" class="scope-label"></span><span class="scope-arrow" aria-hidden="true">▾</span></button>
           <span class="segmented" role="group" aria-label="Diff layout"><button id="diff-split" type="button" aria-pressed="true">Split</button><button id="diff-unified" type="button" aria-pressed="false">Unified</button></span>
           <span id="diff-summary"></span>
         </span>
         <button id="diff-refresh" type="button" class="icon-button" title="Read the changes and the files again" aria-label="Refresh">↻</button>
         <button id="diff-close" type="button" class="icon-button" title="Close the pane" aria-label="Close the pane">×</button>
+        <div id="diff-scope-menu" class="scope-menu" role="dialog" aria-label="Changes to show" hidden></div>
       </div>
       <p id="diff-status" role="status" hidden></p>
       <div id="diff-body" class="diff-body">

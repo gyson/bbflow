@@ -6,9 +6,11 @@ import { DiffPane } from './dist/diff-pane.js';
 class Node {
   children = [];
   attributes = new Map();
+  listeners = {};
   dataset = {};
   style = {};
-  classList = { toggle() {} };
+  className = '';
+  classList = { toggle() {}, add() {}, remove() {} };
   hidden = false;
   disabled = false;
   value = '';
@@ -17,46 +19,40 @@ class Node {
   constructor(tag = 'div') { this.tag = tag; }
   set textContent(text) { this.text = text; this.children = []; }
   get textContent() { return (this.text || '') + this.children.map(child => child.textContent).join(''); }
-  append(...children) { this.children.push(...children); }
-  replaceChildren(...children) { this.text = ''; this.children = children; }
+  append(...children) { this.children.push(...children.map(child => typeof child === 'string' ? Object.assign(new Node('#text'), { text: child }) : child)); }
+  replaceChildren(...children) { this.text = ''; this.children = []; this.append(...children); }
   setAttribute(key, value) { this.attributes.set(key, value); }
+  getAttribute(key) { return this.attributes.get(key); }
+  addEventListener(type, listener) { this.listeners[type] = listener; }
+  contains(node) { return node === this || this.children.some(child => child.contains(node)); }
   querySelectorAll(tag) { return this.children.flatMap(child => [...(child.tag === tag ? [child] : []), ...child.querySelectorAll(tag)]); }
-  get selectedOptions() { return this.querySelectorAll('option').filter(option => option.value === this.value); }
   showModal() {}
   close() {}
   focus() {}
 }
 
-class Option extends Node {
-  constructor(text = '', value = '') {
-    super('option');
-    this.textContent = text;
-    this.value = value;
-  }
-}
-
-const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-baseline', 'diff-split', 'diff-unified', 'diff-summary',
-  'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts', 'diff-toggle', 'diff-copy', 'diff-preview',
-  'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor', 'diff-refresh', 'diff-close', 'preview-close'];
+const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-scope-id', 'diff-scope-label', 'diff-scope-menu',
+  'diff-split', 'diff-unified', 'diff-summary', 'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts',
+  'diff-toggle', 'diff-copy', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
+  'diff-refresh', 'diff-close', 'preview-close'];
 const server = { protocol: 'test', instance: 'test', port: 1234, dataDir: '/fixture' };
 const commit = '0123456789abcdef0123456789abcdef01234567';
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 const baselines = {
   head: { kind: 'head', label: 'Uncommitted changes', commit: 'head' },
-  commit: { kind: 'commit', label: 'Changes from commit 0123456', commit: 'parent', from: commit },
+  commit: { kind: 'commit', label: 'Commit 0123456', commit: 'parent', from: commit, to: commit },
 };
-const changes = (baseline, extra = {}) => ({ repository: true, base: false, baseline, commits: [{ id: commit, subject: 'Fix' }],
+const changes = (baseline, extra = {}) => ({ repository: true, baseline, commits: [{ id: commit, subject: 'Fix', files: 1 }],
   files: [{ path: 'a.txt', status: 'M', added: 1, removed: 1 }], truncated: false, ...extra });
 const file = baseline => ({ path: 'a.txt', baseline, old: { state: 'text', text: 'a\n', size: 2 }, new: { state: 'text', text: 'b\n', size: 2 } });
 
 function setup() {
-  const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
+  const nodes = Object.fromEntries(ids.map(id => [id, new Node(id.startsWith('diff-scope') && id !== 'diff-scope-menu' ? 'span' : 'div')]));
   for (const name of ['HTMLElement', 'HTMLDialogElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLButtonElement']) globalThis[name] = Node;
-  globalThis.Option = Option;
   globalThis.ResizeObserver = class { observe() {} };
   globalThis.window = { addEventListener() {} };
-  globalThis.document = { getElementById: id => nodes[id], createElement: tag => new Node(tag) };
+  globalThis.document = { getElementById: id => nodes[id], createElement: tag => new Node(tag), addEventListener() {}, activeElement: null };
   const pending = [];
   const send = (server, request, signal) => new Promise((resolve, reject) => pending.push({ request, signal, resolve, reject }));
   const shown = [];
@@ -68,6 +64,19 @@ function setup() {
   return { nodes, pending, shown };
 }
 
+// The buttons of the open scope menu.
+function menuButtons(nodes) {
+  const all = node => [node, ...node.children.flatMap(all)];
+  return all(nodes['diff-scope-menu']).filter(node => node.tag === 'button');
+}
+const dot = (nodes, item) => menuButtons(nodes).find(button => button.className.startsWith('scope-dot') && button.dataset.item === String(item));
+const row = (nodes, item) => menuButtons(nodes).find(button => button.className === 'scope-text' && button.dataset.item === String(item));
+const rows = nodes => {
+  const all = node => [node, ...node.children.flatMap(all)];
+  return all(nodes['diff-scope-menu']).filter(node => node.className.startsWith('scope-row'));
+};
+const key = (nodes, name) => nodes['diff-pane'].listeners.keydown({ key: name, target: { closest: () => null }, preventDefault() {} });
+
 test('a file reply without the selected commit reads the list again, and a failed read stops there', async () => {
   const { nodes, pending, shown } = setup();
   assert.deepEqual(pending[0].request.diff, {});
@@ -77,14 +86,19 @@ test('a file reply without the selected commit reads the list again, and a faile
   pending[1].resolve(file(baselines.head));
   await settle();
   assert.equal(shown.length, 1);
+  assert.equal(nodes['diff-scope-label'].textContent, 'Uncommitted changes');
 
-  // Select the commit. The list and the file request use it.
-  nodes['diff-baseline'].value = `commit:${commit}`;
-  nodes['diff-baseline'].onchange();
-  assert.deepEqual(pending[2].request.diff, { baseline: 'commit', from: commit });
+  // Select the commit. Its row closes the menu. The list and the file request use it.
+  nodes['diff-scope'].onclick();
+  assert.equal(nodes['diff-scope-menu'].hidden, false);
+  row(nodes, 1).onclick();
+  assert.equal(nodes['diff-scope-menu'].hidden, true);
+  assert.deepEqual(pending[2].request.diff, { baseline: 'commit', from: commit, to: commit });
+  assert.equal(nodes['diff-scope-id'].textContent, '0123456');
+  assert.equal(nodes['diff-scope-label'].textContent, 'Fix');
   pending[2].resolve(changes(baselines.commit));
   await settle();
-  assert.deepEqual(pending[3].request.diff, { baseline: 'commit', from: commit, path: 'a.txt' });
+  assert.deepEqual(pending[3].request.diff, { baseline: 'commit', from: commit, to: commit, path: 'a.txt' });
 
   // A rebase removed the commit before the file request. The pane does not show this
   // file. It reads the list again with the default baseline, and that read fails.
@@ -109,35 +123,38 @@ test('a file reply without the selected commit reads the list again, and a faile
   await settle();
   assert.equal(shown.length, 2);
   assert.equal(nodes['diff-note'].hidden, true);
-  assert.equal(nodes['diff-baseline'].value, 'head');
+  assert.equal(nodes['diff-scope-label'].textContent, 'Uncommitted changes');
+  assert.equal(nodes['diff-scope-id'].textContent, '');
 });
 
 test('a late file reply does not change a newer menu choice', async () => {
   const { nodes, pending, shown } = setup();
   const base = { kind: 'base', label: 'Since worktree base', commit: 'base' };
-  pending[0].resolve(changes(base, { base: true }));
+  const withBase = { base: { commit: 'base' } };
+  pending[0].resolve(changes(base, withBase));
   await settle();
+  assert.equal(nodes['diff-scope-label'].textContent, 'All changes');
   pending[1].resolve(file(base));
   await settle();
-  nodes['diff-baseline'].value = `commit:${commit}`;
-  nodes['diff-baseline'].onchange();
-  pending[2].resolve(changes(baselines.commit, { base: true }));
+  nodes['diff-scope'].onclick();
+  row(nodes, 1).onclick();
+  pending[2].resolve(changes(baselines.commit, withBase));
   await settle();
-  assert.deepEqual(pending[3].request.diff, { baseline: 'commit', from: commit, path: 'a.txt' });
+  assert.deepEqual(pending[3].request.diff, { baseline: 'commit', from: commit, to: commit, path: 'a.txt' });
 
   // Select Uncommitted changes while the file request for the commit is pending. A
   // rebase removed the commit, so its reply uses the default baseline. The reply comes
   // after the new choice and does nothing.
-  nodes['diff-baseline'].value = 'head';
-  nodes['diff-baseline'].onchange();
+  nodes['diff-scope'].onclick();
+  row(nodes, 0).onclick();
   assert.deepEqual(pending[4].request.diff, { baseline: 'head' });
   assert.equal(pending[3].signal.aborted, true);
   pending[3].resolve(file(base));
   for (let i = 0; i < 3; i++) await settle();
   assert.equal(pending.length, 5);
-  pending[4].resolve(changes(baselines.head, { base: true, commits: [] }));
+  pending[4].resolve(changes(baselines.head, { ...withBase, commits: [] }));
   await settle();
-  assert.equal(nodes['diff-baseline'].value, 'head');
+  assert.equal(nodes['diff-scope-label'].textContent, 'Uncommitted changes');
   assert.deepEqual(pending[5].request.diff, { baseline: 'head', path: 'a.txt' });
   pending[5].resolve(file(baselines.head));
   await settle();
@@ -145,20 +162,70 @@ test('a late file reply does not change a newer menu choice', async () => {
   assert.equal(nodes['diff-note'].hidden, true);
 });
 
+test('two dots select a range, the same dot cancels, and the keys step', async () => {
+  const { nodes, pending } = setup();
+  const commits = ['c', 'b', 'a'].map((letter, index) => ({ id: letter.repeat(40), subject: `Commit ${3 - index}`, files: 1 }));
+  const [newest, , oldest] = commits.map(commit => commit.id);
+  const withBase = { base: { commit: 'base', branch: 'main' }, commits };
+  pending[0].resolve(changes(baselines.head, withBase));
+  await settle();
+  nodes['diff-scope'].onclick();
+  assert.match(nodes['diff-scope-menu'].textContent, /^All changesSince the merge base with main/);
+  assert.equal(rows(nodes).length, 4);
+
+  // The first dot selects its row at once. The menu stays open for the second dot.
+  dot(nodes, 1).onclick();
+  assert.deepEqual(pending[2].request.diff, { baseline: 'commit', from: newest, to: newest });
+  assert.equal(nodes['diff-scope-menu'].hidden, false);
+  assert.match(rows(nodes)[1].className, /pending/);
+  assert.match(nodes['diff-scope-menu'].textContent, /Click a second dot/);
+  // The same dot cancels the range and keeps the selection. One selected item has only
+  // a highlighted row. Its dot does not fill.
+  dot(nodes, 1).onclick();
+  assert.equal(pending.length, 3);
+  assert.equal(rows(nodes)[1].className, 'scope-row in');
+
+  // Two dots, in either order, select the commits between them.
+  dot(nodes, 3).onclick();
+  dot(nodes, 1).onclick();
+  assert.deepEqual(pending[4].request.diff, { baseline: 'commit', from: oldest, to: newest });
+  assert.equal(nodes['diff-scope-label'].textContent, '3 commits, aaaaaaa to ccccccc');
+  pending[4].resolve(changes({ kind: 'commit', label: '', commit: 'base', from: oldest, to: newest }, withBase));
+  await settle();
+  assert.equal(nodes['diff-scope-menu'].hidden, false);
+  assert.deepEqual(rows(nodes).map(node => node.className), ['scope-row', 'scope-row in linked', 'scope-row in linked', 'scope-row in linked']);
+
+  // A range of every item has the same changes as All changes.
+  dot(nodes, 0).onclick();
+  dot(nodes, 3).onclick();
+  assert.deepEqual(pending.at(-1).request.diff, { baseline: 'base' });
+  assert.equal(nodes['diff-scope-label'].textContent, 'All changes');
+
+  // ] steps from All changes to the newest item, and [ to an older item.
+  key(nodes, ']');
+  assert.deepEqual(pending.at(-1).request.diff, { baseline: 'head' });
+  key(nodes, '[');
+  assert.deepEqual(pending.at(-1).request.diff, { baseline: 'commit', from: newest, to: newest });
+  // Escape closes the menu.
+  key(nodes, 'Escape');
+  assert.equal(nodes['diff-scope-menu'].hidden, true);
+  assert.equal(nodes['diff-scope'].getAttribute('aria-expanded'), 'false');
+});
+
 test('the menu shows the notice of omitted commits also with an empty list', async () => {
   const { nodes, pending } = setup();
   pending[0].resolve(changes(baselines.head, { commits: [], moreCommits: true }));
   await settle();
-  const select = nodes['diff-baseline'];
-  const options = select.querySelectorAll('option');
-  assert.deepEqual(options.map(option => [option.textContent, option.disabled]),
-    [['Uncommitted changes', false], ['Older commits are not listed.', true]]);
-  assert.equal(select.disabled, false);
+  const button = nodes['diff-scope'];
+  assert.equal(button.disabled, false);
+  button.onclick();
+  assert.equal(rows(nodes).length, 1);
+  assert.match(nodes['diff-scope-menu'].textContent, /Older commits are not listed\./);
 
   // Without omitted commits, one choice leaves the menu off.
   nodes['diff-refresh'].onclick();
   pending[2].resolve(changes(baselines.head, { commits: [] }));
   await settle();
-  assert.equal(select.querySelectorAll('option').length, 1);
-  assert.equal(select.disabled, true);
+  assert.equal(button.disabled, true);
+  assert.equal(nodes['diff-scope-menu'].hidden, true);
 });
