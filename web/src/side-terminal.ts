@@ -2,13 +2,10 @@ import { Terminal } from '@xterm/xterm';
 import type { ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { call, encodeBytes, errorMessage } from './protocol.js';
-import type { ServerInfo, Size } from './protocol.js';
+import type { ServerInfo } from './protocol.js';
 import { SessionConnection } from './session-connection.js';
 import { element } from './dom.js';
-
-function boundedSize(value: { rows: number; cols: number }): Size {
-  return { rows: Math.max(1, Math.min(256, value.rows)), cols: Math.max(2, Math.min(512, value.cols)) };
-}
+import { terminalSize } from './terminal-size.js';
 
 // SideTerminal is the Terminal view of the workspace pane. It shows an interactive
 // shell in the workspace of the selected session, for ad hoc commands. The server owns
@@ -87,9 +84,9 @@ export class SideTerminal {
     let focus = start;
     this.setStatus(start ? 'Starting shell…' : 'Connecting…');
     const connection = this.connection = new SessionConnection(server, view, {
-      operation: start ? 'side-terminal-open' : 'side-terminal-resume', session, size: boundedSize(view),
+      operation: start ? 'side-terminal-open' : 'side-terminal-resume', session, size: terminalSize(view),
     }, {
-      size: () => boundedSize(view),
+      size: () => terminalSize(view),
       ready: () => {
         if (this.connection !== connection) return;
         view.options.disableStdin = !connection.peer?.active;
@@ -203,7 +200,7 @@ export class SideTerminal {
     if (!this.screen.clientWidth || !this.screen.clientHeight) return;
     const proposed = this.fit?.proposeDimensions();
     if (!proposed || !Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) return;
-    const size = boundedSize(proposed);
+    const size = terminalSize(proposed);
     if (size.cols !== view.cols || size.rows !== view.rows) {
       connection.peer.send({ type: 'resize', size });
     }

@@ -6,8 +6,6 @@ import { element } from './dom.js';
 export type PaneView = 'changes' | 'files' | 'terminal';
 
 const views: PaneView[] = ['changes', 'files', 'terminal'];
-const minPaneWidth = 320;
-const minSessionWidth = 360;
 
 // WorkspacePane is the pane to the right of the session. It shows one view at a time.
 // Changes shows the changed files and their diffs. Files shows the folders of the
@@ -16,8 +14,12 @@ const minSessionWidth = 360;
 // has its own open state and view. A session that this view of the page has not shown
 // yet starts with a closed pane. All sessions use the same width. This view of the page
 // keeps the state. Other browser tabs keep their own state.
+//
+// The CSS keeps the minimum widths of the session and the pane. A narrower window makes
+// the pane narrower first, and a wider window gives back the preferred width. When the
+// main area cannot hold both minimum widths, the pane goes below the session.
 export class WorkspacePane {
-  private readonly row = element('session-row', HTMLElement);
+  private readonly sessionView = element('session-view', HTMLElement);
   private readonly pane = element('workspace-pane', HTMLElement);
   private readonly divider = element('workspace-divider', HTMLElement);
   private readonly diffPanel = element('diff-pane', HTMLElement);
@@ -31,7 +33,6 @@ export class WorkspacePane {
   private session = '';
   // The shown view of each session with an open pane. A closed pane has no entry.
   private readonly views = new Map<string, PaneView>();
-  private width = 0;
 
   constructor(private readonly changes: DiffPane, private readonly terminal: SideTerminal) {
     for (const view of views) {
@@ -101,9 +102,12 @@ export class WorkspacePane {
     this.terminal.setShown(view === 'terminal', click);
   }
 
+  // Set the preferred width. Limit it to the widths that the row can show now, so that
+  // the pane never gets wider than a width that the user saw.
   private resize(width: number): void {
-    const max = Math.max(minPaneWidth, this.row.clientWidth - minSessionWidth);
-    this.width = Math.round(Math.max(minPaneWidth, Math.min(max, width)));
-    this.pane.style.flexBasis = `${this.width}px`;
+    const min = parseFloat(getComputedStyle(this.pane).minWidth);
+    const spare = this.sessionView.getBoundingClientRect().width - parseFloat(getComputedStyle(this.sessionView).minWidth);
+    const max = Math.max(min, this.pane.getBoundingClientRect().width + spare);
+    this.pane.style.setProperty('--pane-width', `${Math.round(Math.max(min, Math.min(max, width)))}px`);
   }
 }
