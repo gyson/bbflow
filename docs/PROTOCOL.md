@@ -16,7 +16,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/33`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/34`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -33,7 +33,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/33",
+    "protocol": "bbflow/34",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -68,7 +68,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/33",
+    "protocol": "bbflow/34",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -211,6 +211,9 @@ a managed worktree can have a base, the merge base with the default branch. Requ
 add `to`, so that a `commit` baseline can end at a commit. Commits add `files`. The
 commit list no longer omits the first commit after the base. The SQLite format does
 not change.
+
+Protocol 34 adds the `image` side state to `workspace-file`. An image side has
+`mediaType` and `data`, and it holds at most 5 MiB. The SQLite format does not change.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -470,9 +473,19 @@ from the tree of that commit. Otherwise, it is the current file:
 }
 ```
 
-`state` is `text`, `missing`, `binary`, `tooLarge`, or `other` for a folder, a
-submodule, or a special file. Only `text` has `text`. A symlink has `symlink` and its
-target as text. Each side holds at most 1 MiB.
+`state` is `text`, `missing`, `binary`, `image`, `tooLarge`, or `other` for a folder,
+a submodule, or a special file. Only `text` has `text`. A symlink has `symlink` and its
+target as text. A text or binary side holds at most 1 MiB.
+
+Since protocol 34, binary data in the PNG, JPEG, GIF, or WebP format is an `image`
+side. The server reads the format from the first bytes, not from the file extension.
+`mediaType` is `image/png`, `image/jpeg`, `image/gif`, or `image/webp`, and `data`
+holds the bytes in base64. An image side holds at most 5 MiB. A symlink is never an
+image. SVG is text, so the client shows it from `text`:
+
+```json
+{ "state": "image", "mediaType": "image/png", "data": "iVBORw0KGgo…", "size": 3419 }
+```
 
 Since protocol 23, `workspace-file` also works without Git. For a folder that Git does
 not manage, or a server without a Git executable, the fields of `baseline` are empty,
@@ -854,13 +867,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/33") {
+    if (message.server.protocol !== "bbflow/34") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/33", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/34", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);

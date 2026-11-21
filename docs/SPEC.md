@@ -1276,6 +1276,37 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   deleted files.
 - A file that you select in **Files** shows its current text. A file that you select in
   **Changes** opens as a diff. A symlink opens as a file with its target text.
+- PNG, JPEG, GIF, WebP, and SVG files show as images in both views. The server reads
+  the raster format from the first bytes of the file, not from its extension. The file
+  view shows one image. The diff shows the old and the new image. **Split** puts them
+  side by side, and **Unified** puts the old image above the new image. An added file
+  shows only its new image, and a deleted file only its old image. A text side without
+  an image, for example the text side of a type change, shows its text in place of the
+  image. Another side without an image shows a note.
+- An SVG file shows as an image only when its root element is `svg` in the SVG
+  namespace, `http://www.w3.org/2000/svg`. The XML parser of the browser reads the
+  text, as for an `img` element. Thus the text must be well-formed XML. The parsed
+  document stays detached, so it runs no scripts and loads no files. Other text in an
+  SVG file, such as the pointer text of Git LFS or an `svg` element in
+  a comment, shows as text. The old side of a
+  rename uses its old path. Thus a rename from an SVG file to another file type shows
+  the old image.
+- Each image fits in its side and never gets larger than its actual size. A click on
+  an image shows all images at their actual size, with scroll bars when necessary. The
+  next click fits them again. An SVG file without its own width and height has no
+  actual size, so it fills its side in both cases. A checkerboard shows transparent
+  pixels. A caption above
+  each image shows **Old** or **New** in a diff, the format, the pixel size, and the
+  file size. An SVG file shows no pixel size. An image that the browser cannot decode
+  shows "The browser cannot show this image."
+- For an SVG file, **View source** shows its text, or the diff of its text. Next to a
+  raster image or a side without text, such as a binary side, the SVG side shows its
+  text in place of its image. The other side keeps its image or its note. **View image** shows
+  the image again. The choice applies to all SVG files in both views of
+  the browser tab. A reload resets it.
+- Images show only in `img` elements, from `data:` URLs. There, an SVG file cannot run
+  scripts or load other files. The page policy also allows images only from the page
+  and from `data:` URLs.
 - A vertical divider between the file list and the file view changes the list width.
   Drag it with a mouse or touch. Or focus it and use Left/Right to resize. Use
   Home/End to reach the limits. A double-click restores the default width, 24% of the
@@ -1295,8 +1326,8 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   (✕), and the rendered current text. The button is not shown for a deleted file, a
   binary file, a file above 1 MiB, or a symlink. The dialog keeps its text while it is
   open. Use **Refresh**, then **Preview** again, to see a later change.
-- In a narrow pane, the line counts, **View file**, and **Copy path** go to a second
-  row of the file header. The path and **Preview** keep at least 200 pixels.
+- In a narrow pane, the line counts, **View source**, **View file**, and **Copy path**
+  go to a second row of the file header. The path and **Preview** keep at least 200 pixels.
 - Preview uses markdown-it with CommonMark, GitHub tables, strikethrough, and task
   lists. Raw HTML shows as text. Images do not load. The dialog shows "Image not
   loaded" with the alternative text and the source. Task list checkboxes are disabled.
@@ -1353,9 +1384,13 @@ the tree shows the entries without ignore marks, and the pane shows the error.
 
 Limits:
 
-- Each side of a file holds at most 1 MiB. A larger side shows a note instead of text.
-- A side with a NUL byte in its first 8000 bytes, or with invalid UTF-8, is binary. The
-  pane shows a note instead of its content.
+- Each text side of a file holds at most 1 MiB. An SVG file is text, so this limit
+  applies to it. An image side holds at most 5 MiB, so that two image sides in base64
+  fit in one 16 MiB protocol message. A larger side shows a note instead of its content.
+- A side with a NUL byte in its first 8000 bytes, or with invalid UTF-8, is binary. A
+  binary side that starts with the signature of a PNG, JPEG, GIF, or WebP file is an
+  image. Text stays text, also when it starts like an image. Thus text above 1 MiB is
+  too large. The pane shows a note instead of the content of other binary sides.
 - The changed list holds at most 5,000 files, and the filter list of **Files** at most
   20,000 paths. A longer list shows a note.
 - One reply of folder lists holds at most 20,000 entries. A folder with more entries
@@ -1373,7 +1408,9 @@ Limits:
 - When the first read of the workspace folder fails, the tree shows "Cannot read this
   folder. Click Refresh to try again." in place of "Reading…".
 - Line counts of untracked files use at most 32 MiB of reads for each list. Later
-  untracked files show no count.
+  untracked files show no count. An untracked file above 1 MiB has no line count. When
+  its first 512 bytes are binary data with a PNG, JPEG, GIF, or WebP signature, it
+  counts as binary.
 - A folder that is not a Git repository has no changes and no filter.
 
 ### Side terminal
@@ -1934,7 +1971,22 @@ of each scope, ranges in either order, and the steps of `[` and `]`. Pane fixtur
 cover the requests after a file reply without the selected commit, a failed list read
 after it, a late file reply after a new choice, two dots, a cancel with the same dot, a
 range of every row, the focus after a row, the keys, a base that is gone, and the
-notice of omitted commits with an empty list. Markdown fixtures cover raw HTML, script links,
+notice of omitted commits with an empty list. Image fixtures cover PNG, JPEG, GIF, and
+WebP sides from Git and from the workspace, a format change, an image above 1 MiB, an
+image and other binary data above the limits, text with an image extension or an image
+signature, text above 1 MiB with an image signature, and an SVG symlink. A change list
+fixture counts an untracked image above 1 MiB as binary. It also counts text above 1 MiB
+with an image signature as text, also when the read of its first bytes cuts a character. A WebSocket fixture sends two 5 MiB image sides in one
+reply. Web fixtures cover the image URLs, SVG text in a URL, the shown sides and their
+text or notes, a rename from an SVG path, Git LFS pointer text in an SVG path, the
+captions, and the size text. SVG root fixtures use a test double for the XML
+parser, because Node has no `DOMParser`. They cover the root name, the namespace, a
+parse error, and one parse for each side. A browser check compared the rule with the
+decoding of an `img` element for nine SVG texts. They had a prefix, a non-ASCII prefix,
+a character reference in the namespace, a comment in a document type declaration, an
+`svg` element in a comment before another root, no namespace, LFS pointer text, and
+malformed XML. Pane fixtures cover an image diff in both layouts, **View source** with an
+SVG file and next to a PNG file or a binary side, and a rename from an SVG path. Markdown fixtures cover raw HTML, script links,
 relative and allowed links, images, tables, task lists, escaped task markers, syntax
 colors and escaped text in fenced code, and the files that Preview accepts.
 
@@ -1955,6 +2007,14 @@ and dark Appearance. It also checked the syntax colors of a Go diff and a Markdo
 view, a phone width without horizontal scroll, and an empty browser console. A headless
 Chrome check with emulated forced colors showed separate checked and open task boxes.
 Code in a level 4 heading kept its case.
+
+A browser check of the image view used a demo instance with a modified PNG file and a
+modified SVG file that has only a `viewBox`. It also used an added PNG file of 1.8 MiB
+and an added SVG file with a script, an `onload` attribute, and an external image. It
+checked Split, Unified, the captions, **View source** and **View image**, the Files
+view, fit and actual size with scroll bars, and light and dark Appearance. The script
+and `onload` did not run, and the browser sent no request for the external image. It
+also checked a phone width without horizontal scroll and an empty browser console.
 
 A browser check of the Files tree used a temporary instance, a fixture repository, and
 a folder outside Git, each with a shell session. It checked open and closed folders,
@@ -2386,7 +2446,7 @@ shows one file at a time. A diff that ends at a commit has no untracked files, a
 Files always shows the current files. Its commit list has at most 30 commits since the
 base, and it omits the last commit of a shallow clone, whose parent is not available.
 **All changes** needs a base. A session without `origin/HEAD` and `main`, and a session
-whose `HEAD` has no commit that the default branch does not have, have none. The **Uncommitted changes** row has no file count. It shows images as binary files. It cannot show changes in a folder that is
+whose `HEAD` has no commit that the default branch does not have, have none. The **Uncommitted changes** row has no file count. Other image formats, such as AVIF, HEIC, TIFF, BMP, and ICO, show as binary files. In a Git LFS repository, Git gives the LFS pointer text for a committed side. Then the diff shows that text in place of the old image. It cannot show changes in a folder that is
 not a Git repository. The filter of **Files** needs a Git repository, and it does not
 find ignored files. The tree has no arrow key navigation. Use Tab and Enter. Git detects a rename only
 between tracked files with similar content. An untracked new file and its deleted

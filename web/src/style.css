@@ -41,6 +41,7 @@
   --diff-add-text: #abf2bc;
   --diff-remove-line: #ffebe9;
   --diff-remove-text: #ffcecb;
+  --image-checker: #e9ebe7;
   --code-keyword: #708;
   --code-literal: #164;
   --code-string: #a11;
@@ -88,6 +89,7 @@
     --diff-add-text: light-dark(#abf2bc, #264c32);
     --diff-remove-line: light-dark(#ffebe9, #362122);
     --diff-remove-text: light-dark(#ffcecb, #5c3439);
+    --image-checker: light-dark(#e9ebe7, #2c2c30);
     --code-keyword: light-dark(#708, #d2a8ff);
     --code-literal: light-dark(#164, #7ee787);
     --code-string: light-dark(#a11, #ffa198);
@@ -556,6 +558,23 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 #diff-editor > .cm-editor, #diff-editor > .cm-mergeView { height: 100%; }
 #diff-editor > .cm-mergeView { background: var(--diff-background); }
 #diff-editor .cm-mergeViewEditor + .cm-mergeViewEditor { border-left: 1px solid var(--border); }
+/* The image view. Split puts the sides in columns and Unified in rows. A checkerboard
+   behind each image shows its transparent pixels. */
+.image-view { height: 100%; display: grid; grid-auto-flow: row; grid-auto-rows: minmax(0, 1fr); gap: 1px; background: var(--border); }
+.image-view.split { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-auto-rows: auto; }
+.image-side { margin: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--diff-background); }
+.image-side figcaption { display: flex; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--divider); background: var(--inset); color: var(--text-muted); font-size: 11px; }
+.image-label { font-weight: 600; color: var(--text); }
+.image-note { padding: 12px; color: var(--text-muted); font-size: 12px; }
+.image-text { flex: 1 1 0; min-height: 0; margin: 0; padding: 10px 12px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; color: var(--text); }
+.image-frame { flex: 1 1 0; min-height: 0; position: relative; display: grid; padding: 12px; border: 0; border-radius: 0; background: transparent; overflow: hidden; cursor: zoom-in; }
+.image-frame:hover:not(:disabled) { background: transparent; }
+.image-frame:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.image-frame img { position: absolute; inset: 12px; margin: auto; max-width: calc(100% - 24px); max-height: calc(100% - 24px); background: repeating-conic-gradient(var(--image-checker) 0 25%, var(--diff-background) 0 50%) 50% / 16px 16px; }
+/* At actual size, the image scrolls in its side. Auto margins center a small image and
+   keep the start of a large image in view. */
+.image-view.actual .image-frame { overflow: auto; cursor: zoom-out; }
+.image-view.actual .image-frame img { position: static; max-width: none; max-height: none; }
 /* Syntax colors of the file view, the diff, and the fenced code of Preview. The classes
    come from codeHighlighter in code-highlight.ts. A later rule wins when a token has two
    classes. Thus a Markdown quote does not change the color of a link or code in it, and a

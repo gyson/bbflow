@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,8 @@ const (
 	maxFolderRequest  = 200      // Folders in one request.
 	maxWorkspaceFiles = 20000    // Paths in the list that the Files filter searches.
 	maxFileSide       = 1 << 20  // Bytes of one side of one file.
+	maxImageSide      = 5 << 20  // Bytes of one image side. Two sides in base64 fit in one message.
+	sniffLength       = 512      // Bytes that identify the format of a file.
 	maxGitList        = 16 << 20 // Bytes of one Git list output.
 	maxCountBudget    = 32 << 20 // Bytes read to count lines of untracked files.
 	gitReadTimeout    = 10 * time.Second
@@ -596,11 +599,20 @@ func applyNumstat(files []protocol.ChangedFile, counts map[string]lineCount) {
 // countLines counts the lines of an untracked file. It reads at most budget bytes over
 // all calls. It returns -1 for an unknown count.
 func countLines(root *os.Root, path string, budget *int) (int, bool) {
-	side := readSide(root, path, min(*budget, maxFileSide))
+	side := readSide(root, path, min(*budget, maxFileSide), 0)
 	switch side.State {
-	case "binary":
+	case "binary", "image":
 		*budget -= int(side.Size)
 		return -1, true
+	case "tooLarge":
+		// An image can be larger than a text side. Its first bytes are binary data with
+		// the signature of an image.
+		if *budget < sniffLength {
+			return -1, false
+		}
+		head := readHead(root, path)
+		*budget -= len(head)
+		return -1, imageType(head) != "" && !textStart(head)
 	case "text":
 		*budget -= int(side.Size)
 		lines := strings.Count(side.Text, "\n")
@@ -682,7 +694,7 @@ func (s *Server) workspaceFile(ctx context.Context, id string, request *protocol
 		return result, err
 	}
 	defer root.Close()
-	result.New = readSide(root, request.Path, maxFileSide)
+	result.New = readSide(root, request.Path, maxFileSide, maxImageSide)
 	return result, nil
 }
 
@@ -861,22 +873,37 @@ func treeSide(ctx context.Context, workspace, commit, path string) (protocol.Fil
 	}
 	side := protocol.FileSide{Symlink: fields[0] == "120000"}
 	side.Size, _ = strconv.ParseInt(fields[3], 10, 64)
-	if side.Size > maxFileSide {
+	limit := maxFileSide
+	if side.Size > maxFileSide && side.Size <= maxImageSide && !side.Symlink {
+		// Only an image can be larger than a text side. Its first bytes identify it.
+		head, _, err := gitRead(ctx, workspace, sniffLength, "cat-file", "blob", fields[2])
+		if err != nil {
+			return missing, err
+		}
+		if imageType(head) != "" {
+			limit = maxImageSide
+		}
+	}
+	if side.Size > int64(limit) {
 		side.State = "tooLarge"
 		return side, nil
 	}
-	data, _, err := gitRead(ctx, workspace, maxFileSide, "cat-file", "blob", fields[2])
+	data, _, err := gitRead(ctx, workspace, limit, "cat-file", "blob", fields[2])
 	if err != nil {
 		return missing, err
 	}
-	setText(&side, data)
+	if side.Symlink {
+		setText(&side, data)
+	} else {
+		setContent(&side, data, maxFileSide)
+	}
 	return side, nil
 }
 
-// readSide reads one path of the current workspace. os.Root refuses paths and
-// symlinks that leave the workspace. A symlink holds its target text and is not
-// followed.
-func readSide(root *os.Root, path string, limit int) protocol.FileSide {
+// readSide reads one path of the current workspace. Text and binary data hold at most
+// limit bytes, and an image at most imageLimit bytes. os.Root refuses paths and symlinks
+// that leave the workspace. A symlink holds its target text and is not followed.
+func readSide(root *os.Root, path string, limit, imageLimit int) protocol.FileSide {
 	info, err := root.Lstat(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -899,38 +926,114 @@ func readSide(root *os.Root, path string, limit int) protocol.FileSide {
 		side.State = "other"
 		return side
 	}
-	if side.Size > int64(limit) {
+	most := max(limit, imageLimit)
+	if side.Size > int64(most) {
 		side.State = "tooLarge"
 		return side
 	}
-	// O_NONBLOCK keeps a special file that replaced the regular file from blocking.
-	file, err := root.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	file, err := openRegular(root, path)
 	if err != nil {
 		return protocol.FileSide{State: "other"}
 	}
 	defer file.Close()
-	if info, err = file.Stat(); err != nil || !info.Mode().IsRegular() {
-		return protocol.FileSide{State: "other"}
-	}
 	data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
+	if err == nil && len(data) > limit && most > limit && imageType(data) != "" {
+		// Only an image can be larger than a text side. Its first bytes identify it.
+		var rest []byte
+		rest, err = io.ReadAll(io.LimitReader(file, int64(most-len(data))+1))
+		data = append(data, rest...)
+	}
 	if err != nil {
 		return protocol.FileSide{State: "other"}
 	}
+	stat := side.Size
 	side.Size = int64(len(data))
-	if len(data) > limit {
-		side.State = "tooLarge"
-		return side
+	if len(data) <= most {
+		setContent(&side, data, limit)
 	}
-	setText(&side, data)
+	if len(data) > most || side.State == "tooLarge" {
+		// The read can stop before the end. Report the larger size.
+		side.State, side.Size = "tooLarge", max(stat, side.Size)
+	}
 	return side
 }
 
-// setText stores text, or marks the side as binary. Like Git, it treats a NUL byte in
-// the first 8000 bytes as binary. Invalid UTF-8 is binary too.
+// openRegular opens a regular file of the workspace. O_NONBLOCK keeps a special file
+// that replaced the regular file from blocking.
+func openRegular(root *os.Root, path string) (*os.File, error) {
+	file, err := root.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	if info, err := file.Stat(); err != nil || !info.Mode().IsRegular() {
+		file.Close()
+		return nil, errors.New("not a regular file")
+	}
+	return file, nil
+}
+
+// readHead reads the first bytes of a regular file of the workspace. They identify its
+// format.
+func readHead(root *os.Root, path string) []byte {
+	file, err := openRegular(root, path)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+	head := make([]byte, sniffLength)
+	n, _ := io.ReadFull(file, head)
+	return head[:n]
+}
+
+// isText reports text. Like Git, it treats a NUL byte in the first 8000 bytes as
+// binary. Invalid UTF-8 is binary too.
+func isText(data []byte) bool {
+	return bytes.IndexByte(data[:min(len(data), 8000)], 0) < 0 && utf8.Valid(data)
+}
+
+// textStart reports that the first bytes of a file can start text. The read can cut the
+// last character, so a cut UTF-8 sequence at the end does not make them binary.
+func textStart(head []byte) bool {
+	for cut := 0; cut < utf8.UTFMax && cut <= len(head); cut++ {
+		if isText(head[:len(head)-cut]) {
+			return true
+		}
+	}
+	return false
+}
+
+// setText stores text, or marks the side as binary.
 func setText(side *protocol.FileSide, data []byte) {
-	if bytes.IndexByte(data[:min(len(data), 8000)], 0) >= 0 || !utf8.Valid(data) {
+	if !isText(data) {
 		side.State = "binary"
 		return
 	}
 	side.State, side.Text = "text", string(data)
+}
+
+// setContent stores text, an image, or binary data. Text stays text, also when it starts
+// like an image. Text and binary data hold at most textLimit bytes. Larger data is too
+// large, unless it is an image.
+func setContent(side *protocol.FileSide, data []byte, textLimit int) {
+	switch text, media := isText(data), imageType(data); {
+	case text && len(data) <= textLimit:
+		side.State, side.Text = "text", string(data)
+	case !text && media != "":
+		side.State, side.MediaType, side.Data = "image", media, data
+	case len(data) > textLimit:
+		side.State = "tooLarge"
+	default:
+		side.State = "binary"
+	}
+}
+
+// imageType returns the media type of data in an image format that the file views show.
+// It reads only the first bytes, not the file extension. Other data gives an empty
+// string. SVG is text, so the client shows it from its text.
+func imageType(data []byte) string {
+	switch media := http.DetectContentType(data); media {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		return media
+	}
+	return ""
 }

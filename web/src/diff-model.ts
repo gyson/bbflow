@@ -1,4 +1,4 @@
-import type { Base, Baseline, ChangedFile, Commit, DiffRequest, FileSide, FolderEntry, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
+import type { Base, Baseline, ChangedFile, Commit, DiffRequest, FileSide, FolderEntry, WorkspaceFile, WorkspaceFolder, WorkspaceFolders } from './protocol.js';
 
 export type DiffLayout = 'split' | 'unified';
 export type FileScope = 'changed' | 'files';
@@ -274,10 +274,102 @@ export function countText(change: ChangedFile): { added: string; removed: string
 export function sideNote(side: FileSide): string {
   switch (side.state) {
     case 'binary': return 'Binary file. bbflow does not show its content.';
-    case 'tooLarge': return 'This file is larger than 1 MiB. bbflow does not show its content.';
+    case 'tooLarge': return 'This file is too large to show. The limit is 1 MiB for text and 5 MiB for PNG, JPEG, GIF, and WebP images.';
     case 'other': return 'This path is a folder, a submodule, or a special file.';
     default: return '';
   }
+}
+
+// The formats of the image sides that the server sends.
+const imageFormats = new Map([['image/png', 'PNG'], ['image/jpeg', 'JPEG'], ['image/gif', 'GIF'], ['image/webp', 'WebP']]);
+
+export function isSVG(path: string): boolean {
+  const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
+  return name.length > 4 && name.endsWith('.svg');
+}
+
+const svgNamespace = 'http://www.w3.org/2000/svg';
+const svgRoots = new WeakMap<FileSide, boolean>();
+
+// Report that text is a well-formed XML document with an svg root element in the SVG
+// namespace. The XML parser of the browser reads it, as for an img element. The parsed
+// document stays detached, so it runs no scripts and loads no files. Without DOMParser,
+// as in Node, no text is SVG.
+export function svgRoot(text: string): boolean {
+  if (typeof DOMParser === 'undefined') return false;
+  const document = new DOMParser().parseFromString(text, 'image/svg+xml');
+  const root = document.documentElement;
+  return root?.localName === 'svg' && root.namespaceURI === svgNamespace && document.getElementsByTagNameNS('*', 'parsererror').length === 0;
+}
+
+// SVG text has an svg root element. Other text of an SVG path, such as the pointer text
+// of Git LFS, is not an image. Each side keeps its result, so that a render parses its
+// text one time.
+function svgText(path: string, side: FileSide): boolean {
+  if (side.state !== 'text' || side.symlink || !isSVG(path)) return false;
+  let root = svgRoots.get(side);
+  if (root === undefined) {
+    root = svgRoot(side.text ?? '');
+    svgRoots.set(side, root);
+  }
+  return root;
+}
+
+// The image of a side, or null. The server sends a raster image as base64. An SVG file
+// is text, and svg selects its image in place of its text. A symlink is never an image.
+export function sideImage(path: string, side: FileSide, svg: boolean): { url: string; format: string } | null {
+  const format = imageFormats.get(side.mediaType ?? '');
+  if (side.state === 'image' && format && side.data) return { url: `data:${side.mediaType};base64,${side.data}`, format };
+  if (svg && svgText(path, side)) {
+    return { url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(side.text ?? '')}`, format: 'SVG' };
+  }
+  return null;
+}
+
+// One side of the image view. A text side without an image shows its text in place of
+// the image. Another side without an image shows a note.
+export interface ImageSide { label: string; alt: string; url: string; format: string; size: number; note: string; text?: string }
+
+// The shown sides of a file with their paths. The file view shows the new side. A diff
+// shows the old and the new side. The old side of a rename uses its old path.
+function shownSides(file: WorkspaceFile, diff: boolean, oldPath: string): [string, string, FileSide][] {
+  return diff ? [['Old', oldPath, file.old], ['New', file.path, file.new]] : [['', file.path, file.new]];
+}
+
+// The sides of the image view, or null when the file shows as text or with a note. The
+// view shows a file with an image on a shown side. It also shows SVG text next to a side
+// without text, so that Source keeps the SVG text in view. A missing side is not shown.
+export function imageSides(file: WorkspaceFile, diff: boolean, svg: boolean, oldPath = file.path): ImageSide[] | null {
+  const shown = shownSides(file, diff, oldPath).filter(([, , side]) => side.state !== 'missing');
+  const sides = shown.map(([label, path, side]): ImageSide => {
+    const image = sideImage(path, side, svg);
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    const alt = label ? `${label} ${name}` : name;
+    if (image) return { label, alt, url: image.url, format: image.format, size: side.size, note: '' };
+    const blank = { label, alt, url: '', format: '', size: side.size };
+    if (side.state === 'text') return { ...blank, note: side.symlink ? 'Symbolic link. The text is the link target.' : '', text: side.text ?? '' };
+    return { ...blank, note: sideNote(side) || 'This version is not an image.' };
+  });
+  const svgBesideBinary = shown.some(([, path, side]) => svgText(path, side)) && sides.some(side => side.text === undefined && !side.url);
+  return sides.some(side => side.url) || svgBesideBinary ? sides : null;
+}
+
+// Report that a shown side is SVG text, which can show as an image or as text.
+export function hasSVG(file: WorkspaceFile, diff: boolean, oldPath = file.path): boolean {
+  return shownSides(file, diff, oldPath).some(([, path, side]) => svgText(path, side));
+}
+
+// The format, the pixel size, and the file size of an image. A pixel size of 0 is not
+// known. An SVG file has no pixel size.
+export function imageDetails(side: ImageSide, width = 0, height = 0): string {
+  const pixels = side.format !== 'SVG' && width > 0 && height > 0 ? `${width} × ${height}` : '';
+  return [side.format, pixels, sizeText(side.size)].filter(Boolean).join(' · ');
+}
+
+export function sizeText(bytes: number): string {
+  if (bytes < 1024) return `${bytes} ${bytes === 1 ? 'byte' : 'bytes'}`;
+  const [value, unit] = bytes < 1024 * 1024 ? [bytes / 1024, 'KiB'] : [bytes / (1024 * 1024), 'MiB'];
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${unit}`;
 }
 
 export type Language = 'javascript' | 'jsx' | 'typescript' | 'tsx' | 'go' | 'python' | 'json' | 'markdown' | 'css' | 'html' | 'yaml' | 'rust' | 'scala' | 'shell' | '';

@@ -1,14 +1,15 @@
 import { call, errorMessage } from './protocol.js';
 import type { ChangedFile, DiffRequest, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles } from './protocol.js';
 import { element } from './dom.js';
-import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, FolderTree, Generation, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, shortId, sideNote, statusTitle, stepScope, timelineHeading } from './diff-model.js';
+import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, FolderTree, Generation, hasSVG, imageSides, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, shortId, sideNote, statusTitle, stepScope, timelineHeading } from './diff-model.js';
 import type { DiffLayout, FileEntry, FileScope, Scope, TreeRow } from './diff-model.js';
 import { showDiff, showFile } from './diff-editor.js';
 import type { CodeView } from './diff-editor.js';
+import { showImages } from './image-view.js';
 import { previewable, renderMarkdown } from './markdown.js';
 
 type Send = typeof call;
-export interface Editor { showDiff: typeof showDiff; showFile: typeof showFile }
+export interface Editor { showDiff: typeof showDiff; showFile: typeof showFile; showImages: typeof showImages }
 
 const maxFolderRequest = 200; // The server lists at most this number of folders in one request.
 const listLimit = 'The file list is incomplete. bbflow limits the number of files that it lists.';
@@ -41,6 +42,7 @@ export class DiffPane {
   private readonly path = element('diff-path', HTMLElement);
   private readonly counts = element('diff-counts', HTMLElement);
   private readonly toggleButton = element('diff-toggle', HTMLButtonElement);
+  private readonly sourceButton = element('diff-source', HTMLButtonElement);
   private readonly copyButton = element('diff-copy', HTMLButtonElement);
   private readonly previewButton = element('diff-preview', HTMLButtonElement);
   private readonly previewDialog = element('preview-dialog', HTMLDialogElement);
@@ -53,6 +55,8 @@ export class DiffPane {
   private visible = false;
   private isOpen = false;
   private layout: DiffLayout = 'split';
+  // An SVG file shows as an image. Source shows its text, or the diff of its text.
+  private svgSource = false;
   private shownLayout: DiffLayout | null = null;
   private shownMode: 'file' | 'diff' | null = null; // What the editor shows now.
   private scope: FileScope = 'changed';
@@ -85,7 +89,7 @@ export class DiffPane {
   constructor(
     private readonly server: () => ServerInfo | null,
     private readonly send: Send = call,
-    private readonly editor: Editor = { showDiff, showFile },
+    private readonly editor: Editor = { showDiff, showFile, showImages },
   ) {
     element('diff-refresh', HTMLButtonElement).onclick = () => void this.refresh();
     element('diff-close', HTMLButtonElement).onclick = () => this.close();
@@ -118,6 +122,10 @@ export class DiffPane {
         return;
       }
       this.pick.preview = !this.pick.preview;
+      this.renderFile();
+    };
+    this.sourceButton.onclick = () => {
+      this.svgSource = !this.svgSource;
       this.renderFile();
     };
     this.copyButton.onclick = async () => {
@@ -723,7 +731,7 @@ export class DiffPane {
     } catch (error) {
       if (!this.fileGeneration.current(generation) || abort.signal.aborted) return;
       this.file = null;
-      this.previewButton.hidden = true;
+      this.previewButton.hidden = this.sourceButton.hidden = true;
       this.destroyView();
       this.showNote(`Cannot read this file: ${errorMessage(error)}`);
     }
@@ -755,6 +763,10 @@ export class DiffPane {
       this.pick.preview ? 'Show the diff' : to ? `Show the file at commit ${shortId(to)}` : 'Show the current file';
     this.copyButton.hidden = !this.selected;
     this.previewButton.hidden = !this.previewFile();
+    const file = this.file;
+    this.sourceButton.hidden = !file || file.path !== this.selected || !hasSVG(file, this.mode(file) === 'diff', this.change(file.path)?.oldPath);
+    this.sourceButton.textContent = this.svgSource ? 'View image' : 'View source';
+    this.sourceButton.title = this.svgSource ? 'Show the SVG file as an image' : 'Show the text of the SVG file';
   }
 
   // The loaded file of the selection, when it is a Markdown file that Preview can show.
@@ -782,20 +794,34 @@ export class DiffPane {
     const file = this.file;
     if (!file || file.path !== this.selected) return;
     this.shownMode = this.mode(file);
+    const layout = effectiveLayout(this.layout, this.editorParent.clientWidth);
     if (this.shownMode === 'file') {
       const side = file.new;
       // In Changes, a scope that ends at a commit shows the file at that commit.
       const to = this.scope === 'changed' && file.baseline.to ? shortId(file.baseline.to) : '';
       if (side.state === 'missing') return this.showNote(to ? `This file is not in commit ${to}.` : 'This file is not in the workspace now.');
+      const images = imageSides(file, false, !this.svgSource);
+      if (images) {
+        this.showNote(to ? `The file at commit ${to}.` : '');
+        this.view = this.editor.showImages(this.editorParent, images, layout);
+        return;
+      }
       if (side.state !== 'text') return this.showNote(sideNote(side));
       this.showNote([to ? `The file at commit ${to}.` : '', side.symlink ? 'Symbolic link. The text is the link target.' : ''].filter(Boolean).join(' '));
       this.view = this.editor.showFile(this.editorParent, file.path, side.text ?? '');
       return;
     }
+    // A side that is not an image shows its text or a note in its place.
+    const images = imageSides(file, true, !this.svgSource, this.change(file.path)?.oldPath);
+    if (images) {
+      this.showNote('');
+      this.view = this.editor.showImages(this.editorParent, images, layout);
+      this.shownLayout = layout;
+      return;
+    }
     const blocked = [file.old, file.new].map(sideNote).find(Boolean);
     if (blocked) return this.showNote(blocked);
     this.showNote(file.old.symlink || file.new.symlink ? 'Symbolic link. The text is the link target.' : '');
-    const layout = effectiveLayout(this.layout, this.editorParent.clientWidth);
     this.view = this.editor.showDiff(this.editorParent, file.path, file.old.text ?? '', file.new.text ?? '', layout);
     this.shownLayout = layout;
   }
@@ -822,7 +848,7 @@ export class DiffPane {
     this.file = null;
     this.path.replaceChildren();
     this.counts.replaceChildren();
-    this.toggleButton.hidden = this.copyButton.hidden = this.previewButton.hidden = true;
+    this.toggleButton.hidden = this.copyButton.hidden = this.previewButton.hidden = this.sourceButton.hidden = true;
     this.showNote('');
   }
 }

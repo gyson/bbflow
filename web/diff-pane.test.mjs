@@ -1,5 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+
+// Node has no DOMParser. This test double reads the root element of the fixture text.
+// The browser check covers the real XML parser.
+class FixtureParser {
+  static types = [];
+  parseFromString(text, type) {
+    FixtureParser.types.push(type);
+    const broken = text.includes('<broken');
+    const tag = /<([^\s?!/>][^\s>/]*)([^>]*)>/.exec(text);
+    let root = null;
+    if (tag) {
+      const colon = tag[1].indexOf(':');
+      const prefix = colon < 0 ? '' : tag[1].slice(0, colon);
+      const namespace = new RegExp(`xmlns${prefix ? `:${prefix}` : ''}="([^"]*)"`).exec(tag[2]);
+      root = { localName: tag[1].slice(colon + 1), namespaceURI: namespace ? namespace[1] : null };
+    }
+    return { documentElement: root, getElementsByTagNameNS: (ns, name) => name === 'parsererror' && broken ? [{}] : [] };
+  }
+}
+globalThis.DOMParser = FixtureParser;
 import { DiffPane } from './dist/diff-pane.js';
 
 // A small fake DOM. It has only the parts that the pane uses.
@@ -33,11 +53,12 @@ class Node {
 
 const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-scope-id', 'diff-scope-label', 'diff-scope-menu',
   'diff-split', 'diff-unified', 'diff-summary', 'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts',
-  'diff-toggle', 'diff-copy', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
+  'diff-toggle', 'diff-source', 'diff-copy', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
   'diff-refresh', 'diff-close', 'preview-close'];
 const server = { protocol: 'test', instance: 'test', port: 1234, dataDir: '/fixture' };
 const commit = '0123456789abcdef0123456789abcdef01234567';
 const settle = () => new Promise(resolve => setImmediate(resolve));
+const svgText = '<svg xmlns="http://www.w3.org/2000/svg"/>';
 
 const baselines = {
   head: { kind: 'head', label: 'Uncommitted changes', commit: 'head' },
@@ -57,7 +78,11 @@ function setup() {
   const send = (server, request, signal) => new Promise((resolve, reject) => pending.push({ request, signal, resolve, reject }));
   const shown = [];
   const view = { destroy() {} };
-  const editor = { showDiff: (parent, path, old, now) => { shown.push(`${path}: ${old}->${now}`); return view; }, showFile: () => view };
+  const editor = {
+    showDiff: (parent, path, old, now) => { shown.push(`${path}: ${old}->${now}`); return view; },
+    showFile: (parent, path, text) => { shown.push(`${path}: ${text}`); return view; },
+    showImages: (parent, sides, layout) => { shown.push(`${layout}: ${sides.map(side => [side.label, side.format || (side.text !== undefined ? `text ${side.text}` : side.note)].filter(Boolean).join(' ')).join(', ')}`); return view; },
+  };
   const pane = new DiffPane(() => server, send, editor);
   pane.select('session');
   pane.setShown(true, 'changed');
@@ -257,4 +282,74 @@ test('the menu shows the notice of omitted commits also with an empty list', asy
   await settle();
   assert.equal(button.disabled, true);
   assert.equal(nodes['diff-scope-menu'].hidden, true);
+});
+
+test('an image diff shows the image view, and Source shows the text of an SVG file', async () => {
+  const { nodes, pending, shown } = setup();
+  const files = [{ path: 'a.png', status: 'M', added: -1, removed: -1, binary: true }, { path: 'b.svg', status: 'A', added: 1, removed: 0 }];
+  pending[0].resolve(changes(baselines.head, { files }));
+  await settle();
+  const png = { state: 'image', mediaType: 'image/png', data: 'AA==', size: 1 };
+  pending[1].resolve({ path: 'a.png', baseline: baselines.head, old: png, new: { ...png, mediaType: 'image/gif' } });
+  await settle();
+  assert.deepEqual(shown, ['split: Old PNG, New GIF']);
+  assert.equal(nodes['diff-source'].hidden, true);
+  // Unified puts the sides in one column.
+  nodes['diff-unified'].onclick();
+  assert.equal(shown.at(-1), 'unified: Old PNG, New GIF');
+
+  // An added SVG file shows its new side as an image. Source shows its text diff, and
+  // the next file keeps that choice.
+  const list = node => [node, ...node.children.flatMap(list)];
+  list(nodes['diff-list']).find(node => node.dataset.file === 'b.svg').onclick();
+  pending[2].resolve({ path: 'b.svg', baseline: baselines.head, old: { state: 'missing', size: 0 }, new: { state: 'text', text: svgText, size: 42 } });
+  await settle();
+  assert.equal(shown.at(-1), 'unified: New SVG');
+  assert.equal(nodes['diff-source'].hidden, false);
+  assert.equal(nodes['diff-source'].textContent, 'View source');
+  nodes['diff-source'].onclick();
+  assert.equal(shown.at(-1), `b.svg: ->${svgText}`);
+  assert.equal(nodes['diff-source'].textContent, 'View image');
+  // View file shows the text too, until Source changes back to the image.
+  nodes['diff-toggle'].onclick();
+  assert.equal(shown.at(-1), `b.svg: ${svgText}`);
+  nodes['diff-source'].onclick();
+  assert.equal(shown.at(-1), 'unified: SVG');
+});
+
+test('Source shows SVG text next to a raster image, and a rename uses the old path for the old side', async () => {
+  const { nodes, pending, shown } = setup();
+  const files = [{ path: 'icon.svg', status: 'M', added: -1, removed: -1, binary: true }, { path: 'renamed.txt', oldPath: 'rename-me.svg', status: 'R', added: 0, removed: 0 }];
+  pending[0].resolve(changes(baselines.head, { files }));
+  await settle();
+  // The SVG file became a PNG file.
+  const svg = { state: 'text', text: '<svg xmlns="http://www.w3.org/2000/svg"/>', size: 42 };
+  pending[1].resolve({ path: 'icon.svg', baseline: baselines.head, old: svg, new: { state: 'image', mediaType: 'image/png', data: 'AA==', size: 1 } });
+  await settle();
+  assert.equal(shown.at(-1), 'split: Old SVG, New PNG');
+  nodes['diff-source'].onclick();
+  assert.equal(shown.at(-1), `split: Old text ${svg.text}, New PNG`);
+  nodes['diff-source'].onclick();
+
+  // A rename from an SVG path to a text path shows the old image and the new text.
+  const list = node => [node, ...node.children.flatMap(list)];
+  list(nodes['diff-list']).find(node => node.dataset.file === 'renamed.txt').onclick();
+  assert.deepEqual(pending[2].request.diff, { baseline: 'head', path: 'renamed.txt', oldPath: 'rename-me.svg' });
+  pending[2].resolve({ path: 'renamed.txt', baseline: baselines.head, old: svg, new: svg });
+  await settle();
+  assert.equal(shown.at(-1), `split: Old SVG, New text ${svg.text}`);
+  assert.equal(nodes['diff-source'].hidden, false);
+});
+
+test('Source keeps SVG text in view next to a binary side', async () => {
+  const { nodes, pending, shown } = setup();
+  pending[0].resolve(changes(baselines.head, { files: [{ path: 'icon.svg', status: 'M', added: -1, removed: -1, binary: true }] }));
+  await settle();
+  const svg = { state: 'text', text: svgText, size: 42 };
+  pending[1].resolve({ path: 'icon.svg', baseline: baselines.head, old: svg, new: { state: 'binary', size: 4 } });
+  await settle();
+  assert.equal(shown.at(-1), 'split: Old SVG, New Binary file. bbflow does not show its content.');
+  nodes['diff-source'].onclick();
+  assert.equal(shown.at(-1), `split: Old text ${svgText}, New Binary file. bbflow does not show its content.`);
+  assert.equal(nodes['diff-note'].hidden, true);
 });
