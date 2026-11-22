@@ -1112,9 +1112,10 @@ input.
 ## Browser access
 
 The server has two checks. Each HTTP request, including a WebSocket upgrade, must name
-the loopback host of the server. A WebSocket upgrade must also come from the same
-origin. The other HTTP routes have no origin check. These checks stop other web sites.
-They do not authenticate local programs.
+the loopback host of the server. A WebSocket upgrade that has an Origin header must
+also have the same host and port in that header. An upgrade without an Origin header
+passes, and the other HTTP routes have no origin check. These checks stop other web
+sites. They do not authenticate local programs.
 
 ### Host and Origin
 
@@ -1198,13 +1199,14 @@ versions.
 - Protocol 19 adds `session-terminals` and the optional `run` field of `session-resume`.
   A view can show an earlier terminal of a session. The SQLite format does not change.
 - Protocol 20 adds `history-search` and `history-context`. See
-  [Recorded-output search](#recorded-output-search). The SQLite format does not change.
+  [Recorded-output search](#recorded-output-search). SQLite format 7 adds three event
+  indexes for these reads. The two operations are read-only.
 - Protocol 21 adds `workspace-changes`, `workspace-files`, and `workspace-file`. See
-  [Workspace changes](#workspace-changes).
+  [Workspace changes](#workspace-changes). The SQLite format does not change.
 - Protocol 22 adds the derived `status` of a session. See
   [Session status](#session-status). The SQLite format does not change.
 - Protocol 23 adds `workspace-folders`, and `workspace-file` also works without Git. See
-  [Workspace changes](#workspace-changes).
+  [Workspace changes](#workspace-changes). The SQLite format does not change.
 - Protocol 24 adds `side-terminal-open`, `side-terminal-resume`, and
   `side-terminal-stop` for [side terminals](#side-terminals). The SQLite format does not
   change.
