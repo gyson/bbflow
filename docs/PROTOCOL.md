@@ -16,7 +16,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/35`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/36`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -33,7 +33,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/35",
+    "protocol": "bbflow/36",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -68,7 +68,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/35",
+    "protocol": "bbflow/36",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -106,9 +106,10 @@ storage-report operations.
 | `stop` | `instance`, from the verified greeting | `result`, containing `stopping`. The server then shuts down. |
 | `update-start` | `version` and `revision`, the `available` version and the `revision` of the [release offer](#release-offers) that the user confirmed | `result`, containing `updating`. The server installs the release in the background and then restarts, which ends all live sessions. It rejects another version, an earlier revision, a second update, and an offer that the off setting hides. |
 | `settings-get` | none | `result`, saved settings and revision |
-| `settings-save` | `settings`, including current revision | `result`, updated settings and revision |
-| `title-tools` | None | `result`, containing the title tools with `id`, `name`, and `command` |
-| `title-test` | `settings` with `titleTool`, and `text` | `result`, containing `title`. It runs the title tool once with `text` and saves nothing. |
+| `settings-save` | `settings`, including current revision | `result`, updated settings and revision. It keeps the saved `titleTool`. |
+| `title-tools` | None | `result`, containing `tools`, the title tools with `id`, `name`, and `command`, and `sample`, the message of a title test |
+| `title-test` | `settings` with `titleTool` | `result`, containing `title`. It runs the title tool once with the sample message and saves nothing. |
+| `title-tool-set` | `settings` with `titleTool` | `result`, containing the saved `settings` with a new revision, and `title`. For a tool other than `none`, it first runs the same test as `title-test`. A failed test saves nothing, and the error names the tool. `none` saves without a test, and `title` is empty. A disconnect during the test stops it and saves nothing. |
 | `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
 | `project-draft` | `project` ID, or `parent` session ID for a sub-session draft | `result`, a new independent draft with saved defaults and `status`. With `parent`, the draft joins the family of that session. A top-level session becomes the parent. For a sub-session, its parent becomes the parent, so the draft is a sibling. The draft takes the project of the family. The request fails for a missing session, a family without a saved project, and an archived parent. Starts no process. |
 | `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
@@ -217,6 +218,11 @@ Protocol 34 adds the `image` side state to `workspace-file`. An image side has
 
 Protocol 35 adds `workspace-open` to the [workspace operations](#workspace-changes). The
 SQLite format does not change.
+
+Protocol 36 adds `title-tool-set`. A title tool saves only after it passes a title test.
+`settings-save` keeps the saved `titleTool`. The server owns the sample message of a
+test. `title-tools` returns an object with `tools` and `sample`, not a list. `title-test`
+no longer reads `text`. The SQLite format does not change.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -883,13 +889,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/35") {
+    if (message.server.protocol !== "bbflow/36") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/35", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/36", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);

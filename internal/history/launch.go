@@ -77,10 +77,15 @@ func ValidateCommand(command string) error {
 }
 
 func (s *Store) Settings() (Settings, error) {
+	return scanSettings(s.db.QueryRow("SELECT revision,data FROM settings WHERE id=1"))
+}
+
+// scanSettings reads the revision and the data of the settings row.
+func scanSettings(row *sql.Row) (Settings, error) {
 	var settings Settings
 	var data string
 	var revision int64
-	err := s.db.QueryRow("SELECT revision,data FROM settings WHERE id=1").Scan(&revision, &data)
+	err := row.Scan(&revision, &data)
 	if err == nil {
 		err = json.Unmarshal([]byte(data), &settings)
 	}
@@ -91,6 +96,9 @@ func (s *Store) Settings() (Settings, error) {
 	return settings, err
 }
 
+// SaveSettings saves the settings from their current revision. It keeps the saved title
+// tool, because only SetTitleTool changes it. A title tool change between the read of
+// the saved tool and the write changes the revision, so the write then fails.
 func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	switch settings.Appearance {
 	case "":
@@ -121,12 +129,6 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 			return settings, err
 		}
 	}
-	if settings.TitleTool == "" {
-		settings.TitleTool = "none"
-	}
-	if !slices.Contains(TitleTools, settings.TitleTool) {
-		return settings, fmt.Errorf("title tool must be one of %s", strings.Join(TitleTools, ", "))
-	}
 	if !seen[settings.DefaultTool] {
 		return settings, errors.New("default tool does not exist")
 	}
@@ -145,6 +147,11 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	if settings.Tools == nil {
 		settings.Tools = []Tool{}
 	}
+	saved, err := s.Settings()
+	if err != nil {
+		return settings, err
+	}
+	settings.TitleTool = saved.TitleTool
 	data, err := json.Marshal(settings)
 	if err != nil {
 		return settings, err
@@ -155,6 +162,18 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	}
 	settings.Revision++
 	return settings, nil
+}
+
+// SetTitleTool saves the title tool alone, with a new revision, and returns the saved
+// settings. It does not test the tool. The server tests it before this call.
+func (s *Store) SetTitleTool(tool string) (Settings, error) {
+	if tool == "" {
+		tool = "none"
+	}
+	if !slices.Contains(TitleTools, tool) {
+		return Settings{}, fmt.Errorf("title tool must be one of %s", strings.Join(TitleTools, ", "))
+	}
+	return scanSettings(s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?) WHERE id=1 RETURNING revision,data", tool))
 }
 
 func revisionChanged(result sql.Result, err error) error {

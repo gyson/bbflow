@@ -15,7 +15,8 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
   return updated;
 }
 
-export type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool' | 'updateCheck'>;
+// The title tool is not a default. It saves alone, after its test.
+export type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'updateCheck'>;
 export type SettingsChange = (settings: Settings) => Settings;
 
 // The server calls of the Settings saves. conflict tells a rejected save that another
@@ -58,8 +59,7 @@ export class SettingsSaves {
       const next = change(saved);
       if (sameSettings(next, saved)) return;
       try {
-        this.saved = await this.service.save(next);
-        this.changed();
+        this.update(await this.service.save(next));
         return;
       } catch (error) {
         if (!this.service.conflict(error) || attempt === 2) throw error;
@@ -89,12 +89,21 @@ export class SettingsSaves {
   savePort(port: number): Promise<void> {
     return this.enqueue(() => this.save(settings => ({ ...settings, port })));
   }
+
+  // update takes the settings that a request outside the queue saved, such as a title
+  // tool change. Only a newer revision applies, so a late reply cannot undo a later save.
+  update(settings: Settings): void {
+    if (this.saved && settings.revision <= this.saved.revision) return;
+    this.saved = settings;
+    this.changed();
+  }
 }
 
-// The revision tracks saves. The other fields determine if a save is necessary.
+// The revision tracks saves. The other fields determine if a save is necessary. A
+// settings save keeps the saved title tool, so the title tool is not one of them.
 export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&
-    a.worktree === b.worktree && a.base === b.base && a.titleTool === b.titleTool &&
+    a.worktree === b.worktree && a.base === b.base &&
     a.updateCheck === b.updateCheck && a.port === b.port && sameTools(a.tools, b.tools);
 }
 
@@ -163,9 +172,10 @@ export function sameTools(a: Tool[], b: Tool[]): boolean {
   });
 }
 
-// The state of the title tool controls. Test needs a tool and no running test. A save of
-// another setting does not change this state.
-export function titleControls(tools: TitleTool[], selected: string, testing: boolean): { command: string; test: boolean; select: boolean } {
+// The state of the title tool controls. busy reports a running title test or title tool
+// change. Test needs a tool and no busy state. A save of another setting does not change
+// this state.
+export function titleControls(tools: TitleTool[], selected: string, busy: boolean): { command: string; test: boolean; select: boolean } {
   const tool = tools.find(tool => tool.id === selected);
-  return { command: tool?.command ?? '', test: !!tool && !testing, select: !testing };
+  return { command: tool?.command ?? '', test: !!tool && !busy, select: !busy };
 }

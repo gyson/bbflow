@@ -897,7 +897,41 @@ clears its title.
 **Automatic titles** in Settings selects the title tool: None, Claude, Codex, Code
 Puppy, or Apple. The settings JSON stores `titleTool` as `none`, `claude`, `codex`,
 `code-puppy`, or `apple`. None turns automatic titles off. This is the default.
-`bbflow settings set title-tool` sets the same value. A change saves at once.
+`bbflow settings set title-tool` sets the same value.
+
+A change to a title tool other than None saves only after the tool passes a title test.
+The server runs the tool once with the fixed sample message, as **Test** does. When the
+tool gives a title, the server saves the tool and returns the title. When the test
+fails or times out, the server saves nothing. Its error names the tool, tells that the
+title tool did not change, and gives the reason. When the client disconnects during the
+test, the server stops the test and saves nothing. A change to None saves at once,
+without a test. A change to the saved tool tests that tool again and saves it again.
+
+The test runs in the server environment, as the title runs of sessions do. Thus a CLI
+that works in a terminal of the user, but is not on the PATH of the server, fails the
+test. The test holds no lock, so other settings can save while it runs. A passed test
+does not prevent later failures, for example after a sign-out, a CLI update, or a macOS
+update that needs a new `fm` license acceptance. These later failures go only to
+`server.log`. **Test** checks the saved tool again.
+
+Only `title-tool-set` changes the title tool. `settings-save` keeps the saved title
+tool. A change of the title tool gives the settings a new revision, so a save from an
+earlier revision fails.
+
+In Settings, a selection in the tool list starts the change. The list and **Test** stay
+disabled until the change ends. During the test, the list shows the new tool, and the
+status shows **Saving…**. The result area shows the sample message and a line such as
+**Testing Codex. This can take up to 90 seconds.** After a passed test, a green line
+shows that the tool is now the title tool, with the title from the sample message. After
+a failed test, the list shows the saved tool again. A red line under it shows the error
+and tells the user to fix the problem and select the tool again. A reload or close of
+the page during the test cancels the change. The page asks for confirmation first.
+
+In the CLI, `bbflow settings set title-tool` writes a note to standard error before the
+test. It waits 100 seconds for the reply, longer than the 90-second server limit. After
+a passed test, it prints the title from the sample message. After a failed test, it
+prints the error and exits with status 1. An interrupt of the command cancels the test,
+and the tool does not save. A change to None prints nothing.
 
 The server owns the command of each title tool. Users cannot edit these commands:
 
@@ -1001,15 +1035,16 @@ crash or restart is lost. The server does not run it again.
 After each title change, the status watch sends a new title revision. Each view then
 reads the session list again.
 
-**Test** in Settings runs the selected title tool once. It is not available for None.
+**Test** in Settings runs the saved title tool once. It is not available for None.
 Test and the tool list stay disabled until the test ends, also when another setting
 saves. A result shows only while its tool stays selected, also after another view
 changes the tool. The browser waits 100 seconds for the reply, longer than the 90-second server
 limit.
 It sends a fixed sample message, not a message of a session, and saves nothing. The
+server owns the sample message, and `title-tools` returns it with the tools. The
 result shows the sample message first. Under it, a green line shows **Test passed**
 with the title from the sample message. A red line shows **Test failed** with the
-error. A change of the title tool hides the result.
+error. A change of the title tool replaces the result with the result of the change.
 
 Claude, Codex, and Code Puppy send the first message to their provider. They use the
 installation and authentication of the user. Claude and Code Puppy can save each call in
@@ -2373,6 +2408,19 @@ A message that named a local canary file did not give its content to the hardene
 Claude and Codex commands. Fixtures verify that terminal escape sequences do not stay
 in a title or an error. They also verify that a marker which only escape sequences
 break does not reach the request, so an echoed request gives no title.
+
+Title tool change fixtures verify that a tool saves only after it passes a test with the
+sample message. A failed test, a canceled test, and an unknown tool save nothing and keep
+the revision. None saves without a run of the command. A settings save keeps the saved
+title tool, and a save from before a title tool change fails. A CLI test runs a real test
+server with synthetic Code Puppy and Codex CLIs on its PATH. It verifies the passed and
+failed messages and the unchanged settings after the failure. Web fixtures verify the
+100-second wait of `title-tool-set`. They also verify that a late reply of an earlier
+settings save does not undo a title tool change. A browser check of a demo instance used
+the same synthetic CLIs on the PATH of the server. A selection of Codex showed the test
+state, then the list showed None again with the error. A selection of Code Puppy saved
+it with its title. A later appearance save from the CLI and from the page kept Code
+Puppy. No real agent CLI or model was used.
 
 Live checks of the Apple command used `fm` of macOS 27.0.1 with the FM1 terms, version
 1.0. Before the terms were accepted, `fm` ended with exit status 69 and a colored notice

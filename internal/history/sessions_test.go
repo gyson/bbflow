@@ -267,6 +267,8 @@ func TestSessionTitlesKeepUserAndDerivedValues(t *testing.T) {
 	}
 }
 
+// Only SetTitleTool changes the title tool. A settings save keeps the saved title tool,
+// and its revision check rejects a save from before a title tool change.
 func TestTitleToolSettings(t *testing.T) {
 	store := testStore(t)
 	settings, err := store.Settings()
@@ -274,17 +276,40 @@ func TestTitleToolSettings(t *testing.T) {
 		t.Fatalf("default title tool: %+v, %v", settings, err)
 	}
 	for _, tool := range TitleTools {
-		settings.TitleTool = tool
-		if settings, err = store.SaveSettings(settings); err != nil || settings.TitleTool != tool {
-			t.Fatalf("save %s: %+v, %v", tool, settings, err)
+		saved, err := store.SetTitleTool(tool)
+		if err != nil || saved.TitleTool != tool || saved.Revision != settings.Revision+1 {
+			t.Fatalf("set %s: %+v, %v", tool, saved, err)
 		}
+		settings = saved
 	}
-	settings.TitleTool = ""
-	if settings, err = store.SaveSettings(settings); err != nil || settings.TitleTool != "none" {
+	if settings, err = store.SetTitleTool(""); err != nil || settings.TitleTool != "none" {
 		t.Fatalf("an empty title tool did not select none: %+v, %v", settings, err)
 	}
-	settings.TitleTool = "claude -p"
-	if _, err = store.SaveSettings(settings); err == nil || !strings.Contains(err.Error(), "none, claude, codex, code-puppy, apple") {
+	if _, err = store.SetTitleTool("claude -p"); err == nil || !strings.Contains(err.Error(), "none, claude, codex, code-puppy, apple") {
 		t.Fatalf("accepted an unknown title tool: %v", err)
+	}
+	if after, err := store.Settings(); err != nil || after.Revision != settings.Revision {
+		t.Fatalf("a rejected title tool saved settings: %+v, %v", after, err)
+	}
+
+	// A settings save does not change the title tool, also with another value.
+	settings.TitleTool = "claude"
+	settings.Appearance = "dark"
+	if settings, err = store.SaveSettings(settings); err != nil || settings.TitleTool != "none" || settings.Appearance != "dark" {
+		t.Fatalf("a settings save changed the title tool: %+v, %v", settings, err)
+	}
+	if saved, err := store.Settings(); err != nil || saved.TitleTool != "none" {
+		t.Fatalf("saved title tool: %+v, %v", saved, err)
+	}
+	stale := settings
+	if _, err = store.SetTitleTool("codex"); err != nil {
+		t.Fatal(err)
+	}
+	stale.Appearance = "light"
+	if _, err = store.SaveSettings(stale); err == nil || !strings.Contains(err.Error(), "settings changed") {
+		t.Fatalf("a save from before the title tool change: %v", err)
+	}
+	if saved, err := store.Settings(); err != nil || saved.TitleTool != "codex" || saved.Appearance != "dark" {
+		t.Fatalf("settings after the stale save: %+v, %v", saved, err)
 	}
 }

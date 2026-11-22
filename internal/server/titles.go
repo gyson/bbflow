@@ -17,6 +17,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"bbflow/internal/history"
 	"bbflow/internal/protocol"
 )
 
@@ -72,17 +73,54 @@ var titleTools = []protocol.TitleTool{
 var pathMask = strings.NewReplacer("/", "\u2215", "~", "\u223c")
 var pathUnmask = strings.NewReplacer("\u2215", "/", "\u223c", "~")
 
-// titleCommand returns the command of a title tool.
-func titleCommand(tool string) (string, error) {
-	for _, candidate := range titleTools {
-		if candidate.ID == tool {
-			return candidate.Command, nil
+// findTitleTool returns the title tool with the ID. None has no title tool.
+func findTitleTool(id string) (protocol.TitleTool, error) {
+	for _, tool := range titleTools {
+		if tool.ID == id {
+			return tool, nil
 		}
 	}
-	if tool == "" || tool == "none" {
-		return "", errors.New("choose a title tool")
+	if id == "" || id == "none" {
+		return protocol.TitleTool{}, errors.New("choose a title tool")
 	}
-	return "", fmt.Errorf("unknown title tool %q", tool)
+	return protocol.TitleTool{}, fmt.Errorf("title tool must be one of %s", strings.Join(history.TitleTools, ", "))
+}
+
+// titleSample is the message of a title test. It is like a first message of a session.
+const titleSample = "The login page redirects to a blank page after sign-in. Find the cause and fix it."
+
+// testTitleTool runs a title tool once with the sample message and returns the title.
+// It saves nothing.
+func testTitleTool(ctx context.Context, id string) (protocol.TitleTest, error) {
+	tool, err := findTitleTool(id)
+	if err != nil {
+		return protocol.TitleTest{}, err
+	}
+	title, err := runTitleCommand(ctx, tool.Command, titleSample)
+	return protocol.TitleTest{Title: title}, err
+}
+
+// setTitleTool saves the title tool of the settings. Each tool except none must first
+// pass a title test. A failed test saves nothing. The test holds no lock, so other
+// settings can save while it runs. A client that disconnects during the test cancels
+// it, and the tool does not save.
+func (s *Server) setTitleTool(ctx context.Context, id string) (protocol.TitleToolSet, error) {
+	var result protocol.TitleToolSet
+	if id != "" && id != "none" {
+		tool, err := findTitleTool(id)
+		if err != nil {
+			return result, err
+		}
+		if result.Title, err = runTitleCommand(ctx, tool.Command, titleSample); err != nil {
+			return result, fmt.Errorf("%s failed the title test, so the title tool did not change: %w", tool.Name, err)
+		}
+		if err = ctx.Err(); err != nil {
+			return result, err
+		}
+	}
+	var err error
+	result.Settings, err = s.store.SetTitleTool(id)
+	return result, err
 }
 
 // titleMarker starts the answer line. Agent CLIs can print status lines, the request,
@@ -337,12 +375,12 @@ func (s *Server) claimTitle(sid string, revision int64, data []byte) (text, comm
 	if err != nil || session.AutoTitle == "" {
 		return "", "", false
 	}
-	command, err = titleCommand(settings.TitleTool)
+	tool, err := findTitleTool(settings.TitleTool)
 	requested := err == nil && session.Title == ""
 	if claimed, err := s.store.ClaimTitle(sid, revision, settings.TitleTool, requested); err != nil || !claimed || !requested {
 		return "", "", false
 	}
-	return send.Text, command, true
+	return send.Text, tool.Command, true
 }
 
 // generateTitle replaces the derived title of a session with a summary of its first

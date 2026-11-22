@@ -29,7 +29,7 @@ test('adding the same tool twice keeps one copy', () => {
   assert.deepEqual(mergeToolEdit(tools, agent), tools);
 });
 
-test('a running title test keeps Test and the tool list disabled', () => {
+test('a running title test or title tool change keeps Test and the tool list disabled', () => {
   const tools = [{ id: 'claude', name: 'Claude', command: 'claude -p' }];
   assert.deepEqual(titleControls(tools, 'claude', false), { command: 'claude -p', test: true, select: true });
   // A save of another setting renders again during the test. Test stays disabled.
@@ -37,9 +37,41 @@ test('a running title test keeps Test and the tool list disabled', () => {
   assert.deepEqual(titleControls(tools, 'none', false), { command: '', test: false, select: true });
 });
 
-test('a title tool change needs a save', () => {
+test('a settings save does not save the title tool', () => {
+  // The title tool saves alone, after its test. A settings save keeps the saved tool.
   const titled = { ...settings, titleTool: 'none' };
-  assert.ok(!sameSettings(titled, { ...titled, titleTool: 'codex' }));
+  assert.ok(sameSettings(titled, { ...titled, titleTool: 'codex' }));
+});
+
+test('settings from a title tool change apply only when they are newer', () => {
+  let changes = 0;
+  const saves = new SettingsSaves(service(), () => changes++, () => {});
+  saves.saved = { ...settings, titleTool: 'none', port: 0 };
+  saves.update({ ...saves.saved, revision: 5, titleTool: 'codex' });
+  assert.equal(saves.saved.titleTool, 'codex');
+  assert.equal(changes, 1);
+  // A late reply of an earlier save does not undo the title tool change.
+  saves.update({ ...saves.saved, revision: 5, titleTool: 'none' });
+  saves.update({ ...saves.saved, revision: 4, titleTool: 'none' });
+  assert.equal(saves.saved.titleTool, 'codex');
+  assert.equal(changes, 1);
+});
+
+test('a save reply older than a title tool change does not undo it', async () => {
+  const server = service();
+  const saves = new SettingsSaves(server, () => {}, () => {});
+  saves.saved = { ...settings, titleTool: 'none', port: 0 };
+  let reply;
+  server.save = next => new Promise(resolve => { reply = () => resolve({ ...next, revision: next.revision + 1 }); });
+  const saving = saves.saveDefault('appearance', 'dark');
+  await new Promise(resolve => setImmediate(resolve));
+  // The title tool change commits after the save, but its reply comes first.
+  saves.update({ ...saves.saved, appearance: 'dark', revision: 6, titleTool: 'codex' });
+  reply();
+  await saving;
+  assert.equal(saves.saved.revision, 6);
+  assert.equal(saves.saved.titleTool, 'codex');
+  assert.deepEqual(saves.defaults, {});
 });
 
 test('an update check change needs a save', () => {
