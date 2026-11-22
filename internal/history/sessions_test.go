@@ -267,42 +267,59 @@ func TestSessionTitlesKeepUserAndDerivedValues(t *testing.T) {
 	}
 }
 
-// Only SetTitleTool changes the title tool. A settings save keeps the saved title tool,
-// and its revision check rejects a save from before a title tool change.
+// Only SetTitleTool changes the title tool and the custom title command. A settings save
+// keeps both, and its revision check rejects a save from before a title tool change.
 func TestTitleToolSettings(t *testing.T) {
 	store := testStore(t)
 	settings, err := store.Settings()
-	if err != nil || settings.TitleTool != "none" {
+	if err != nil || settings.TitleTool != "none" || settings.TitleCommand != "" {
 		t.Fatalf("default title tool: %+v, %v", settings, err)
 	}
 	for _, tool := range TitleTools {
-		saved, err := store.SetTitleTool(tool)
+		command := ""
+		if tool == "custom" {
+			command = `my-llm --fast "$(cat)"`
+		}
+		saved, err := store.SetTitleTool(tool, command)
 		if err != nil || saved.TitleTool != tool || saved.Revision != settings.Revision+1 {
 			t.Fatalf("set %s: %+v, %v", tool, saved, err)
 		}
 		settings = saved
 	}
-	if settings, err = store.SetTitleTool(""); err != nil || settings.TitleTool != "none" {
-		t.Fatalf("an empty title tool did not select none: %+v, %v", settings, err)
+	if settings.TitleCommand != `my-llm --fast "$(cat)"` {
+		t.Fatalf("custom command: %+v", settings)
 	}
-	if _, err = store.SetTitleTool("claude -p"); err == nil || !strings.Contains(err.Error(), "none, claude, codex, code-puppy, apple") {
-		t.Fatalf("accepted an unknown title tool: %v", err)
+	// Another tool keeps the saved custom command.
+	if settings, err = store.SetTitleTool("", ""); err != nil || settings.TitleTool != "none" || settings.TitleCommand != `my-llm --fast "$(cat)"` {
+		t.Fatalf("an empty title tool did not select none, or lost the custom command: %+v, %v", settings, err)
+	}
+	for _, test := range []struct{ tool, command, want string }{
+		{"claude -p", "", "none, claude, codex, code-puppy, apple, custom"},
+		{"codex", "codex exec -", "only the custom title tool takes a command"},
+		{"custom", " ", "enter a command for the custom title tool"},
+		{"custom", "my-llm\nrm -rf", "must be one line"},
+		{"custom", strings.Repeat("x", 1001), "at most 1000 bytes"},
+	} {
+		if _, err = store.SetTitleTool(test.tool, test.command); err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("set %q %q: %v, want %q", test.tool, test.command, err, test.want)
+		}
 	}
 	if after, err := store.Settings(); err != nil || after.Revision != settings.Revision {
 		t.Fatalf("a rejected title tool saved settings: %+v, %v", after, err)
 	}
 
-	// A settings save does not change the title tool, also with another value.
-	settings.TitleTool = "claude"
+	// A settings save does not change the title tool or the custom command, also with
+	// other values.
+	settings.TitleTool, settings.TitleCommand = "claude", "other"
 	settings.Appearance = "dark"
-	if settings, err = store.SaveSettings(settings); err != nil || settings.TitleTool != "none" || settings.Appearance != "dark" {
+	if settings, err = store.SaveSettings(settings); err != nil || settings.TitleTool != "none" || settings.TitleCommand != `my-llm --fast "$(cat)"` || settings.Appearance != "dark" {
 		t.Fatalf("a settings save changed the title tool: %+v, %v", settings, err)
 	}
-	if saved, err := store.Settings(); err != nil || saved.TitleTool != "none" {
+	if saved, err := store.Settings(); err != nil || saved.TitleTool != "none" || saved.TitleCommand != `my-llm --fast "$(cat)"` {
 		t.Fatalf("saved title tool: %+v, %v", saved, err)
 	}
 	stale := settings
-	if _, err = store.SetTitleTool("codex"); err != nil {
+	if _, err = store.SetTitleTool("codex", ""); err != nil {
 		t.Fatal(err)
 	}
 	stale.Appearance = "light"

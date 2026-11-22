@@ -100,7 +100,8 @@ export class SettingsSaves {
 }
 
 // The revision tracks saves. The other fields determine if a save is necessary. A
-// settings save keeps the saved title tool, so the title tool is not one of them.
+// settings save keeps the saved title tool and custom title command, so they are not
+// among them.
 export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&
     a.worktree === b.worktree && a.base === b.base &&
@@ -172,10 +173,19 @@ export function sameTools(a: Tool[], b: Tool[]): boolean {
   });
 }
 
-// The state of the title tool controls. busy reports a running title test or title tool
-// change. Test needs a tool and no busy state. A save of another setting does not change
-// this state.
-export function titleControls(tools: TitleTool[], selected: string, busy: boolean): { command: string; test: boolean; select: boolean } {
-  const tool = tools.find(tool => tool.id === selected);
-  return { command: tool?.command ?? '', test: !!tool && !busy, select: !busy };
+// The state of the title tool controls. shown is the tool in the list, and saved is the
+// saved tool. busy reports a running title test or title tool change. command is the
+// exact command of a built-in tool. custom shows the custom command field. Test needs
+// the saved tool, other than none, and no busy state. A save of another setting does not
+// change this state.
+export function titleControls(tools: TitleTool[], shown: string, saved: string, busy: boolean):
+  { command: string; custom: boolean; customize: boolean; test: boolean; select: boolean } {
+  const tool = tools.find(tool => tool.id === shown);
+  return {
+    command: tool?.command ?? '',
+    custom: shown === 'custom',
+    customize: !!tool && !busy,
+    test: shown !== 'none' && shown === saved && !busy,
+    select: !busy,
+  };
 }

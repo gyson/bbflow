@@ -130,6 +130,9 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 			if _, exists := original["port"]; !exists {
 				original["port"] = float64(0)
 			}
+			if _, exists := original["titleCommand"]; !exists {
+				original["titleCommand"] = ""
+			}
 			for _, tool := range original["tools"].([]any) {
 				delete(tool.(map[string]any), "continueCommand")
 			}
@@ -145,7 +148,7 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -164,9 +167,15 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			if version >= 8 {
 				appearance = "dark"
 			}
-			// The format 12 and 13 fixtures turned the release check off. Earlier upgrades turn
-			// it on. Each upgrade selects the automatic port.
-			if err != nil || settings.Appearance != appearance || settings.TitleTool != "none" || settings.UpdateCheck != (version < 12) || settings.Port != 0 || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}, TitleTool: "none", UpdateCheck: true})) {
+			// The format 12 to 14 fixtures turned the release check off. Earlier upgrades turn
+			// it on. Upgrades before format 14 select the automatic port. The format 14 fixture
+			// saved a port and the Codex title tool, and the upgrade keeps them. No upgrade
+			// saves a custom title command.
+			titleTool, port := "none", 0
+			if version == 14 {
+				titleTool, port = "codex", 50000
+			}
+			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != "" || settings.UpdateCheck != (version < 12) || settings.Port != port || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}, TitleTool: "none", UpdateCheck: true})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
@@ -317,6 +326,20 @@ func TestPortSettingUpgradeRollsBack(t *testing.T) {
 		store.Close()
 		t.Fatal("accepted blocked port settings update")
 	} else if !strings.Contains(err.Error(), "apply history migration 14") {
+		t.Fatal(err)
+	}
+	assertSnapshot(t, rawDatabase(t, path), before, true)
+}
+
+func TestTitleCommandUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 14)
+	execSQL(t, db, "CREATE TRIGGER reject_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted blocked title command settings update")
+	} else if !strings.Contains(err.Error(), "apply history migration 15") {
 		t.Fatal(err)
 	}
 	assertSnapshot(t, rawDatabase(t, path), before, true)

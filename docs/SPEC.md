@@ -895,45 +895,74 @@ which send was its first, so it never gets an automatic title, also after the us
 clears its title.
 
 **Automatic titles** in Settings selects the title tool: None, Claude, Codex, Code
-Puppy, or Apple. The settings JSON stores `titleTool` as `none`, `claude`, `codex`,
-`code-puppy`, or `apple`. None turns automatic titles off. This is the default.
-`bbflow settings set title-tool` sets the same value.
+Puppy, Apple, or Custom. The settings JSON stores `titleTool` as `none`, `claude`,
+`codex`, `code-puppy`, `apple`, or `custom`. None turns automatic titles off. This is the
+default. `bbflow title-tool` selects and tests the title tool from the CLI. See
+[title tool commands](COMMANDS.md#title-tool).
+
+For a built-in tool, the settings JSON stores only the choice. The server supplies the
+command, so a later release can change it. Custom runs the command in `titleCommand`.
+This command stays saved when the user selects another tool, so a later selection of
+Custom can use it again. Only Custom has a saved command.
+
+A custom command follows the rules of a tool startup command: one line, at most 1,000
+bytes, and no control characters. It runs as a built-in command runs, with the same
+request on standard input. It must print a line that starts with `bbflow-title:`. The
+request asks the model for this line. A custom command does not get the limits of the
+built-in commands, such as turned-off tools, hooks, and MCP servers. The user is
+responsible for what it does. A command that reads the request with `"$(cat)"` puts the
+message in the command arguments, where other programs on the Mac can read it.
+Standard input does not do this.
 
 A change to a title tool other than None saves only after the tool passes a title test.
 The server runs the tool once with the fixed sample message, as **Test** does. When the
-tool gives a title, the server saves the tool and returns the title. When the test
-fails or times out, the server saves nothing. Its error names the tool, tells that the
-title tool did not change, and gives the reason. When the client disconnects during the
-test, the server stops the test and saves nothing. A change to None saves at once,
-without a test. A change to the saved tool tests that tool again and saves it again.
+tool gives a title, the server saves the tool and returns the command and the title.
+For Custom, the command saves together with the choice. When the test fails or times
+out, the server saves nothing. The error tells that the tool is not configured, names
+the saved tool, and gives the reason, for example `Codex is not configured. The title
+tool is still None. The test failed: …`. When the client disconnects during the test,
+the server stops the test and saves nothing. A change to None saves at once, without a
+test. A change to the saved tool tests that tool again and saves it again. Custom
+without a command tests the saved custom command.
 
 The test runs in the server environment, as the title runs of sessions do. Thus a CLI
 that works in a terminal of the user, but is not on the PATH of the server, fails the
 test. The test holds no lock, so other settings can save while it runs. A passed test
 does not prevent later failures, for example after a sign-out, a CLI update, or a macOS
 update that needs a new `fm` license acceptance. These later failures go only to
-`server.log`. **Test** checks the saved tool again.
+`server.log`. **Test** and `bbflow title-tool test` check the saved tool again.
 
-Only `title-tool-set` changes the title tool. `settings-save` keeps the saved title
-tool. A change of the title tool gives the settings a new revision, so a save from an
+Only `title-tool-set` changes the title tool and the custom command. `settings-save`
+keeps both. A title tool change gives the settings a new revision, so a save from an
 earlier revision fails.
 
-In Settings, a selection in the tool list starts the change. The list and **Test** stay
-disabled until the change ends. During the test, the list shows the new tool, and the
-status shows **Saving…**. The result area shows the sample message and a line such as
-**Testing Codex. This can take up to 90 seconds.** After a passed test, a green line
-shows that the tool is now the title tool, with the title from the sample message. After
-a failed test, the list shows the saved tool again. A red line under it shows the error
-and tells the user to fix the problem and select the tool again. A reload or close of
-the page during the test cancels the change. The page asks for confirmation first.
+In Settings, a selection in the tool list starts the change. A spinner shows next to the
+list until the change ends. The spinner does not turn when the system asks for reduced
+motion. The list, **Test**, and the custom command controls stay disabled during the
+change. The list shows the new tool, and the status shows **Saving…**. The result area
+shows the sample message, the exact command, and a line such as **Testing Codex. This
+can take up to 90 seconds.** After a passed test, a green line tells that the tool is
+configured, with the title from the sample message. After a failed test, the list shows
+the saved tool again. A red line under it shows the error and tells the user to fix the
+problem and select the tool again. A reload or close of the page during the test
+cancels the change. The page asks for confirmation first.
 
-In the CLI, `bbflow settings set title-tool` writes a note to standard error before the
-test. It waits 100 seconds for the reply, longer than the 90-second server limit. After
-a passed test, it prints the title from the sample message. After a failed test, it
-prints the error and exits with status 1. An interrupt of the command cancels the test,
-and the tool does not save. A change to None prints nothing.
+For a built-in tool, Settings shows the exact command from the server and a note that a
+later release can change it. **Customize this command** copies that command into the
+custom command field and selects Custom. Nothing saves until **Save and test**. A
+selection of Custom with a saved command tests that command at once. Without a saved
+command, the field waits for a command, and **Save and test** starts the change. A
+custom command that fails its test stays in the field, with Custom in the list, so that
+the user can fix it. The status then shows **Changes not saved**.
 
-The server owns the command of each title tool. Users cannot edit these commands:
+In the CLI, `bbflow title-tool set` writes the tool name and its exact command to
+standard error before the test. It waits 100 seconds for the reply, longer than the
+90-second server limit. After a passed test, it prints that the tool is configured, with
+the title from the sample message. After a failed test, it prints the error and exits
+with status 1. An interrupt of the command cancels the test, and the tool does not save.
+
+The server owns the command of each built-in title tool. Users cannot edit these
+commands, but **Customize this command** can start a custom command from a copy:
 
 | Title tool | Command |
 | --- | --- |
@@ -1035,14 +1064,14 @@ crash or restart is lost. The server does not run it again.
 After each title change, the status watch sends a new title revision. Each view then
 reads the session list again.
 
-**Test** in Settings runs the saved title tool once. It is not available for None.
-Test and the tool list stay disabled until the test ends, also when another setting
-saves. A result shows only while its tool stays selected, also after another view
-changes the tool. The browser waits 100 seconds for the reply, longer than the 90-second server
-limit.
-It sends a fixed sample message, not a message of a session, and saves nothing. The
-server owns the sample message, and `title-tools` returns it with the tools. The
-result shows the sample message first. Under it, a green line shows **Test passed**
+**Test** in Settings runs the saved title tool once. It is not available for None, or
+while the list shows a tool that is not saved. Test and the tool list stay disabled
+until the test ends, also when another setting saves. A result shows only while its
+tool stays selected, also after another view changes the tool. The browser waits 100
+seconds for the reply, longer than the 90-second server limit. It sends a fixed sample
+message, not a message of a session, and saves nothing. The server owns the sample
+message, and `title-tools` returns it with the built-in tools. The result shows the
+sample message and the command first. Under them, a green line shows **Test passed**
 with the title from the sample message. A red line shows **Test failed** with the
 error. A change of the title tool replaces the result with the result of the change.
 
@@ -1932,7 +1961,7 @@ as one transaction after column, index, and foreign-key checks. Any failure roll
 the entire upgrade and stops startup. A failed SQL step reports its migration number.
 WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4 through 14. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 15. In the same
   transaction, a new database sets `worktree` to true in the settings JSON. Thus new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -1965,7 +1994,10 @@ WAL is enabled after the schema transaction commits.
 - Format 13 gains `port: 0` in the settings JSON through migration 14. Port `0` selects
   the automatic port, so the server keeps its last port. The settings revision and the
   other values stay.
-- Format 14 opens without running scripts or rewriting history, settings, or metadata.
+- Format 14 gains `titleCommand: ""` in the settings JSON through migration 15. The
+  custom title tool runs this command. The upgrade saves no command and keeps the
+  selected title tool, the settings revision, and the other values.
+- Format 15 opens without running scripts or rewriting history, settings, or metadata.
 
 The upgrade preserves IDs, timestamps, event sequences, original blobs, text, drafts,
 and attachments. It also preserves the highest allocated event sequence. Migration
@@ -1974,7 +2006,7 @@ afterward. Repeated or concurrent opens see the committed version and skip compl
 steps.
 
 Formats 1 and 2 have no known migration path in this repository. They, nonempty
-unversioned databases, and formats newer than 13 are rejected without changing their
+unversioned databases, and formats newer than 15 are rejected without changing their
 schema or records. A newer format error asks for a newer executable. There is no
 downgrade path, external migration command, or automatic backup.
 
@@ -2340,7 +2372,7 @@ launch in a worktree, and separate drafts for subsequent sessions.
 
 No real agent CLI was used for these project checks.
 
-Frozen schemas from repository history test upgrades from formats 3–13 to format 14 and
+Frozen schemas from repository history test upgrades from formats 3–14 to format 15 and
 verify that reopen preserves the upgraded data. Fixtures compare original blobs, archive
 flags, metadata, and event allocation state. They test rollback of the entire upgrade
 after SQL, schema, or foreign-key failures. They also cover repeated opens, concurrent
@@ -2411,16 +2443,35 @@ break does not reach the request, so an echoed request gives no title.
 
 Title tool change fixtures verify that a tool saves only after it passes a test with the
 sample message. A failed test, a canceled test, and an unknown tool save nothing and keep
-the revision. None saves without a run of the command. A settings save keeps the saved
-title tool, and a save from before a title tool change fails. A CLI test runs a real test
-server with synthetic Code Puppy and Codex CLIs on its PATH. It verifies the passed and
-failed messages and the unchanged settings after the failure. Web fixtures verify the
-100-second wait of `title-tool-set`. They also verify that a late reply of an earlier
-settings save does not undo a title tool change. A browser check of a demo instance used
-the same synthetic CLIs on the PATH of the server. A selection of Codex showed the test
-state, then the list showed None again with the error. A selection of Code Puppy saved
-it with its title. A later appearance save from the CLI and from the page kept Code
-Puppy. No real agent CLI or model was used.
+the revision. None saves without a run of the command. A built-in tool with a command is
+rejected. Custom saves its command with the choice, keeps it across a change to another
+tool, and tests the saved command without a new one. A first send then runs the saved
+custom command. Custom without a command, with a second line, or with more than 1,000
+bytes is rejected. A settings save keeps the saved title tool and custom command, and a
+save from before a title tool change fails. Migration fixtures upgrade a frozen format
+14 archive with a saved port and title tool. The upgrade keeps them and adds an empty
+custom command. A blocked settings update rolls back migration 15.
+
+A CLI test runs a real test server with synthetic Code Puppy, Codex, and custom CLIs on
+its PATH. It verifies `bbflow title-tool list`, `show`, `set`, and `test`: the exact
+commands, the configured and not configured messages, exit status 1, argument errors,
+and unchanged settings after each failure. Web fixtures verify the title control states
+and the 100-second wait of `title-tool-set`. They also verify that a late reply of an
+earlier settings save does not undo a title tool change. A browser check of a demo
+instance used synthetic Code Puppy and Codex CLIs on the PATH of the server, before the
+Custom choice. A selection of Codex showed the test state, then the list showed None
+again with the error. A selection of Code Puppy saved it with its title. A later
+appearance save from the CLI and from the page kept Code Puppy. No real agent CLI or
+model was used in these checks.
+
+A later browser check of a new instance tried Custom. A selection of Custom without a
+saved command showed the empty field and **Changes not saved**. A failing command showed
+the spinner, then the not configured error, with the command kept in the field. A
+passing command saved and showed its title. Apple then passed its test with `fm`.
+**Customize this command** copied the exact Apple command and saved nothing. A change
+to None kept the custom command, and a new selection of Custom tested it at once. A
+restart of a demo instance with the new build upgraded format 14 to 15. It kept the
+settings revision, the selected title tool, and the port.
 
 Live checks of the Apple command used `fm` of macOS 27.0.1 with the FM1 terms, version
 1.0. Before the terms were accepted, `fm` ended with exit status 69 and a colored notice

@@ -24,12 +24,13 @@ lines identify an optional argument. Do not type the brackets.
 | `bbflow storage [--redact]` | See which projects, sessions, and event kinds use the most space. | Reads the archive. Prints a Markdown report. |
 | `bbflow tool list\|add\|remove` | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
 | `bbflow settings get\|set` | Show or change appearance, session defaults, the update check, and the server port. | Changes saved settings. Starts no session. |
+| `bbflow title-tool list\|show\|set\|test` | Show, select, or test the tool for automatic session titles. | `set` and `test` run the tool once with a sample message. `set` saves the tool only after the test passes. Starts no session. |
 | `bbflow skill` | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
 
 Create, browse, reopen, and stop sessions in the web UI. The CLI has no session
 operations or interactive terminal client. `query` handles custom history reads. `ui`
-accepts no workspace or session arguments. `tool` and `settings` change the same saved
-settings as the Settings page.
+accepts no workspace or session arguments. `tool`, `settings`, and `title-tool` change
+the same saved settings as the Settings page.
 
 ## Instance directory
 
@@ -521,7 +522,6 @@ bbflow settings set appearance dark
 bbflow settings set default-tool Codex
 bbflow settings set worktree true
 bbflow settings set base main
-bbflow settings set title-tool codex
 bbflow settings set update-check false
 bbflow settings set port 50000
 ```
@@ -536,7 +536,6 @@ bbflow settings set port 50000
 | `default-tool` | The name of a tool. An empty value, `""`, selects the built-in Shell. |
 | `worktree` | `true` or `false`. `true` selects **Use worktree** for new drafts in Git folders. A new installation starts with `true`. An upgrade keeps the saved value. |
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
-| `title-tool` | `none`, `claude`, `codex`, `code-puppy`, or `apple`. It selects the CLI that makes automatic session titles. `apple` uses the on-device model of macOS 27. `none` turns them off. A tool other than `none` saves only after it passes a test with a sample message. The test can take up to 90 seconds. A new installation starts with `none`. The upgrade to SQLite format 10, which added automatic titles, also set `none`. Later upgrades keep the saved value. See [session titles](SPEC.md#session-titles) for the commands and the test. |
 | `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
 | `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port, or when browsers refuse the port, such as 6000 and 10080. See [Instance directory](#instance-directory). |
 
@@ -544,12 +543,61 @@ bbflow settings set port 50000
 not move the running server. The command tells you that the port applies at the next
 server start. A restart stops all sessions.
 
-A `title-tool` change runs the selected CLI once through the server, with a fixed sample
-message. Claude, Codex, and Code Puppy send this message to their provider. If the test
-passes, the command saves the tool and prints the title from the sample message. If the
-test fails, the command prints the error, exits with status 1, and changes nothing.
-Interrupt the command to cancel the test. Then the tool does not save. `none` saves
-without a test.
+Use [`title-tool`](#title-tool) to select the title tool.
+
+## Title tool
+
+```text
+bbflow [--dir DIR] title-tool list
+bbflow [--dir DIR] title-tool show
+bbflow [--dir DIR] title-tool set TOOL
+bbflow [--dir DIR] title-tool set custom [COMMAND]
+bbflow [--dir DIR] title-tool test
+```
+
+```sh
+bbflow title-tool set apple
+bbflow title-tool set custom 'my-llm --fast'
+bbflow title-tool test
+bbflow title-tool set none
+```
+
+The title tool makes automatic session titles. `TOOL` is `none`, `claude`, `codex`,
+`code-puppy`, `apple`, or `custom`. `apple` uses the on-device model of macOS 27. `none`
+turns automatic titles off. A new installation starts with `none`. The upgrade to SQLite
+format 10, which added automatic titles, also set `none`. Later upgrades keep the saved
+value.
+
+- `list` prints the ID and the exact command of each built-in tool, one tool on each
+  line. The commands come from the running server. A later release can change them.
+- `show` prints the saved tool and the command that the server runs for it. It also
+  prints a saved custom command when another tool is selected.
+- `set TOOL` runs the tool once with a fixed sample message, then saves it. Before the
+  test, the command writes the tool name and its exact command to standard error. If the
+  test passes, it prints that the tool is configured, with the title from the sample
+  message. If the test fails, it prints that the tool is not configured, the saved tool,
+  and the error. It then exits with code `1` and changes nothing. `set none` saves
+  without a test.
+- `set custom COMMAND` tests `COMMAND` and saves it together with the Custom choice.
+  `set custom` without `COMMAND` tests the saved custom command again. Quote a command
+  that contains spaces. Only `custom` takes a command.
+- `test` runs the saved tool once with the sample message and saves nothing. If the test
+  fails, the command exits with code `1`. Use it after a sign-out or a CLI update.
+
+A test can take up to 90 seconds. The command waits 100 seconds for the reply. Press
+Ctrl-C to cancel a test. Then the tool does not save. Claude, Codex, and Code Puppy send
+the sample message to their provider and use your sign-in. Apple keeps it on the Mac.
+The test runs in the server environment, so the CLI must be on the PATH of the server.
+
+A custom command gets the request on standard input. It must print one line that starts
+with `bbflow-title:` and then the title. It must be one line of at most 1,000 bytes. A
+custom command does not get the limits of the built-in commands, such as turned-off
+tools, hooks, and MCP servers. Prefer standard input to `"$(cat)"`, because other
+programs can read the arguments of a command. See [session titles](SPEC.md#session-titles).
+
+**Impact:** `set` saves the change in SQLite with a new settings revision after a passed
+test. Another tool keeps the saved custom command. `list`, `show`, and `test` change
+nothing. No command starts a session or changes the titles of existing sessions.
 
 ## Agent guide
 
@@ -583,8 +631,8 @@ or read history. `--dir` and `BBFLOW_DIR` have no effect on this command.
 
 ## Exit codes
 
-Help and successful server, UI, query, storage, tool, settings, and skill commands exit with
-code `0`. bbflow errors print a message to standard error and exit with code `1`.
+Help and successful server, UI, query, storage, tool, settings, title-tool, and skill
+commands exit with code `0`. bbflow errors print a message to standard error and exit with code `1`.
 
 See [README.md](../README.md) for installation, [DEVELOPMENT.md](DEVELOPMENT.md) for
 local builds, and [SPEC.md](SPEC.md) for implementation details and current limitations.

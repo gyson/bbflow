@@ -6,10 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"bbflow/internal/client"
 	"bbflow/internal/history"
@@ -33,10 +31,10 @@ Keys:
   default-tool  a tool name, or "" for the built-in Shell
   worktree      true or false
   base          the default Git branch or commit, such as HEAD
-  title-tool    none, claude, codex, code-puppy, or apple for automatic session titles;
-                a tool saves only after it passes a test, which can take 90 seconds
   update-check  true or false: read the latest release from GitHub once a day
-  port          1024 to 65535, or 0 for an automatic port; applies at the next server start`
+  port          1024 to 65535, or 0 for an automatic port; applies at the next server start
+
+Use bbflow title-tool to select the title tool.`
 
 func toolCommand(target client.Target, args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
@@ -138,9 +136,6 @@ func settingsCommand(target client.Target, args []string) error {
 		return errors.New("settings get takes no arguments")
 	case args[0] == "set" && len(args) == 3:
 		key, value := args[1], args[2]
-		if key == "title-tool" {
-			return setTitleTool(target, strings.TrimSpace(value))
-		}
 		err := changeSettings(target, func(settings *history.Settings) error {
 			switch key {
 			case "appearance":
@@ -181,7 +176,7 @@ func settingsCommand(target client.Target, args []string) error {
 				}
 				settings.Port = port
 			default:
-				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, title-tool, update-check, or port", key)
+				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, update-check, or port", key)
 			}
 			return nil
 		})
@@ -211,31 +206,6 @@ func findTool(tools []history.Tool, name string) (int, error) {
 		found = i
 	}
 	return found, nil
-}
-
-// titleTestWait is the time that the CLI waits for a title tool change. The server
-// stops a title test after 90 seconds, so the CLI waits a little longer. See
-// titleTimeout in internal/server/titles.go.
-const titleTestWait = 100 * time.Second
-
-// setTitleTool saves the title tool. The server first tests each tool except none with
-// a sample message. A failed test saves nothing, and the server error tells why.
-func setTitleTool(target client.Target, tool string) error {
-	if tool != "none" && slices.Contains(history.TitleTools, tool) {
-		fmt.Fprintf(os.Stderr, "Testing the %s title tool. This can take up to 90 seconds.\n", tool)
-	}
-	result, err := target.CallWithin(protocol.Request{Operation: "title-tool-set", Settings: &history.Settings{TitleTool: tool}}, titleTestWait)
-	if err != nil {
-		return err
-	}
-	var set protocol.TitleToolSet
-	if err = json.Unmarshal(result, &set); err != nil {
-		return err
-	}
-	if set.Title != "" {
-		fmt.Printf("Test passed. The title tool made the title %q from a sample message.\n", set.Title)
-	}
-	return nil
 }
 
 func loadSettings(target client.Target) (history.Settings, error) {

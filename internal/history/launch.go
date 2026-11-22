@@ -26,8 +26,11 @@ type Settings struct {
 	Base        string `json:"base"`
 	Tools       []Tool `json:"tools"`
 	// TitleTool selects the CLI that makes automatic session titles. It is one of
-	// TitleTools. "none" turns automatic titles off.
+	// TitleTools. "none" turns automatic titles off. "custom" runs TitleCommand.
 	TitleTool string `json:"titleTool"`
+	// TitleCommand is the command of the custom title tool. It stays saved when another
+	// title tool is selected. The server owns the commands of the other title tools.
+	TitleCommand string `json:"titleCommand"`
 	// UpdateCheck lets the server read the latest release from GitHub once a day.
 	UpdateCheck bool `json:"updateCheck"`
 	// Port is the loopback port that the server uses at its next start. 0 selects the
@@ -43,8 +46,8 @@ const MinPort = 1024
 var blockedPorts = []int{1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080}
 
 // TitleTools lists the values of Settings.TitleTool. The server owns the command of each
-// CLI.
-var TitleTools = []string{"none", "claude", "codex", "code-puppy", "apple"}
+// CLI, except custom, which runs Settings.TitleCommand.
+var TitleTools = []string{"none", "claude", "codex", "code-puppy", "apple", "custom"}
 
 // Preparation stores a snapshot of the selected preset. Preset changes never rewrite a
 // prepared or launched session. The server owns this state.
@@ -97,8 +100,9 @@ func scanSettings(row *sql.Row) (Settings, error) {
 }
 
 // SaveSettings saves the settings from their current revision. It keeps the saved title
-// tool, because only SetTitleTool changes it. A title tool change between the read of
-// the saved tool and the write changes the revision, so the write then fails.
+// tool and custom title command, because only SetTitleTool changes them. A title tool
+// change between the read of the saved values and the write changes the revision, so
+// the write then fails.
 func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	switch settings.Appearance {
 	case "":
@@ -151,7 +155,7 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	if err != nil {
 		return settings, err
 	}
-	settings.TitleTool = saved.TitleTool
+	settings.TitleTool, settings.TitleCommand = saved.TitleTool, saved.TitleCommand
 	data, err := json.Marshal(settings)
 	if err != nil {
 		return settings, err
@@ -164,16 +168,39 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	return settings, nil
 }
 
-// SetTitleTool saves the title tool alone, with a new revision, and returns the saved
-// settings. It does not test the tool. The server tests it before this call.
-func (s *Store) SetTitleTool(tool string) (Settings, error) {
+// SetTitleTool saves the title tool, with a new revision, and returns the saved
+// settings. For custom, command is the custom command, and it saves too. Other tools
+// take no command and keep the saved custom command. SetTitleTool does not test the
+// tool. The server tests it before this call.
+func (s *Store) SetTitleTool(tool, command string) (Settings, error) {
 	if tool == "" {
 		tool = "none"
 	}
 	if !slices.Contains(TitleTools, tool) {
 		return Settings{}, fmt.Errorf("title tool must be one of %s", strings.Join(TitleTools, ", "))
 	}
-	return scanSettings(s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?) WHERE id=1 RETURNING revision,data", tool))
+	if tool != "custom" {
+		if command != "" {
+			return Settings{}, errors.New("only the custom title tool takes a command")
+		}
+		return scanSettings(s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?) WHERE id=1 RETURNING revision,data", tool))
+	}
+	if err := ValidateTitleCommand(command); err != nil {
+		return Settings{}, err
+	}
+	return scanSettings(s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?,'$.titleCommand',?) WHERE id=1 RETURNING revision,data", tool, command))
+}
+
+// ValidateTitleCommand checks a custom title command. It follows the rules of a tool
+// startup command, and it cannot be empty.
+func ValidateTitleCommand(command string) error {
+	if strings.TrimSpace(command) == "" {
+		return errors.New("enter a command for the custom title tool")
+	}
+	if len(command) > 1000 || !utf8.ValidString(command) || strings.IndexFunc(command, unicode.IsControl) >= 0 {
+		return errors.New("the custom title command must be one line, at most 1000 bytes, without control characters")
+	}
+	return nil
 }
 
 func revisionChanged(result sql.Result, err error) error {

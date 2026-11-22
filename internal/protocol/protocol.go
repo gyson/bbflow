@@ -315,21 +315,25 @@ type TitleTool struct {
 	Command string `json:"command"`
 }
 
-// TitleTools lists the title tools. Sample is the message that a title test sends.
+// TitleTools lists the built-in title tools. Sample is the message that a title test
+// sends. The custom title tool is not in the list, because its command is in Settings.
 type TitleTools struct {
 	Tools  []TitleTool `json:"tools"`
 	Sample string      `json:"sample"`
 }
 
-// TitleTest is the title that a title tool made from the sample message.
+// TitleTest is the command that a title test ran and the title that it made from the
+// sample message.
 type TitleTest struct {
-	Title string `json:"title"`
+	Command string `json:"command"`
+	Title   string `json:"title"`
 }
 
-// TitleToolSet holds the settings after a title tool change. Title is the title of the
-// test, or empty for none, which has no test.
+// TitleToolSet holds the settings after a title tool change, and the command and the
+// title of its test. Command and Title are empty for none, which has no test.
 type TitleToolSet struct {
 	Settings history.Settings `json:"settings"`
+	Command  string           `json:"command"`
 	Title    string           `json:"title"`
 }
 

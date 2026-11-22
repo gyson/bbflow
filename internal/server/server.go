@@ -240,9 +240,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		// A disconnect cancels the test. Then title-tool-set saves nothing.
 		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) {
 			if request.Operation == "title-test" {
-				return testTitleTool(ctx, request.Settings.TitleTool)
+				return s.testTitleTool(ctx, request.Settings.TitleTool, request.Settings.TitleCommand)
 			}
-			return s.setTitleTool(ctx, request.Settings.TitleTool)
+			return s.setTitleTool(ctx, request.Settings.TitleTool, request.Settings.TitleCommand)
 		})
 	case "session-resume":
 		s.resumeSession(conn, request.Session, request.Run, request.Size)

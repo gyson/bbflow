@@ -36,10 +36,18 @@ export class SettingsView {
   private readonly editTool = toolEditor('edit-tool');
   private readonly toolError = element('tool-error', HTMLElement);
   private readonly titleTool = element('title-tool', HTMLSelectElement);
+  private readonly titleSpinner = element('title-spinner', HTMLElement);
+  private readonly titleBuiltin = element('title-builtin', HTMLElement);
   private readonly titleCommand = element('title-tool-command', HTMLElement);
+  private readonly customForm = element('title-custom', HTMLFormElement);
+  private readonly customCommand = element('title-custom-command', HTMLInputElement);
+  private readonly customSave = element('title-custom-save', HTMLButtonElement);
+  private readonly customize = element('title-customize', HTMLButtonElement);
   private readonly titleTest = element('title-test', HTMLButtonElement);
   private readonly testResult = element('title-test-result', HTMLElement);
   private readonly testSample = element('title-test-sample', HTMLElement);
+  private readonly testRun = element('title-test-run', HTMLElement);
+  private readonly testCommand = element('title-test-command', HTMLElement);
   private readonly testOutcome = element('title-test-outcome', HTMLElement);
   private readonly testDetail = element('title-test-detail', HTMLElement);
 
@@ -58,6 +66,11 @@ export class SettingsView {
   private settingTool: string | null = null;
   // The tool of the shown test result. A result shows only under this tool.
   private testedTool = '';
+  // customOpen reports that the list shows Custom, but Custom is not saved. The custom
+  // command field then waits for a command, or keeps a command that failed its test.
+  private customOpen = false;
+  // The saved custom command that the field showed last. Other text is an edit.
+  private renderedCustom = '';
   private editing: Tool | null = null;
   private newToolId = '';
   private toolBusy = false;
@@ -93,7 +106,10 @@ export class SettingsView {
     this.addTool.cancel.onclick = () => this.resetAddTool();
     this.editTool.cancel.onclick = () => this.closeEditor();
     this.addTool.form.oninput = this.editTool.form.oninput = () => this.showStatus();
-    this.titleTool.onchange = () => void this.setTitleTool(this.titleTool.value);
+    this.titleTool.onchange = () => this.selectTitleTool(this.titleTool.value);
+    this.customForm.onsubmit = event => { event.preventDefault(); this.saveCustom(); };
+    this.customCommand.oninput = () => this.showStatus();
+    this.customize.onclick = () => this.customizeTool();
     this.titleTest.onclick = () => void this.testTitleTool();
     this.addTool.form.onsubmit = event => { event.preventDefault(); this.saveTool(this.addTool, null); };
     this.editTool.form.onsubmit = event => {
@@ -112,7 +128,7 @@ export class SettingsView {
     if (!server) return;
     if (!this.titleTools.length) {
       ({ tools: this.titleTools, sample: this.titleSample } = await call(server, { operation: 'title-tools' }));
-      this.titleTool.replaceChildren(new Option('None', 'none'), ...this.titleTools.map(tool => new Option(tool.name, tool.id)));
+      this.titleTool.replaceChildren(new Option('None', 'none'), ...this.titleTools.map(tool => new Option(tool.name, tool.id)), new Option('Custom', 'custom'));
     }
     if (!this.pending() && !this.editing) {
       const settings = await call(server, { operation: 'settings-get' });
@@ -128,7 +144,7 @@ export class SettingsView {
 
   private pending(): boolean {
     return this.saves.writes > 0 || Object.keys(this.saves.defaults).length > 0 || this.base.value !== this.renderedBase ||
-      this.portField.edited || this.settingTool !== null ||
+      this.portField.edited || this.settingTool !== null || this.customOpen || this.customCommand.value !== this.renderedCustom ||
       !!(this.addTool.name.value || this.addTool.command.value) ||
       !!this.editing && (this.editTool.name.value !== this.editing.name || this.editTool.command.value !== this.editing.command);
   }
@@ -159,7 +175,12 @@ export class SettingsView {
     if (this.port.value !== port) this.port.value = port;
     const server = this.server();
     this.portStatus.textContent = server ? portStatus(saved.port, server.port) : '';
-    this.titleTool.value = this.settingTool ?? saved.titleTool ?? 'none';
+    this.titleTool.value = this.settingTool ?? (this.customOpen ? 'custom' : saved.titleTool ?? 'none');
+    // Keep any text entered in the custom command field since the last render.
+    if (this.customCommand.value === this.renderedCustom) {
+      this.renderedCustom = saved.titleCommand ?? '';
+      this.customCommand.value = this.renderedCustom;
+    }
     this.showTitleTool();
     if (!this.renderedTools || !sameTools(saved.tools, this.renderedTools)) {
       this.tool.replaceChildren(new Option('Shell', ''), ...saved.tools.map(tool => new Option(tool.name, tool.id)));
@@ -330,59 +351,123 @@ export class SettingsView {
     (edit ?? this.addTool.name).focus();
   }
 
-  // Show the command of the selected title tool. None has no command and no test. A
-  // running test or change keeps Test and the list disabled, also across a render.
+  // Show the controls of the tool in the list. A built-in tool shows its exact command
+  // and Customize. Custom shows its command field. None has no command and no test. A
+  // running test or change keeps the controls disabled and shows the spinner, also across
+  // a render.
   private showTitleTool(): void {
     // Another view or a reload can change the saved tool. Hide a result of another tool.
     if (this.titleTool.value !== this.testedTool) this.testResult.hidden = true;
-    const controls = titleControls(this.titleTools, this.titleTool.value, this.busy);
+    const controls = titleControls(this.titleTools, this.titleTool.value, this.saved?.titleTool ?? 'none', this.busy);
     this.titleCommand.textContent = controls.command;
-    this.titleCommand.parentElement!.hidden = !controls.command;
+    this.titleBuiltin.hidden = !controls.command;
+    this.customize.hidden = !controls.command;
+    this.customize.disabled = !controls.customize;
+    this.customForm.hidden = this.customSave.hidden = !controls.custom;
+    this.customCommand.disabled = this.customSave.disabled = !controls.select;
     this.titleTest.disabled = !controls.test;
     this.titleTool.disabled = !controls.select;
+    this.titleSpinner.hidden = !this.busy;
   }
 
-  // Show the state of a test: the sample message, then the outcome, then a note. state is
-  // running, passed, or failed. A result without a test does not show the sample.
-  private showTest(state: 'running' | 'passed' | 'failed', outcome: string, detail = '', sample = true): void {
+  // Show the state of a test: the sample message, the command, the outcome, and a note.
+  // state is running, passed, or failed. A result without a test shows no sample.
+  private showTest(state: 'running' | 'passed' | 'failed', outcome: string, detail = '', sample = true, command = ''): void {
     this.testResult.className = state;
     this.testSample.textContent = `Sample message: ${this.titleSample}`;
     this.testSample.hidden = !sample;
+    this.testCommand.textContent = command;
+    this.testRun.hidden = !command;
     this.testOutcome.textContent = outcome;
     this.testDetail.textContent = detail;
     this.testDetail.hidden = !detail;
     this.testResult.hidden = false;
   }
 
-  // Save the selected title tool. The server first tests each tool except None with the
-  // sample message. A failed test saves nothing, and the list shows the saved tool again
-  // with the error below it.
-  private async setTitleTool(tool: string): Promise<void> {
+  // The name of a title tool and the command that a test of it runs. Custom without a
+  // command runs the saved custom command.
+  private describeTitleTool(tool: string, command = ''): { name: string; run: string } {
+    if (tool === 'custom') return { name: 'Custom', run: command || this.saved?.titleCommand || '' };
+    const builtin = this.titleTools.find(candidate => candidate.id === tool);
+    return { name: builtin?.name ?? 'None', run: builtin?.command ?? '' };
+  }
+
+  // A selection in the list starts a title tool change. Custom with a saved command
+  // tests it at once. Without one, the command field waits for a command.
+  private selectTitleTool(tool: string): void {
+    if (tool !== 'custom') {
+      this.customOpen = false;
+      this.customCommand.value = this.renderedCustom;
+      void this.setTitleTool(tool);
+      return;
+    }
+    if (this.saved?.titleCommand) {
+      void this.setTitleTool('custom');
+      return;
+    }
+    this.customOpen = true;
+    this.testResult.hidden = true;
+    this.render();
+    this.customCommand.focus({ preventScroll: true });
+  }
+
+  // Save and test the command in the custom command field.
+  private saveCustom(): void {
+    const command = this.customCommand.value.trim();
+    if (command) {
+      void this.setTitleTool('custom', command);
+      return;
+    }
+    this.testedTool = 'custom';
+    this.showTest('failed', '✕ Enter a command for the custom title tool.', '', false);
+    this.customCommand.focus({ preventScroll: true });
+  }
+
+  // Copy the exact command of the built-in tool in the list into the custom command
+  // field. Nothing saves until Save and test.
+  private customizeTool(): void {
+    const tool = this.titleTools.find(candidate => candidate.id === this.titleTool.value);
+    if (!tool || this.busy) return;
+    this.customCommand.value = tool.command;
+    this.customOpen = true;
+    this.testResult.hidden = true;
+    this.render();
+    this.customCommand.focus({ preventScroll: true });
+  }
+
+  // Save a title tool. The server first tests each tool except None with the sample
+  // message. A failed test saves nothing. Then the list shows the saved tool again, with
+  // the error below it. A custom command that failed stays in its field, so that the
+  // user can fix it.
+  private async setTitleTool(tool: string, command = ''): Promise<void> {
     const server = this.server();
     if (!server || !this.saved || this.busy) {
       this.render();
       return;
     }
-    const name = this.titleTools.find(candidate => candidate.id === tool)?.name;
+    const { name, run } = this.describeTitleTool(tool, command);
     this.busy = true;
     this.settingTool = this.testedTool = tool;
-    this.showTitleTool();
-    this.showStatus();
-    if (name) this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`);
+    this.render();
+    if (tool !== 'none') this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`, '', true, run);
     else this.testResult.hidden = true;
     try {
-      const result = await call(server, { operation: 'title-tool-set', settings: { titleTool: tool } });
+      const result = await call(server, { operation: 'title-tool-set', settings: { titleTool: tool, titleCommand: command } });
+      if (tool === 'custom') this.customCommand.value = this.renderedCustom = result.settings.titleCommand;
+      this.customOpen = false;
       this.saves.update(result.settings);
-      if (name) this.showTest('passed', `✓ Test passed. ${name} is now the title tool. It made the title “${result.title}” from the sample message.`);
+      if (tool !== 'none') this.showTest('passed', `✓ ${name} is configured. Its test made the title “${result.title}” from the sample message.`, '', true, result.command);
     } catch (error) {
-      this.showTest('failed', `✕ ${errorMessage(error)}`, name ? 'Fix the problem, then select the tool again.' : '', !!name);
+      this.customOpen = tool === 'custom';
+      const detail = tool === 'custom' ? 'Fix the command, then click Save and test again.' : tool === 'none' ? '' : 'Fix the problem, then select the tool again.';
+      this.showTest('failed', `✕ ${errorMessage(error)}`, detail, tool !== 'none', run);
     } finally {
       this.busy = false;
       this.settingTool = null;
-      // After a failure, the list shows the saved tool. The result stays below it.
-      this.testedTool = this.saved?.titleTool ?? 'none';
+      // The result stays below the tool that the list shows after the change.
+      this.testedTool = this.customOpen ? 'custom' : this.saved?.titleTool ?? 'none';
       this.render();
-      this.titleTool.focus({ preventScroll: true });
+      (this.customOpen ? this.customCommand : this.titleTool).focus({ preventScroll: true });
     }
   }
 
@@ -391,19 +476,23 @@ export class SettingsView {
     const server = this.server();
     const tool = this.titleTool.value;
     if (!server || tool === 'none' || this.busy) return;
-    const run = ++this.titleRun;
+    const { name, run } = this.describeTitleTool(tool);
+    const runNumber = ++this.titleRun;
     this.busy = true;
     this.testedTool = tool;
     this.showTitleTool();
-    this.showTest('running', 'Testing the title tool…');
+    this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`, '', true, run);
     try {
       const result = await call(server, { operation: 'title-test', settings: { titleTool: tool } });
-      if (run === this.titleRun && tool === this.titleTool.value) this.showTest('passed', `✓ Test passed. The tool made the title “${result.title}” from the sample message.`);
+      if (runNumber === this.titleRun && tool === this.titleTool.value) {
+        this.showTest('passed', `✓ Test passed. ${name} made the title “${result.title}” from the sample message.`, '', true, result.command);
+      }
     } catch (error) {
-      if (run === this.titleRun && tool === this.titleTool.value) this.showTest('failed', `✕ Test failed: ${errorMessage(error)}`,
-        'Sessions keep their current title when the tool fails.');
+      if (runNumber === this.titleRun && tool === this.titleTool.value) {
+        this.showTest('failed', `✕ Test failed: ${errorMessage(error)}`, 'Sessions keep their current title when the tool fails.', true, run);
+      }
     } finally {
-      if (run === this.titleRun) {
+      if (runNumber === this.titleRun) {
         this.busy = false;
         this.showTitleTool();
         this.titleTest.focus({ preventScroll: true });

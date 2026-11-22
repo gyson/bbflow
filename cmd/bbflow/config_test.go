@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,18 +12,6 @@ import (
 
 func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	directory := t.TempDir()
-	// Synthetic title CLIs on the PATH of the server. Code Puppy passes the title test.
-	// Codex fails it.
-	bin := t.TempDir()
-	for name, script := range map[string]string{
-		"code-puppy": "echo 'bbflow-title: Fix login redirect'",
-		"codex":      "cat >/dev/null; echo 'not signed in' >&2; exit 1",
-	} {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+script+"\n"), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	startTestServer(t, directory)
 	cli := func(args ...string) string {
 		t.Helper()
@@ -76,13 +62,9 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	if settings := saved(); settings.TitleTool != "none" || !settings.UpdateCheck {
 		t.Fatal("automatic titles are on or the update check is off by default", settings)
 	}
-	if output := cli("settings", "set", "title-tool", "code-puppy"); !strings.Contains(output, "Testing the code-puppy title tool") ||
-		!strings.Contains(output, `Test passed. The title tool made the title "Fix login redirect" from a sample message.`) {
-		t.Fatal(output)
-	}
 	cli("settings", "set", "update-check", "false")
 	settings = saved()
-	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != settings.Tools[1].ID || settings.TitleTool != "code-puppy" || settings.UpdateCheck {
+	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != settings.Tools[1].ID || settings.TitleTool != "none" || settings.UpdateCheck {
 		t.Fatalf("settings after set: %+v", settings)
 	}
 
@@ -94,16 +76,12 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "80")
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "auto")
 	fails("unknown settings key", "settings", "set", "theme", "dark")
-	fails("title tool must be one of none, claude, codex, code-puppy, apple", "settings", "set", "title-tool", "claude -p")
-	fails("Codex failed the title test, so the title tool did not change: the command ended with exit status 1: not signed in", "settings", "set", "title-tool", "codex")
+	// bbflow title-tool selects the title tool.
+	fails("unknown settings key", "settings", "set", "title-tool", "codex")
 	fails(`tool "Absent" does not exist`, "tool", "remove", "Absent")
 	fails(`tool "Absent" does not exist`, "settings", "set", "default-tool", "Absent")
 	if after := saved(); after.Revision != settings.Revision {
 		t.Fatal("a rejected change saved settings")
-	}
-	// None turns automatic titles off without a test.
-	if output := cli("settings", "set", "title-tool", "none"); output != "" || saved().TitleTool != "none" {
-		t.Fatalf("title tool none: %q", output)
 	}
 
 	// Removal of the default tool selects Shell.
