@@ -35,6 +35,7 @@ export class SettingsView {
   private readonly addTool = toolEditor('add-tool');
   private readonly editTool = toolEditor('edit-tool');
   private readonly toolError = element('tool-error', HTMLElement);
+  private readonly titleCard = element('title-settings', HTMLElement);
   private readonly titleTool = element('title-tool', HTMLSelectElement);
   private readonly titleSpinner = element('title-spinner', HTMLElement);
   private readonly titleBuiltin = element('title-builtin', HTMLElement);
@@ -105,7 +106,13 @@ export class SettingsView {
     this.addTool.form.oninput = this.editTool.form.oninput = () => this.showStatus();
     this.titleTool.onchange = () => this.selectTitleTool(this.titleTool.value);
     this.customForm.onsubmit = event => { event.preventDefault(); this.saveCustom(); };
-    this.customCommand.oninput = () => this.showStatus();
+    this.customCommand.oninput = () => {
+      // A result tells about the command that ran. An edit makes the result stale, and
+      // Test waits until the edit saves.
+      if (this.testedTool === 'custom') this.testResult.hidden = true;
+      this.showTitleTool();
+      this.showStatus();
+    };
     this.titleTest.onclick = () => void this.testTitleTool();
     this.addTool.form.onsubmit = event => { event.preventDefault(); this.saveTool(this.addTool, null); };
     this.editTool.form.onsubmit = event => {
@@ -129,7 +136,8 @@ export class SettingsView {
     if (!this.pending() && !this.editing) {
       const settings = await call(server, { operation: 'settings-get' });
       if (!this.pending() && !this.editing) {
-        this.saves.saved = settings;
+        // A title tool change can save while this read runs. Keep the newer settings.
+        this.saves.update(settings);
         this.render();
       }
     }
@@ -353,7 +361,8 @@ export class SettingsView {
   private showTitleTool(): void {
     // Another view or a reload can change the saved tool. Hide a result of another tool.
     if (this.titleTool.value !== this.testedTool) this.testResult.hidden = true;
-    const controls = titleControls(this.titleTools, this.titleTool.value, this.saved?.titleTool ?? 'none', this.busy);
+    const edited = this.customCommand.value !== this.renderedCustom;
+    const controls = titleControls(this.titleTools, this.titleTool.value, this.saved?.titleTool ?? 'none', this.busy, edited);
     this.titleCommand.textContent = controls.command;
     this.titleBuiltin.hidden = !controls.command;
     this.customForm.hidden = this.customSave.hidden = !controls.custom;
@@ -383,7 +392,9 @@ export class SettingsView {
   }
 
   // A selection in the list starts a title tool change. Custom with a saved command
-  // tests it at once. Without one, the command field waits for a command.
+  // tests it at once. Without one, the command field waits for a command. The view sends
+  // the custom command that it shows, so the test runs that command, also after another
+  // view saves another one.
   private selectTitleTool(tool: string): void {
     if (tool !== 'custom') {
       this.customOpen = false;
@@ -392,7 +403,7 @@ export class SettingsView {
       return;
     }
     if (this.saved?.titleCommand) {
-      void this.setTitleTool('custom');
+      void this.setTitleTool('custom', this.saved.titleCommand);
       return;
     }
     this.customOpen = true;
@@ -439,17 +450,30 @@ export class SettingsView {
       this.customOpen = tool === 'custom';
       const detail = tool === 'custom' ? 'Fix the command, then click Save and test again.' : tool === 'none' ? '' : 'Fix the problem, then select the tool again.';
       this.showTest('failed', `✕ ${errorMessage(error)}`, detail, tool !== 'none');
+      // Another change can save during the test. Read the settings, so that the list
+      // shows the saved tool.
+      const latest = await call(server, { operation: 'settings-get' }).catch(() => null);
+      if (latest) this.saves.update(latest);
     } finally {
       this.busy = false;
       this.settingTool = null;
       // The result stays below the tool that the list shows after the change.
       this.testedTool = this.customOpen ? 'custom' : this.saved?.titleTool ?? 'none';
       this.render();
-      (this.customOpen ? this.customCommand : this.titleTool).focus({ preventScroll: true });
+      this.focusTitle(this.customOpen ? this.customCommand : this.titleTool);
     }
   }
 
-  // Run the saved title tool once with the sample message. The test saves nothing.
+  // Move focus to a title control at the end of a test, only when focus is not in
+  // another field. A test can run for 90 seconds, and the user can type in another field
+  // meanwhile. A blur there would save a partial value.
+  private focusTitle(control: HTMLElement): void {
+    const active = document.activeElement;
+    if (!active || active === document.body || this.titleCard.contains(active)) control.focus({ preventScroll: true });
+  }
+
+  // Run the saved title tool once with the sample message. The test saves nothing. For
+  // Custom, the view sends the saved command that the field shows.
   private async testTitleTool(): Promise<void> {
     const server = this.server();
     const tool = this.titleTool.value;
@@ -461,7 +485,8 @@ export class SettingsView {
     this.showTitleTool();
     this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`);
     try {
-      const result = await call(server, { operation: 'title-test', settings: { titleTool: tool } });
+      const titleCommand = tool === 'custom' ? this.customCommand.value : '';
+      const result = await call(server, { operation: 'title-test', settings: { titleTool: tool, titleCommand } });
       if (runNumber === this.titleRun && tool === this.titleTool.value) {
         this.showTest('passed', `✓ Test passed. ${name} made the title “${result.title}” from the sample message.`);
       }
@@ -473,7 +498,7 @@ export class SettingsView {
       if (runNumber === this.titleRun) {
         this.busy = false;
         this.showTitleTool();
-        this.titleTest.focus({ preventScroll: true });
+        this.focusTitle(this.titleTest);
       }
     }
   }

@@ -207,6 +207,20 @@ func TestRunTitleCommandStopsAtCancel(t *testing.T) {
 	}
 }
 
+// pickTitleTool saves a title tool without a test.
+func pickTitleTool(t *testing.T, store *history.Store, tool, command string) history.Settings {
+	t.Helper()
+	current, err := store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.SetTitleTool(history.TitleChoice{Tool: tool, Command: command}, current.Choice())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return saved
+}
+
 func titleServer(t *testing.T, command string) (*Server, history.Session) {
 	t.Helper()
 	dir := t.TempDir()
@@ -220,9 +234,7 @@ func titleServer(t *testing.T, command string) (*Server, history.Session) {
 	saved := titleTools
 	titleTools = []protocol.TitleTool{{ID: "claude", Name: "Claude", Command: command}}
 	t.Cleanup(func() { titleTools = saved })
-	if _, err = store.SetTitleTool("claude", ""); err != nil {
-		t.Fatal(err)
-	}
+	pickTitleTool(t, store, "claude", "")
 	session, err := store.CreateSession("", t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
@@ -453,13 +465,9 @@ func TestFirstSendCountsWhileTitlesAreOff(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	command, dir := writeTitleScript(t, "echo bbflow-title: Generated")
 	s, session := titleServer(t, command)
-	if _, err := s.store.SetTitleTool("none", ""); err != nil {
-		t.Fatal(err)
-	}
+	pickTitleTool(t, s.store, "none", "")
 	submit(t, s, session.ID, "First message", true)
-	if _, err := s.store.SetTitleTool("claude", ""); err != nil {
-		t.Fatal(err)
-	}
+	pickTitleTool(t, s.store, "claude", "")
 	submit(t, s, session.ID, "Second message", true)
 	if got := ranTitle(t, s, dir); got != "" {
 		t.Fatalf("a later send became the first message: %q", got)
@@ -536,10 +544,7 @@ func TestTitleToolSavesOnlyAfterItsTest(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	failing, _ := writeTitleScript(t, "echo 'not signed in' >&2; exit 1")
 	s, _ := titleServer(t, failing)
-	before, err := s.store.SetTitleTool("none", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := pickTitleTool(t, s.store, "none", "")
 	unchanged := func() {
 		t.Helper()
 		if after, err := s.store.Settings(); err != nil || after.Revision != before.Revision || after.TitleTool != "none" {
@@ -547,13 +552,17 @@ func TestTitleToolSavesOnlyAfterItsTest(t *testing.T) {
 		}
 	}
 
-	_, err = s.setTitleTool(context.Background(), "claude", "")
+	_, err := s.setTitleTool(context.Background(), "claude", "")
 	if err == nil || !strings.Contains(err.Error(), "Claude is not configured. The title tool is still None. The test failed: ") || !strings.Contains(err.Error(), "not signed in") {
 		t.Fatalf("failed test: %v", err)
 	}
 	unchanged()
 	if _, err = s.setTitleTool(context.Background(), "claude -p", ""); err == nil || !strings.Contains(err.Error(), "title tool must be one of none, claude") {
 		t.Fatalf("unknown tool: %v", err)
+	}
+	// Only the ID none turns automatic titles off. An empty ID is an error.
+	if _, err = s.setTitleTool(context.Background(), "", ""); err == nil || !strings.Contains(err.Error(), "choose a title tool") {
+		t.Fatalf("empty tool: %v", err)
 	}
 	unchanged()
 	for _, tool := range []string{"claude", "none"} {
@@ -600,17 +609,16 @@ func TestTitleToolSavesOnlyAfterItsTest(t *testing.T) {
 }
 
 // The custom title tool saves its command only after the command passes its test. The
-// command stays saved when another tool is selected. Custom without a command tests the
-// saved command. The first send of a session runs the saved custom command.
+// command stays saved when another tool is selected. Custom needs the command in each
+// request, so the test runs the command that the client shows. The first send of a
+// session runs the saved custom command.
 func TestCustomTitleToolSavesItsCommandAfterItsTest(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	builtin, _ := writeTitleScript(t, "echo bbflow-title: Built-in title")
 	s, session := titleServer(t, builtin)
-	if _, err := s.store.SetTitleTool("none", ""); err != nil {
-		t.Fatal(err)
-	}
+	pickTitleTool(t, s.store, "none", "")
 	if _, err := s.setTitleTool(context.Background(), "custom", ""); err == nil || !strings.Contains(err.Error(), "enter a command for the custom title tool") {
-		t.Fatalf("custom without a saved command: %v", err)
+		t.Fatalf("custom without a command: %v", err)
 	}
 	failing, _ := writeTitleScript(t, "echo 'model not found' >&2; exit 2")
 	if _, err := s.setTitleTool(context.Background(), "custom", failing); err == nil || !strings.Contains(err.Error(), "Custom is not configured. The title tool is still None. The test failed: ") || !strings.Contains(err.Error(), "model not found") {
@@ -628,15 +636,22 @@ func TestCustomTitleToolSavesItsCommandAfterItsTest(t *testing.T) {
 	if input := ranTitle(t, s, dir); !strings.Contains(input, titleSample) {
 		t.Fatalf("custom test input: %q", input)
 	}
-	// Another tool keeps the custom command. Custom then tests the saved command again. The
-	// built-in Claude command gives another title, so the title tells which command ran.
+	// A failed new custom command keeps the working one, and the error tells so.
+	if _, err = s.setTitleTool(context.Background(), "custom", failing); err == nil || !strings.Contains(err.Error(), "Custom is not configured with the new command. The title tool is still Custom, with its saved command. The test failed: ") {
+		t.Fatalf("failed new custom command: %v", err)
+	}
+	// Another tool keeps the custom command. A test and a change of Custom without a
+	// command are errors, also with a saved command.
 	if result, err = s.setTitleTool(context.Background(), "claude", ""); err != nil || result.Settings.TitleCommand != custom {
 		t.Fatalf("switch to claude: %+v %v", result, err)
 	}
-	if test, err := s.testTitleTool(context.Background(), "custom", ""); err != nil || test.Title != "Custom title" {
-		t.Fatalf("test of the saved custom command: %+v %v", test, err)
+	if _, err = s.testTitleTool(context.Background(), "custom", ""); err == nil || !strings.Contains(err.Error(), "enter a command for the custom title tool") {
+		t.Fatalf("test of custom without a command: %v", err)
 	}
-	if result, err = s.setTitleTool(context.Background(), "custom", ""); err != nil || result.Title != "Custom title" || result.Settings.TitleTool != "custom" {
+	if test, err := s.testTitleTool(context.Background(), "custom", custom); err != nil || test.Title != "Custom title" {
+		t.Fatalf("test of the custom command: %+v %v", test, err)
+	}
+	if result, err = s.setTitleTool(context.Background(), "custom", custom); err != nil || result.Title != "Custom title" || result.Settings.TitleTool != "custom" {
 		t.Fatalf("custom with the saved command: %+v %v", result, err)
 	}
 	ranTitle(t, s, dir)
@@ -646,5 +661,94 @@ func TestCustomTitleToolSavesItsCommandAfterItsTest(t *testing.T) {
 	}
 	if got, err := s.store.Session(session.ID); err != nil || got.AutoTitle != "Custom title" {
 		t.Fatalf("session: %+v %v", got, err)
+	}
+}
+
+// heldTitleScript writes a title command that waits until release runs. started tells
+// that the command reads its request.
+func heldTitleScript(t *testing.T, answer string) (command string, started func() bool, release func()) {
+	t.Helper()
+	command, dir := writeTitleScript(t, "while [ ! -f \"$(dirname \"$0\")/release\" ]; do sleep 0.05; done\n"+answer)
+	started = func() bool {
+		_, err := os.Stat(filepath.Join(dir, "cwd"))
+		return err == nil
+	}
+	release = func() {
+		if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return command, started, release
+}
+
+// setDuringTest starts a change of the title tool with a held command, runs during while
+// the command waits, and returns the result of the change.
+func setDuringTest(t *testing.T, s *Server, tool, command string, started func() bool, release func(), during func()) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.setTitleTool(context.Background(), tool, command)
+		done <- err
+	}()
+	for deadline := time.Now().Add(10 * time.Second); !started(); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the title command did not start")
+		}
+	}
+	during()
+	release()
+	return <-done
+}
+
+// A test that ends after a later title tool change does not undo that change. Its error
+// names the tool that is saved now. A change of another setting during the test does
+// not block the save.
+func TestLateTitleTestKeepsALaterChange(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	s, _ := titleServer(t, "true")
+	pickTitleTool(t, s.store, "claude", "")
+
+	passing, started, release := heldTitleScript(t, "echo bbflow-title: Late title")
+	err := setDuringTest(t, s, "custom", passing, started, release, func() {
+		if _, err := s.setTitleTool(context.Background(), "none", ""); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "Custom did not save, because another change selected None during the test") {
+		t.Fatalf("late passed test: %v", err)
+	}
+	if saved, err := s.store.Settings(); err != nil || saved.TitleTool != "none" || saved.TitleCommand != "" {
+		t.Fatalf("a late test undid a later change: %+v %v", saved, err)
+	}
+
+	// The error of a late failed test names the tool that is saved after the test.
+	pickTitleTool(t, s.store, "claude", "")
+	failing, started, release := heldTitleScript(t, "echo 'model not found' >&2; exit 2")
+	err = setDuringTest(t, s, "custom", failing, started, release, func() { pickTitleTool(t, s.store, "none", "") })
+	if err == nil || !strings.Contains(err.Error(), "Custom is not configured. The title tool is still None. The test failed: ") {
+		t.Fatalf("late failed test: %v", err)
+	}
+
+	// A change of another setting during the test does not block the save.
+	passing, started, release = heldTitleScript(t, "echo bbflow-title: Late title")
+	err = setDuringTest(t, s, "custom", passing, started, release, func() {
+		settings, err := s.store.Settings()
+		if err == nil {
+			settings.Appearance = "dark"
+			_, err = s.store.SaveSettings(settings)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	if saved, readErr := s.store.Settings(); err != nil || readErr != nil || saved.TitleTool != "custom" || saved.TitleCommand != passing || saved.Appearance != "dark" {
+		t.Fatalf("test during another save: %+v %v %v", saved, err, readErr)
+	}
+
+	// A failed test of the saved tool tells that the tool stays selected.
+	titleTools[0].Command = "exit 3"
+	pickTitleTool(t, s.store, "claude", "")
+	if _, err = s.setTitleTool(context.Background(), "claude", ""); err == nil || !strings.Contains(err.Error(), "Claude is still the title tool, but its test failed: ") {
+		t.Fatalf("failed test of the saved tool: %v", err)
 	}
 }

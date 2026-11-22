@@ -53,10 +53,12 @@ func titleToolCommand(target client.Target, args []string) error {
 		return showTitleTool(target)
 	case args[0] == "test" && len(args) == 1:
 		return testTitleTool(target)
-	case args[0] == "set" && len(args) == 2:
-		return setTitleTool(target, strings.TrimSpace(args[1]), "")
+	case args[0] == "set" && len(args) == 2 && strings.TrimSpace(args[1]) != "":
+		// custom without COMMAND uses the saved custom command.
+		return setTitleTool(target, strings.TrimSpace(args[1]), "", true)
 	case args[0] == "set" && len(args) == 3 && strings.TrimSpace(args[1]) == "custom":
-		return setTitleTool(target, "custom", args[2])
+		// An empty COMMAND is an error of the server. It does not select the saved command.
+		return setTitleTool(target, "custom", args[2], false)
 	case args[0] == "set" && len(args) == 3:
 		return errors.New("only the custom title tool takes a command")
 	case args[0] == "set":
@@ -78,16 +80,13 @@ func loadTitleTools(target client.Target) (protocol.TitleTools, error) {
 }
 
 // describeTitleTool returns the name of a title tool and the command that the server
-// runs for it. For custom without a command, it uses the saved custom command. An
-// unknown tool gives no name, and the server rejects it.
-func describeTitleTool(tools protocol.TitleTools, settings history.Settings, id, command string) (name, run string) {
+// runs for it. For custom, command is the custom command. An unknown tool gives no
+// name, and the server rejects it.
+func describeTitleTool(tools protocol.TitleTools, id, command string) (name, run string) {
 	switch id {
 	case "none":
 		return "None", ""
 	case "custom":
-		if command == "" {
-			command = settings.TitleCommand
-		}
 		return "Custom", command
 	}
 	for _, tool := range tools.Tools {
@@ -116,7 +115,7 @@ func showTitleTool(target client.Target) error {
 	if err != nil {
 		return err
 	}
-	name, command := describeTitleTool(tools, settings, settings.TitleTool, "")
+	name, command := describeTitleTool(tools, settings.TitleTool, settings.TitleCommand)
 	switch settings.TitleTool {
 	case "none":
 		fmt.Println("Title tool: None. Automatic titles are off.")
@@ -132,8 +131,10 @@ func showTitleTool(target client.Target) error {
 }
 
 // setTitleTool saves the title tool. The server first tests each tool except none with
-// a sample message. A failed test saves nothing, and the server error tells why.
-func setTitleTool(target client.Target, tool, command string) error {
+// a sample message. A failed test saves nothing, and the server error tells why. With
+// saved, custom uses the saved custom command. The CLI sends the command that it shows,
+// so the test runs that command, also after another client saves another one.
+func setTitleTool(target client.Target, tool, command string, saved bool) error {
 	name := ""
 	if tool != "none" {
 		settings, err := loadSettings(target)
@@ -144,8 +145,14 @@ func setTitleTool(target client.Target, tool, command string) error {
 		if err != nil {
 			return err
 		}
+		if tool == "custom" && saved {
+			if settings.TitleCommand == "" {
+				return errors.New("no custom command is saved; use bbflow title-tool set custom COMMAND")
+			}
+			command = settings.TitleCommand
+		}
 		var run string
-		name, run = describeTitleTool(tools, settings, tool, command)
+		name, run = describeTitleTool(tools, tool, command)
 		noteTitleTest(name, run)
 	}
 	result, err := target.CallWithin(protocol.Request{Operation: "title-tool-set", Settings: &history.Settings{TitleTool: tool, TitleCommand: command}}, titleTestWait)
@@ -178,9 +185,14 @@ func testTitleTool(target client.Target) error {
 	if err != nil {
 		return err
 	}
-	name, command := describeTitleTool(tools, settings, settings.TitleTool, "")
+	name, command := describeTitleTool(tools, settings.TitleTool, settings.TitleCommand)
 	noteTitleTest(name, command)
-	result, err := target.CallWithin(protocol.Request{Operation: "title-test", Settings: &history.Settings{TitleTool: settings.TitleTool}}, titleTestWait)
+	// Send the custom command that the note shows, so that the test runs this command.
+	choice := &history.Settings{TitleTool: settings.TitleTool}
+	if settings.TitleTool == "custom" {
+		choice.TitleCommand = settings.TitleCommand
+	}
+	result, err := target.CallWithin(protocol.Request{Operation: "title-test", Settings: choice}, titleTestWait)
 	if err != nil {
 		return fmt.Errorf("the test of %s failed: %w", name, err)
 	}

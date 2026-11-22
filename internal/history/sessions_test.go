@@ -1,6 +1,7 @@
 package history
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -275,12 +276,21 @@ func TestTitleToolSettings(t *testing.T) {
 	if err != nil || settings.TitleTool != "none" || settings.TitleCommand != "" {
 		t.Fatalf("default title tool: %+v, %v", settings, err)
 	}
+	// choose saves a title tool from the current choice.
+	choose := func(tool, command string) (Settings, error) {
+		t.Helper()
+		current, err := store.Settings()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store.SetTitleTool(TitleChoice{Tool: tool, Command: command}, current.Choice())
+	}
 	for _, tool := range TitleTools {
 		command := ""
 		if tool == "custom" {
 			command = `my-llm --fast "$(cat)"`
 		}
-		saved, err := store.SetTitleTool(tool, command)
+		saved, err := choose(tool, command)
 		if err != nil || saved.TitleTool != tool || saved.Revision != settings.Revision+1 {
 			t.Fatalf("set %s: %+v, %v", tool, saved, err)
 		}
@@ -290,22 +300,42 @@ func TestTitleToolSettings(t *testing.T) {
 		t.Fatalf("custom command: %+v", settings)
 	}
 	// Another tool keeps the saved custom command.
-	if settings, err = store.SetTitleTool("", ""); err != nil || settings.TitleTool != "none" || settings.TitleCommand != `my-llm --fast "$(cat)"` {
-		t.Fatalf("an empty title tool did not select none, or lost the custom command: %+v, %v", settings, err)
+	if settings, err = choose("none", ""); err != nil || settings.TitleTool != "none" || settings.TitleCommand != `my-llm --fast "$(cat)"` {
+		t.Fatalf("none lost the custom command: %+v, %v", settings, err)
 	}
 	for _, test := range []struct{ tool, command, want string }{
+		{"", "", "none, claude, codex, code-puppy, apple, custom"},
 		{"claude -p", "", "none, claude, codex, code-puppy, apple, custom"},
 		{"codex", "codex exec -", "only the custom title tool takes a command"},
 		{"custom", " ", "enter a command for the custom title tool"},
 		{"custom", "my-llm\nrm -rf", "must be one line"},
 		{"custom", strings.Repeat("x", 1001), "at most 1000 bytes"},
 	} {
-		if _, err = store.SetTitleTool(test.tool, test.command); err == nil || !strings.Contains(err.Error(), test.want) {
+		if _, err = choose(test.tool, test.command); err == nil || !strings.Contains(err.Error(), test.want) {
 			t.Fatalf("set %q %q: %v, want %q", test.tool, test.command, err, test.want)
 		}
 	}
 	if after, err := store.Settings(); err != nil || after.Revision != settings.Revision {
 		t.Fatalf("a rejected title tool saved settings: %+v, %v", after, err)
+	}
+
+	// A change from an earlier title choice saves nothing, so a test that ends late does
+	// not undo a later change. A change of another setting does not block it.
+	earlier := settings.Choice()
+	if _, err = choose("codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.SetTitleTool(TitleChoice{Tool: "claude"}, earlier); !errors.Is(err, ErrTitleChanged) {
+		t.Fatalf("a change from an earlier choice: %v", err)
+	}
+	from := TitleChoice{Tool: "codex", Command: `my-llm --fast "$(cat)"`}
+	current, _ := store.Settings()
+	current.Appearance = "light"
+	if _, err = store.SaveSettings(current); err != nil {
+		t.Fatal(err)
+	}
+	if settings, err = store.SetTitleTool(TitleChoice{Tool: "none"}, from); err != nil || settings.TitleTool != "none" || settings.Appearance != "light" {
+		t.Fatalf("a change after another setting saved: %+v, %v", settings, err)
 	}
 
 	// A settings save does not change the title tool or the custom command, also with
@@ -315,11 +345,8 @@ func TestTitleToolSettings(t *testing.T) {
 	if settings, err = store.SaveSettings(settings); err != nil || settings.TitleTool != "none" || settings.TitleCommand != `my-llm --fast "$(cat)"` || settings.Appearance != "dark" {
 		t.Fatalf("a settings save changed the title tool: %+v, %v", settings, err)
 	}
-	if saved, err := store.Settings(); err != nil || saved.TitleTool != "none" || saved.TitleCommand != `my-llm --fast "$(cat)"` {
-		t.Fatalf("saved title tool: %+v, %v", saved, err)
-	}
 	stale := settings
-	if _, err = store.SetTitleTool("codex", ""); err != nil {
+	if _, err = choose("codex", ""); err != nil {
 		t.Fatal(err)
 	}
 	stale.Appearance = "light"

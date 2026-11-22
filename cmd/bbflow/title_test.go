@@ -87,7 +87,10 @@ func TestTitleToolCommandTestsBeforeItSaves(t *testing.T) {
 	// A failed test, a wrong argument, and an unknown tool save nothing.
 	fails("bbflow: Codex is not configured. The title tool is still Code Puppy. The test failed: the command ended with exit status 1: not signed in", "set", "codex")
 	fails("only the custom title tool takes a command", "set", "codex", "codex exec -")
-	fails("enter a command for the custom title tool", "set", "custom")
+	fails("no custom command is saved; use bbflow title-tool set custom COMMAND", "set", "custom")
+	fails("enter a command for the custom title tool", "set", "custom", " ")
+	// An empty tool is an error. Only none turns automatic titles off.
+	fails("provide one title tool", "set", " ")
 	fails("title tool must be one of none, claude, codex, code-puppy, apple, custom", "set", "claude -p")
 	fails("provide one title tool", "set")
 	fails("title-tool list takes no arguments", "list", "all")
@@ -113,6 +116,12 @@ func TestTitleToolCommandTestsBeforeItSaves(t *testing.T) {
 		t.Fatalf("test changed settings: %+v", after)
 	}
 
+	// An empty COMMAND does not run the saved custom command again.
+	fails("enter a command for the custom title tool", "set", "custom", "")
+	if after := saved(); after.Revision != custom.Revision || after.TitleCommand != "my-llm --fast" {
+		t.Fatalf("an empty custom command changed settings: %+v", after)
+	}
+
 	// None saves without a test and keeps the custom command. Custom without a command
 	// then tests the saved command again.
 	if stdout, stderr = passes("set", "none"); stdout != "Automatic titles are off.\n" || stderr != "" {
@@ -122,7 +131,7 @@ func TestTitleToolCommandTestsBeforeItSaves(t *testing.T) {
 		t.Fatal(stdout)
 	}
 	fails("the title tool is None, so there is nothing to test", "test")
-	if stdout, _ = passes("set", "custom"); !strings.HasPrefix(stdout, "Custom is configured.") || saved().TitleTool != "custom" {
-		t.Fatal(stdout)
+	if stdout, stderr = passes("set", "custom"); !strings.HasPrefix(stdout, "Custom is configured.") || !strings.Contains(stderr, "  my-llm --fast\n") || saved().TitleTool != "custom" {
+		t.Fatalf("set custom:\n%s%s", stdout, stderr)
 	}
 }

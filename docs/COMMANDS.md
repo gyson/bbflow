@@ -576,11 +576,13 @@ value.
   test, the command writes the tool name and its exact command to standard error. If the
   test passes, it prints that the tool is configured, with the title from the sample
   message. If the test fails, it prints that the tool is not configured, the saved tool,
-  and the error. It then exits with code `1` and changes nothing. `set none` saves
-  without a test.
+  and the error. It then exits with code `1` and changes nothing. If another change of
+  the title tool saves during the test, the command also changes nothing and exits with
+  code `1`. `set none` saves without a test. An empty `TOOL` is an error.
 - `set custom COMMAND` tests `COMMAND` and saves it together with the Custom choice.
-  `set custom` without `COMMAND` tests the saved custom command again. Quote a command
-  that contains spaces. Only `custom` takes a command.
+  `set custom` without `COMMAND` tests the saved custom command again. It fails when no
+  custom command is saved. An empty `COMMAND` is an error, and it does not test the
+  saved command. Quote a command that contains spaces. Only `custom` takes a command.
 - `test` runs the saved tool once with the sample message and saves nothing. If the test
   fails, the command exits with code `1`. Use it after a sign-out or a CLI update.
 

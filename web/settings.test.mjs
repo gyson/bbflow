@@ -45,6 +45,10 @@ test('Custom shows its command field, and Test runs only the saved tool', () => 
   // During a change, the list shows the new tool. Test waits for the save.
   assert.equal(titleControls(tools, 'claude', 'none', true).test, false);
   assert.equal(titleControls(tools, 'claude', 'custom', false).test, false);
+  // Test runs the saved custom command. An edit in the field must save first.
+  assert.equal(titleControls(tools, 'custom', 'custom', false, true).test, false);
+  assert.equal(titleControls(tools, 'custom', 'custom', false, true).select, true);
+  assert.equal(titleControls(tools, 'claude', 'claude', false, true).test, true);
 });
 
 test('a settings save does not save the title tool or the custom command', () => {
@@ -65,6 +69,27 @@ test('settings from a title tool change apply only when they are newer', () => {
   saves.update({ ...saves.saved, revision: 4, titleTool: 'none' });
   assert.equal(saves.saved.titleTool, 'codex');
   assert.equal(changes, 1);
+});
+
+test('a delayed settings read after a conflict does not undo a title tool change', async () => {
+  const saves = new SettingsSaves({
+    sent: [],
+    async save(next) {
+      this.sent.push(next);
+      throw new Error('settings changed');
+    },
+    get() {
+      // A title tool change saves revision 6 before this read of revision 5 replies.
+      saves.update({ ...settings, appearance: 'dark', revision: 6, titleTool: 'codex', port: 0 });
+      return Promise.resolve({ ...settings, appearance: 'dark', revision: 5, titleTool: 'none', port: 0 });
+    },
+    conflict: () => true,
+  }, () => {}, () => {});
+  saves.saved = { ...settings, titleTool: 'none', port: 0 };
+  await saves.saveDefault('appearance', 'dark');
+  assert.equal(saves.saved.revision, 6);
+  assert.equal(saves.saved.titleTool, 'codex');
+  assert.deepEqual(saves.defaults, {});
 });
 
 test('a save reply older than a title tool change does not undo it', async () => {

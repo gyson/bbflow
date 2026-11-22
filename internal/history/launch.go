@@ -168,27 +168,51 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	return settings, nil
 }
 
-// SetTitleTool saves the title tool, with a new revision, and returns the saved
-// settings. For custom, command is the custom command, and it saves too. Other tools
-// take no command and keep the saved custom command. SetTitleTool does not test the
-// tool. The server tests it before this call.
-func (s *Store) SetTitleTool(tool, command string) (Settings, error) {
-	if tool == "" {
-		tool = "none"
-	}
-	if !slices.Contains(TitleTools, tool) {
+// TitleChoice is a selected title tool and the saved custom command. Command is empty
+// for a change to a built-in tool or none, because such a change keeps the saved custom
+// command.
+type TitleChoice struct {
+	Tool    string
+	Command string
+}
+
+// Choice returns the title tool and the custom command of the settings.
+func (s Settings) Choice() TitleChoice {
+	return TitleChoice{Tool: s.TitleTool, Command: s.TitleCommand}
+}
+
+// ErrTitleChanged reports that another change of the title tool or the custom command
+// saved first. SetTitleTool then saves nothing.
+var ErrTitleChanged = errors.New("the title tool changed during the test")
+
+// SetTitleTool saves next, with a new revision, and returns the saved settings. It
+// saves only while the settings still have the title tool and the custom command of
+// from. A test can run for 90 seconds, and a later change must not be undone by an
+// earlier test. Other settings can change meanwhile. For custom, next.Command is the
+// custom command, and it saves too. Other tools take no command. SetTitleTool does not
+// test the tool. The server tests it before this call.
+func (s *Store) SetTitleTool(next, from TitleChoice) (Settings, error) {
+	if !slices.Contains(TitleTools, next.Tool) {
 		return Settings{}, fmt.Errorf("title tool must be one of %s", strings.Join(TitleTools, ", "))
 	}
-	if tool != "custom" {
-		if command != "" {
+	var row *sql.Row
+	const unchanged = " WHERE id=1 AND json_extract(data,'$.titleTool')=? AND json_extract(data,'$.titleCommand')=? RETURNING revision,data"
+	if next.Tool != "custom" {
+		if next.Command != "" {
 			return Settings{}, errors.New("only the custom title tool takes a command")
 		}
-		return scanSettings(s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?) WHERE id=1 RETURNING revision,data", tool))
+		row = s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?)"+unchanged, next.Tool, from.Tool, from.Command)
+	} else {
+		if err := ValidateTitleCommand(next.Command); err != nil {
+			return Settings{}, err
+		}
+		row = s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?,'$.titleCommand',?)"+unchanged, next.Tool, next.Command, from.Tool, from.Command)
 	}
-	if err := ValidateTitleCommand(command); err != nil {
-		return Settings{}, err
+	settings, err := scanSettings(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Settings{}, ErrTitleChanged
 	}
-	return scanSettings(s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?,'$.titleCommand',?) WHERE id=1 RETURNING revision,data", tool, command))
+	return settings, err
 }
 
 // ValidateTitleCommand checks a custom title command. It follows the rules of a tool

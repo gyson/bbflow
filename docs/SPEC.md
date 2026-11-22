@@ -916,14 +916,34 @@ Standard input does not do this.
 
 A change to a title tool other than None saves only after the tool passes a title test.
 The server runs the tool once with the fixed sample message, as **Test** does. When the
-tool gives a title, the server saves the tool and returns the title.
-For Custom, the command saves together with the choice. When the test fails or times
-out, the server saves nothing. The error tells that the tool is not configured, names
-the saved tool, and gives the reason, for example `Codex is not configured. The title
-tool is still None. The test failed: …`. When the client disconnects during the test,
-the server stops the test and saves nothing. A change to None saves at once, without a
-test. A change to the saved tool tests that tool again and saves it again. Custom
-without a command tests the saved custom command.
+tool gives a title, the server saves the tool and returns the title. For Custom, the
+command saves together with the choice. A change to None saves at once, without a test.
+Only the ID `none` turns automatic titles off. An empty ID is an error. A change to the
+saved tool tests that tool again and saves it again. When the client disconnects during
+the test, the server stops the test and saves nothing.
+
+When the test fails or times out, the server saves nothing. The error names the tool
+that is saved after the test, because another change can save during the test. It also
+gives the reason:
+
+- `Codex is not configured. The title tool is still None. The test failed: …` for a
+  change to another tool.
+- `Codex is still the title tool, but its test failed: …` for a new test of the saved
+  tool.
+- `Custom is not configured with the new command. The title tool is still Custom, with
+  its saved command. The test failed: …` for a new custom command that replaces a
+  saved one.
+
+A passed test saves only when the title tool and the custom command are the same as at
+the start of the test. Otherwise another change of the title tool saved during the test.
+Then the server saves nothing, so a test that ends late cannot undo a later change, for
+example a change to None. The error is, for example, `Custom did not save, because
+another change selected None during the test`. A change of another setting during the
+test does not block the save.
+
+Each test and each change of Custom needs its command. The UI and the CLI send the
+custom command that they show. Thus a test runs the command that the user sees, also
+after another client saves another custom command.
 
 The test runs in the server environment, as the title runs of sessions do. Thus a CLI
 that works in a terminal of the user, but is not on the PATH of the server, fails the
@@ -943,24 +963,32 @@ the custom command controls stay disabled during the change. The list shows the 
 tool, and the status shows **Saving…**. The result area shows the sample message and a
 line such as **Testing Codex. This can take up to 90 seconds.** After a passed test, a
 green line tells that the tool is configured, with the title from the sample message.
-After a failed test, the list shows the saved tool again. A red line under it shows the
-error and tells the user to fix the problem and select the tool again. A reload or close
+After a failed test, the view reads the settings again, and the list shows the saved
+tool. A red line under it shows the error and tells the user to fix the problem and
+select the tool again. At the end of a test, focus goes back to the title controls only
+when focus is not in another field. Thus a test does not move focus out of a field that
+the user types in, and the blur does not save a partial value there. A reload or close
 of the page during the test cancels the change. The page asks for confirmation first.
 
 For a built-in tool, Settings shows the exact command from the server under the list.
 The test result does not repeat it. A built-in tool has no edit action. To run another
-command, select Custom. A selection of Custom with a saved command tests that command
-at once. Without a saved command, the field waits for a command, and **Save and test**
+command, select Custom. A selection of Custom with a saved command tests that command at
+once. Without a saved command, the field waits for a command, and **Save and test**
 starts the change. A custom command that fails its test stays in the field, with Custom
 in the list, so that the user can fix it. The status then shows **Changes not saved**.
-The CLI also has no edit command for a built-in tool. Use
-`bbflow title-tool set custom COMMAND`.
+An edit in the field hides an earlier result. **Test** runs the saved custom command, so
+it is not available until the edit saves. **Save and test** stays available. The CLI
+also has no edit command for a built-in tool. Use `bbflow title-tool set custom
+COMMAND`.
 
 In the CLI, `bbflow title-tool set` writes the tool name and its exact command to
 standard error before the test. It waits 100 seconds for the reply, longer than the
 90-second server limit. After a passed test, it prints that the tool is configured, with
 the title from the sample message. After a failed test, it prints the error and exits
 with status 1. An interrupt of the command cancels the test, and the tool does not save.
+`set custom` without a command sends the saved custom command, and it fails when no
+custom command is saved. An empty tool and an empty custom command are errors. They do
+not change the settings.
 
 The server owns the command of each built-in title tool. Users cannot edit these
 commands:
@@ -2451,19 +2479,24 @@ custom command. Custom without a command, with a second line, or with more than 
 bytes is rejected. A settings save keeps the saved title tool and custom command, and a
 save from before a title tool change fails. Migration fixtures upgrade a frozen format
 14 archive with a saved port and title tool. The upgrade keeps them and adds an empty
-custom command. A blocked settings update rolls back migration 15.
+custom command. A blocked settings update rolls back migration 15. Server fixtures hold
+a test open while another change saves. A passed test then saves nothing, a failed test
+names the tool that is saved now, and a change of another setting does not block the
+save. Store fixtures reject a change from an earlier title choice and an empty title
+tool.
 
 A CLI test runs a real test server with synthetic Code Puppy, Codex, and custom CLIs on
 its PATH. It verifies `bbflow title-tool list`, `show`, `set`, and `test`: the exact
 commands, the configured and not configured messages, exit status 1, argument errors,
 and unchanged settings after each failure. Web fixtures verify the title control states
 and the 100-second wait of `title-tool-set`. They also verify that a late reply of an
-earlier settings save does not undo a title tool change. A browser check of a demo
-instance used synthetic Code Puppy and Codex CLIs on the PATH of the server, before the
-Custom choice. A selection of Codex showed the test state, then the list showed None
-again with the error. A selection of Code Puppy saved it with its title. A later
-appearance save from the CLI and from the page kept Code Puppy. No real agent CLI or
-model was used in these checks.
+earlier settings save, or a late settings read after a conflict, does not undo a title
+tool change. They verify that **Test** waits for an edit of the custom command to save.
+A browser check of a demo instance used synthetic Code Puppy and Codex CLIs on the PATH
+of the server, before the Custom choice. A selection of Codex showed the test state,
+then the list showed None again with the error. A selection of Code Puppy saved it with
+its title. A later appearance save from the CLI and from the page kept Code Puppy. No
+real agent CLI or model was used in these checks.
 
 A later browser check of a new instance tried Custom. A selection of Custom without a
 saved command showed the empty field and **Changes not saved**. A failing command showed

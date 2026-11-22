@@ -65,8 +65,8 @@ export class SettingsSaves {
         if (!this.service.conflict(error) || attempt === 2) throw error;
         const latest = await this.service.get().catch(() => null);
         if (!latest || latest.revision === saved.revision) throw error;
-        this.saved = latest;
-        this.changed();
+        // A read can reply after a newer title tool change. Keep the newer settings.
+        this.update(latest);
       }
     }
   }
@@ -174,17 +174,18 @@ export function sameTools(a: Tool[], b: Tool[]): boolean {
 }
 
 // The state of the title tool controls. shown is the tool in the list, and saved is the
-// saved tool. busy reports a running title test or title tool change. command is the
-// exact command of a built-in tool. custom shows the custom command field. Test needs
-// the saved tool, other than none, and no busy state. A save of another setting does not
-// change this state.
-export function titleControls(tools: TitleTool[], shown: string, saved: string, busy: boolean):
+// saved tool. busy reports a running title test or title tool change. edited reports an
+// edit in the custom command field. command is the exact command of a built-in tool.
+// custom shows the custom command field. Test needs the saved tool, other than none, and
+// no busy state. For Custom, Test also needs a field without edits, because Test runs
+// the saved command. A save of another setting does not change this state.
+export function titleControls(tools: TitleTool[], shown: string, saved: string, busy: boolean, edited = false):
   { command: string; custom: boolean; test: boolean; select: boolean } {
   const tool = tools.find(tool => tool.id === shown);
   return {
     command: tool?.command ?? '',
     custom: shown === 'custom',
-    test: shown !== 'none' && shown === saved && !busy,
+    test: shown !== 'none' && shown === saved && !busy && !(shown === 'custom' && edited),
     select: !busy,
   };
 }
