@@ -1,7 +1,7 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { mergeToolEdit, parsePort, PortField, portStatus, sameTools, SettingsSaves, titleControls } from './settings-model.js';
+import { failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, sameTools, SettingsSaves, titleControls } from './settings-model.js';
 import type { Defaults, SettingsChange } from './settings-model.js';
 
 function toolEditor(prefix: string) {
@@ -427,7 +427,7 @@ export class SettingsView {
   // Save a title tool. The server first tests each tool except None with the sample
   // message. A failed test saves nothing. Then the list shows the saved tool again, with
   // the error below it. A custom command that failed stays in its field, so that the
-  // user can fix it.
+  // user can fix it. The list keeps Custom only when Custom is not saved.
   private async setTitleTool(tool: string, command = ''): Promise<void> {
     const server = this.server();
     if (!server || !this.saved || this.busy) {
@@ -435,6 +435,7 @@ export class SettingsView {
       return;
     }
     const name = this.titleToolName(tool);
+    const before = { titleTool: this.saved.titleTool, titleCommand: this.saved.titleCommand };
     this.busy = true;
     this.settingTool = this.testedTool = tool;
     this.render();
@@ -447,13 +448,13 @@ export class SettingsView {
       this.saves.update(result.settings);
       if (tool !== 'none') this.showTest('passed', `✓ ${name} is configured. Its test made the title “${result.title}” from the sample message.`);
     } catch (error) {
-      this.customOpen = tool === 'custom';
-      const detail = tool === 'custom' ? 'Fix the command, then click Save and test again.' : tool === 'none' ? '' : 'Fix the problem, then select the tool again.';
-      this.showTest('failed', `✕ ${errorMessage(error)}`, detail, tool !== 'none');
       // Another change can save during the test. Read the settings, so that the list
       // shows the saved tool.
       const latest = await call(server, { operation: 'settings-get' }).catch(() => null);
       if (latest) this.saves.update(latest);
+      const failed = failedTitleChange(tool, before, latest);
+      this.customOpen = failed.customOpen;
+      this.showTest('failed', `✕ ${errorMessage(error)}`, failed.detail, tool !== 'none');
     } finally {
       this.busy = false;
       this.settingTool = null;

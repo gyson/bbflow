@@ -974,12 +974,15 @@ For a built-in tool, Settings shows the exact command from the server under the 
 The test result does not repeat it. A built-in tool has no edit action. To run another
 command, select Custom. A selection of Custom with a saved command tests that command at
 once. Without a saved command, the field waits for a command, and **Save and test**
-starts the change. A custom command that fails its test stays in the field, with Custom
-in the list, so that the user can fix it. The status then shows **Changes not saved**.
-An edit in the field hides an earlier result. **Test** runs the saved custom command, so
-it is not available until the edit saves. **Save and test** stays available. The CLI
-also has no edit command for a built-in tool. Use `bbflow title-tool set custom
-COMMAND`.
+starts the change. A custom command that fails its test stays in the field, so that the
+user can fix it. When Custom is not saved, the list also keeps Custom. When Custom is
+saved, the list shows it, and the failed command is an edit of the saved one. The status
+then shows **Changes not saved** until the field shows the saved command again or the
+edit saves. An edit in the field hides an earlier result. **Test** runs the saved custom
+command, so it is not available until the edit saves. **Save and test** stays available.
+When another change of the title tool saved during the test, the note under the error
+tells about that change, because the tool or the command can have no fault. The CLI also
+has no edit command for a built-in tool. Use `bbflow title-tool set custom COMMAND`.
 
 In the CLI, `bbflow title-tool set` writes the tool name and its exact command to
 standard error before the test. It waits 100 seconds for the reply, longer than the
@@ -2474,7 +2477,7 @@ Title tool change fixtures verify that a tool saves only after it passes a test 
 sample message. A failed test, a canceled test, and an unknown tool save nothing and keep
 the revision. None saves without a run of the command. A built-in tool with a command is
 rejected. Custom saves its command with the choice, keeps it across a change to another
-tool, and tests the saved command without a new one. A first send then runs the saved
+tool, and needs its command in each test and change. A first send then runs the saved
 custom command. Custom without a command, with a second line, or with more than 1,000
 bytes is rejected. A settings save keeps the saved title tool and custom command, and a
 save from before a title tool change fails. Migration fixtures upgrade a frozen format

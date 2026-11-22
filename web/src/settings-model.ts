@@ -99,6 +99,26 @@ export class SettingsSaves {
   }
 }
 
+// The saved title tool and custom command.
+export type TitleChoice = Pick<Settings, 'titleTool' | 'titleCommand'>;
+
+// failedTitleChange returns the state of the Settings view after a failed title tool
+// change. tool is the tool of the change. before is the saved choice at the start of the
+// change, and after is the saved choice after it, or null when the read failed.
+// customOpen keeps Custom in the list only when Custom is not saved. A failed new
+// command for a saved Custom then stays in the field as an edit. detail tells what to do.
+// When another change of the title tool saved meanwhile, the tool or the command can
+// have no fault, so detail tells about that change.
+export function failedTitleChange(tool: string, before: TitleChoice, after: TitleChoice | null): { customOpen: boolean; detail: string } {
+  const saved = after ?? before;
+  const changed = !!after && (after.titleTool !== before.titleTool || after.titleCommand !== before.titleCommand);
+  let detail = '';
+  if (changed) detail = 'Another change of the title tool saved during the test.';
+  else if (tool === 'custom') detail = 'Fix the command, then click Save and test again.';
+  else if (tool !== 'none') detail = 'Fix the problem, then select the tool again.';
+  return { customOpen: tool === 'custom' && saved.titleTool !== 'custom', detail };
+}
+
 // The revision tracks saves. The other fields determine if a save is necessary. A
 // settings save keeps the saved title tool and custom title command, so they are not
 // among them.

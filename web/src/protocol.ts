@@ -154,8 +154,9 @@ type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: st
 type RenameRequest = { operation: 'project-rename'; project: string; name: string } | { operation: 'session-rename'; session: string; name: string };
 type ProjectRemoveRequest = { operation: 'project-remove'; project: string };
 type SettingsRequest = { operation: 'settings-get' } | { operation: 'settings-save'; settings: Settings };
-// The title tool of a test or a change. Only custom takes titleCommand. Without one,
-// custom uses the saved custom command.
+// The title tool of a test or a change. Only custom takes titleCommand, and it needs
+// one. The server does not use the saved custom command in its place. The client sends
+// the custom command that it shows.
 type TitleChoice = Pick<Settings, 'titleTool'> & Partial<Pick<Settings, 'titleCommand'>>;
 // title-test runs a title tool once with the sample message and saves nothing.
 type TitleTestRequest = { operation: 'title-test'; settings: TitleChoice };

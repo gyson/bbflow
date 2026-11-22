@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, titleControls } from './dist/settings-model.js';
+import { failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, titleControls } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -69,6 +69,29 @@ test('settings from a title tool change apply only when they are newer', () => {
   saves.update({ ...saves.saved, revision: 4, titleTool: 'none' });
   assert.equal(saves.saved.titleTool, 'codex');
   assert.equal(changes, 1);
+});
+
+test('a failed title change keeps Custom in the list only when Custom is not saved', () => {
+  const none = { titleTool: 'none', titleCommand: '' };
+  const custom = { titleTool: 'custom', titleCommand: 'title-pass' };
+  // A failed first custom command keeps Custom in the list, so that it can be fixed.
+  assert.deepEqual(failedTitleChange('custom', none, none), { customOpen: true, detail: 'Fix the command, then click Save and test again.' });
+  // With a saved Custom, the list shows the saved Custom. The failed command is an edit.
+  assert.deepEqual(failedTitleChange('custom', custom, custom), { customOpen: false, detail: 'Fix the command, then click Save and test again.' });
+  // When the settings read fails, the choice from the start decides.
+  assert.equal(failedTitleChange('custom', custom, null).customOpen, false);
+  assert.deepEqual(failedTitleChange('codex', none, none), { customOpen: false, detail: 'Fix the problem, then select the tool again.' });
+  assert.deepEqual(failedTitleChange('none', none, null), { customOpen: false, detail: '' });
+});
+
+test('a title change that another change replaced does not ask for a fix', () => {
+  const custom = { titleTool: 'custom', titleCommand: 'title-pass' };
+  const none = { titleTool: 'none', titleCommand: 'title-pass' };
+  // Another client selected None during a test of Custom. The command has no fault.
+  assert.deepEqual(failedTitleChange('custom', custom, none), { customOpen: true, detail: 'Another change of the title tool saved during the test.' });
+  assert.equal(failedTitleChange('codex', custom, none).detail, 'Another change of the title tool saved during the test.');
+  // A new custom command from another client is also another change.
+  assert.equal(failedTitleChange('claude', custom, { ...custom, titleCommand: 'title-slow' }).detail, 'Another change of the title tool saved during the test.');
 });
 
 test('a delayed settings read after a conflict does not undo a title tool change', async () => {
