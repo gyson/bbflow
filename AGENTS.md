@@ -6,30 +6,40 @@ from other applications.
 
 ## Writing style
 
-Use [ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/) style for all
-project communication and documentation. This includes chat replies, progress updates,
-reviews, commit messages, pull requests, Markdown files, and code comments.
+Use plain technical English for all project text. Write for a reader who has not read
+the chat. This list of rules is the reference. It does not refer to an external
+standard.
 
-- Use short, clear sentences. Give one instruction in each sentence.
-- Use no more than 20 words in an instruction and 25 words in a description.
+Follow these rules in all text:
+
 - Use the active voice. Start instructions with a command verb.
-- Put a necessary condition before its instruction.
-- Use simple verb forms and common words. Avoid idioms, contractions, and unnecessary
-  words.
+- Use simple verb forms and common words. Avoid idioms and unnecessary words.
 - Use one term for each concept. Keep the same meaning each time you use that term.
 - Use American English spelling. Explain an unfamiliar abbreviation at first use.
-- Keep each paragraph about one topic, with no more than six sentences.
-- Use a list for a procedure or a complex set of related items.
-- Preserve technical meaning, requirements, and limits when you simplify text. Do not
-  omit necessary articles or other words.
 - Keep technical names, code identifiers, commands, paths, protocol fields, and UI
   labels exact.
+- Preserve technical meaning, requirements, and limits when you simplify text. Do not
+  omit necessary articles or other words.
 - Keep legal text, quoted source text, compiler directives, released migrations, and
   frozen fixtures unchanged during style edits.
 
-Use the standard's writing rules and dictionary as the reference. Keep necessary
-software terms, such as PTY, WebSocket, worktree, and SQLite. Do not claim full
-ASD-STE100 conformance without a review against the complete standard and dictionary.
+Reference text states rules, procedures, and behavior. It includes `README.md`, this
+file, `SPEC.md`, `PROTOCOL.md`, `COMMANDS.md`, `DEVELOPMENT.md`, `cmd/bbflow/skill.md`,
+the project skills, UI text, and code comments. Follow these additional rules in
+reference text:
+
+- Use short, clear sentences. Prefer sentences of fewer than 25 words.
+- Give one instruction in each sentence.
+- Put a necessary condition before its instruction.
+- Do not use contractions.
+- Keep each paragraph about one topic, with no more than six sentences.
+- Use a list for a procedure or a complex set of related items. Use a table for a set
+  of values.
+
+Other text explains reasons and decisions. It includes chat replies, progress updates,
+reviews, commit messages, pull request descriptions, `GOAL.md`, `PLAN.md`, and release
+notes. Use clear, normal prose there. A sentence can give a reason, a condition, or a
+tradeoff. Keep the text short and specific.
 
 ## Development stage
 
@@ -56,32 +66,46 @@ and APIs may still change, but durable data needs a supported migration path.
 
 ## Start here
 
+- Follow the user's current direction. Do not treat earlier technology suggestions as
+  settled choices.
+- Inspect the current repository and working-tree changes before editing. Preserve
+  unrelated work.
+- Apply the writing style above to documentation, comments, and communication.
 - Use bbflow for the product name and `bbflow` for the CLI command and executable.
 - bbflow was named BonBon. Use the BonBon name only in released migrations, frozen
   fixtures, and earlier release notes.
-- Read [docs/GOAL.md](docs/GOAL.md) for what the project is intended to become.
-- Read [docs/SPEC.md](docs/SPEC.md) for what is currently implemented.
-- Update [docs/COMMANDS.md](docs/COMMANDS.md) when bbflow commands, options, defaults,
-  or their effects change. This reference covers `bbflow` commands only. Keep developer
-  build, test, and release commands in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
-  Clearly identify unavailable commands.
-- Keep the README short and for users. It covers the purpose, installation, first use,
-  data handling, and links to the other documents.
-- Give each fact one owner document. Link to that document from the others. Do not copy
-  reference details, such as limits, format numbers, or UI behavior, into the README.
-- Update `cmd/bbflow/skill.md` when the archive tables, event kinds, or `bbflow query`
-  behavior change. `bbflow skill` prints this guide for agents.
-- Keep product intent in `GOAL.md` and planned implementation work in
-  [docs/PLAN.md](docs/PLAN.md). Keep `SPEC.md` limited to implemented behavior,
-  architecture, interfaces, and verified limitations. Do not put proposals or plans
-  there.
-- Update `SPEC.md` alongside implementation changes. Until code exists, a minimal
-  statement of the current state is sufficient.
-- Follow the user's current direction. Do not treat earlier technology suggestions as
-  settled choices.
-- Apply the writing style above to documentation, comments, and communication.
-- Inspect the current repository and working-tree changes before editing. Preserve
-  unrelated work.
+
+### Documents
+
+Give each fact one owner document. Link to that document from the others. Do not copy
+reference details, such as limits, format numbers, or UI behavior, into the README.
+
+| Document | Contents | Update it when |
+| --- | --- | --- |
+| [README.md](README.md) | Keep the README short and for users. It covers the purpose, installation, first use, data handling, and links to the other documents. | These user facts change. |
+| [docs/GOAL.md](docs/GOAL.md) | Product intent: what the project is intended to become. | The intent changes. |
+| [docs/PLAN.md](docs/PLAN.md) | Planned implementation work, at a high level. | A plan starts, changes, or is completed. |
+| [docs/SPEC.md](docs/SPEC.md) | What is currently implemented: behavior, architecture, interfaces, and verified limitations. Do not put proposals or plans there. | The implementation changes. Update it alongside the change. Until code exists, a minimal statement of the current state is sufficient. |
+| [docs/PROTOCOL.md](docs/PROTOCOL.md) | The WebSocket messages between the clients and the server. | An operation, a message, or the protocol version changes. |
+| [docs/COMMANDS.md](docs/COMMANDS.md) | The `bbflow` commands only. Clearly identify unavailable commands. | bbflow commands, options, defaults, or their effects change. |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Developer build, test, and release commands and procedures. | A build, check, or release procedure changes, or you add a toolchain. |
+| `cmd/bbflow/skill.md` | The guide for agents that `bbflow skill` prints. | The archive tables, event kinds, or `bbflow query` behavior change. |
+| This file | Contributor guidance. | A rule for contributors changes. |
+
+Keep the structure of each document:
+
+- In `SPEC.md`, start each section with a summary. Put the exact rules in topic
+  sub-sections below it. Put the limits of a feature in its "Limits" sub-section.
+- In `SPEC.md`, record each check in "Validation", in the group of its feature. Update
+  the contents table when you add, move, or rename a section.
+- In `PROTOCOL.md`, add each operation to the table of its area. Add each protocol
+  version to "Protocol versions".
+- In `COMMANDS.md`, give each command a row in the summary table, and a section with
+  its usage, its behavior, and an **Impact** paragraph.
+- In `PLAN.md`, keep each plan at a high level. Obey the rules at the top of that file.
+- Keep the name of a heading that another document links to, or update those links.
+
+### Architecture
 
 The core requires Go 1.27.3+ and the pure Go SQLite driver
 `github.com/ncruces/go-sqlite3`. The product has a separate background server and
@@ -91,6 +115,8 @@ information. The CLI only opens the UI, manages the server, edits settings, and 
 history.
 
 Keep deployment builds compatible with `CGO_ENABLED=0`.
+
+### Build and tools
 
 - Prefer simple, standard tools. Builds require Go 1.27.3+, Node.js 22+, and npm. The
   resulting binary is self-contained.
@@ -106,6 +132,15 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   you change its shape or colors, update the README copies in `docs/images/` too. The
   frontend build uses `@resvg/resvg-js` to render the embedded template PNG. Commit the
   SVG source, not the generated image.
+- Build with `make build`. Start the server with `./bin/bbflow server start`. Open
+  `./bin/bbflow ui`.
+- Local builds use `~/.bbflow-dev`. `make release` produces `bin/release/bbflow`, which
+  uses `~/.bbflow`. Each instance gets an automatically allocated loopback port, unless
+  its Settings name a port. Keep development and production data separate by default.
+  Tests must use temporary data directories.
+
+### Sessions and launches
+
 - New sessions always use the server environment. Launch an interactive shell with
   `$SHELL -i`, or `/bin/sh -i` if `$SHELL` is unset.
 - Tools have user-defined names and single-line startup commands. Submit the selected
@@ -117,35 +152,24 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 - Keep General and custom project metadata in SQLite. Projects supply launch defaults.
   Sessions retain their actual workspace path. Project removal must preserve session
   history, files, and processes.
-- Build with `make build`. Start the server with `./bin/bbflow server start`. Open
-  `./bin/bbflow ui`.
-- Click ＋ beside a project to create a new draft entry. Choose a tool or Shell. Select
-  an optional worktree. Click Start session. Edit startup commands only in Settings.
-- After the latest terminal of a session ends, use Continue in new terminal. It starts a
-  new run in the same session and workspace. It first rebuilds a read-only handoff
-  folder with every earlier terminal. Allow one live session terminal per session.
+- Allow one live session terminal per session.
 - The Terminal view of the workspace pane is an ad hoc shell in the session workspace. Do
   not record it in SQLite. It must not change session status, order, or handoff.
-- A closed tab leaves its view. The session and history capture continue. Use the UI's
-  Stop session action to stop work. Archive hides drafts or finished sessions. Archived
-  lets users find and restore them. Each session has one saved message editor. All views
-  of a session show its latest saved draft.
-- Use `./bin/bbflow ui` to open the running instance's home page in the default browser.
-  It uses the same instance selection and server verification as other clients.
-- On macOS, server start also launches a menu companion from the same executable. The
-  menu shows Open UI and Quit bbflow with a separator between them. The Quit bbflow
-  label includes the running version. For a directory that is not the build default, it
-  shows a short instance tag in place of the version. Quit bbflow stops the server and
-  its sessions.
+
+### Server, instances, and the macOS menu
+
+- Use global `--dir` or `BBFLOW_DIR` to select the instance for every command. Clients
+  read `server.json` and verify the connected server before sending operations. They do
+  not open SQLite directly. The instance directory is separate from the agent workspace.
 - Every server start launches the menu companion on macOS. There is no command option to
   turn it off. Automated runtime tests disable native menus with the link-time variable
   `main.menuBar=off`, or in `TestMain`. A separate helper uses a pipe to test the
   companion lifecycle. Keep menu code in macOS-specific Go files and retain
   `CGO_ENABLED=0` builds.
-- Local builds use `~/.bbflow-dev`. `make release` produces `bin/release/bbflow`, which
-  uses `~/.bbflow`. Each instance gets an automatically allocated loopback port, unless
-  its Settings name a port. Keep development and production data separate by default.
-  Tests must use temporary data directories.
+- Backup and restore are deferred to the cloud backup plan.
+
+### Releases and the installer
+
 - Package tagged macOS releases with `make release-assets VERSION=X.Y.Z`. Keep the
   installer and checksums with the release assets. Include the project and dependency
   license notices in the archives and embedded binary. Use the patched Go version
@@ -158,19 +182,17 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 - Use synthetic releases for installer tests. Use temporary installation and instance
   directories for live install checks. See `docs/DEVELOPMENT.md` for release publishing
   and validation commands.
-- Use global `--dir` or `BBFLOW_DIR` to select the instance for every command. Clients
-  read `server.json` and verify the connected server before sending operations. They do
-  not open SQLite directly. The instance directory is separate from the agent workspace.
-- Stop all temporary development servers and agent processes created for validation
-  before finishing.
+
+### Validation commands
+
 - Validate with `make test`, `make check`, and `make web-check`. Direct
   `CGO_ENABLED=0 go test ./...` and `go vet ./...` require `make web-build` first in a
   fresh checkout.
 - Use `go test -race ./...` for concurrent runtime changes. The race detector needs CGO
   for tests. The deployed core does not.
 - PTY tests need permission to create local processes and terminal devices.
-- Read `docs/COMMANDS.md` for CLI usage and `docs/SPEC.md` for storage details. Backup
-  and restore are deferred to the cloud backup plan.
+- Stop all temporary development servers and agent processes created for validation
+  before finishing.
 
 ## Project skills
 
@@ -341,9 +363,6 @@ added. Preserve them across database upgrades too.
   formatting, links, and consistency. Do not invent application tests.
 - When you add a toolchain, document its setup, development, and validation commands in
   `docs/DEVELOPMENT.md`. Update this file too.
-- Keep `GOAL.md` focused on intent, `PLAN.md` on future implementation, `SPEC.md` on
-  current behavior, `DEVELOPMENT.md` on build, check, and release procedures, and this
-  file on contributor guidance.
 - In the completion report, state what changed, each addition, what was verified, and
   any remaining limitations. Distinguish interface inspection, fixture tests, and actual
   end-to-end runs.
@@ -395,10 +414,10 @@ Use this starting format. Adjust the structure and detail to the change:
 ```
 
 A small change may combine these answers into a short paragraph. Keep the agent
-additions in their own section, also in a short description. A complex change may
-need separate design sections. Add reviewer notes, compatibility or migration details,
-risks, or screenshots only when they help assess the change. There is no target word
-count. Include alternatives or abandoned approaches only when they explain an important
+additions in their own section, even in a short description. A complex change may need
+separate design sections. Add reviewer notes, compatibility or migration details, risks,
+or screenshots only when they help assess the change. There is no target word count.
+Include alternatives or abandoned approaches only when they explain an important
 tradeoff in the final design.
 
 Keep the description focused on the change. Omit raw conversation transcripts, private

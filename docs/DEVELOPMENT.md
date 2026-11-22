@@ -77,11 +77,11 @@ go test -race ./...
 | `make skill-check` | Fixture checks of the project skill scripts. It needs `jq` and no network access. |
 | `go test -race ./...` | Go tests with the race detector, for concurrent runtime changes. |
 
-`make test` and `make check` build the frontend first. The race detector needs CGO for
-tests. Deployment builds do not need CGO.
-Pseudo-terminal (PTY) tests launch interactive shells and synthetic commands. They need
-permission to create local processes and terminal devices. See
-[validation](SPEC.md#validation) for the record of fixtures and manual checks.
+- `make test` and `make check` build the frontend first.
+- The race detector needs CGO for tests. Deployment builds do not need CGO.
+- Pseudo-terminal (PTY) tests launch interactive shells and synthetic commands. They
+  need permission to create local processes and terminal devices.
+- See [validation](SPEC.md#validation) for the record of fixtures and manual checks.
 
 ## Logo
 
@@ -89,7 +89,7 @@ The logo source is `web/src/bbflow.svg`. It draws the letters "bb" on a 16-unit 
 grid in six rainbow bands. Each band is two grid rows. The frontend build renders the
 menu bar PNG from this source at 2 pixels per grid unit.
 
-GitHub selects README images from its own theme. Thus the README uses fixed-color light
+GitHub selects README images from its own theme, so the README uses fixed-color light
 and dark copies in `docs/images/`. `web/logo.test.mjs` checks that the copies keep the
 shape and colors of the source.
 
@@ -114,6 +114,12 @@ format 3 baseline.
 
 ## Publish a release
 
+A release has three parts: build and check the archives, publish them for a tag, and
+check the installer. Publish with the Release workflow. Publish manually only when
+hosted Actions is unavailable.
+
+### Build and check the archives
+
 Install the locked frontend dependencies. Then run the checks and create the archives.
 Replace `X.Y.Z` with the release version:
 
@@ -128,16 +134,19 @@ sh scripts/smoke-release.sh "$PWD/bin/release/bbflow" X.Y.Z
 make release-assets VERSION=X.Y.Z
 ```
 
-`make release` without `VERSION` reports `dev`. `make release-assets` requires a full
-version and builds macOS `arm64` and `amd64` with `CGO_ENABLED=0`. It writes two
-archives, `install.sh`, and SHA-256 `checksums.txt` to `bin/releases/vX.Y.Z/`. The
-output directory must not already exist. Git ignores it. Each archive includes the
-executable, `LICENSE`, and `THIRD_PARTY_NOTICES.txt`. Use the patched Go version that
-`go.mod` requires.
+- `make release` without `VERSION` reports `dev`.
+- `make release-assets` requires a full version and builds macOS `arm64` and `amd64`
+  with `CGO_ENABLED=0`.
+- It writes two archives, `install.sh`, and SHA-256 `checksums.txt` to
+  `bin/releases/vX.Y.Z/`. The output directory must not already exist. Git ignores it.
+- Each archive includes the executable, `LICENSE`, and `THIRD_PARTY_NOTICES.txt`.
+- Use the patched Go version that `go.mod` requires.
 
 The smoke check uses a temporary instance. Its server adds a menu bar icon until the
 check stops it. It verifies the embedded UI and a read-only query. It stops the server
 before it removes temporary files.
+
+### Publish with the Release workflow
 
 To publish with the Release workflow, do these steps:
 
@@ -150,6 +159,8 @@ runners. Only after both pass does it package and publish the release with those
 The workflow uses the GitHub token of the repository. It does not change repository
 visibility.
 
+### Publish manually
+
 If hosted Actions is unavailable, publish manually:
 
 1. Run the same checks locally.
@@ -159,6 +170,8 @@ If hosted Actions is unavailable, publish manually:
 
 Use either the workflow or manual publishing for a tag, not both. Never replace
 published release assets or retag a published version. Publish a new version for fixes.
+
+### Check the installer
 
 Installer fixtures run under `make test` with synthetic binaries and GitHub API
 responses. For a live installation check, use the installer `--dir` option with a

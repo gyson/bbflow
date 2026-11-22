@@ -1,347 +1,150 @@
 # bbflow — Project Goal
 
-Status: Intended product. The current focus is a local server with a web workspace and
-durable history. See [SPEC.md](SPEC.md) for implemented behavior.
-
-## Development stage
-
-bbflow is in daily use. Upgrades must keep existing databases usable and preserve
-recorded history, settings, and drafts. Ship database migrations inside the release
-binary. Apply them automatically when the new server starts. Users must not need a fresh
-database or separate migration tools for supported upgrades.
-
-Commands and APIs can still change. Keep the current implementation simple. Retain the
-migrations that preserve durable data across releases.
+This file describes, at a high level, the product that bbflow is meant to become. Three
+other documents own the related facts: [SPEC.md](SPEC.md) describes what is implemented
+and where its limits are, [PLAN.md](PLAN.md) lists the planned work, and
+[AGENTS.md](../AGENTS.md) gives the rules and invariants for contributors.
 
 ## Why this project exists
 
-Daily work can require several agent command-line interface (CLI) tools. Some tools
-support sessions and integrations. Others provide only a terminal interface with limited
-history. Users must manually manage conversations, find earlier decisions, attach files,
-create worktrees, and move work between tools.
+Daily work often needs several agent command-line interface (CLI) tools. Some of them
+support sessions and integrations, while others offer only a terminal interface with
+limited history. That leaves the user to manage conversations by hand: finding earlier
+decisions, attaching files, creating worktrees, and moving work from one tool to
+another.
 
-Some tools cannot preserve or search earlier sessions. Others make these operations
-difficult. Reliable session capture, review, and search are the main reasons to use
-bbflow.
+Some tools cannot preserve or search earlier sessions at all, and others make it
+difficult. Reliable capture, review, and search of sessions are therefore the main
+reasons to use bbflow.
 
-bbflow should provide session management and message composition for the CLI agents that
-users already use. Codex Desktop, Claude Desktop, and Cursor Desktop provide examples of
-this experience.
-
-## Initial audience
-
-Build first for individual daily use on macOS. Shared history and multi-user
-collaboration are outside the initial release. Support for other operating systems can
-be considered later.
+bbflow should give the CLI agents that people already use the kind of session
+management and message composition that Codex Desktop, Claude Desktop, and Cursor
+Desktop provide.
 
 ## Goal
 
-Build a desktop workspace where conversations, history, and working context remain
+Build a desktop workspace where conversations, history, and working context stay
 available across different agent CLI tools.
 
-A user should be able to start work with one agent and continue with another. The new
-agent should have access to the earlier conversation. Users should also be able to
+A user should be able to start work with one agent and continue with another, and the
+new agent should have access to the earlier conversation. Users should also be able to
 import conversations from other applications into bbflow.
+
+## Audience
+
+Build first for one person's daily use on macOS. Shared history and multi-user
+collaboration are outside the initial release, and support for other operating systems
+can be considered later.
 
 ## What the user should be able to do
 
-1. **Manage conversations.** View, select, and organize sessions under saved projects.
-   Preserve history even when a CLI does not store it. Start sessions from a project
-   without another folder selection. Keep a built-in General project for work and
-   history searches across projects.
+1. **Manage conversations.** View, select, and organize sessions under saved projects,
+   and start a session from a project without selecting its folder again. History is
+   preserved even when a CLI does not store it. A built-in General project is there for
+   work and history searches that span projects.
 2. **Compose comfortably.** Edit multiline prompts, copy and paste, attach files, paste
-   images, and retain drafts while switching conversations.
-3. **Switch agents manually.** The user chooses when to switch and which CLI to use
-   next, including after a quota limit. bbflow prepares access to the history needed for
-   continuation. It does not automatically choose or switch agents.
-4. **Fork conversations.** Explore a different direction from an earlier point while
-   retaining access to the history inherited by that fork.
+   images, and keep drafts while switching between conversations.
+3. **Switch agents manually.** The user decides when to switch and which CLI to use
+   next, including after a quota limit. bbflow prepares access to the history that
+   continuation needs, but it never chooses or switches agents by itself.
+4. **Fork conversations.** Explore a different direction from an earlier point, while
+   the fork keeps access to the history it inherited.
 5. **Use worktrees.** Create separate working directories for independent coding tasks,
-   regardless of whether the CLI supports worktrees itself.
+   whether or not the CLI supports worktrees itself.
 6. **Find and reuse earlier work.** Search conversations, retrieve original messages,
-   and retain useful decisions and memory across sessions and agents.
-7. **Import existing history.** Import conversations from Cursor Desktop, Codex Desktop,
-   and Claude Desktop into the same searchable library. Continue or fork them with a
-   supported CLI.
-8. **Back up and restore data easily.** Preserve bbflow's SQLite data in cloud storage.
-   Recover it on a replacement installation without the original CLI's history service.
-   Cloud backup is future work in [PLAN.md](PLAN.md).
+   and keep useful decisions and memory across sessions and agents.
+7. **Import existing history.** Bring conversations from Cursor Desktop, Codex Desktop,
+   and Claude Desktop into the same searchable library, then continue or fork them with
+   a supported CLI.
+8. **Back up and restore data easily.** Keep bbflow's SQLite data in cloud storage, and
+   recover it on a replacement installation without the original CLI's history service.
 
-## Server-owned sessions and web workspace
+SPEC.md states which of these capabilities work today.
 
-Open `bbflow ui`, create an interactive shell session, and run Codex or another agent
-inside it. Preserve each agent's terminal interface, arguments, authentication, and
-approval prompts. A separate Go server owns the PTY, terminal screen, and local SQLite
-history. The TypeScript UI uses a JSON WebSocket protocol to view and control sessions.
-Keep deployment self-contained. Add a desktop shell later.
+## Example workflow
 
-Keep the bbflow CLI small:
+The everyday workflow starts with a new or reopened session in which the user works
+with an agent. Later, the user finds that conversation, or one decision from it,
+through bbflow. This has to work even when the CLI itself keeps little session history.
 
-- `ui` opens the home page.
-- `server start/stop/restart` manages the background server.
-- `query` reads history.
-- `update` installs a new release.
-
-Session operations and terminal interaction belong in the UI. New sessions start from a
-saved project. Each project keeps independent unfinished drafts. `bbflow ui` needs no
-path or session arguments. Shell launches use the server's environment.
-
-Closing a browser view leaves work and recording running. Reopening a live session joins
-the same process. Multiple tabs can share it. Every tab can send input. The PTY uses the
-size of the tab that most recently sent input. Stopping a session explicitly ends work
-for all views. Server stop and restart end all owned sessions and finalize their
-history. Ended sessions remain readable.
-
-Original terminal input and output are authoritative evidence. bbflow derives readable
-text from this evidence. Terminal redraws and escape sequences do not provide exact
-message boundaries. Allow multiple sessions in the same or overlapping workspace, with
-independent terminals and history. Provide optional managed worktrees for independent
-filesystem changes.
-
-Distinguish three operations: attachment to a live process, verified native CLI resume,
-and a fresh agent with history retrieval access. Recorded output alone cannot restore
-hidden model context or process memory. Keep bbflow IDs independent of provider IDs.
-Preserve native source information when available. Never replay recorded keystrokes to
-resume work.
-
-Provide a general-purpose read-only `bbflow query SQL` command for listing, searching,
-and reading recorded data. SQL chooses the scope, with no automatic session filter. Use
-the UI to browse sessions. Keep durable bbflow data in SQLite and preserve it across
-upgrades. Defer backup and recovery features to the cloud backup plan. History imports,
-native agent attachments, and a richer chat interface remain goals after the shared
-terminal workflow is useful.
-
-## Future workspace interface
-
-Keep a terminal-centered workspace with a resizable message editor:
-
-- **Left:** saved projects, including General, with sessions for browsing and switching
-  conversations.
-- **Center:** the interactive terminal, with a multiline editor below it and a draggable
-  divider to adjust their heights.
-- **Right:** supporting views such as a code diff or file preview.
-
-Support multiple windows to view different sessions at the same time. Each window shows
-one selected session. A session change in one window must not change another window.
-Windows share recorded history and run state. Another window must not duplicate an
-existing agent run. Windows for the same session share one process and one PTY size.
-
-After the web workflow is useful, provide one global shortcut to open bbflow's UI or
-move it to the foreground. Per-window and per-session shortcuts are not required. The
-key binding remains undecided.
-
-A future chat interface can provide a primary experience. In that interface, show
-prompts sent through bbflow alongside terminal output. Keep a terminal view available
-for interactive prompts. Plain terminal output may mix replies, tool logs, progress
-updates, and screen redraws. Do not present inferred message boundaries as exact.
-
-## First runtime: a generic CLI
-
-Treat local Codex as an ordinary interactive CLI. The first runtime must not depend on
-an app server, SDK, structured JSON output, or native session APIs.
-
-- Start an interactive shell in the chosen working directory through a pseudo-terminal
-  (PTY). Let users launch their commands from that shell.
-- Forward terminal input and controls, and capture available output while the process
-  runs in the foreground.
-- Save the original terminal input and output recording. Build readable, searchable text
-  from that recording and keep links to the source.
-- Preserve the CLI's own approval prompts and interactive controls. Do not infer
-  completion or safe input timing from silence alone.
-- Start a fresh CLI process for a new run when needed. bbflow owns conversation IDs and
-  history across runs.
-
-Use the same path for local Codex and other terminal agents. Richer integrations can be
-considered later after this basic path works.
-
-## Session views and background work
-
-When a web UI session view closes, its active agent should continue in the background.
-History capture must continue while the view is closed. A reopened view should connect
-to the existing run. It should show recorded output and current state without a
-duplicate run. Other open windows must remain usable.
-
-Closing a view and explicitly stopping a run are separate actions. Explicit runtime
-shutdown should stop active runs cleanly and preserve captured history without replaying
-agent actions. Quit bbflow in the macOS menu bar stops the server and its sessions. Host
-sleep and reboot remain separate requirements.
-
-## Core workflow
-
-The everyday workflow starts with a new or reopened session. The user works with an
-agent. Later, the user finds the conversation or an earlier decision through bbflow.
-This must work even when the CLI has limited session history.
-
-An example that also exercises import and continuation:
+A longer example also exercises import, continuation, and a fork:
 
 1. Import a conversation from Cursor or Codex Desktop.
 2. Open it in bbflow and select a workspace.
 3. Continue with the local Codex CLI.
-4. Retrieve an earlier decision through bbflow's history tools when more detail is
-   needed.
-5. Manually select another agent CLI after a quota limit or when a different tool is
-   more useful.
+4. Retrieve an earlier decision from the bbflow history when more detail is needed.
+5. Select another agent CLI after a quota limit, or when a different tool is more
+   useful.
 6. Fork the conversation into a new worktree to try another approach.
 
 The conversation and its ancestry remain accessible throughout this workflow.
 
-## History retrieval and continuation
-
-For future continuation, inject only a short history retrieval instruction. Identify the
-current bbflow session and its inherited history reference. Explain how to retrieve that
-history through the Model Context Protocol (MCP) or a bbflow CLI. Do not add an
-automatic history summary in the initial approach.
-
-The agent can search and read earlier messages as needed. The initial prompt does not
-need the full transcript. Keep the user's current request in the new session's input.
-
-For the first generic runtime, use `bbflow query` that the agent can call through its
-shell tools. Check that this access works. Terminal input and output alone do not
-establish whether the agent can use shell tools or MCP. Agents without a retrieval path
-cannot use the reference-only handoff as described.
-
-bbflow must still capture or import the actual history and retain its provenance. An
-inheritance instruction points to stored evidence. It does not replace that evidence or
-prove that the agent read it. The history service must enforce the inherited cutoff
-across search and direct reads.
-
-The general-purpose SQL command reads exactly the scope selected by its query. It may
-read across sessions, including when called from an agent. Future session-aware
-retrieval tools should default to the current session and its fixed inherited prefix,
-with an explicit broader request for other sessions. Their history service must enforce
-that selected scope and fork cutoff consistently. Raw SQL does not construct an
-inherited view automatically.
-
-First, validate continuation with the instruction and history retrieval. Then use the
-results to decide whether a summary is necessary. Continuation must not require a final
-summary from an outgoing agent whose quota is exhausted. Import source formats and
-refresh behavior remain separate open questions.
-
-## SQLite storage and future cloud backup
-
-Keep all durable bbflow data in SQLite, including sessions, runs, original events,
-derived text, attachments, and drafts. Store future imported evidence, provenance, fork
-boundaries, memory, and settings there when implemented. Workspace files and
-provider-managed credentials remain separate. Runtime logs, locks, and caches must not
-become the only copy of product data.
-
-Database upgrades must be atomic. A failed migration must leave the prior schema and
-records intact. Preserve original bytes and stable references. Clearly reject
-unsupported or newer formats. Never guess a conversion or reset a user's database.
-
-Keep production data under `~/.bbflow` and local development data under `~/.bbflow-dev`
-by default. Select the whole instance through one directory option, with automatic
-discovery of its running server. Keep the instance directory separate from the agent
-workspace. Preserve this separation in future cloud destinations.
-
-Cloud backup is deferred. Evaluate Litestream or a similar SQLite replication tool. Keep
-implementation and acceptance work in [PLAN.md](PLAN.md). No local backup or export
-feature is planned. Recovery should preserve original evidence and stable references. It
-should report missing workspaces and never replay actions or start agents.
-
 ## Principles
 
-- **bbflow owns the recorded history.** A conversation's identity and availability
-  should not depend on a particular CLI or its native session format.
-- **Start with ordinary terminal access.** Make the first runtime work without
-  structured interfaces or provider-specific session APIs. Plain output does not imply
-  that an agent lacks shell or MCP tools. Richer interfaces are possible later
-  additions.
-- **Start continuation with a history reference and retrieval instructions.** Use MCP or
-  a bbflow CLI to retrieve detailed history. Evaluate this approach before you add
-  summaries. If a tool cannot retrieve history, state that limitation. A prompt with
-  selected history is a separate capability.
+AGENTS.md holds the detailed [invariants](../AGENTS.md#invariants-to-preserve) behind
+these principles.
+
+- **bbflow owns the recorded history.** The identity and availability of a conversation
+  do not depend on any one CLI or its native session format. The original terminal
+  input and output are the evidence, and readable text and summaries are only derived
+  from it.
+- **The server owns the work.** A background server owns each terminal process and its
+  history, so a view can close and open again while the work and the recording
+  continue. A session ends only when its shell exits, when the user stops it, or when
+  the server stops.
+- **Use ordinary terminal access.** Run each agent through its normal interactive CLI
+  and preserve its arguments, authentication, and approval prompts. Do not depend on an
+  SDK, structured output, or a native session API, although richer integrations can
+  come later.
+- **Continue with a history reference.** A new agent gets a reference to the recorded
+  history and instructions to read it. Continuation must not need a summary from the
+  earlier agent, because that agent's quota can be exhausted. Evaluate this approach
+  before adding summaries.
+- **State what continues.** Attaching to a live process, native CLI resume, and a new
+  agent with history access are three different operations. A recording cannot restore
+  hidden model state, and recorded input is never replayed to resume work.
 - **Preserve history boundaries.** A fork inherits history up to its selected point.
-  Later parent messages and sibling branches appear only through explicitly broader
-  searches.
+  Later parent messages and sibling branches appear only through an explicitly broader
+  search.
 - **Keep file state explicit.** Conversation forks and workspace snapshots are separate
-  concepts. Old transcripts alone cannot reconstruct historical files.
-- **Show context coverage.** Preserve all captured or imported data. Identify missing
-  attachments, unsupported data, and summaries. Hidden runtime state may not transfer.
-- **Keep data local and scope explicit.** Retain the existing agents' authentication and
-  provider behavior. SQL selects its own scope. Future session-aware retrieval should
-  default to the current session and inherited prefix.
-- **Preserve imported originals.** Import by copying and retain provenance. Repeated
-  imports should not create duplicates or silently change history already inherited by a
-  fork.
-- **Make durable storage easy to back up.** Keep required records and attachments
-  accessible. Provide a consistent backup method. Verify that restoration preserves
-  stable identities and history boundaries.
+  concepts, because an old transcript alone cannot reconstruct historical files.
+- **Show context coverage.** Preserve all captured or imported data, and identify
+  missing attachments, unsupported data, and summaries rather than hiding them.
+- **Preserve imported originals.** Import by copying, and retain provenance. A repeated
+  import must not create duplicates or silently change history that a fork inherits.
+- **Keep data local and scope explicit.** All durable bbflow data lives in one local
+  SQLite database. Cloud replication happens only when the user selects it, and each
+  history read has an explicit scope.
+- **Keep durable data safe.** Upgrades preserve existing history, settings, and drafts,
+  and backup and recovery preserve stable identities and history boundaries.
+- **Keep bbflow small.** Keep the CLI small, the web client thin, and the release
+  binary self-contained.
 
-## Initial integration targets
+## Later interface goals
 
-Development starts with local Codex on macOS. Other agent CLIs must be tested separately
-before claiming support.
-
-- **Local Codex CLI:** the first real agent for the generic terminal runtime, and the
-  first history-import target. Use ordinary interactive CLI input and output for runtime
-  integration.
-- **A generic terminal test program:** exercise partial output, screen redraws, input
-  prompts, interruption, and process exit without a structured output protocol. Passing
-  these tests does not establish support for an untested agent CLI.
-- **Other agent CLIs:** inspect their actual versions, execution environments, and
-  interfaces. Verify terminal behavior and any shell or MCP path for history retrieval
-  before claiming compatibility. Public documentation alone does not establish support.
-
-Cursor and Claude history import are part of the intended first useful release.
-Source-specific behavior will be validated against actual exports or accessible local
-records.
-
-## Design reference: Herdr
-
-Use [Herdr](https://github.com/herdrdev/herdr) as a reference for separate client views
-and process ownership. Its
-[session lifecycle documentation](https://herdr.dev/docs/session-state/) distinguishes
-live detach and reattach from layout, screen, and native agent session restoration. Its
-[socket API](https://herdr.dev/docs/socket-api/) provides a reference for shared CLI
-control and clients that respond to events.
-
-Evaluate Herdr as a possible runtime backend. bbflow would own conversation identity,
-durable history, imports, fork boundaries, retrieval, and the chat interface. No
-dependency or framework decision has been made.
-
-Herdr's documented event history is not durable. Screen replay does not prove that a
-conversation archive is complete. Verify complete output capture and integration with
-the target agent CLIs before adoption. This assessment uses public documentation
-reviewed on October 3, 2026. No Herdr runtime integration has been tested.
+- **Chat interface.** Show the prompts sent through bbflow alongside the terminal
+  output, while keeping a terminal view available for interactive prompts. Inferred
+  message boundaries must not be presented as exact.
+- **Desktop shell and global shortcut.** Once the web workflow is useful, provide one
+  global shortcut that opens the bbflow UI or brings it to the foreground.
 
 ## What success looks like
 
-The user can use bbflow for daily agent work and find decisions from previous sessions.
-The user can switch tools without manual context reconstruction. Imported conversations
-are immediately available for search, agent references, and continuation in a new
-session.
+- The user can rely on bbflow for daily agent work and can find decisions from earlier
+  sessions.
+- Each tested agent CLI leaves sessions that are available and searchable after a run
+  ends, without depending on the CLI's own history management.
+- The user can change tools without reconstructing context by hand, because a new CLI
+  agent can retrieve an earlier decision from the bbflow history.
+- Imported conversations are immediately available for search, agent references, and
+  continuation in a new session.
 
-Daily-use validation must show that each tested agent CLI leaves available, searchable
-sessions after a run ends. This must not depend on the CLI's own history management.
+## Open decisions
 
-The runtime proof is to create a shell in the web UI, run local Codex inside it, and
-interact through its normal terminal interface. Verify recorded input/output and search.
-A closed tab should leave work and recording active. A reopened tab should join the same
-process. Explicit stop should end it while keeping history. Validate resizing, Ctrl+C,
-exit status, background capture, and reconnection across independent tabs with fixtures.
-
-Later continuation should demonstrate that a fresh CLI agent can retrieve an earlier
-decision through bbflow history. Validate native CLI resume separately when supported.
-
-The import proof is to copy an existing Codex conversation into bbflow and continue it
-through the same generic runtime and history retrieval path.
-
-## Decisions still open
-
-The initial delivery is a Go server with a web UI and a pure Go SQLite driver. Cloud
-backup is planned in [PLAN.md](PLAN.md), with Litestream as a candidate.
-
-These decisions remain open:
-
-- Native CLI session mapping and continuation after a process ends.
-- Cloud backend and replication lifecycle.
-- Possible reuse of Herdr.
-- Additional agent CLI versions, imports, and memory automation.
-
-Keep the first web client focused on the shared terminal workflow. Choose a desktop
-framework when a desktop shell is needed. Consider summary injection only after you
-evaluate continuation with inheritance references and retrieval instructions.
-
-[SPEC.md](SPEC.md) describes what is currently implemented. It should grow as these
-goals become working features.
+- Native CLI session mapping and resume after a process ends.
+- Import source formats and refresh behavior. Codex is the first import target.
+- Memory across sessions and agents.
+- Summaries for continuation, to be decided after continuation with history references
+  has been evaluated.
+- The desktop framework and the key binding of the global shortcut.
+- Cloud backup. See [PLAN.md](PLAN.md#cloud-backup).

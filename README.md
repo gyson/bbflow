@@ -70,12 +70,14 @@ see which sessions the restart ends. The update starts only after you confirm.
 7. Click the search icon to search the recorded output of a session, a project, or all
    sessions.
 
-Run agents in the normal screen to keep their full output in the handoff transcript.
-For Codex, use `codex --no-alt-screen`. For Claude Code, keep the fullscreen renderer
-off.
+Two tips:
 
-To share a tool set with a team, write a setup script with `bbflow tool add` and
-`bbflow settings set`. See [Manage tools](docs/COMMANDS.md#manage-tools).
+- **Keep the full output.** Run agents in the normal screen to keep their full output
+  in the handoff transcript. For Codex, use `codex --no-alt-screen`. For Claude Code,
+  keep the fullscreen renderer off.
+- **Share a tool set.** To share a tool set with a team, write a setup script with
+  `bbflow tool add` and `bbflow settings set`. See
+  [Manage tools](docs/COMMANDS.md#manage-tools).
 
 ## Your data
 

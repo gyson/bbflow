@@ -9,23 +9,32 @@ path to your executable, such as `./bin/bbflow` or `./bin/release/bbflow`. Repla
 uppercase placeholders such as `SESSION_ID` with your own values. Brackets in usage
 lines identify an optional argument. Do not type the brackets.
 
+Each command section gives the usage, the behavior, and an **Impact** paragraph. The
+Impact paragraph tells what the command changes.
+
+See [README.md](../README.md) for installation, [DEVELOPMENT.md](DEVELOPMENT.md) for
+local builds, and [SPEC.md](SPEC.md) for implementation details and current limitations.
+
 ## Command summary
 
 | Command | Use it to | Impact |
 | --- | --- | --- |
-| `bbflow`, `bbflow help`, `bbflow --help`, `bbflow -h` | Show available commands. | Displays help only. |
-| `bbflow --version` | Show the executable version. | Prints a release version or `dev`. Does not contact a server. |
-| `bbflow [--dir DIR] update [--yes]` | Install the latest release and restart the server with it. | Asks first when a server runs. Replaces the invoked executable, then stops the server, which ends its sessions, and starts the new version. |
-| `bbflow server start` | Start the local server in the background. | Creates the data directory and log. Adds the macOS menu. The server continues after the terminal closes. |
-| `bbflow server stop` | Stop the local server. | Stops its active agents and saves their partial history. |
-| `bbflow server restart` | Replace the server with the invoked executable. | Stops active agents, finishes shutdown, then starts a new server and its macOS menu. |
-| `bbflow ui` | Open the web UI home page in the default browser. | Verifies the selected running server, then launches its home URL. Starts no server or agent. |
-| `bbflow query SQL` | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
-| `bbflow storage [--redact]` | See which projects, sessions, and event kinds use the most space. | Reads the archive. Prints a Markdown report. |
-| `bbflow tool list\|add\|remove` | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
-| `bbflow settings get\|set` | Show or change appearance, session defaults, the update check, and the server port. | Changes saved settings. Starts no session. |
-| `bbflow title-tool list\|show\|set\|test` | Show, select, or test the tool for automatic session titles. | `set` and `test` run the tool once with a sample message. `set` saves the tool only after the test passes. Starts no session. |
-| `bbflow skill` | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
+| [`bbflow`, `bbflow help`, `bbflow --help`, `bbflow -h`](#help) | Show available commands. | Displays help only. |
+| [`bbflow --version`](#executable-version) | Show the executable version. | Prints a release version or `dev`. Does not contact a server. |
+| [`bbflow server start`](#start-the-server) | Start the local server in the background. | Creates the data directory and log. Adds the macOS menu. The server continues after the terminal closes. |
+| [`bbflow ui`](#open-the-web-ui) | Open the web UI home page in the default browser. | Verifies the selected running server, then launches its home URL. Starts no server or agent. |
+| [`bbflow server stop`](#stop-the-server) | Stop the local server. | Stops its active agents and saves their partial history. |
+| [`bbflow server restart`](#restart-the-server) | Replace the server with the invoked executable. | Stops active agents, finishes shutdown, then starts a new server and its macOS menu. |
+| [`bbflow [--dir DIR] update [--yes]`](#update-bbflow) | Install the latest release and restart the server with it. | Asks first when a server runs. Replaces the invoked executable, then stops the server, which ends its sessions, and starts the new version. |
+| [`bbflow query SQL`](#query-sqlite) | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
+| [`bbflow storage [--redact]`](#storage-report) | See which projects, sessions, and event kinds use the most space. | Reads the archive. Prints a Markdown report. |
+| [`bbflow tool list\|add\|remove`](#manage-tools) | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
+| [`bbflow settings get\|set`](#manage-settings) | Show or change appearance, session defaults, the update check, and the server port. | Changes saved settings. Starts no session. |
+| [`bbflow title-tool list\|show\|set\|test`](#title-tool) | Show, select, or test the tool for automatic session titles. | `set` and `test` run the tool once with a sample message. `set` saves the tool only after the test passes. Starts no session. |
+| [`bbflow skill`](#agent-guide) | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
+
+Each command accepts the global `--dir` option. See
+[Instance directory](#instance-directory) and [Exit codes](#exit-codes).
 
 Create, browse, reopen, and stop sessions in the web UI. The CLI has no session
 operations or interactive terminal client. `query` handles custom history reads. `ui`
@@ -33,6 +42,12 @@ accepts no workspace or session arguments. `tool`, `settings`, and `title-tool` 
 the same saved settings as the Settings page.
 
 ## Instance directory
+
+Each instance has one directory. The directory holds the database, the log, and the
+connection information of its server. A command selects the instance with `--dir`,
+`BBFLOW_DIR`, or the default of the build.
+
+### Default and selection
 
 | Build | Default instance directory |
 | --- | --- |
@@ -45,6 +60,11 @@ does not change its default. All commands select one instance in this order:
 1. Global `--dir DIR`, if supplied before the command.
 2. `BBFLOW_DIR`, if set to a nonempty value.
 3. The build's default directory.
+
+Explicit overrides can point either build at any directory. Development and production
+instances are separate by default. Previous locations are not searched or moved.
+
+### Server port
 
 Each server listens on a port at `127.0.0.1` and `::1`. To keep one address for
 bookmarks, set `port` with [settings set](#manage-settings) or in Settings. The default,
@@ -60,9 +80,13 @@ Clients read the port from `server.json` in the selected directory. Before a com
 they verify the server's directory and instance ID on the same WebSocket connection.
 There are no `--port` or `--data-dir` options.
 
+### Running server
+
 Query, UI, tool, and settings commands require a running server and do not start one
 automatically. The web UI uses the same server at its printed HTTP URL. There is no
 authentication token.
+
+### Files
 
 The instance directory contains:
 
@@ -78,8 +102,7 @@ shutdown. Lock files may remain after shutdown. Their presence does not mean a s
 active. Lifecycle commands create the instance directory and lock files as needed,
 including when stopping an instance that is already stopped.
 
-Explicit overrides can point either build at any directory. Development and production
-instances are separate by default. Previous locations are not searched or moved.
+### Position of the options
 
 Put global `--dir` before the command. Put command options after the subcommand and
 before its positional arguments:
@@ -94,6 +117,8 @@ bbflow --dir ~/bbflow-experiment query "SELECT id,title FROM sessions"
 directory. Click ＋ beside a saved project in the UI to create a new draft. Relative
 instance paths resolve from the client's current directory. Paths with symlinks resolve
 to the same instance.
+
+### Variables in a session
 
 bbflow sets `BBFLOW_SESSION` and the canonical `BBFLOW_DIR` inside each wrapped agent.
 Its bbflow commands automatically connect to the owning instance, even if the outer
@@ -115,8 +140,10 @@ bbflow server stop --help
 bbflow server restart --help
 bbflow ui --help
 bbflow query --help
+bbflow storage --help
 bbflow tool --help
 bbflow settings --help
+bbflow title-tool --help
 bbflow skill --help
 ```
 
@@ -139,79 +166,6 @@ executable, not an already running server, and does not check GitHub for updates
 **Impact:** prints version information without contacting a server or opening an
 instance directory. See the [installation guide](../README.md#install-on-macos) to
 install or update bbflow.
-
-## Update bbflow
-
-```text
-bbflow [--dir DIR] update [--yes]
-```
-
-The command reads the latest macOS release. If the executable that received the
-command is already current or newer, it downloads no binaries and changes nothing.
-Development builds cannot update.
-
-When a server runs in the selected instance directory, the command shows the two
-versions. It also tells you that the server stops and its running sessions end. Then it
-asks `Continue? [y/N]`. Any answer other than `y` or `yes` changes nothing. Without a
-terminal on standard input, the command refuses unless you give `--yes`.
-
-After confirmation, the command does these steps in order:
-
-1. Download the release while the current server continues.
-2. Verify its checksum and its executable version.
-3. Replace the executable through an atomic rename.
-4. Start the new executable as an updater in its own session. The updater does not
-   depend on the terminal, so it continues when the server stop closes that terminal.
-5. Stop the confirmed server and wait until it releases its archive.
-6. Start the new version in the same instance directory, with the macOS menu.
-
-The update does not open the UI. The new server uses the same port, so open browser
-tabs reconnect and reload. If the port changed, reopen the UI with `bbflow ui` or the
-**Open UI** menu item.
-
-The command shows the updater output until the updater ends. Then it confirms that a new
-server answers. Then it prints a line that names both versions, for example
-`Updated bbflow 0.0.12 to 0.0.13. The server in ~/.bbflow runs the new version.` The
-last line gives the `bbflow ui` command for the instance. When no server runs, the
-command prints `Updated bbflow 0.0.12 to 0.0.13.`, then the hint to start the server.
-The updater also appends its output to `update.log` in the instance directory. Ctrl+C
-stops only that display. The update continues.
-
-When no server runs, the command only replaces the executable. It does not create the
-instance directory.
-
-Hints and recovery commands name the selected instance with `--dir`, for example
-`bbflow --dir '/Users/you/my instance' server start`.
-
-Updates that share an executable run one at a time. A second update waits for the
-first and says so. If another command changed the executable while the question waited,
-the update stops and changes nothing.
-
-The new server and its sessions do not receive `GITHUB_TOKEN` from the update command.
-They receive all other variables of its environment.
-
-`--yes` continues without the confirmation prompt.
-
-The executable must have the name `bbflow`. The command supports a symlink to it. You
-need write access to its installation directory.
-
-`--dir` and `BBFLOW_DIR` select the instance to restart. They do not select the
-executable to update. `BBFLOW_INSTALL_DIR` also does not redirect an update.
-
-**Impact:** contacts GitHub and replaces the executable through an atomic rename. When
-a server runs, it stops that server after confirmation, which ends its sessions and
-saves their partial history. The new server applies pending embedded database
-migrations at startup, before accepting requests. A failure before the rename leaves the
-executable and the server unchanged. A failure after the rename leaves the new
-executable in place. Then run `bbflow --dir DIR server start`. Other instances that use
-the same executable continue on the previous version until you restart them.
-
-Do not run the command inside a bbflow session if you want to see its result there. The
-server stop ends that terminal. The update continues, and `update.log` has its output.
-
-The web UI can start the same update without this command. When the server finds a
-newer release, the sidebar shows it above **Settings**. The update starts only after
-you confirm in its dialog. See [update from the web UI](SPEC.md#update-from-the-web-ui).
 
 ## Start the server
 
@@ -241,17 +195,22 @@ All pending migrations commit together. A failure rolls them back and stops star
 
 The command starts no shell or agent. Create sessions in the UI. The server uses the
 port from Settings or the saved port of the directory when it is free. Otherwise, it
-uses a free port from the operating system. See [Instance directory](#instance-directory). A second server cannot own the same directory. If startup fails,
-inspect the printed log path.
+uses a free port from the operating system. See
+[Instance directory](#instance-directory). A second server cannot own the same
+directory. If startup fails, inspect the printed log path.
 
-On macOS, a new server also launches a menu bar companion from this same executable.
-**Open UI** opens the verified server's home page. **Quit bbflow** stops that server and
-its active sessions, then closes the menu. Its label includes the running version.
-For an instance directory that is not the default of the build, the label shows a short
-instance tag in place of the version, such as **Quit bbflow (demo-1a2b3)**.
-Quit retains and verifies the original server connection, so missing or replaced
-`server.json` files do not prevent it. The menu has no separate Stop, Settings, or Logs
-action. There is no persistent Running label.
+### macOS menu
+
+- On macOS, a new server also launches a menu bar companion from this same executable.
+- **Open UI** opens the verified server's home page.
+- **Quit bbflow** stops that server and its active sessions, then closes the menu. Its
+  label includes the running version.
+- For an instance directory that is not the default of the build, the label shows a
+  short instance tag in place of the version, such as **Quit bbflow (demo-1a2b3)**.
+- Quit retains and verifies the original server connection, so missing or replaced
+  `server.json` files do not prevent it.
+- The menu has no separate Stop, Settings, or Logs action. There is no persistent
+  Running label.
 
 Each server start on macOS launches the menu. There is no option to turn it off. Linux
 never launches the menu. A repeated start leaves the existing server and its menu
@@ -330,8 +289,8 @@ verified shutdown request described above. If stopping fails, it does not launch
 replacement.
 
 **Impact:** the command ends all active agent runs and preserves their history. It opens
-the same archive in a new server process. The new server has a new instance ID. It uses the
-same port when that port is free. When Settings names another port, the new server
+the same archive in a new server process. The new server has a new instance ID. It uses
+the same port when that port is free. When Settings names another port, the new server
 tries that port first.
 
 The new server applies pending database migrations before accepting requests. Clients
@@ -340,6 +299,86 @@ input. Restart can fail to start the new process after the previous server stops
 the reported error and log path.
 
 Restart closes the previous menu companion and launches a new one on macOS.
+
+## Update bbflow
+
+```text
+bbflow [--dir DIR] update [--yes]
+```
+
+The command reads the latest macOS release. If the executable that received the
+command is already current or newer, it downloads no binaries and changes nothing.
+Development builds cannot update.
+
+### Confirmation
+
+When a server runs in the selected instance directory, the command shows the two
+versions. It also tells you that the server stops and its running sessions end. Then it
+asks `Continue? [y/N]`. Any answer other than `y` or `yes` changes nothing. Without a
+terminal on standard input, the command refuses unless you give `--yes`.
+
+### Steps
+
+After confirmation, the command does these steps in order:
+
+1. Download the release while the current server continues.
+2. Verify its checksum and its executable version.
+3. Replace the executable through an atomic rename.
+4. Start the new executable as an updater in its own session. The updater does not
+   depend on the terminal, so it continues when the server stop closes that terminal.
+5. Stop the confirmed server and wait until it releases its archive.
+6. Start the new version in the same instance directory, with the macOS menu.
+
+The update does not open the UI. The new server uses the same port, so open browser
+tabs reconnect and reload. If the port changed, reopen the UI with `bbflow ui` or the
+**Open UI** menu item.
+
+### Output
+
+- The command shows the updater output until the updater ends. Then it confirms that a
+  new server answers.
+- Then it prints a line that names both versions, for example
+  `Updated bbflow 0.0.12 to 0.0.13. The server in ~/.bbflow runs the new version.` The
+  last line gives the `bbflow ui` command for the instance.
+- When no server runs, the command prints `Updated bbflow 0.0.12 to 0.0.13.`, then the
+  hint to start the server.
+- The updater also appends its output to `update.log` in the instance directory.
+- Ctrl+C stops only that display. The update continues.
+
+### Rules
+
+- When no server runs, the command only replaces the executable. It does not create the
+  instance directory.
+- Hints and recovery commands name the selected instance with `--dir`, for example
+  `bbflow --dir '/Users/you/my instance' server start`.
+- Updates that share an executable run one at a time. A second update waits for the
+  first and says so.
+- If another command changed the executable while the question waited, the update stops
+  and changes nothing.
+- The new server and its sessions do not receive `GITHUB_TOKEN` from the update
+  command. They receive all other variables of its environment.
+- `--yes` continues without the confirmation prompt.
+- The executable must have the name `bbflow`. The command supports a symlink to it. You
+  need write access to its installation directory.
+- `--dir` and `BBFLOW_DIR` select the instance to restart. They do not select the
+  executable to update. `BBFLOW_INSTALL_DIR` also does not redirect an update.
+- Do not run the command inside a bbflow session if you want to see its result there.
+  The server stop ends that terminal. The update continues, and `update.log` has its
+  output.
+
+**Impact:** contacts GitHub and replaces the executable through an atomic rename. When
+a server runs, it stops that server after confirmation, which ends its sessions and
+saves their partial history. The new server applies pending embedded database
+migrations at startup, before accepting requests. A failure before the rename leaves the
+executable and the server unchanged. A failure after the rename leaves the new
+executable in place. Then run `bbflow --dir DIR server start`. Other instances that use
+the same executable continue on the previous version until you restart them.
+
+### Update from the web UI
+
+The web UI can start the same update without this command. When the server finds a
+newer release, the sidebar shows it above **Settings**. The update starts only after
+you confirm in its dialog. See [update from the web UI](SPEC.md#update-from-the-web-ui).
 
 ## Query SQLite
 
@@ -350,6 +389,8 @@ bbflow [--dir DIR] query SQL
 Pass one quoted SQL query. SQL chooses which sessions and records to read. There is no
 implicit session filter, even inside a wrapped agent. Queries go through the server to
 the selected archive. Queries need no direct database access or SQLite CLI installation.
+
+### Examples
 
 ```sh
 # Saved projects.
@@ -371,6 +412,8 @@ bbflow query "SELECT * FROM events WHERE seq=42"
 bbflow query "SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name"
 ```
 
+### Tables
+
 The tables are:
 
 | Table | Columns |
@@ -382,6 +425,8 @@ The tables are:
 | `preparations` | `session_id`, `revision`, `state`, `data` (JSON launch choices) |
 | `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
+
+### Data rules
 
 Server startup upgrades supported older database formats automatically. It rejects
 unsupported formats without changing their contents. Downgrades are not supported. See
@@ -402,6 +447,8 @@ A `LIKE` predicate checks each chunk separately, so a phrase split across chunks
 missed. Normal SQLite matching rules apply. Reads do not imply that an agent has seen
 the records.
 
+### Result format
+
 Results use column names and row arrays, so duplicate column names do not discard data:
 
 ```json
@@ -412,18 +459,28 @@ SQLite NULL becomes JSON `null`, BLOBs become base64 strings, and integers, real
 numbers, and text retain their JSON types. Use column aliases to make joins easier to
 read.
 
+### Accepted SQL
+
 The server accepts only read queries: `SELECT`, `WITH ... SELECT`, and `VALUES`. It
 accepts an optional final semicolon and SQL comments. It rejects writes, schema changes,
 PRAGMAs, transactions, external database attachment, and multiple statements. Use
 `sqlite_schema` to inspect the schema.
 
-Each query has a five-second timeout. Results are limited to 1,000 rows and 8 MiB of
-JSON. `truncated: true` means the result reached a limit. This is not an SQL error. For
-later event pages, use the last returned `seq` in `WHERE seq>LAST_SEQ ORDER BY seq`.
+### Limits
 
-Use an explicit order and limit for repeatable pages. A query may contain up to 64 KiB
-of SQL and return at most 128 columns. SQLite values/rows are limited to 1 MiB and its
-query heap to 64 MiB. Queries that exceed these limits or the timeout return an error.
+| Item | Limit | Above the limit |
+| --- | --- | --- |
+| Time of one query | 5 seconds | The query returns an error. |
+| Rows in a result | 1,000 | The result has `truncated: true`. |
+| JSON size of a result | 8 MiB | The result has `truncated: true`. |
+| SQL text | 64 KiB | The query returns an error. |
+| Columns in a result | 128 | The query returns an error. |
+| One SQLite value or row | 1 MiB | The query returns an error. |
+| SQLite query heap | 64 MiB | The query returns an error. |
+
+`truncated: true` means the result reached a limit. This is not an SQL error. For later
+event pages, use the last returned `seq` in `WHERE seq>LAST_SEQ ORDER BY seq`. Use an
+explicit order and limit for repeatable pages.
 
 **Impact:** opens a separate read-only connection. It does not change history, replay
 input, start or stop agents, or block capture by sharing its write connection. A missing
@@ -443,6 +500,8 @@ bbflow storage > storage-report.md
 bbflow storage --redact > storage-report.md
 ```
 
+### Report sections
+
 The report has these sections:
 
 - **Totals:** the database, used, free, and write-ahead log (WAL) sizes, the event
@@ -458,11 +517,15 @@ The report has these sections:
 Event counts and column bytes are exact. Sizes for each event kind, project, session,
 and day are estimates. See [storage report](SPEC.md#storage-report) for the method.
 
+### Names in the report
+
 The report shows project names, session titles, tool names, and the first 8 characters
 of session IDs. It never shows terminal content or workspace paths. Use `--redact` to
 replace project names and session titles with short IDs. General and standalone
-sessions keep their labels.
-The report escapes Markdown characters in names, so each name shows as saved.
+sessions keep their labels. The report escapes Markdown characters in names, so each
+name shows as saved.
+
+### Read time and limits
 
 The server reads every event once. A large archive can take some seconds. The command
 prints a progress note to standard error and the report to standard output. The read
@@ -539,9 +602,9 @@ bbflow settings set port 50000
 | `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
 | `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port, or when browsers refuse the port, such as 6000 and 10080. See [Instance directory](#instance-directory). |
 
-**Impact:** the same as `tool add`. A rejected value changes nothing. A `port` change does
-not move the running server. The command tells you that the port applies at the next
-server start. A restart stops all sessions.
+**Impact:** the same as `tool add`. A rejected value changes nothing. A `port` change
+does not move the running server. The command tells you that the port applies at the
+next server start. A restart stops all sessions.
 
 Use [`title-tool`](#title-tool) to select the title tool.
 
@@ -568,6 +631,8 @@ turns automatic titles off. A new installation starts with `none`. The upgrade t
 format 10, which added automatic titles, also set `none`. Later upgrades keep the saved
 value.
 
+### Subcommands
+
 - `list` prints the ID and the exact command of each built-in tool, one tool on each
   line. The commands come from the running server. A later release can change them.
 - `show` prints the saved tool and the command that the server runs for it. It also
@@ -586,16 +651,21 @@ value.
 - `test` runs the saved tool once with the sample message and saves nothing. If the test
   fails, the command exits with code `1`. Use it after a sign-out or a CLI update.
 
+### Test
+
 A test can take up to 90 seconds. The command waits 100 seconds for the reply. Press
 Ctrl-C to cancel a test. Then the tool does not save. Claude, Codex, and Code Puppy send
 the sample message to their provider and use your sign-in. Apple keeps it on the Mac.
 The test runs in the server environment, so the CLI must be on the PATH of the server.
 
+### Custom command
+
 A custom command gets the request on standard input. It must print one line that starts
 with `bbflow-title:` and then the title. It must be one line of at most 1,000 bytes. A
 custom command does not get the limits of the built-in commands, such as turned-off
 tools, hooks, and MCP servers. Prefer standard input to `"$(cat)"`, because other
-programs can read the arguments of a command. See [session titles](SPEC.md#session-titles).
+programs can read the arguments of a command. See
+[session titles](SPEC.md#session-titles).
 
 **Impact:** `set` saves the change in SQLite with a new settings revision after a passed
 test. Another tool keeps the saved custom command. `list`, `show`, and `test` change
@@ -634,7 +704,5 @@ or read history. `--dir` and `BBFLOW_DIR` have no effect on this command.
 ## Exit codes
 
 Help and successful server, UI, query, storage, tool, settings, title-tool, and skill
-commands exit with code `0`. bbflow errors print a message to standard error and exit with code `1`.
-
-See [README.md](../README.md) for installation, [DEVELOPMENT.md](DEVELOPMENT.md) for
-local builds, and [SPEC.md](SPEC.md) for implementation details and current limitations.
+commands exit with code `0`. bbflow errors print a message to standard error and exit
+with code `1`.
