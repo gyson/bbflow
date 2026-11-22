@@ -102,3 +102,27 @@ func TestOpenInBrowserUsesTheDefaultBrowser(t *testing.T) {
 		}
 	}
 }
+
+func TestRevealShowsTheFileInFinder(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		if err := Reveal(context.Background(), "/tmp/notes.md"); !errors.Is(err, ErrUnsupported) {
+			t.Fatalf("Reveal on %s: %v", runtime.GOOS, err)
+		}
+		return
+	}
+	dir := fakeCommands(t, map[string]string{"open": "exit 0"})
+	if err := Reveal(context.Background(), "/work/docs/notes.md"); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(filepath.Join(dir, "open.args"))
+	if err != nil || string(args) != "-R\n/work/docs/notes.md\n" {
+		t.Fatalf("open arguments %q, %v", args, err)
+	}
+	if err := Reveal(context.Background(), "docs/notes.md"); err == nil {
+		t.Fatal("a relative path was accepted")
+	}
+	fakeCommands(t, map[string]string{"open": "echo 'no such file' >&2\nexit 1"})
+	if err := Reveal(context.Background(), "/work/missing.md"); err == nil || !strings.Contains(err.Error(), "no such file") {
+		t.Fatalf("failed open: %v", err)
+	}
+}

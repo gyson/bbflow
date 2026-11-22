@@ -191,7 +191,7 @@ body.resizing-sidebar, body.resizing-sidebar * { cursor: col-resize !important; 
 [data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transition-delay: .35s; }
 /* A short confirmation, such as after a copy, shows the tooltip at once. */
 [data-tip].tip-open::after { opacity: 1; transition-delay: 0s; }
-[data-tip]:disabled::after, #session-menu-open[aria-expanded="true"]::after { display: none; }
+[data-tip]:disabled::after, .action-menu-box > [aria-expanded="true"]::after { display: none; }
 .toolbar-title [data-tip]::after { right: auto; left: 0; }
 /* A container query on the width of the main area puts the workspace pane below the session. */
 main { min-width: 0; flex: 1; display: flex; flex-direction: column; overflow: auto; container: main / inline-size; }
@@ -210,10 +210,12 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; margin-left: auto; font-size: 12px; }
 #continue-action[data-tip] > button:disabled { pointer-events: none; }
 #continue-session, #stop { padding: 6px 10px; }
-#session-menu-box { position: relative; display: flex; }
-#session-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; display: flex; flex-direction: column; min-width: 180px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px var(--shadow-overlay); }
-#session-menu button { margin: 1px 0; padding: 7px 10px; border-color: transparent; background: transparent; text-align: left; }
-#session-menu button:hover:not(:disabled), #session-menu button:focus-visible { background: var(--selected); border-color: var(--selected-border); }
+/* An action menu opens below its ⋯ button, at its right edge. */
+.action-menu-box { position: relative; display: flex; }
+.action-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; display: flex; flex-direction: column; min-width: 180px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px var(--shadow-overlay); }
+.action-menu button { margin: 1px 0; padding: 7px 10px; border-color: transparent; background: transparent; text-align: left; }
+.action-menu button:hover:not(:disabled), .action-menu button:focus-visible { background: var(--selected); border-color: var(--selected-border); }
+.action-menu [role="separator"] { height: 1px; margin: 4px 6px; background: var(--border); }
 .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: var(--accent-text); background: var(--selected); border-radius: 5px; padding: 6px 9px; }
 .welcome { margin: auto; padding: 60px 40px; text-align: center; color: var(--text-muted); line-height: 1.7; }
 /* The page bar shows a state of the whole page, such as a restart of the server. */
@@ -569,11 +571,14 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .diff-view { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .diff-file-header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 40px; padding: 6px 10px; border-bottom: 1px solid var(--divider); font-size: 12px; }
 .diff-file-header button { padding: 4px 8px; font-size: 11px; }
-/* The path, Preview, and Open in browser take the free space. In a narrow pane, the other controls go to
+/* The path and Preview take the free space. In a narrow pane, the other controls go to
    the next row, so that the path keeps a part of its name in view. */
 .diff-path-group { flex: 1 1 0; min-width: min(200px, 100%); display: flex; align-items: center; gap: 8px; }
 #diff-path { flex: 0 1 auto; min-width: 0; display: flex; font-family: Menlo, Monaco, monospace; font-size: 11px; }
-#diff-preview, #diff-open { flex: none; }
+#diff-preview { flex: none; }
+#diff-menu-open { display: flex; padding: 3px 6px; }
+#diff-menu-open svg { width: 16px; height: 16px; fill: currentColor; }
+.diff-file-header .action-menu button { padding: 6px 10px; font-size: 12px; }
 #diff-counts { display: flex; gap: 6px; font-size: 11px; }
 #diff-counts .added { color: var(--positive); } #diff-counts .removed { color: var(--danger); }
 .diff-tag { padding: 1px 6px; border-radius: 5px; background: var(--inset); color: var(--text-muted); }

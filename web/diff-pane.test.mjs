@@ -20,7 +20,7 @@ class FixtureParser {
   }
 }
 globalThis.DOMParser = FixtureParser;
-import { DiffPane } from './dist/diff-pane.js';
+import { DiffPane, absolutePath } from './dist/diff-pane.js';
 
 // A small fake DOM. It has only the parts that the pane uses.
 class Node {
@@ -53,8 +53,10 @@ class Node {
 
 const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-scope-id', 'diff-scope-label', 'diff-scope-menu',
   'diff-split', 'diff-unified', 'diff-summary', 'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts',
-  'diff-toggle', 'diff-source', 'diff-copy', 'diff-preview', 'diff-open', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
-  'diff-refresh', 'diff-close', 'preview-close'];
+  'diff-toggle', 'diff-source', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
+  'diff-refresh', 'diff-close', 'preview-close', 'diff-menu-box', 'diff-menu-open', 'diff-menu', 'diff-menu-status'];
+// The items of the file menu, in menu order.
+const menuItems = ['diff-copy-path', 'diff-copy-relative', 'diff-reveal-line', 'diff-reveal', 'diff-open'];
 const server = { protocol: 'test', instance: 'test', port: 1234, dataDir: '/fixture' };
 const commit = '0123456789abcdef0123456789abcdef01234567';
 const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -71,6 +73,8 @@ const htmlFile = (path, baseline) => ({ path, baseline, old: { state: 'missing',
 
 function setup() {
   const nodes = Object.fromEntries(ids.map(id => [id, new Node(id.startsWith('diff-scope') && id !== 'diff-scope-menu' ? 'span' : 'div')]));
+  for (const id of menuItems) nodes[id] = new Node(id === 'diff-reveal-line' ? 'div' : 'button');
+  nodes['diff-menu'].append(...menuItems.map(id => nodes[id]));
   for (const name of ['HTMLElement', 'HTMLDialogElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLButtonElement']) globalThis[name] = Node;
   globalThis.ResizeObserver = class { observe() {} };
   globalThis.window = { addEventListener() {} };
@@ -87,7 +91,7 @@ function setup() {
   const pane = new DiffPane(() => server, send, editor);
   pane.select('session');
   pane.setShown(true, 'changed');
-  return { nodes, pending, shown };
+  return { nodes, pending, shown, pane };
 }
 
 // The buttons of the open scope menu.
@@ -361,37 +365,38 @@ test('Open in browser asks the server to open the selected HTML file', async () 
   pending[0].resolve(changes(baselines.head, { files: [report] }));
   await settle();
   assert.deepEqual(pending[1].request.diff, { baseline: 'head', path: 'reports/coverage.html' });
+  // Before the file reply, the pane does not know that the file is there now.
+  assert.equal(nodes['diff-open'].hidden, true);
   pending[1].resolve(htmlFile('reports/coverage.html', baselines.head));
   await settle();
-  const button = nodes['diff-open'];
-  assert.equal(button.hidden, false);
+  const item = nodes['diff-open'];
+  const status = nodes['diff-menu-status'];
+  assert.equal(item.hidden, false);
+  assert.equal(nodes['diff-reveal-line'].hidden, false);
   assert.equal(nodes['diff-preview'].hidden, true);
 
-  button.onclick();
+  item.onclick();
   assert.deepEqual(pending[2].request, { operation: 'workspace-open', session: 'session', diff: { path: 'reports/coverage.html' } });
   pending[2].resolve({ opened: true });
   await settle();
-  assert.equal(button.textContent, 'Opened');
+  assert.equal(status.textContent, 'Opened in browser');
 
-  // A failure shows the reason of the server in the tooltip.
-  button.onclick();
+  // A failure shows the reason of the server.
+  item.onclick();
   pending[3].reject(new Error('the file is not in the session workspace now'));
   await settle();
-  assert.equal(button.textContent, 'Open failed');
-  assert.equal(button.title, 'the file is not in the session workspace now');
+  assert.equal(status.textContent, 'Cannot open the file in the browser: the file is not in the session workspace now');
 
-  // Only the reply of the latest click changes the button.
-  button.onclick();
-  button.onclick();
-  pending[5].resolve({ opened: true });
+  // Only the reply of the latest click shows. Show in Finder and Open in browser share
+  // this rule.
+  item.onclick();
+  nodes['diff-reveal'].onclick();
+  pending[5].resolve({ revealed: true });
   await settle();
-  assert.equal(button.textContent, 'Opened');
+  assert.equal(status.textContent, 'Shown in Finder');
   pending[4].reject(new Error('late failure'));
   await settle();
-  assert.equal(button.textContent, 'Opened');
-  await new Promise(resolve => setTimeout(resolve, 1600));
-  assert.equal(button.textContent, 'Open in browser');
-  assert.equal(button.title, 'Open the current file in your default browser');
+  assert.equal(status.textContent, 'Shown in Finder');
 });
 
 test('Open in browser goes away when Changes selects a scope that ends at a commit', async () => {
@@ -401,35 +406,37 @@ test('Open in browser goes away when Changes selects a scope that ends at a comm
   await settle();
   pending[1].resolve(htmlFile('report.html', baselines.head));
   await settle();
-  const button = nodes['diff-open'];
-  assert.equal(button.hidden, false);
+  const item = nodes['diff-open'];
+  assert.equal(item.hidden, false);
 
   // The commit row changes the scope at once. The old file reply is still loaded, but it
   // is not the file of the new scope.
   nodes['diff-scope'].onclick();
   row(nodes, 1).onclick();
   assert.equal(pending.length, 3);
-  assert.equal(button.hidden, true);
-  button.onclick();
+  assert.equal(item.hidden, true);
+  assert.equal(nodes['diff-reveal-line'].hidden, true);
+  item.onclick();
   assert.equal(pending.length, 3, 'a click before the file reply sent a request');
 
-  // The file reply of the commit keeps the button away.
+  // The file reply of the commit keeps the item away.
   pending[2].resolve(changes(baselines.commit, { files: [report] }));
   await settle();
   pending[3].resolve(htmlFile('report.html', baselines.commit));
   await settle();
-  assert.equal(button.hidden, true);
+  assert.equal(item.hidden, true);
 });
 
-test('a reply for an earlier file does not change the button of the selected file', async () => {
+test('a reply for an earlier file does not show for the selected file', async () => {
   const { nodes, pending } = setup();
   const files = [{ path: 'a.html', status: 'M', added: 1, removed: 1 }, { path: 'b.html', status: 'M', added: 1, removed: 1 }];
   pending[0].resolve(changes(baselines.head, { files }));
   await settle();
   pending[1].resolve(htmlFile('a.html', baselines.head));
   await settle();
-  const button = nodes['diff-open'];
-  button.onclick();
+  const item = nodes['diff-open'];
+  const status = nodes['diff-menu-status'];
+  item.onclick();
   assert.deepEqual(pending[2].request.diff, { path: 'a.html' });
 
   const list = node => [node, ...node.children.flatMap(list)];
@@ -438,16 +445,122 @@ test('a reply for an earlier file does not change the button of the selected fil
   await settle();
   pending[2].reject(new Error('cannot open a.html'));
   await settle();
-  assert.equal(button.hidden, false);
-  assert.equal(button.textContent, 'Open in browser');
-  assert.equal(button.title, 'Open the current file in your default browser');
+  assert.equal(item.hidden, false);
+  assert.equal(status.textContent, '');
 
-  // A result that shows goes away when the selection changes.
-  button.onclick();
+  item.onclick();
   pending[4].reject(new Error('cannot open b.html'));
   await settle();
-  assert.equal(button.textContent, 'Open failed');
-  list(nodes['diff-list']).find(node => node.dataset.file === 'a.html').onclick();
-  assert.equal(button.textContent, 'Open in browser');
-  assert.equal(button.title, 'Open the current file in your default browser');
+  assert.equal(status.textContent, 'Cannot open the file in the browser: cannot open b.html');
+});
+
+// The IDs of the shown items of the file menu.
+const shownItems = nodes => menuItems.filter(id => id !== 'diff-reveal-line' && !nodes[id].hidden);
+
+test('the file menu copies the absolute and the relative path of the selected file', async () => {
+  const { nodes, pending, pane } = setup();
+  const copied = [];
+  let failure = null;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText: async text => {
+    if (failure) throw failure;
+    copied.push(text);
+  } } } });
+  // The menu button shows only for a selected file.
+  assert.equal(nodes['diff-menu-open'].hidden, true);
+  pending[0].resolve(changes(baselines.head, { files: [{ path: 'docs/a.txt', status: 'M', added: 1, removed: 1 }] }));
+  await settle();
+  assert.equal(nodes['diff-menu-open'].hidden, false);
+  assert.equal(nodes['diff-copy-path'].hidden, false);
+  assert.equal(nodes['diff-copy-relative'].hidden, false);
+
+  // Without a known workspace, Copy path copies nothing and tells why.
+  nodes['diff-copy-path'].onclick();
+  await settle();
+  assert.deepEqual(copied, []);
+  assert.match(nodes['diff-menu-status'].textContent, /^Cannot copy the path: the session workspace is not known/);
+
+  pane.workspace = session => session === 'session' ? '/Users/me/work tree/' : '';
+  nodes['diff-copy-path'].onclick();
+  await settle();
+  assert.equal(nodes['diff-menu-status'].textContent, 'Path copied');
+  nodes['diff-copy-relative'].onclick();
+  await settle();
+  assert.equal(nodes['diff-menu-status'].textContent, 'Relative path copied');
+  assert.deepEqual(copied, ['/Users/me/work tree/docs/a.txt', 'docs/a.txt']);
+
+  failure = new Error('clipboard blocked');
+  nodes['diff-copy-relative'].onclick();
+  await settle();
+  assert.equal(nodes['diff-menu-status'].textContent, 'Cannot copy the path: clipboard blocked');
+});
+
+test('Show in Finder asks the server to show the current file', async () => {
+  const { nodes, pending } = setup();
+  const files = [
+    { path: 'a.txt', status: 'M', added: 1, removed: 1 },
+    { path: 'gone.txt', status: 'D', added: 0, removed: 1 },
+    { path: 'link', status: 'A', added: 1, removed: 0 },
+  ];
+  pending[0].resolve(changes(baselines.head, { files }));
+  await settle();
+  // Before the file reply, the pane does not know that the file is there now.
+  assert.deepEqual(shownItems(nodes), ['diff-copy-path', 'diff-copy-relative']);
+  pending[1].resolve(file(baselines.head));
+  await settle();
+  assert.equal(nodes['diff-reveal'].hidden, false);
+  assert.equal(nodes['diff-reveal-line'].hidden, false);
+
+  nodes['diff-reveal'].onclick();
+  assert.deepEqual(pending[2].request, { operation: 'workspace-reveal', session: 'session', diff: { path: 'a.txt' } });
+  pending[2].resolve({ revealed: true });
+  await settle();
+  assert.equal(nodes['diff-menu-status'].textContent, 'Shown in Finder');
+
+  // Only the reply of the latest click shows.
+  nodes['diff-reveal'].onclick();
+  nodes['diff-reveal'].onclick();
+  pending[4].reject(new Error('the file is not in the session workspace now'));
+  await settle();
+  pending[3].resolve({ revealed: true });
+  await settle();
+  assert.equal(nodes['diff-menu-status'].textContent, 'Cannot show the file in Finder: the file is not in the session workspace now');
+
+  // A deleted file and a symlink have no Show in Finder. The copy items stay.
+  const list = node => [node, ...node.children.flatMap(list)];
+  list(nodes['diff-list']).find(node => node.dataset.file === 'gone.txt').onclick();
+  pending[5].resolve({ path: 'gone.txt', baseline: baselines.head, old: { state: 'text', text: 'a\n', size: 2 }, new: { state: 'missing', size: 0 } });
+  await settle();
+  assert.equal(nodes['diff-reveal'].hidden, true);
+  assert.equal(nodes['diff-reveal-line'].hidden, true);
+  assert.equal(nodes['diff-copy-path'].hidden, false);
+  nodes['diff-reveal'].onclick();
+  assert.equal(pending.length, 6, 'a hidden item sent a request');
+  list(nodes['diff-list']).find(node => node.dataset.file === 'link').onclick();
+  pending[6].resolve({ path: 'link', baseline: baselines.head, old: { state: 'missing', size: 0 }, new: { state: 'text', text: 'a.txt', size: 5, symlink: true } });
+  await settle();
+  assert.equal(nodes['diff-reveal'].hidden, true);
+});
+
+test('Show in Finder goes away when Changes selects a scope that ends at a commit', async () => {
+  const { nodes, pending } = setup();
+  pending[0].resolve(changes(baselines.head));
+  await settle();
+  pending[1].resolve(file(baselines.head));
+  await settle();
+  assert.equal(nodes['diff-reveal'].hidden, false);
+  nodes['diff-scope'].onclick();
+  row(nodes, 1).onclick();
+  assert.equal(nodes['diff-reveal'].hidden, true);
+  pending[2].resolve(changes(baselines.commit));
+  await settle();
+  pending[3].resolve(file(baselines.commit));
+  await settle();
+  assert.equal(nodes['diff-reveal'].hidden, true);
+  assert.equal(nodes['diff-copy-path'].hidden, false);
+});
+
+test('absolutePath joins the workspace and the relative path', () => {
+  assert.equal(absolutePath('/Users/me/repo', 'web/src/app.ts'), '/Users/me/repo/web/src/app.ts');
+  assert.equal(absolutePath('/Users/me/repo/', 'a.txt'), '/Users/me/repo/a.txt');
+  assert.equal(absolutePath('/', 'a.txt'), '/a.txt');
 });

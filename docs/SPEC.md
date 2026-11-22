@@ -532,6 +532,8 @@ about:
   update bar. The restart bar has **Reload page**.
 - After **Copy session ID**, the More actions button shows **Session ID copied** as its
   tooltip for a short time.
+- The ⋯ button of the file header shows the result of a file menu item as its tooltip.
+  See [the file menu](#file-menu).
 
 A failed action that has no such place shows an error toast at the right, below the
 toolbar. The toast names the action and the session, for example
@@ -1511,35 +1513,17 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
 - In Changes, the file header shows the path and the line counts. **View file** and
   **View diff** change between the current text and the diff.
 - In Files, the file header shows the path only. For a changed file, **View diff**
-  opens the diff of that file in the Changes view. **Copy path** copies the path
-  relative to the workspace in both views.
+  opens the diff of that file in the Changes view.
+- In both views, a ⋯ button at the right end of the file header opens the file menu.
+  See [the file menu](#file-menu).
 - For a Markdown file (`.md` or `.markdown`), **Preview** shows to the right of the
   path in both views. **Preview** opens a dialog with the file path, a close button
   (✕), and the rendered current text. The button is not shown for a deleted file, a
   binary file, a file above 1 MiB, or a symlink. The dialog keeps its text while it is
   open. Use **Refresh**, then **Preview** again, to see a later change.
-- For an HTML file (`.html` or `.htm`), **Open in browser** shows to the right of the
-  path in both views. A click asks the server to open the current file in the default
-  browser of the user. The server asks macOS for the application that opens `https`
-  links. Then it runs `open -a` with that browser and the file. Thus an editor that
-  owns HTML files does not open the file. The default browser can be different from
-  the browser of the bbflow tab.
-- Only macOS has this opener now. On other systems, a click shows **Open failed**.
-- The browser loads the file from the disk as a `file:` page. Thus relative styles,
-  images, and scripts load, and external scripts load too. To see a later change, reload
-  the page in the browser. A `file:` page has an opaque origin. The server rejects its
-  WebSocket connections, so a report cannot control bbflow.
-- **Open in browser** is not shown for a deleted file, a folder, a symlink, or a diff
-  that ends at a commit. It goes away when Changes selects such a scope, before the
-  file reply. A file above 1 MiB can open. The server also rejects a path through a
-  symlink.
-- After a click, the button shows **Opened** or **Open failed** for 1.5 seconds. The
-  tooltip of **Open failed** gives the reason. Only the reply of the latest click shows.
-  The result goes away when the selected file changes or the button goes away, for
-  example after a selection of a scope that ends at a commit.
-- In a narrow pane, the line counts, **View source**, **View file**, and **Copy path**
-  go to a second row of the file header. The path and **Preview** or
-  **Open in browser** keep at least 200 pixels.
+- In a narrow pane, the line counts, **View source**, **View file**, and the ⋯ button
+  go to a second row of the file header. The path and **Preview** keep at least 200
+  pixels.
 - Preview uses markdown-it with CommonMark, GitHub tables, strikethrough, and task
   lists. Raw HTML shows as text. Images do not load. The dialog shows "Image not
   loaded" with the alternative text and the source. Task list checkboxes are disabled.
@@ -1624,6 +1608,48 @@ Limits:
   its first 512 bytes are binary data with a PNG, JPEG, GIF, or WebP signature, it
   counts as binary.
 - A folder that is not a Git repository has no changes and no filter.
+
+#### File menu
+
+The ⋯ button of the file header, **More file actions**, opens the file menu. It shows
+when a file is selected, in Changes and in Files. The menu has these items:
+
+- **Copy path** copies the absolute path of the file. The page joins the workspace path
+  of the session and the path of the file relative to that workspace.
+- **Copy relative path** copies the path relative to the workspace. This is the path
+  that the file header shows.
+- **Show in Finder** asks the server to show the file in a Finder window. Finder
+  selects the file and does not open it.
+- **Open in browser** asks the server to open the file in the default browser of the
+  user. It shows only for an HTML file (`.html` or `.htm`).
+
+A line separates the copy items from the other items. **Show in Finder** and **Open in
+browser** show only for a current file that is in the workspace now. They are not
+shown for a deleted file, a symlink, or a diff that ends at a commit. They go away
+when Changes selects such a scope, before the file reply. The server also rejects a
+path through a symlink.
+
+For **Show in Finder**, the page sends `workspace-reveal`, which accepts the same paths
+as `workspace-open` without the HTML rule. On macOS, the server runs `open -R` with the
+absolute path.
+
+For **Open in browser**, the page sends `workspace-open`. The server asks macOS for the
+application that opens `https` links. Then it runs `open -a` with that browser and the
+file. Thus an editor that owns HTML files does not open the file. The default browser
+can be different from the browser of the bbflow tab. A file above 1 MiB can open. The
+browser loads the file from the disk as a `file:` page. Thus relative styles, images,
+and scripts load, and external scripts load too. To see a later change, reload the
+page in the browser. A `file:` page has an opaque origin. The server rejects its
+WebSocket connections, so a report cannot control bbflow.
+
+Only macOS has these two openers now. On other systems, a click shows an error.
+
+After a choice, the tooltip of the ⋯ button shows **Path copied**, **Relative path
+copied**, **Shown in Finder**, or **Opened in browser** for 1.8 seconds. An error shows
+there for 6 seconds. A screen reader reads the result from a status element. For
+**Show in Finder** and **Open in browser**, only the reply of the latest click shows.
+It does not show when another file is selected before the reply. The menu has the keys
+of the [More actions](#session-status) menu.
 
 ### Side terminal
 
@@ -2241,10 +2267,29 @@ sends `workspace-open`. The tests replace the opener, so they open no browser. O
 fixtures replace `open`, `xdg-open`, and `osascript`. They cover a child that keeps the
 output pipes open after a successful exit, a failed exit with its output, and a
 cancellation. They also cover the arguments of `open -a`, a relative path, and an
-empty or failed browser lookup. Web fixtures cover the files that the button accepts,
-the request, **Opened**, and **Open failed** with its tooltip. They also cover a scope
+empty or failed browser lookup. Web fixtures cover the files that the menu item
+accepts, the request, **Opened in browser**, and an error. They also cover a scope
 change before the file reply, a late reply of an earlier click, and a late reply after
 a change of the file.
+
+File menu fixtures cover **Copy path** with and without a known workspace, **Copy
+relative path**, and a failed copy. They also cover the `workspace-reveal` request,
+**Shown in Finder**, an error, a late reply of an earlier click, and no **Show in
+Finder** for a deleted file, a symlink, a commit scope, or a file before its reply.
+Server fixtures cover a file, a script file, and a folder. They also cover a symlink, a
+path through a symlink, a path outside the workspace, a missing file, `..` and absolute
+paths, an unknown session, a failed opener, and a server without an opener. A WebSocket
+fixture sends `workspace-reveal`. Opener fixtures replace `open`, so they show no
+Finder window. They cover the arguments of `open -R`, a relative path, and a failed
+exit with its output.
+
+A browser check of the file menu used a demo instance. The browser pane did not allow
+clipboard access, so the check recorded the copied text in the page. **Copy path** gave
+the absolute path in the demo instance, and **Copy relative path** gave the path of the
+header. **Show in Finder** got a success reply, and the server ran `open -R` on macOS.
+The check did not examine the Finder window. It also checked the arrow keys, Escape, a
+deleted file, the Files view, the session More actions menu, light and dark Appearance,
+and an empty browser console.
 
 A browser check of Open in browser used a demo instance with a synthetic HTML report.
 It checked an added file in Changes, an unchanged file in Files, and no button for a
@@ -2747,8 +2792,8 @@ find ignored files. The tree has no arrow key navigation. Use Tab and Enter. Git
 between tracked files with similar content. An untracked new file and its deleted
 original show as two changes.
 
-**Open in browser** needs the browser and the server on the same computer. It works
-only on macOS now. It uses the default browser, which can be different from the
+**Open in browser** and **Show in Finder** need the browser and the server on the same
+computer. They work only on macOS now. It uses the default browser, which can be different from the
 browser of the bbflow tab. Browsers can block module scripts and `fetch()` in a `file:`
 page. A report that must work in all browsers keeps its scripts and data in the HTML
 file or in classic `<script>` files.

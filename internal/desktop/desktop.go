@@ -1,5 +1,5 @@
-// Package desktop opens a URL with the default application of the user, or a file in
-// the default web browser.
+// Package desktop opens a URL with the default application of the user, opens a file in
+// the default web browser, or shows a file in Finder.
 package desktop
 
 import (
@@ -64,6 +64,19 @@ func OpenInBrowser(ctx context.Context, path string) error {
 		return errors.New("no default browser is set")
 	}
 	_, err = run(ctx, "open", "-a", browser, path)
+	return err
+}
+
+// Reveal shows a file or a folder in a Finder window and selects it. Finder does not
+// open the item. Only macOS has this opener now.
+func Reveal(ctx context.Context, path string) error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("%w: a file shows in Finder only on macOS", ErrUnsupported)
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("the file path %q is not absolute", path)
+	}
+	_, err := run(ctx, "open", "-R", path)
 	return err
 }
 

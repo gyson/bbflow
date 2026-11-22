@@ -1,5 +1,6 @@
 import { call, errorMessage } from './protocol.js';
 import type { ChangedFile, DiffRequest, ServerInfo, WorkspaceChanges, WorkspaceFile, WorkspaceFiles } from './protocol.js';
+import { ActionMenu } from './action-menu.js';
 import { element } from './dom.js';
 import { baselineMoved, baselineRequest, baseText, countText, effectiveLayout, fileEntries, FolderTree, Generation, hasSVG, imageSides, openable, scopeId, scopeLabel, scopeOf, scopeRange, scopeRequest, shortId, sideNote, statusTitle, stepScope, timelineHeading } from './diff-model.js';
 import type { DiffLayout, FileEntry, FileScope, Scope, TreeRow } from './diff-model.js';
@@ -13,7 +14,7 @@ export interface Editor { showDiff: typeof showDiff; showFile: typeof showFile; 
 
 const maxFolderRequest = 200; // The server lists at most this number of folders in one request.
 const listLimit = 'The file list is incomplete. bbflow limits the number of files that it lists.';
-const openTitle = 'Open the current file in your default browser';
+const errorTime = 6000; // An error message of the file menu shows for this time, in ms.
 
 // One selected file of a view. preview shows the current file, not its diff.
 interface Pick { path: string; preview: boolean }
@@ -44,9 +45,13 @@ export class DiffPane {
   private readonly counts = element('diff-counts', HTMLElement);
   private readonly toggleButton = element('diff-toggle', HTMLButtonElement);
   private readonly sourceButton = element('diff-source', HTMLButtonElement);
-  private readonly copyButton = element('diff-copy', HTMLButtonElement);
+  private readonly fileMenu = new ActionMenu('diff-menu');
+  private readonly copyPathItem = element('diff-copy-path', HTMLButtonElement);
+  private readonly copyRelativeItem = element('diff-copy-relative', HTMLButtonElement);
+  private readonly revealLine = element('diff-reveal-line', HTMLElement);
+  private readonly revealItem = element('diff-reveal', HTMLButtonElement);
   private readonly previewButton = element('diff-preview', HTMLButtonElement);
-  private readonly openButton = element('diff-open', HTMLButtonElement);
+  private readonly openItem = element('diff-open', HTMLButtonElement);
   private readonly previewDialog = element('preview-dialog', HTMLDialogElement);
   private readonly previewTitle = element('preview-title', HTMLElement);
   private readonly previewBody = element('preview-body', HTMLElement);
@@ -87,11 +92,9 @@ export class DiffPane {
   private readonly fileGeneration = new Generation();
   private listAbort: AbortController | null = null;
   private fileAbort: AbortController | null = null;
-  private openTimer: ReturnType<typeof setTimeout> | undefined;
-  // Counts the clicks of Open in browser and the changes of its file. A reply changes the
-  // button only for the latest click on the same file.
-  private openRequest = 0;
-  private openPath = ''; // The file of the result that the button shows.
+  // Counts the clicks of Show in Finder and Open in browser. Only the reply of the
+  // latest click shows.
+  private menuRequest = 0;
 
   constructor(
     private readonly server: () => ServerInfo | null,
@@ -135,18 +138,15 @@ export class DiffPane {
       this.svgSource = !this.svgSource;
       this.renderFile();
     };
-    this.copyButton.onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(this.selected);
-        this.copyButton.textContent = 'Copied';
-      } catch (error) {
-        this.copyButton.textContent = 'Copy failed';
-        this.copyButton.title = errorMessage(error);
-      }
-      setTimeout(() => { this.copyButton.textContent = 'Copy path'; this.copyButton.title = ''; }, 1500);
+    this.copyPathItem.onclick = () => {
+      const workspace = this.workspace(this.session);
+      if (!workspace) return this.fileMenu.confirm('Cannot copy the path: the session workspace is not known.', errorTime);
+      void this.copy(absolutePath(workspace, this.selected), 'Path copied');
     };
+    this.copyRelativeItem.onclick = () => void this.copy(this.selected, 'Relative path copied');
+    this.revealItem.onclick = () => this.reveal();
     this.previewButton.onclick = () => this.openPreview();
-    this.openButton.onclick = () => void this.openInBrowser();
+    this.openItem.onclick = () => this.openInBrowser();
     element('preview-close', HTMLButtonElement).onclick = () => this.previewDialog.close();
     // The divider of the file list changes the editor width without a change of the pane.
     const observer = new ResizeObserver(() => this.relayout());
@@ -194,6 +194,9 @@ export class DiffPane {
   // The workspace pane sets these. close closes the pane. openChanges shows Changes.
   close: () => void = () => {};
   openChanges: () => void = () => {};
+  // The page sets this. It gives the absolute workspace path of a session, or an empty
+  // string when the page does not know it.
+  workspace: (session: string) => string = () => '';
 
   // The workspace pane shows or hides the Changes or Files view. Without a scope, the
   // pane keeps its scope.
@@ -404,7 +407,7 @@ export class DiffPane {
     if (!changes?.repository) return;
     this.choice = scopeRequest(scope, changes.commits);
     this.renderScope();
-    this.renderOpen();
+    this.renderFileMenu();
     void this.refresh();
   }
 
@@ -741,7 +744,7 @@ export class DiffPane {
       if (!this.fileGeneration.current(generation) || abort.signal.aborted) return;
       this.file = null;
       this.previewButton.hidden = this.sourceButton.hidden = true;
-      this.renderOpen();
+      this.renderFileMenu();
       this.destroyView();
       this.showNote(`Cannot read this file: ${errorMessage(error)}`);
     }
@@ -771,64 +774,87 @@ export class DiffPane {
     const to = this.changes?.repository ? this.changes.baseline.to : undefined;
     this.toggleButton.title = this.scope === 'files' ? 'Show the diff of this file in Changes' :
       this.pick.preview ? 'Show the diff' : to ? `Show the file at commit ${shortId(to)}` : 'Show the current file';
-    this.copyButton.hidden = !this.selected;
     this.previewButton.hidden = !this.previewFile();
     const file = this.file;
     this.sourceButton.hidden = !file || file.path !== this.selected || !hasSVG(file, this.mode(file) === 'diff', this.change(file.path)?.oldPath);
     this.sourceButton.textContent = this.svgSource ? 'View image' : 'View source';
     this.sourceButton.title = this.svgSource ? 'Show the SVG file as an image' : 'Show the text of the SVG file';
-    this.renderOpen();
+    this.renderFileMenu();
+  }
+
+  // The file menu shows for a selected file. Show in Finder shows only for a current
+  // file that is in the workspace now. Open in browser shows only for such an HTML file.
+  private renderFileMenu(): void {
+    this.copyPathItem.hidden = this.copyRelativeItem.hidden = !this.selected;
+    this.revealItem.hidden = !this.revealFile();
+    this.openItem.hidden = !this.openFile();
+    this.revealLine.hidden = this.revealItem.hidden && this.openItem.hidden;
+    this.fileMenu.controls();
+  }
+
+  // Copy a path of the selected file. The tooltip of the menu button shows the result.
+  private async copy(text: string, done: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      this.fileMenu.confirm(done);
+    } catch (error) {
+      this.fileMenu.confirm(`Cannot copy the path: ${errorMessage(error)}`, errorTime);
+    }
+  }
+
+  // The loaded file of the selection, when the view shows its current version and the
+  // file is in the workspace now. A scope that ends at a commit does not show the
+  // current file. Thus the item goes away when Changes selects such a scope, before the
+  // file reply. The server rejects a symlink, so the item does not show for one.
+  private revealFile(): WorkspaceFile | null {
+    if (this.scope === 'changed' && this.choice?.to) return null;
+    const file = this.file;
+    return file && file.path === this.selected && file.new.state !== 'missing' && !file.new.symlink ? file : null;
   }
 
   // The loaded file of the selection, when it is a current HTML file that the browser can
-  // open. A scope that ends at a commit does not show the current file. Thus the button
-  // goes away when Changes selects such a scope, before the file reply.
+  // open. The rules of revealFile also apply.
   private openFile(): WorkspaceFile | null {
     if (this.scope === 'changed' && this.choice?.to) return null;
     const file = this.file;
     return file && file.path === this.selected && openable(file) ? file : null;
   }
 
-  // Show Open in browser for the current HTML file. Another file, or no file, ends the
-  // result of an earlier click.
-  private renderOpen(): void {
-    const path = this.openFile()?.path ?? '';
-    if (path !== this.openPath) {
-      this.openPath = path;
-      this.resetOpen();
-    }
-    this.openButton.hidden = !path;
-  }
-
-  private resetOpen(): void {
-    this.openRequest++;
-    clearTimeout(this.openTimer);
-    this.openButton.textContent = 'Open in browser';
-    this.openButton.title = openTitle;
+  // Ask the server to show the selected file in Finder. Finder selects the file and does
+  // not open it.
+  private reveal(): void {
+    const server = this.server();
+    const file = this.revealFile();
+    if (!server || !file) return;
+    void this.fileRequest(file.path, 'Shown in Finder', 'Cannot show the file in Finder',
+      () => this.send(server, { operation: 'workspace-reveal', session: this.session, diff: { path: file.path } }));
   }
 
   // Ask the server to open the current file in the default browser. The browser loads
-  // the file itself, so a later change shows after a reload in the browser. The label
-  // shows the result for a short time, like Copy path.
-  private async openInBrowser(): Promise<void> {
+  // the file itself, so a later change shows after a reload in the browser.
+  private openInBrowser(): void {
     const server = this.server();
     const file = this.openFile();
     if (!server || !file) return;
-    const request = ++this.openRequest;
-    clearTimeout(this.openTimer);
-    let label = 'Opened';
-    let title = openTitle;
+    void this.fileRequest(file.path, 'Opened in browser', 'Cannot open the file in the browser',
+      () => this.send(server, { operation: 'workspace-open', session: this.session, diff: { path: file.path } }));
+  }
+
+  // Send the request of a file menu item. The tooltip of the menu button shows the
+  // result. Only the reply of the latest click shows, and only while its file stays
+  // selected.
+  private async fileRequest(path: string, done: string, failed: string, send: () => Promise<unknown>): Promise<void> {
+    const request = ++this.menuRequest;
+    const session = this.session;
+    let text = done;
+    let duration: number | undefined;
     try {
-      await this.send(server, { operation: 'workspace-open', session: this.session, diff: { path: file.path } });
+      await send();
     } catch (error) {
-      label = 'Open failed';
-      title = errorMessage(error);
+      text = `${failed}: ${errorMessage(error)}`;
+      duration = errorTime;
     }
-    // A later click or a change of the file makes this reply old.
-    if (request !== this.openRequest) return;
-    this.openButton.textContent = label;
-    this.openButton.title = title;
-    this.openTimer = setTimeout(() => this.resetOpen(), 1500);
+    if (request === this.menuRequest && session === this.session && path === this.selected) this.fileMenu.confirm(text, duration);
   }
 
   // The loaded file of the selection, when it is a Markdown file that Preview can show.
@@ -910,10 +936,15 @@ export class DiffPane {
     this.file = null;
     this.path.replaceChildren();
     this.counts.replaceChildren();
-    this.toggleButton.hidden = this.copyButton.hidden = this.previewButton.hidden = this.sourceButton.hidden = true;
-    this.renderOpen();
+    this.toggleButton.hidden = this.previewButton.hidden = this.sourceButton.hidden = true;
+    this.renderFileMenu();
     this.showNote('');
   }
+}
+
+// Join the absolute workspace path and a path relative to it.
+export function absolutePath(workspace: string, path: string): string {
+  return `${workspace.replace(/\/+$/, '')}/${path}`;
 }
 
 function textSpan(className: string, text: string): HTMLSpanElement {
