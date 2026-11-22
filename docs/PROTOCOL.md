@@ -519,12 +519,12 @@ The `diff` object has these fields:
 - `from`: the full ID of a commit from the `commits` list of `workspace-changes`. The
   `commit` baseline compares the first parent of this commit with the new side. A root
   commit compares with the empty tree.
-- `to`: the full ID of a listed commit that is not older than `from`. Only the
-  `commit` baseline accepts it. The new side is then the tree of this commit, and the
-  diff has no untracked files. Without `to`, the new side is the current files. Thus
-  the diff includes `from`, the later commits, and the uncommitted changes. When `from`
-  or `to` is not in the list now, for example after a rebase, the server uses the
-  default baseline. The reply names the baseline that it used.
+- `to`: the full ID of a listed commit that is not older than `from`. Only the `commit`
+  baseline accepts it. The new side is then the tree of this commit, and the diff has no
+  untracked files. Without `to`, the new side is the current files, so the diff includes
+  `from`, the later commits, and the uncommitted changes. When `from` or `to` is not in
+  the list now, for example after a rebase, the server uses the default baseline. The
+  reply names the baseline that it used.
 - `path`: a clean path relative to the session workspace. `.`, `..`, absolute paths,
   and empty paths fail.
 - `oldPath`: the old path of a rename. The old side uses it instead of `path`.
@@ -667,7 +667,7 @@ server then finds the default browser, the application that opens `https` URLs. 
 runs `open -a` with that browser and the absolute path. It waits up to 10 seconds and
 returns `{ "opened": true }`. On other systems, the operation gives an error.
 
-A path that does not obey these rules, a missing file, or a failed opener gives an
+A path that does not follow these rules, a missing file, or a failed opener gives an
 error. The error of a failed opener gives only the cause, so that a client can name the
 action. The operation does not change files. A browser loads the file as a `file:` page.
 Such a page has an opaque origin, so the server rejects its WebSocket connections. See
@@ -682,7 +682,7 @@ Such a page has an opaque origin, so the server rejects its WebSocket connection
 - On macOS, the server runs `open -R` with the absolute path. Finder then selects the
   entry and does not open it. The server waits up to 10 seconds and returns
   `{ "revealed": true }`. On other systems, the operation gives an error.
-- A path that does not obey these rules, a missing entry, or a failed opener gives an
+- A path that does not follow these rules, a missing entry, or a failed opener gives an
   error. The error of a failed opener gives only the cause, as for `workspace-open`.
 - The operation does not change files.
 
@@ -1022,9 +1022,9 @@ process and capture continue.
 
 - Ended sessions send one full frame of their latest run, wait for its acknowledgment,
   then send `history-end`.
-- A request with `run` gets the same reply for that run, also while a later run is
-  live. Its `session` message has the `status` of that run. The view never joins the
-  live process.
+- A request with `run` gets the same reply for that run, even while a later run is live.
+  Its `session` message has the `status` of that run. The view never joins the live
+  process.
 - Without `run`, or with the ID of the live run, the view joins the live process.
 - A `run` of another session or an unknown run fails before any frame.
 - Normal completion stores a derived final view in a versioned `terminal-screen` SQLite
@@ -1058,11 +1058,11 @@ input.
 that the view last loaded or saved. A save returns its new revision. Omit the entire
 `draft` field to load the latest saved state.
 
-The latest save wins, also when its revision is older than the current revision.
-Earlier revisions stay in the archive. One exception keeps sends safe. The server does
-not store a save from an older revision when that revision or a later one is pending.
-The reply then contains the latest draft and `rejected: true`. A negative revision or a
-revision above the current revision fails with an error.
+The latest save wins, even when its revision is older than the current revision. Earlier
+revisions stay in the archive. One exception keeps sends safe. The server does not store
+a save from an older revision when that revision or a later one is pending. The reply
+then contains the latest draft and `rejected: true`. A negative revision or a revision
+above the current revision fails with an error.
 
 ### composer-watch
 

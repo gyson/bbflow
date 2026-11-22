@@ -10,7 +10,7 @@ Use plain technical English for all project text. Write for a reader who has not
 the chat. This list of rules is the reference. It does not refer to an external
 standard.
 
-Obey these rules in all text:
+Follow these rules in all text:
 
 - Use the active voice. Start instructions with a command verb.
 - Use simple verb forms and common words. Avoid idioms and unnecessary words.
@@ -25,7 +25,7 @@ Obey these rules in all text:
 
 Reference text states rules, procedures, and behavior. It includes `README.md`, this
 file, `SPEC.md`, `PROTOCOL.md`, `COMMANDS.md`, `DEVELOPMENT.md`, `cmd/bbflow/skill.md`,
-the project skills, UI text, and code comments. Obey these additional rules in
+the project skills, UI text, and code comments. Follow these additional rules in
 reference text:
 
 - Use short, clear sentences. Prefer sentences of fewer than 25 words.
@@ -414,10 +414,10 @@ Use this starting format. Adjust the structure and detail to the change:
 ```
 
 A small change may combine these answers into a short paragraph. Keep the agent
-additions in their own section, also in a short description. A complex change may
-need separate design sections. Add reviewer notes, compatibility or migration details,
-risks, or screenshots only when they help assess the change. There is no target word
-count. Include alternatives or abandoned approaches only when they explain an important
+additions in their own section, even in a short description. A complex change may need
+separate design sections. Add reviewer notes, compatibility or migration details, risks,
+or screenshots only when they help assess the change. There is no target word count.
+Include alternatives or abandoned approaches only when they explain an important
 tradeoff in the final design.
 
 Keep the description focused on the change. Omit raw conversation transcripts, private

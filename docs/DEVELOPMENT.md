@@ -89,7 +89,7 @@ The logo source is `web/src/bbflow.svg`. It draws the letters "bb" on a 16-unit 
 grid in six rainbow bands. Each band is two grid rows. The frontend build renders the
 menu bar PNG from this source at 2 pixels per grid unit.
 
-GitHub selects README images from its own theme. Thus the README uses fixed-color light
+GitHub selects README images from its own theme, so the README uses fixed-color light
 and dark copies in `docs/images/`. `web/logo.test.mjs` checks that the copies keep the
 shape and colors of the source.
 

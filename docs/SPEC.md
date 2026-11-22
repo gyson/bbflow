@@ -231,7 +231,7 @@ runs, the command does not create the instance directory.
 #### Lock of the executable
 
 After the question, the command locks the directory of the executable with `flock`. The
-lock creates no file. Updates that share the executable run one at a time, also for
+lock creates no file. Updates that share the executable run one at a time, even for
 different instance directories. A second update waits and says so. Under the lock, the
 command runs the executable with `--version` again. If the version is no longer the
 version from the check, another command changed the executable. Then the command stops
@@ -239,7 +239,7 @@ with an error and changes nothing.
 
 The command passes its open directory to the updater as file 3. The lock belongs to that
 open directory, so it continues until both processes close it. The updater holds it
-until it ends, also when the command ends early, for example after Ctrl+C or when its
+until it ends, even when the command ends early, for example after Ctrl+C or when its
 terminal closes. The updater marks file 3 close-on-exec at once, so the new server, its
 menu companion, and its sessions never inherit the lock. An updater without that file
 stops with an error.
@@ -310,7 +310,7 @@ off.
 - The first check runs when the server starts. The next check runs 24 hours after the
   previous check. Each server start checks again.
 - The result stays only in server memory.
-- A settings save applies at once, also while a check runs.
+- A settings save applies at once, even while a check runs.
 - While the setting is off, the server sends no request and shows no offer, and a view
   cannot start an update.
 - When the setting changes to on, the view shows the result of the last check again.
@@ -349,7 +349,7 @@ itself. The restart stops all live sessions.
   steps. It also links to the release notes on GitHub. **Cancel** changes nothing.
 - The dialog names up to five live sessions that the restart stops and counts the
   others. It takes the live sessions from the same status message as the offer. Their
-  titles come from the current session list, also after a rename.
+  titles come from the current session list, even after a rename.
 - While the status watch has no connection, the view does not know the live sessions.
   Then the button and the dialog close until the watch sends the offer again.
 - An update in progress stays in the sidebar.
@@ -642,7 +642,7 @@ sessions in groups. It also has a search box, and a bottom row with **＋ Projec
 - When the group then shows all of its families, the keyboard focus moves from **Show
   more** to its last session.
 - The list and Archived keep separate group sizes until reload.
-- The family of the selected session stays in its group, also when it is older than the
+- The family of the selected session stays in its group, even when it is older than the
   other families that the group shows.
 
 #### Sidebar width
@@ -702,7 +702,7 @@ inherits no history, draft, or settings from its parent.
 - A sub-session belongs to one top-level session, its parent.
 - A family has one level: a sub-session cannot have sub-sessions.
 - `sessions.parent_id` keeps the parent, or NULL for a top-level session.
-- The parent is set when the sub-session draft is created, and it does not change. Thus
+- The parent is set when the sub-session draft is created, and it does not change, so
   families form only through **New sub-session**.
 - Sessions from before families stay top-level sessions.
 - Each session keeps its own terminal, status, and lifecycle. **Stop session** stops
@@ -737,11 +737,11 @@ offers two workspaces:
 
 - **Parent workspace** starts the sub-session in the current workspace of its parent.
   Both sessions then change the same files. This choice needs a parent whose first
-  terminal started. Before that, the parent has no launch workspace, also after a launch
+  terminal started. Before that, the parent has no launch workspace, even after a launch
   that stopped early. The sub-session gets no worktree record.
 - **New worktree** creates a managed worktree from the project folder. The default base
   is the current branch of the managed worktree of the parent, or its commit when that
-  checkout is detached. Thus the base has the commits of the parent, also after it
+  checkout is detached. Thus the base has the commits of the parent, even after it
   switched branches. Without a parent worktree, the default is the default Git base.
   Uncommitted changes of the parent are not copied.
 
@@ -881,8 +881,8 @@ paths. Requests cannot override the shell or environment.
 
 A selected tool supplies an optional startup command to submit through that shell. The
 server inherits its startup environment and sets `TERM=xterm-256color`. The launch
-stores the tool name and workspace basename as the derived title, also when the user
-set a title.
+stores the tool name and workspace basename as the derived title, even when the user set
+a title.
 
 Workspaces accept absolute paths, `~`, and `~/path`. Home expansion uses the server's
 `HOME` from startup, before canonicalization. Other relative paths, `~user`, and
@@ -1187,7 +1187,7 @@ that follows. The detection does not depend on the tool.
 
 `idle` means only that there was no recent output. The application can be complete, can
 wait for an answer or a permission, or can work without output. A spinner or other
-repeated output shows as `running`, also without progress. No completion, readiness, or
+repeated output shows as `running`, even without progress. No completion, readiness, or
 message boundaries are inferred from silence. bbflow never sends input because of a
 status.
 
@@ -1214,7 +1214,7 @@ The sidebar shows the status with these rules:
 - A label for screen readers gives the short status, for example **idle, 1 view**.
 - Each page keeps one `status-watch` stream open. The server pushes the statuses of all
   live terminals on it, at most 200 milliseconds after a change. Thus the sidebar shows
-  brief activity of each session, also without a view of that session.
+  brief activity of each session, even without a view of that session.
 - The `session-list` refresh every five seconds supplies all other session data. It
   also supplies the statuses while the watch reconnects.
 - When a terminal starts or ends, the page reads the list at once.
@@ -1326,7 +1326,7 @@ shows its derived title. Neither field ever changes the other.
 
 Automatic titles apply only to sessions that start after the upgrade to format 10. An
 older session keeps its title and has an empty derived title. The archive cannot show
-which send was its first, so it never gets an automatic title, also after the user
+which send was its first, so it never gets an automatic title, even after the user
 clears its title.
 
 #### Title tool setting
@@ -1383,7 +1383,7 @@ another change selected None during the test`. A change of another setting durin
 test does not block the save.
 
 Each test and each change of Custom needs its command. The UI and the CLI send the
-custom command that they show. Thus a test runs the command that the user sees, also
+custom command that they show. Thus a test runs the command that the user sees, even
 after another client saves another custom command.
 
 The test runs in the server environment, as the title runs of sessions do. Thus a CLI
@@ -1519,11 +1519,11 @@ The archive records the first message as a `title` event:
   PTY receipt and in the order that the PTY accepts input. Its data holds the draft
   revision, the selected title tool, and `requested`.
 - The event is recorded also when the send starts no request, because the tool is None
-  or the session has a user title. So a later send never becomes the first message,
-  also after the user selects a title tool or removes a user title.
+  or the session has a user title. So a later send never becomes the first message, even
+  after the user selects a title tool or removes a user title.
 - One statement checks that the session has no `title` event and inserts it. Thus each
-  session gets at most one title request, also after a server restart, a lost receipt
-  in the browser, or an unlocked draft.
+  session gets at most one title request, even after a server restart, a lost receipt in
+  the browser, or an unlocked draft.
 - Only the command runs later, in a job. A failed request does not run again.
 - The command does not run for autosaves, sends without a receipt, attachments without
   text, or terminal input from the keyboard.
@@ -1584,10 +1584,10 @@ reads the session list again.
 
 - **Test** in Settings runs the saved title tool once. It is not available for None, or
   while the list shows a tool that is not saved.
-- Test and the tool list stay disabled until the test ends, also when another setting
+- Test and the tool list stay disabled until the test ends, even when another setting
   saves.
-- A result shows only while its tool stays selected, also after another view changes
-  the tool.
+- A result shows only while its tool stays selected, even after another view changes the
+  tool.
 - The browser waits 100 seconds for the reply, longer than the 90-second server limit.
 - It sends a fixed sample message, not a message of a session, and saves nothing. The
   server owns the sample message, and `title-tools` returns it with the built-in tools.
@@ -1689,7 +1689,7 @@ process ends. Send is disabled in these states.
 The oldest message is at the top and the newest is at the bottom. The list opens
 scrolled to the bottom and shows the newest 20 messages. **Show older messages** at the
 top loads 20 more and keeps the visible messages in place. The `composer-sent` operation
-derives this list from the existing pending draft revisions. Thus the list also includes
+derives this list from the existing pending draft revisions, so the list also includes
 sends from before this feature. Direct terminal input is not listed.
 
 Each message shows its time, text, and attached file names. **Sent** means that the
@@ -2122,7 +2122,7 @@ at that commit. Files always shows the current files.
   the base. Without a base, it lists the latest commits of `HEAD`.
 - A shallow clone does not have the parent of its last commit. The list omits that
   commit.
-- The menu shows "Older commits are not listed." when the list omits commits, also when
+- The menu shows "Older commits are not listed." when the list omits commits, even when
   the list is empty.
 - When a rebase or a reset removes a selected commit, or the session loses its base,
   the next refresh uses the default changes.
@@ -2184,7 +2184,7 @@ at that commit. Files always shows the current files.
 - In a narrow pane, the line counts, **View source**, **View file**, and the ⋯ button
   go to a second row of the file header. The path and **Preview** keep at least 200
   pixels.
-- The ⋯ button stays at the right end of the second row. Thus its tooltip opens to the
+- The ⋯ button stays at the right end of the second row, so its tooltip opens to the
   left. The tooltip is at most 280 pixels wide, so it stays in the pane at the minimum
   pane width of 320 pixels.
 
@@ -2214,12 +2214,12 @@ SVG files have these additional rules:
 
 - An SVG file shows as an image only when its root element is `svg` in the SVG
   namespace, `http://www.w3.org/2000/svg`.
-- The XML parser of the browser reads the text, as for an `img` element. Thus the text
-  must be well-formed XML. The parsed document stays detached, so it runs no scripts
-  and loads no files.
+- The XML parser of the browser reads the text, as for an `img` element, so the text
+  must be well-formed XML. The parsed document stays detached, so it runs no scripts and
+  loads no files.
 - Other text in an SVG file, such as the pointer text of Git LFS or an `svg` element in
   a comment, shows as text.
-- The old side of a rename uses its old path. Thus a rename from an SVG file to another
+- The old side of a rename uses its old path, so a rename from an SVG file to another
   file type shows the old image.
 - **View source** shows the text of an SVG file, or the diff of its text. **View
   image** shows the image again.
@@ -2278,8 +2278,8 @@ A line separates the copy items from the other items. The menu has the keys of t
   paths as `workspace-open` without the HTML rule. On macOS, the server runs `open -R`
   with the absolute path.
 - For **Open in browser**, the page sends `workspace-open`. The server asks macOS for
-  the application that opens `https` links. Then it runs `open -a` with that browser
-  and the file. Thus an editor that owns HTML files does not open the file.
+  the application that opens `https` links. Then it runs `open -a` with that browser and
+  the file, so an editor that owns HTML files does not open the file.
 - A file above 1 MiB can open in the browser.
 - The browser loads the file from the disk as a `file:` page. Thus relative styles,
   images, and scripts load, and external scripts load too. To see a later change,
@@ -2321,9 +2321,9 @@ The tooltip of the ⋯ button shows the result of a choice:
 - A refresh reads each open folder again. It closes a folder that is gone.
 - A refresh keeps the shown file when its content is the same.
 - Only the latest request for a folder changes its entries. A reply or a failure of an
-  earlier request does nothing, also after the folder closes and opens again.
-- The keyboard focus stays on its row when the list changes. Thus Tab moves from an
-  opened folder to its entries.
+  earlier request does nothing, even after the folder closes and opens again.
+- The keyboard focus stays on its row when the list changes, so Tab moves from an opened
+  folder to its entries.
 
 A folder read can fail or reach a limit:
 
@@ -2375,7 +2375,7 @@ The server finds the workspace and reads the files with these rules:
 
 The server runs Git with these rules:
 
-- Git runs with `GIT_OPTIONAL_LOCKS=0`. Thus it does not take `index.lock` from a live
+- Git runs with `GIT_OPTIONAL_LOCKS=0`, so it does not take `index.lock` from a live
   agent.
 - Git also runs with literal pathspecs, `core.fsmonitor=false`, `--no-ext-diff`,
   `--no-textconv`, and a 10-second timeout.
@@ -2389,8 +2389,8 @@ The server runs Git with these rules:
 
 The server gets the ignore marks of the tree with these rules:
 
-- The server runs `git check-ignore` in each listed folder. Thus a submodule and a
-  nested repository use their own ignore rules.
+- The server runs `git check-ignore` in each listed folder, so a submodule and a nested
+  repository use their own ignore rules.
 - This command does not support literal pathspecs. The server sends each name with a
   `./` prefix through standard input, so that Git reads it as a path.
 - When this command fails, the tree shows the entries without ignore marks, and the
@@ -2417,8 +2417,7 @@ File content has these limits:
 - A side with a NUL byte in its first 8000 bytes, or with invalid UTF-8, is binary. A
   binary side that starts with the signature of a PNG, JPEG, GIF, or WebP file is an
   image.
-- Text stays text, also when it starts like an image. Thus text above 1 MiB is too
-  large.
+- Text stays text, even when it starts like an image, so text above 1 MiB is too large.
 - The pane shows a note instead of the content of other binary sides.
 - Other image formats, such as AVIF, HEIC, TIFF, BMP, and ICO, show as binary files.
 - An untracked file above 1 MiB has no line count. When its first 512 bytes are binary
@@ -2455,7 +2454,7 @@ The views have these limits:
 ### Side terminal
 
 The side terminal is a shell for ad hoc commands in the session workspace. It is the
-Terminal view of the [workspace pane](#workspace-pane). Thus the session terminal keeps
+Terminal view of the [workspace pane](#workspace-pane), so the session terminal keeps
 its full height. Drafts have no side terminal. Ended sessions have one while their
 workspace exists.
 
@@ -2544,7 +2543,7 @@ about 1,000,000 history cells (rows × columns), with at least 10,000 rows and a
 
 #### Reason for the limit
 
-The emulator allocates all cells of a row, also blank cells. Thus rows × columns sets
+The emulator allocates all cells of a row, including blank cells, so rows × columns sets
 its memory, not the length of the text. A narrower terminal wraps the same text into
 more rows, so the limit keeps about the same amount of wrapped text. The 10,000-row
 minimum keeps the row count of earlier releases at every width. The 50,000-row maximum
@@ -2745,7 +2744,7 @@ WAL is enabled after the schema transaction commits.
 #### Formats
 
 - Empty databases run the format 3 baseline, then migrations 4 through 15. In the same
-  transaction, a new database sets `worktree` to true in the settings JSON. Thus new
+  transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
   Existing sessions remain standalone, with their original workspace and history.
@@ -2770,7 +2769,7 @@ WAL is enabled after the schema transaction commits.
   port of the server, with `0` for no saved port. The first start after the upgrade
   saves a new port.
 - Format 11 gains `updateCheck: true` in the settings JSON through migration 12. Thus
-  the daily release check starts on, also after an upgrade. The settings revision and
+  the daily release check starts on, even after an upgrade. The settings revision and
   the other values stay.
 - Format 12 gains the nullable `sessions.parent_id` column and its index through
   migration 13. Existing sessions stay top-level sessions.
@@ -3239,8 +3238,8 @@ tab continued the session and stopped the new terminal. Both tabs then showed
   process and SQL injection words, and a 3,480-byte message that the server cut at 2,000
   bytes. No message triggered the guardrails.
 - Three runs of one message gave the same title.
-- A message that told the model to reply with a fixed title got that title. Thus the
-  first message can choose its own title.
+- A message that told the model to reply with a fixed title got that title, so the first
+  message can choose its own title.
 - In a demo instance, **Test** passed, and a first send in a new session set the derived
   title and recorded the `title` event. With the full path, the command also ran with
   only `/bin` on the PATH. There, the bare name `fm` ended with exit status 127.
@@ -3395,7 +3394,7 @@ These checks apply to the [Changes pane](#changes-pane) and its file menu.
   data above the limits, text with an image extension or an image signature, text
   above 1 MiB with an image signature, and an SVG symlink.
 - A change list fixture counts an untracked image above 1 MiB as binary. It also counts
-  text above 1 MiB with an image signature as text, also when the read of its first
+  text above 1 MiB with an image signature as text, even when the read of its first
   bytes cuts a character.
 - A WebSocket fixture sends two 5 MiB image sides in one reply.
 - Web fixtures cover the image URLs, SVG text in a URL, the shown sides and their text
