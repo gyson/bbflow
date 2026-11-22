@@ -83,6 +83,8 @@ fi
 case $author in '' | *[!A-Za-z0-9_-]*) fail "unsupported account name: $author" ;; esac
 
 # The first line identifies a round comment. Ignore the second line and later lines.
+# The reviewer chooses the verdict from its findings: LGTM only when no finding is
+# open. The script reads only the verdict in the first line, not the findings.
 # Only comments from the selected account count.
 filter='"state\t\(.state)", "head\t\(.headRefOid)", (.comments | sort_by(.createdAt)[] | select(.author.login == "'$author'") | (.body | split("\n")[0] | rtrimstr("\r")) | select(startswith("**[review-loop ")) | "mark\t\(.)")'
 
