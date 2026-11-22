@@ -948,12 +948,12 @@ problem and select the tool again. A reload or close of the page during the test
 cancels the change. The page asks for confirmation first.
 
 For a built-in tool, Settings shows the exact command from the server and a note that a
-later release can change it. **Customize this command** copies that command into the
-custom command field and selects Custom. Nothing saves until **Save and test**. A
-selection of Custom with a saved command tests that command at once. Without a saved
-command, the field waits for a command, and **Save and test** starts the change. A
-custom command that fails its test stays in the field, with Custom in the list, so that
-the user can fix it. The status then shows **Changes not saved**.
+later release can change it. A built-in tool has no edit action. To run another command,
+select Custom. A selection of Custom with a saved command tests that command at once.
+Without a saved command, the field waits for a command, and **Save and test** starts the
+change. A custom command that fails its test stays in the field, with Custom in the
+list, so that the user can fix it. The status then shows **Changes not saved**. The CLI
+also has no edit command for a built-in tool. Use `bbflow title-tool set custom COMMAND`.
 
 In the CLI, `bbflow title-tool set` writes the tool name and its exact command to
 standard error before the test. It waits 100 seconds for the reply, longer than the
@@ -962,7 +962,7 @@ the title from the sample message. After a failed test, it prints the error and 
 with status 1. An interrupt of the command cancels the test, and the tool does not save.
 
 The server owns the command of each built-in title tool. Users cannot edit these
-commands, but **Customize this command** can start a custom command from a copy:
+commands:
 
 | Title tool | Command |
 | --- | --- |
@@ -2467,8 +2467,7 @@ model was used in these checks.
 A later browser check of a new instance tried Custom. A selection of Custom without a
 saved command showed the empty field and **Changes not saved**. A failing command showed
 the spinner, then the not configured error, with the command kept in the field. A
-passing command saved and showed its title. Apple then passed its test with `fm`.
-**Customize this command** copied the exact Apple command and saved nothing. A change
+passing command saved and showed its title. Apple then passed its test with `fm`. A change
 to None kept the custom command, and a new selection of Custom tested it at once. A
 restart of a demo instance with the new build upgraded format 14 to 15. It kept the
 settings revision, the selected title tool, and the port.

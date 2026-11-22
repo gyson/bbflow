@@ -173,7 +173,7 @@
             <label>Custom command<input id="title-custom-command" maxlength="1000" placeholder="my-llm --fast" spellcheck="false" autocomplete="off"></label>
             <p class="form-help">The command gets the request on standard input. It must print one line that starts with bbflow-title: and then the title. bbflow does not limit what a custom command can do. Prefer standard input to "$(cat)", because other programs on this Mac can read the arguments of a command.</p>
           </form>
-          <div class="title-actions"><button id="title-custom-save" type="submit" form="title-custom" hidden>Save and test</button><button id="title-customize" type="button" hidden>Customize this command</button><button id="title-test" type="button" disabled>Test</button></div>
+          <div class="title-actions"><button id="title-custom-save" type="submit" form="title-custom" hidden>Save and test</button><button id="title-test" type="button" disabled>Test</button></div>
           <div id="title-test-result" role="status" hidden><p id="title-test-sample" class="form-help"></p><p id="title-test-run" class="form-help" hidden>Command: <code id="title-test-command"></code></p><p id="title-test-outcome"></p><p id="title-test-detail" class="form-help"></p></div>
           <p class="form-help">Claude, Codex, and Code Puppy must be installed on the PATH of the server and signed in. They send your first message to their provider, with paths masked and the tools of the CLI turned off. Code Puppy still runs your user plugins. Claude and Code Puppy can save each call in their own history. Apple uses the on-device model of macOS 27 and keeps your message on this Mac. Before you use Apple, run sudo /usr/bin/fm license and accept the terms.</p>
         </section>

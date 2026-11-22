@@ -42,7 +42,6 @@ export class SettingsView {
   private readonly customForm = element('title-custom', HTMLFormElement);
   private readonly customCommand = element('title-custom-command', HTMLInputElement);
   private readonly customSave = element('title-custom-save', HTMLButtonElement);
-  private readonly customize = element('title-customize', HTMLButtonElement);
   private readonly titleTest = element('title-test', HTMLButtonElement);
   private readonly testResult = element('title-test-result', HTMLElement);
   private readonly testSample = element('title-test-sample', HTMLElement);
@@ -109,7 +108,6 @@ export class SettingsView {
     this.titleTool.onchange = () => this.selectTitleTool(this.titleTool.value);
     this.customForm.onsubmit = event => { event.preventDefault(); this.saveCustom(); };
     this.customCommand.oninput = () => this.showStatus();
-    this.customize.onclick = () => this.customizeTool();
     this.titleTest.onclick = () => void this.testTitleTool();
     this.addTool.form.onsubmit = event => { event.preventDefault(); this.saveTool(this.addTool, null); };
     this.editTool.form.onsubmit = event => {
@@ -351,18 +349,15 @@ export class SettingsView {
     (edit ?? this.addTool.name).focus();
   }
 
-  // Show the controls of the tool in the list. A built-in tool shows its exact command
-  // and Customize. Custom shows its command field. None has no command and no test. A
-  // running test or change keeps the controls disabled and shows the spinner, also across
-  // a render.
+  // Show the controls of the tool in the list. A built-in tool shows its exact command.
+  // Custom shows its command field. None has no command and no test. A running test or
+  // change keeps the controls disabled and shows the spinner, also across a render.
   private showTitleTool(): void {
     // Another view or a reload can change the saved tool. Hide a result of another tool.
     if (this.titleTool.value !== this.testedTool) this.testResult.hidden = true;
     const controls = titleControls(this.titleTools, this.titleTool.value, this.saved?.titleTool ?? 'none', this.busy);
     this.titleCommand.textContent = controls.command;
     this.titleBuiltin.hidden = !controls.command;
-    this.customize.hidden = !controls.command;
-    this.customize.disabled = !controls.customize;
     this.customForm.hidden = this.customSave.hidden = !controls.custom;
     this.customCommand.disabled = this.customSave.disabled = !controls.select;
     this.titleTest.disabled = !controls.test;
@@ -420,18 +415,6 @@ export class SettingsView {
     }
     this.testedTool = 'custom';
     this.showTest('failed', '✕ Enter a command for the custom title tool.', '', false);
-    this.customCommand.focus({ preventScroll: true });
-  }
-
-  // Copy the exact command of the built-in tool in the list into the custom command
-  // field. Nothing saves until Save and test.
-  private customizeTool(): void {
-    const tool = this.titleTools.find(candidate => candidate.id === this.titleTool.value);
-    if (!tool || this.busy) return;
-    this.customCommand.value = tool.command;
-    this.customOpen = true;
-    this.testResult.hidden = true;
-    this.render();
     this.customCommand.focus({ preventScroll: true });
   }
 

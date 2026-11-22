@@ -179,12 +179,11 @@ export function sameTools(a: Tool[], b: Tool[]): boolean {
 // the saved tool, other than none, and no busy state. A save of another setting does not
 // change this state.
 export function titleControls(tools: TitleTool[], shown: string, saved: string, busy: boolean):
-  { command: string; custom: boolean; customize: boolean; test: boolean; select: boolean } {
+  { command: string; custom: boolean; test: boolean; select: boolean } {
   const tool = tools.find(tool => tool.id === shown);
   return {
     command: tool?.command ?? '',
     custom: shown === 'custom',
-    customize: !!tool && !busy,
     test: shown !== 'none' && shown === saved && !busy,
     select: !busy,
   };

@@ -31,17 +31,17 @@ test('adding the same tool twice keeps one copy', () => {
 
 test('a running title test or title tool change keeps the title controls disabled', () => {
   const tools = [{ id: 'claude', name: 'Claude', command: 'claude -p' }];
-  assert.deepEqual(titleControls(tools, 'claude', 'claude', false), { command: 'claude -p', custom: false, customize: true, test: true, select: true });
+  assert.deepEqual(titleControls(tools, 'claude', 'claude', false), { command: 'claude -p', custom: false, test: true, select: true });
   // A save of another setting renders again during the test. The controls stay disabled.
-  assert.deepEqual(titleControls(tools, 'claude', 'claude', true), { command: 'claude -p', custom: false, customize: false, test: false, select: false });
-  assert.deepEqual(titleControls(tools, 'none', 'none', false), { command: '', custom: false, customize: false, test: false, select: true });
+  assert.deepEqual(titleControls(tools, 'claude', 'claude', true), { command: 'claude -p', custom: false, test: false, select: false });
+  assert.deepEqual(titleControls(tools, 'none', 'none', false), { command: '', custom: false, test: false, select: true });
 });
 
 test('Custom shows its command field, and Test runs only the saved tool', () => {
   const tools = [{ id: 'claude', name: 'Claude', command: 'claude -p' }];
   // Custom has no built-in command. Its field shows, also before it saves.
-  assert.deepEqual(titleControls(tools, 'custom', 'none', false), { command: '', custom: true, customize: false, test: false, select: true });
-  assert.deepEqual(titleControls(tools, 'custom', 'custom', false), { command: '', custom: true, customize: false, test: true, select: true });
+  assert.deepEqual(titleControls(tools, 'custom', 'none', false), { command: '', custom: true, test: false, select: true });
+  assert.deepEqual(titleControls(tools, 'custom', 'custom', false), { command: '', custom: true, test: true, select: true });
   // During a change, the list shows the new tool. Test waits for the save.
   assert.equal(titleControls(tools, 'claude', 'none', true).test, false);
   assert.equal(titleControls(tools, 'claude', 'custom', false).test, false);
