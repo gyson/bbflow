@@ -46,6 +46,9 @@ type Server struct {
 	// open opens a file in the default browser of the user. Tests replace it. A nil
 	// open rejects workspace-open.
 	open func(ctx context.Context, path string) error
+	// reveal shows a file in Finder. Tests replace it. A nil reveal rejects
+	// workspace-reveal.
+	reveal func(ctx context.Context, path string) error
 }
 
 // On cancellation, Serve stops new requests and waits for agent cleanup. The caller
@@ -62,7 +65,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		Protocol: protocol.Version, Instance: history.ID(), PID: os.Getpid(),
 		DataDir: filepath.Dir(store.Path), Port: listener.Addr().(*net.TCPAddr).Port,
 		Executable: executable,
-	}, releases: releases, open: desktop.OpenInBrowser}
+	}, releases: releases, open: desktop.OpenInBrowser, reveal: desktop.Reveal}
 	s.updates.load(store)
 	if err := s.ensureGeneral(); err != nil {
 		return protocol.ServerInfo{}, err
@@ -307,6 +310,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "workspace-open":
 		err := s.workspaceOpen(ctx, request.Session, request.Diff)
 		s.reply(conn, map[string]bool{"opened": err == nil}, err)
+	case "workspace-reveal":
+		err := s.workspaceReveal(ctx, request.Session, request.Diff)
+		s.reply(conn, map[string]bool{"revealed": err == nil}, err)
 	case "composer-draft":
 		result, err := s.composer(request.Session, request.Draft)
 		s.reply(conn, result, err)

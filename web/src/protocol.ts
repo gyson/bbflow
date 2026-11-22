@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/36';
+export const VERSION = 'bbflow/37';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -132,7 +132,8 @@ type FilesRequest = { operation: 'workspace-files'; session: string };
 type FoldersRequest = { operation: 'workspace-folders'; session: string; diff: DiffRequest };
 type FileRequest = { operation: 'workspace-file'; session: string; diff: DiffRequest };
 type OpenRequest = { operation: 'workspace-open'; session: string; diff: DiffRequest };
-export type DiffRPC = ChangesRequest | FilesRequest | FoldersRequest | FileRequest | OpenRequest;
+type RevealRequest = { operation: 'workspace-reveal'; session: string; diff: DiffRequest };
+export type DiffRPC = ChangesRequest | FilesRequest | FoldersRequest | FileRequest | OpenRequest | RevealRequest;
 type HistorySearchRequest = { operation: 'history-search'; search: HistoryFilter };
 type HistoryContextRequest = { operation: 'history-context'; context: { anchor: HistoryAnchor; before: number; after: number } };
 type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draft };
@@ -426,6 +427,7 @@ export function call(server: ServerInfo, request: FilesRequest, signal?: AbortSi
 export function call(server: ServerInfo, request: FoldersRequest, signal?: AbortSignal): Promise<WorkspaceFolders>;
 export function call(server: ServerInfo, request: FileRequest, signal?: AbortSignal): Promise<WorkspaceFile>;
 export function call(server: ServerInfo, request: OpenRequest): Promise<{ opened: boolean }>;
+export function call(server: ServerInfo, request: RevealRequest): Promise<{ revealed: boolean }>;
 export function call(server: ServerInfo, request: RPCRequest, signal?: AbortSignal): Promise<unknown> {
   if (signal?.aborted) return Promise.reject(new DOMException('Request canceled.', 'AbortError'));
   return new Promise<unknown>((resolve, reject) => {

@@ -16,7 +16,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/36`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/37`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -33,7 +33,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/36",
+    "protocol": "bbflow/37",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -68,7 +68,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/36",
+    "protocol": "bbflow/37",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -225,6 +225,9 @@ keeps the saved `titleTool` and `titleCommand`. The server owns the sample messa
 test. `title-tools` returns an object with `tools` and `sample`, not a list. `title-test`
 no longer reads `text`. SQLite format 15 adds
 `titleCommand: ""`.
+
+Protocol 37 adds `workspace-reveal` to the [workspace operations](#workspace-changes).
+The SQLite format does not change.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -547,9 +550,19 @@ runs `open -a` with that browser and the absolute path. It waits up to 10 second
 returns `{ "opened": true }`. On other systems, the operation gives an error.
 
 A path that does not obey these rules, a missing file, or a failed opener gives an
-error. The operation does not change files. A browser loads the file as a `file:` page.
+error. The error of a failed opener gives only the cause, so that a client can name the
+action. The operation does not change files. A browser loads the file as a `file:` page.
 Such a page has an opaque origin, so the server rejects its WebSocket connections. See
 [browser access](#browser-access).
+
+Protocol 37 adds `workspace-reveal`. It shows a current entry of the session workspace
+in Finder. `diff.path` names the entry, with the same rules as `path`. The entry can
+be a file of any type or a folder. No part of the path can be a symlink. On macOS, the
+server runs `open -R` with the absolute path. Finder then selects the entry and does
+not open it. The server waits up to 10 seconds and returns `{ "revealed": true }`. On
+other systems, the operation gives an error. A path that does not obey these rules, a
+missing entry, or a failed opener gives an error. The error of a failed opener gives
+only the cause, as for `workspace-open`. The operation does not change files.
 
 ## Settings and prepared launches
 
@@ -893,13 +906,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/36") {
+    if (message.server.protocol !== "bbflow/37") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/36", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/37", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);

@@ -37,30 +37,10 @@ func (s *Server) workspaceOpen(ctx context.Context, id string, request *protocol
 	if !htmlFile(request.Path) {
 		return errors.New("only an HTML file can open in the browser")
 	}
-	session, err := s.store.Session(id)
-	if err != nil {
-		return err
-	}
-	workspace, err := agent.Canonical(session.Workspace)
-	if err != nil {
-		return fmt.Errorf("the session workspace is not available: %w", err)
-	}
-	// The button opens a file of this workspace. A symbolic link with an HTML name can
-	// lead to another file, so no part of the path can be a symbolic link. The browser
-	// reads the path again after this check. A change at that time changes only the
-	// page that the browser shows, because the browser and not the file type selects
-	// the application.
-	path := filepath.Join(workspace, request.Path)
-	resolved, err := filepath.EvalSymlinks(path)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return errors.New("the file is not in the session workspace now")
-	case err != nil:
-		return err
-	case resolved != path:
-		return errors.New("the path goes through a symbolic link")
-	}
-	info, err := os.Lstat(path)
+	// A symbolic link with an HTML name can lead to another file. The browser reads the
+	// path again after this check. A change at that time changes only the page that the
+	// browser shows, because the browser and not the file type selects the application.
+	path, info, err := s.workspaceEntry(id, request.Path)
 	if err != nil {
 		return err
 	}
@@ -72,8 +52,57 @@ func (s *Server) workspaceOpen(ctx context.Context, id string, request *protocol
 	}
 	ctx, cancel := context.WithTimeout(ctx, openTimeout)
 	defer cancel()
-	if err = s.open(ctx, path); err != nil {
-		return fmt.Errorf("cannot open the file: %w", err)
+	// The error gives the cause only. The client names the action that failed.
+	return s.open(ctx, path)
+}
+
+// workspaceReveal shows a current file of the session workspace in Finder. Finder
+// selects the file and does not open it.
+func (s *Server) workspaceReveal(ctx context.Context, id string, request *protocol.DiffRequest) error {
+	if request == nil {
+		return errors.New("missing diff request")
 	}
-	return nil
+	if !workspacePath(request.Path) {
+		return errors.New("the file path must name a file in the session workspace")
+	}
+	path, _, err := s.workspaceEntry(id, request.Path)
+	if err != nil {
+		return err
+	}
+	if s.reveal == nil {
+		return errors.New("this server cannot show files in Finder")
+	}
+	ctx, cancel := context.WithTimeout(ctx, openTimeout)
+	defer cancel()
+	// The error gives the cause only. The client names the action that failed.
+	return s.reveal(ctx, path)
+}
+
+// workspaceEntry returns the absolute path of an entry of the session workspace. The
+// caller checks the relative path with workspacePath first. No part of the path can be
+// a symbolic link, so the path cannot lead out of the workspace.
+func (s *Server) workspaceEntry(id, relative string) (string, fs.FileInfo, error) {
+	session, err := s.store.Session(id)
+	if err != nil {
+		return "", nil, err
+	}
+	workspace, err := agent.Canonical(session.Workspace)
+	if err != nil {
+		return "", nil, fmt.Errorf("the session workspace is not available: %w", err)
+	}
+	path := filepath.Join(workspace, relative)
+	resolved, err := filepath.EvalSymlinks(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "", nil, errors.New("the file is not in the session workspace now")
+	case err != nil:
+		return "", nil, err
+	case resolved != path:
+		return "", nil, errors.New("the path goes through a symbolic link")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", nil, err
+	}
+	return path, info, nil
 }

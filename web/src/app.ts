@@ -15,7 +15,7 @@ import '@xterm/xterm/css/xterm.css';
 import './style.css';
 import { element } from './dom.js';
 import { Composer } from './composer.js';
-import { SessionMenu } from './session-menu.js';
+import { ActionMenu } from './action-menu.js';
 import { RowMenus } from './row-menu.js';
 import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
@@ -181,7 +181,7 @@ const composer = new Composer({
   action,
 });
 const sessionSplit = new SessionSplit();
-const sessionMenu = new SessionMenu();
+const sessionMenu = new ActionMenu('session-menu');
 const rowMenus = new RowMenus(() => renderSessions());
 const handoffPrompt = new HandoffPrompt({ insert: text => composer.insert(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
@@ -192,6 +192,8 @@ const terminalPicker = new TerminalPicker({
 });
 const historySearch = new HistorySearch(() => server);
 const diffPane = new DiffPane(() => server);
+// Copy path of the file menu joins this workspace and the relative path of the file.
+diffPane.workspace = session => selected?.id === session ? selected.workspace : '';
 const sideTerminal = new SideTerminal(() => server, terminalTheme);
 const workspacePane = new WorkspacePane(diffPane, sideTerminal);
 new Sidebar();

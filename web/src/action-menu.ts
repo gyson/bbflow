@@ -1,17 +1,25 @@
 import { element } from './dom.js';
 
-// The More menu of the session toolbar holds the session actions that a user needs less
-// often. The host shows or hides each item. The menu button shows only when an item shows.
-export class SessionMenu {
-  private readonly box = element('session-menu-box', HTMLElement);
-  private readonly button = element('session-menu-open', HTMLButtonElement);
-  private readonly menu = element('session-menu', HTMLElement);
-  private readonly status = element('session-menu-status', HTMLElement);
-  private readonly tip = this.button.dataset.tip ?? '';
+// An action menu holds actions that a user needs less often, behind a ⋯ button. The
+// More menu of the session toolbar and the menu of the file header are action menus.
+// The host shows or hides each item. The menu button shows only when an item shows.
+// The page has a box `<id>-box`, a menu button `<id>-open`, a menu `<id>`, and a status
+// element `<id>-status` for each menu.
+export class ActionMenu {
+  private readonly box: HTMLElement;
+  private readonly button: HTMLButtonElement;
+  private readonly menu: HTMLElement;
+  private readonly status: HTMLElement;
+  private readonly tip: string;
   private confirmTimer: ReturnType<typeof setTimeout> | undefined;
   private expanded = false;
 
-  constructor() {
+  constructor(id: string) {
+    this.box = element(`${id}-box`, HTMLElement);
+    this.button = element(`${id}-open`, HTMLButtonElement);
+    this.menu = element(id, HTMLElement);
+    this.status = element(`${id}-status`, HTMLElement);
+    this.tip = this.button.dataset.tip ?? '';
     this.button.onclick = () => this.open(!this.expanded);
     const onItem = (event: Event) => event.target instanceof Element && !!event.target.closest('button');
     // Move the focus to the menu button before an item runs its action. A dialog that
@@ -49,16 +57,21 @@ export class SessionMenu {
   }
 
   // Show a short confirmation of an item, such as a copy, as the tooltip of the menu
-  // button. A screen reader reads it from a status element.
-  confirm(text: string): void {
+  // button. A screen reader reads it from a status element. An error message is longer,
+  // so the host can show it for a longer time.
+  confirm(text: string, duration = 1800): void {
     clearTimeout(this.confirmTimer);
     this.button.dataset.tip = this.status.textContent = text;
     this.button.classList.add('tip-open');
-    this.confirmTimer = setTimeout(() => {
-      this.button.dataset.tip = this.tip;
-      this.status.textContent = '';
-      this.button.classList.remove('tip-open');
-    }, 1800);
+    this.confirmTimer = setTimeout(() => this.clear(), duration);
+  }
+
+  // End the confirmation that shows now, for example when its subject goes away.
+  clear(): void {
+    clearTimeout(this.confirmTimer);
+    this.button.dataset.tip = this.tip;
+    this.status.textContent = '';
+    this.button.classList.remove('tip-open');
   }
 
   // Call this after the host changes the items.
