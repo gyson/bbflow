@@ -936,16 +936,16 @@ Only `title-tool-set` changes the title tool and the custom command. `settings-s
 keeps both. A title tool change gives the settings a new revision, so a save from an
 earlier revision fails.
 
-In Settings, a selection in the tool list starts the change. A spinner shows next to the
-list until the change ends. The spinner does not turn when the system asks for reduced
-motion. The list, **Test**, and the custom command controls stay disabled during the
-change. The list shows the new tool, and the status shows **Saving…**. The result area
-shows the sample message and a line such as **Testing Codex. This can take up to 90
-seconds.** After a passed test, a green line tells that the tool is
-configured, with the title from the sample message. After a failed test, the list shows
-the saved tool again. A red line under it shows the error and tells the user to fix the
-problem and select the tool again. A reload or close of the page during the test
-cancels the change. The page asks for confirmation first.
+In Settings, a selection in the tool list starts the change. A spinner shows after
+**Test** until the change ends. It also shows during a test that **Test** starts. The
+spinner does not turn when the system asks for reduced motion. The list, **Test**, and
+the custom command controls stay disabled during the change. The list shows the new
+tool, and the status shows **Saving…**. The result area shows the sample message and a
+line such as **Testing Codex. This can take up to 90 seconds.** After a passed test, a
+green line tells that the tool is configured, with the title from the sample message.
+After a failed test, the list shows the saved tool again. A red line under it shows the
+error and tells the user to fix the problem and select the tool again. A reload or close
+of the page during the test cancels the change. The page asks for confirmation first.
 
 For a built-in tool, Settings shows the exact command from the server under the list.
 The test result does not repeat it. A built-in tool has no edit action. To run another

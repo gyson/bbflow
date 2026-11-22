@@ -366,9 +366,8 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
 .settings-card h3 { margin: 0 0 20px; font-size: 15px; font-weight: 600; }
 .settings-card > label { margin: 16px 0; max-width: 440px; }
 /* The title tool list is outside a form. Give it the field style of a form. The spinner
-   shows next to the list while a title test runs. */
-.title-select { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-#title-tool { flex: 1; min-width: 0; font-weight: 400; }
+   shows after Test while a title test runs. */
+#title-tool { margin-top: 8px; font-weight: 400; }
 .spinner { flex: none; box-sizing: border-box; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spinner-turn .8s linear infinite; }
 @keyframes spinner-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-color: var(--accent); } }
