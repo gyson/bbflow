@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -226,6 +227,55 @@ func TestEndedScreenCacheAndArchiveReconstruction(t *testing.T) {
 		if !strings.Contains(string(data), "Answer: café 你好") || strings.Contains(string(data), "Working") || strings.Contains(string(data), "NEVER REPLAY") || strings.Contains(string(data), "[6n") {
 			t.Fatalf("cached=%v: %q", cached, data)
 		}
+	}
+}
+
+// A narrow terminal keeps more than 10,000 history rows. Its saved screen must load.
+func TestSavedScreenKeepsTheRowLimitOfItsWidth(t *testing.T) {
+	store, err := history.Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	session, err := store.CreateSession("fixture", t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store}
+	r := &runningSession{id: session.ID, terminal: terminal.New(protocol.Size{Cols: 40, Rows: 8})}
+	var out strings.Builder
+	for i := range 30000 {
+		fmt.Fprintf(&out, "row %05d\r\n", i)
+	}
+	r.terminal.Apply(history.Event{Kind: "output", Data: []byte(out.String())})
+	if err = s.saveScreen(r); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.loadScreen(session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.History) != terminal.ScrollbackRows(40) {
+		t.Fatalf("saved screen has %d history rows, want %d", len(view.History), terminal.ScrollbackRows(40))
+	}
+	// A saved screen with more rows than the limit of its width loads with the newest
+	// rows. A rejected screen could not show its session.
+	wide := &terminal.View{Size: protocol.Size{Cols: 120, Rows: 2}, Lines: []string{"a", "b"}, Offset: 5}
+	for i := range terminal.ScrollbackRows(120) + 1 {
+		wide.History = append(wide.History, fmt.Sprintf("row %05d", i))
+	}
+	data, err := json.Marshal(savedScreen{Format: 1, View: wide})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Append(session.ID, "wide", "terminal-screen", data, ""); err != nil {
+		t.Fatal(err)
+	}
+	if view, err = s.loadScreen(session.ID, "wide"); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.History) != terminal.ScrollbackRows(120) || view.History[0] != "row 00001" || view.Offset != 6 {
+		t.Fatalf("wide saved screen has %d history rows from %q at offset %d", len(view.History), view.History[0], view.Offset)
 	}
 }
 

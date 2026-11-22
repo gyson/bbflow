@@ -40,9 +40,12 @@ func (s *Server) loadScreen(id, runID string) (*terminal.View, error) {
 		if err = json.Unmarshal(data, &saved); err != nil {
 			return nil, err
 		}
-		if saved.Format != 1 || saved.View == nil || !terminal.ValidSize(saved.View.Size) || len(saved.View.Lines) != int(saved.View.Size.Rows) || len(saved.View.History) > terminal.Scrollback {
+		if saved.Format != 1 || saved.View == nil || !terminal.ValidSize(saved.View.Size) || len(saved.View.Lines) != int(saved.View.Size.Rows) {
 			return nil, errors.New("unsupported saved terminal screen")
 		}
+		// Do not reject a saved screen with more rows than the limit of its width. Its
+		// session could then not show it. Keep the newest rows.
+		saved.View.TrimHistory()
 		return saved.View, nil
 	}
 	// The server emulates interrupted recordings and recordings without a final cache. It

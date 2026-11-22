@@ -1,8 +1,9 @@
 import type { Terminal } from '@xterm/xterm';
 import { decodeBytes } from './protocol.js';
 import type { ServerMessage } from './protocol.js';
+import { scrollbackRows } from './terminal-size.js';
 
-type Display = Pick<Terminal, 'write' | 'resize' | 'reset'>;
+export type Display = Pick<Terminal, 'write' | 'resize' | 'reset' | 'options'>;
 
 // Frames contain cells rendered by the server. They exclude raw application escape
 // sequences. Only one frame is outstanding. Acknowledge it after asynchronous xterm
@@ -30,7 +31,12 @@ export class TerminalStream {
     }
     this.pending = true;
     try {
-      if (message.full) this.view.reset();
+      if (message.full) {
+        this.view.reset();
+        // The server sends no more history rows than this limit for the frame width. A
+        // new width always gives a full frame.
+        this.view.options.scrollback = scrollbackRows(message.size.cols);
+      }
       this.resizing = true;
       this.view.resize(message.size.cols, message.size.rows);
       this.resizing = false;

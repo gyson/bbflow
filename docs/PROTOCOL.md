@@ -764,11 +764,13 @@ contains at most 11 MiB of rendered data, so it stays below the 16 MiB message l
 after base64 encoding. A full frame always contains the visible screen. It omits the
 oldest scrollback rows that do not fit.
 
-The first frame is always full. It contains up to 10,000 normal-buffer scrollback rows
-and the current visible screen, including an active alternate screen. It has rendered
-cell styles, cursor position and supported input modes. Clients reset their view and
-apply the frame's dimensions before parsing a full frame. Later frames contain only
-changed rows, scrollback additions and input-mode/cursor updates.
+The first frame is always full. It contains the normal-buffer scrollback rows that the
+view keeps and the current visible screen, including an active alternate screen. The row
+limit depends on the frame width. See [terminal scrollback](SPEC.md#terminal-scrollback).
+A full frame has rendered cell styles, cursor position and supported input modes.
+Before parsing a full frame, clients reset their view, set the row limit of the frame
+width, and apply the frame's dimensions. Later frames contain only changed rows,
+scrollback additions and input-mode/cursor updates.
 
 A resize, history clear, incompatible baseline, or update larger than the frame limit
 produces another full frame. The display uses positioned rows. It does not reproduce

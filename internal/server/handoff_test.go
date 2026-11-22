@@ -135,7 +135,7 @@ func TestHandoffFolderKeepsEveryEarlierTerminalAndMessage(t *testing.T) {
 		"`terminals/2-" + second.ID + ".txt`: the transcript of the latest terminal", "Tool: Fixture", "Tool: Other",
 		"Started from a handoff folder after terminal 1.", "`bbflow/fixture`", "`0123abcd`", "`git status`",
 		`'/opt/bbflow/bbflow' --dir '` + strings.ReplaceAll(s.info.DataDir, "'", `'\''`) + `' query`,
-		"run `'/opt/bbflow/bbflow' skill`",
+		"run `'/opt/bbflow/bbflow' skill`", "A terminal keeps 10,000 to 50,000 history rows",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("README misses %q:\n%s", want, readme)

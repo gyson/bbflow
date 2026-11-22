@@ -296,7 +296,7 @@ func handoffReadme(session history.Session, terminals []handoffTerminal, info pr
 		}
 	}
 	b.WriteString("\n## Limits\n\n")
-	b.WriteString("- A transcript is the text of the final screen of a terminal and at most the newest 10,000 rows above it. Older output is only in the original recording.\n")
+	b.WriteString("- A transcript is the text of the final screen of a terminal and the history rows above it that the terminal kept. A terminal keeps 10,000 to 50,000 history rows, more when it is narrower. Older output is only in the original recording.\n")
 	b.WriteString("- When a program used only the alternate screen, the transcript shows only its last screen.\n")
 	b.WriteString("- Transcripts have no colors or styles. Text typed directly in the terminal is in the transcripts, not in `messages.md`.\n")
 	executable := info.Executable
