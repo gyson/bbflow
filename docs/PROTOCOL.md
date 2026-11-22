@@ -1,11 +1,48 @@
 # Client/server protocol
 
+The bbflow server and its clients exchange JSON messages over WebSocket. The browser UI
+and the CLI use the same protocol. This document is the reference for the connection,
+each operation, and each stream. See [COMMANDS.md](COMMANDS.md) for user commands and
+[SPEC.md](SPEC.md) for storage and runtime behavior.
+
+## Contents
+
+| Section | Contents |
+| --- | --- |
+| [Transport](#transport) | The endpoint, the message format, and the protocol version. |
+| [Connections and requests](#connections-and-requests) | The greeting, its verification, shutdown, the request message, and replies. |
+| [Operations](#operations) | Each operation, with its request fields and its reply. |
+| [Sessions and projects](#sessions-and-projects) | New sessions, session fields, projects, the session list, and archive. |
+| [Recorded-output search](#recorded-output-search) | `history-search` and `history-context`. |
+| [Workspace changes](#workspace-changes) | The operations of the Changes and Files views. |
+| [Settings and prepared launches](#settings-and-prepared-launches) | Settings, the preparation of a session, and managed worktrees. |
+| [New terminals in ended sessions](#new-terminals-in-ended-sessions) | `session-continue`, the handoff folder, and `session-terminals`. |
+| [Side terminals](#side-terminals) | The shell of the workspace pane. |
+| [Session status](#session-status) | The derived status, `status-watch`, and release offers. |
+| [Terminal streams](#terminal-streams) | The messages of a live terminal, frames, and receipts. |
+| [Drafts and file references](#drafts-and-file-references) | The message editor operations. |
+| [Browser access](#browser-access) | The Host and Origin rules, and the HTTP routes. |
+| [Protocol versions](#protocol-versions) | The changes of each protocol version. |
+| [Source files](#source-files) | The code that defines the protocol. |
+
+## Transport
+
+Each operation uses one WebSocket connection to a loopback port. Each message is one
+JSON object in a text message. The server and the client must use the same protocol
+version.
+
+### Endpoint
+
 The CLI selects an instance directory with global `--dir`, `BBFLOW_DIR`, or its build
 default. It reads the assigned port from `<instance>/server.json` and connects to
-`ws://127.0.0.1:PORT/ws`. The server uses the loopback port from Settings, or else the
-port that it saved at its last start. When neither port is free, the operating system
-assigns a new one. The server holds the port at `127.0.0.1` and `::1`, because browsers
-open the UI at `localhost`. HTTP also serves the embedded web UI and its connection information.
+`ws://127.0.0.1:PORT/ws`.
+
+The server uses the loopback port from Settings, or else the port that it saved at its
+last start. When neither port is free, the operating system assigns a new one. The
+server holds the port at `127.0.0.1` and `::1`, because browsers open the UI at
+`localhost`. HTTP also serves the embedded web UI and its connection information.
+
+### Messages
 
 The transport uses [Gorilla WebSocket](https://github.com/gorilla/websocket). Each
 WebSocket text message contains one JSON object. There is no bbflow length prefix or
@@ -15,6 +52,8 @@ The server rejects binary messages, malformed JSON, and multiple JSON values in 
 message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and control
 codes.
 
+### Protocol version
+
 This is an early development protocol. The server greeting and first request verify
 version `bbflow/37`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
@@ -23,11 +62,18 @@ protocol change. This requires the same greeting and shutdown envelope.
 
 There is no fallback for previous transports. The server upgrades supported older
 database formats before it accepts requests. These formats do not imply support for
-their previous WebSocket protocols. See [database upgrades](SPEC.md#database-upgrades).
+their previous WebSocket protocols. See [database upgrades](SPEC.md#database-upgrades)
+and [Protocol versions](#protocol-versions).
 
 ## Connections and requests
 
-Open one connection per operation. The server immediately sends a greeting:
+Open one connection per operation. The server sends a greeting first. The client
+verifies the greeting, and then sends one request. Most operations send one reply and
+close the connection. Some operations keep a stream open.
+
+### Greeting
+
+The server immediately sends a greeting:
 
 ```json
 {
@@ -48,6 +94,8 @@ canonical selected directory. Its protocol, instance ID, PID, and port must matc
 `server.json`. Queries and health checks also require the client's current protocol
 version. Verify the greeting on the connection that will carry the command.
 
+### Health check and shutdown
+
 A separate health check cannot prevent a race with server replacement. An invalid or
 stale descriptor must never direct a command to a different server. To check health,
 read and verify the greeting. Then close the connection.
@@ -59,6 +107,8 @@ does not depend on a later copy of `server.json`. It cannot stop a replacement i
 For shutdown, send `stop` with the protocol and instance ID from that verified greeting.
 Require a `result` with `{"stopping":true}`. Wait for release of the archive lock before
 you start a replacement. Do not retry with another protocol or kill a stored PID.
+
+### Request
 
 HTTP headers and the WebSocket upgrade have five-second timeouts. Server writes time
 out after five seconds. After the greeting, send a `request` message within five
@@ -80,48 +130,7 @@ Requests contain no archive path. The connection reaches one server and its arch
 browser is the session client. The management CLI uses health, shutdown, query, and
 storage-report operations.
 
-| Operation | Additional request fields | Reply |
-| --- | --- | --- |
-| `project-list` | None | `result`, containing projects with `id`, `name`, `workspace`, and `created` |
-| `project-add` | `workspace`, optional `name` | `result`, containing the new project |
-| `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
-| `project-remove` | `project` ID | `result`, containing `removed`. Sessions become standalone. |
-| `session-rename` | `session` ID, `name` | `result`, containing `renamed`. An empty `name` removes the user title. |
-| `session-list` | `groups` (group keys, required), `limit` of families for each group (default 10; `limit` times the number of groups is at most 100), optional `offset` of families (default 0, needs exactly one group), optional `session` ID whose family to include (not with `offset`), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status), `parentId`, an optional `context` flag, and an optional `runStatus`, the stored status of the latest run. |
-| `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
-| `storage-report` | None | `result`, containing database facts, `total`, `columns`, session counts, and the `kinds`, `days`, `projects`, and `sessions` lists. `sessions` has only the largest sessions. The other lists have one entry for each project, day, or kind. Above 16 MiB, the reply is an `error`. See [storage report](SPEC.md#storage-report). Closing the connection cancels the read. |
-| `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
-| `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
-| `workspace-changes` | `session` ID, `diff` object with optional `baseline` and `from` | `result`, containing `repository`, `base`, `baseline`, `commits`, an optional `moreCommits`, `files`, and `truncated` |
-| `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
-| `workspace-folders` | `session` ID, `diff` object with `folders` | `result`, containing `folders` and an optional `ignoreError` |
-| `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath`, `baseline`, and `from` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
-| `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed; missing confirms none) | `result`, containing `archived`. Applies to the family as described below. Rejects active runs and unfinished launch claims. |
-| `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
-| `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal and the [release offer](#release-offers) first, then all of them again after each change |
-| `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
-| `composer-watch` | `session` ID | A stream of `draft` messages: the latest draft first, then each newer saved draft |
-| `composer-sent` | `session` ID, optional `revision` (list sends older than this revision) | `result`, containing `messages` (at most 20, newest first) and `more` |
-| `composer-attach` | `session` ID, `upload` with `name`, `mediaType`, base64 `data` | `result`, containing attachment metadata and its local file path |
-| `stop` | `instance`, from the verified greeting | `result`, containing `stopping`. The server then shuts down. |
-| `update-start` | `version` and `revision`, the `available` version and the `revision` of the [release offer](#release-offers) that the user confirmed | `result`, containing `updating`. The server installs the release in the background and then restarts, which ends all live sessions. It rejects another version, an earlier revision, a second update, and an offer that the off setting hides. |
-| `settings-get` | none | `result`, saved settings and revision |
-| `settings-save` | `settings`, including current revision | `result`, updated settings and revision. It keeps the saved `titleTool` and `titleCommand`. |
-| `title-tools` | None | `result`, containing `tools`, the built-in title tools with `id`, `name`, and the exact `command`, and `sample`, the message of a title test. Custom is not in the list. |
-| `title-test` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the `title`. It runs the title tool once with the sample message and saves nothing. `custom` needs `titleCommand`. The client sends the custom command that it shows, so the test runs that command. |
-| `title-tool-set` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the saved `settings` with a new revision, and the `title` of the test. For a tool other than `none`, it first runs the same test as `title-test`. A failed test saves nothing. Its error tells that the tool is not configured and names the tool that is saved after the test. A passed test saves only when the title tool and the custom command are the same as at the start of the test. Otherwise another change saved during the test, and the request fails without a change. `none` saves without a test, with an empty `title`. An empty `titleTool` is an error. Only `custom` takes `titleCommand`. It needs one, and the command saves with the choice. A disconnect during the test stops it and saves nothing. |
-| `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
-| `project-draft` | `project` ID, or `parent` session ID for a sub-session draft | `result`, a new independent draft with saved defaults and `status`. With `parent`, the draft joins the family of that session. A top-level session becomes the parent. For a sub-session, its parent becomes the parent, so the draft is a sibling. The draft takes the project of the family. The request fails for a missing session, a family without a saved project, and an archived parent. Starts no process. |
-| `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
-| `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. Before `session`, a `status` of `running` comes every 5 seconds while the server fetches the base and creates the worktree. |
-| `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
-| `session-resume` | `session` ID, `size`, and optional `run` (an earlier run of the session) | `session`, then a terminal stream or recorded history. With `run`, the recorded history of that run. |
-| `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, `status`, `started`, and `ended`. |
-| `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
-| `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
-| `side-terminal-open` | `session` ID, terminal `size` | `session` with the `shell` ID, then a [side terminal](#side-terminals) stream. Starts a shell when the session has no live side terminal. |
-| `side-terminal-resume` | `session` ID, terminal `size`, optional `shell` ID | `session` with the `shell` ID, then the side terminal stream. Without a live side terminal, or when the live shell has another ID, `session` without `active`, then `history-end`. Starts no process. |
-| `side-terminal-stop` | `session` ID, optional `shell` ID | `result`, containing `stopped`. `stopped` is false when the session has no live side terminal, or when the live shell has another ID. |
+### Replies and retries
 
 Ordinary operations send one reply, then close the connection. Replies use
 `{"type":"result","result":...}` or `{"type":"error","error":"..."}`. RPC requests have
@@ -132,166 +141,242 @@ After a lost reply, inspect session-list before creating another. Reopen existin
 by ID through session-config. After an uncertain result, inspect session-config and
 reattach. Never repeat session-start.
 
-New sessions start with project-draft, session-config, then session-start. A sub-session
-draft without a worktree starts in the current workspace of its parent. Its start fails
-until the first terminal of the parent started. The parent of a sub-session does not
-change. The project supplies a fixed workspace. An unknown project fails before draft creation. A missing
-folder fails creation or launch. The server resolves its `$SHELL` from PATH or an
-absolute path.
+## Operations
 
-If `$SHELL` is unset, it uses `/bin/sh`. It rejects relative shell paths. It starts the
-shell with `-i`, using its startup environment and `TERM=xterm-256color`. Clients do not
-supply shell settings or environment.
+Each table gives the operations of one area. Each request also has the `protocol` and
+`operation` fields. The sections after this one give the details of the fields and the
+replies.
 
-Settings include `appearance` with a value of `system`, `light`, or `dark`. A save
-with an empty or omitted value uses `system`.
+### Server operations
 
-A startup command is one shell line of at most 1,000 bytes, without control characters.
-The server submits it once after the PTY opens. It records the command as input,
-separate from the composer draft.
+| Operation | Additional request fields | Reply |
+| --- | --- | --- |
+| `stop` | `instance`, from the verified greeting | `result`, containing `stopping`. The server then shuts down. |
+| `update-start` | `version` and `revision`, the `available` version and the `revision` of the [release offer](#release-offers) that the user confirmed | `result`, containing `updating`. The server installs the release in the background and then restarts, which ends all live sessions. It rejects another version, an earlier revision, a second update, and an offer that the off setting hides. |
+| `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
+| `storage-report` | None | `result`, containing database facts, `total`, `columns`, session counts, and the `kinds`, `days`, `projects`, and `sessions` lists. `sessions` has only the largest sessions. The other lists have one entry for each project, day, or kind. Above 16 MiB, the reply is an `error`. See [storage report](SPEC.md#storage-report). Closing the connection cancels the read. |
+| `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal and the [release offer](#release-offers) first, then all of them again after each change |
+
+### Project operations
+
+| Operation | Additional request fields | Reply |
+| --- | --- | --- |
+| `project-list` | None | `result`, containing projects with `id`, `name`, `workspace`, and `created` |
+| `project-add` | `workspace`, optional `name` | `result`, containing the new project |
+| `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
+| `project-remove` | `project` ID | `result`, containing `removed`. Sessions become standalone. |
+| `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
+
+### Session operations
+
+| Operation | Additional request fields | Reply |
+| --- | --- | --- |
+| `project-draft` | `project` ID, or `parent` session ID for a sub-session draft | `result`, a new independent draft with saved defaults and `status`. Starts no process. See [New sessions](#new-sessions). |
+| `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
+| `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. Before `session`, a `status` of `running` comes every 5 seconds while the server fetches the base and creates the worktree. |
+| `session-resume` | `session` ID, `size`, and optional `run` (an earlier run of the session) | `session`, then a terminal stream or recorded history. With `run`, the recorded history of that run. |
+| `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
+| `session-rename` | `session` ID, `name` | `result`, containing `renamed`. An empty `name` removes the user title. |
+| `session-list` | See [Session list](#session-list). | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status), `parentId`, an optional `context` flag, and an optional `runStatus`, the stored status of the latest run. |
+| `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed; missing confirms none) | `result`, containing `archived`. Applies to the family. See [Session archive](#session-archive). Rejects active runs and unfinished launch claims. |
+| `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
+| `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, `status`, `started`, and `ended`. |
+| `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
+| `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
+
+### History operations
+
+| Operation | Additional request fields | Reply |
+| --- | --- | --- |
+| `history-search` | `search` object. See [Recorded-output search](#recorded-output-search). | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
+| `history-context` | `context` object. See [Recorded-output search](#recorded-output-search). | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
+
+### Workspace operations
+
+See [Workspace changes](#workspace-changes) for the `diff` object and each reply.
+
+| Operation | Additional request fields | Reply |
+| --- | --- | --- |
+| `workspace-changes` | `session` ID, `diff` object with optional `baseline` and `from` | `result`, containing `repository`, `base`, `baseline`, `commits`, an optional `moreCommits`, `files`, and `truncated` |
+| `workspace-files` | `session` ID | `result`, containing `repository`, `paths`, and `truncated` |
+| `workspace-folders` | `session` ID, `diff` object with `folders` | `result`, containing `folders` and an optional `ignoreError` |
+| `workspace-file` | `session` ID, `diff` object with `path`, optional `oldPath`, `baseline`, and `from` | `result`, containing `path`, `baseline`, and the `old` and `new` sides |
+| `workspace-open` | `session` ID, `diff` object with `path` | `result`, containing `opened` |
+| `workspace-reveal` | `session` ID, `diff` object with `path` | `result`, containing `revealed` |
+
+### Message editor operations
+
+See [Drafts and file references](#drafts-and-file-references).
+
+| Operation | Additional request fields | Reply |
+| --- | --- | --- |
+| `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
+| `composer-watch` | `session` ID | A stream of `draft` messages: the latest draft first, then each newer saved draft |
+| `composer-sent` | `session` ID, optional `revision` (list sends older than this revision) | `result`, containing `messages` (at most 20, newest first) and `more` |
+| `composer-attach` | `session` ID, `upload` with `name`, `mediaType`, base64 `data` | `result`, containing attachment metadata and its local file path |
+
+### Settings and title operations
+
+See [Settings and prepared launches](#settings-and-prepared-launches).
+
+| Operation | Additional request fields | Reply |
+| --- | --- | --- |
+| `settings-get` | none | `result`, saved settings and revision |
+| `settings-save` | `settings`, including current revision | `result`, updated settings and revision. It keeps the saved `titleTool` and `titleCommand`. |
+| `title-tools` | None | `result`, containing `tools`, the built-in title tools with `id`, `name`, and the exact `command`, and `sample`, the message of a title test. Custom is not in the list. |
+| `title-test` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the `title`. It runs the title tool once with the sample message and saves nothing. `custom` needs `titleCommand`. The client sends the custom command that it shows, so the test runs that command. |
+| `title-tool-set` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the saved `settings` with a new revision, and the `title` of the test. See [Title tool change](#title-tool-change). |
+
+### Side terminal operations
+
+| Operation | Additional request fields | Reply |
+| --- | --- | --- |
+| `side-terminal-open` | `session` ID, terminal `size` | `session` with the `shell` ID, then a [side terminal](#side-terminals) stream. Starts a shell when the session has no live side terminal. |
+| `side-terminal-resume` | `session` ID, terminal `size`, optional `shell` ID | `session` with the `shell` ID, then the side terminal stream. Without a live side terminal, or when the live shell has another ID, `session` without `active`, then `history-end`. Starts no process. |
+| `side-terminal-stop` | `session` ID, optional `shell` ID | `result`, containing `stopped`. `stopped` is false when the session has no live side terminal, or when the live shell has another ID. |
+
+## Sessions and projects
+
+A session belongs to a project, or it is standalone. A new session is first a draft.
+The client configures the draft and then starts it. The session list groups sessions by
+project and by family.
+
+### New sessions
+
+New sessions start with project-draft, session-config, then session-start.
+
+- The project supplies a fixed workspace. An unknown project fails before draft
+  creation. A missing folder fails creation or launch.
+- With `parent`, `project-draft` makes a sub-session draft. The draft joins the family
+  of that session. A top-level session becomes the parent. For a sub-session, its
+  parent becomes the parent, so the draft is a sibling.
+- The draft takes the project of the family. The request fails for a missing session, a
+  family without a saved project, and an archived parent.
+- A sub-session draft without a worktree starts in the current workspace of its parent.
+  Its start fails until the first terminal of the parent started.
+- The parent of a sub-session does not change.
+
+The server resolves its `$SHELL` from PATH or an absolute path. If `$SHELL` is unset, it
+uses `/bin/sh`. It rejects relative shell paths. It starts the shell with `-i`, using
+its startup environment and `TERM=xterm-256color`. Clients do not supply shell settings
+or environment.
+
+### Session fields
+
+- Session records and summaries have `title`, the title that the user set, and
+  `autoTitle`, the derived title. Show `title`, or `autoTitle` when `title` is empty.
+- A launch without a user title sets `autoTitle` to the tool and workspace names. See
+  [session titles](SPEC.md#session-titles).
+- Terminal size is `{"rows":24,"cols":80}`, with 2–512 columns and 1–256 rows.
+- Multiple sessions may share the same or overlapping workspace.
+
+### Workspace paths
 
 `workspace` accepts an absolute path, `~`, or `~/path`. The server expands `~` using its
 own `HOME`. Other relative paths, `~user`, and environment-variable expansion are
 unsupported. Workspaces must resolve to existing directories. History records their
 canonical paths.
 
-Multiple sessions may share the same or overlapping workspace. Session records and
-summaries have `title`, the title that the user set, and `autoTitle`, the derived title.
-Show `title`, or `autoTitle` when `title` is empty. A launch without a user title sets
-`autoTitle` to the tool and workspace names. See
-[session titles](SPEC.md#session-titles). Terminal size is `{"rows":24,"cols":80}`, with 2–512
-columns and 1–256 rows.
-
-Protocol 15 supports multiple drafts per project, archive/restore, and paginated
-collection search. Project records no longer contain a draftId. Session records and
-summaries include an archived boolean. SQLite format 6 stores this independent flag.
-Server startup applies the embedded migrations for supported formats.
-
-Protocol 16 removes the controller role and the `control` and `take-control` messages.
-Every view can send input. It adds `composer-watch` and the latest-save rule for
-drafts. The SQLite format does not change.
-
-Protocol 17 adds the read-only `composer-sent` operation. It lists the messages that the
-message editor sent. The SQLite format does not change.
-
-Protocol 18 adds `session-handoff` and `session-continue`. A session can have several
-runs, one after another. Each run has its own terminal.
-
-Protocol 19 adds `session-terminals` and the optional `run` field of `session-resume`.
-A view can show an earlier terminal of a session. The SQLite format does not change.
-
-Protocol 24 adds `side-terminal-open`, `side-terminal-resume`, and `side-terminal-stop`
-for [side terminals](#side-terminals). The SQLite format does not change.
-
-Protocol 25 removes `continueCommand` from tools. SQLite format 9 removes this field
-from saved tools.
-
-Protocol 27 adds automatic session titles. Session records and summaries add
-`autoTitle`, and `title` holds only the user title. Settings add `titleTool`. The
-operations `title-tools` and `title-test` are new. A `statuses` message adds
-`revision`. SQLite format 10 adds the `auto_title` column and `titleTool: "none"`.
-
-Protocol 28 adds the `commit` baseline of the
-[workspace change operations](#workspace-changes). The SQLite format does not change.
-
-Protocol 30 adds `update-start`, the `version` request field, and the `update` field of
-`statuses` messages for [release offers](#release-offers). Settings add `updateCheck`.
-SQLite format 12 adds `updateCheck: true`.
-
-Protocol 31 adds session families. `project-draft` accepts `parent`. Session summaries
-add `parentId`, `context`, and `runStatus`. `session-list` limits and offsets count
-families. `session-archive` archives and restores families. SQLite format 13 adds
-the `sessions.parent_id` column.
-
-Protocol 32 adds `port` to settings. `settings-save` rejects a new port that another
-program holds. SQLite format 14 adds `port: 0`.
-
-Protocol 33 changes the [workspace change operations](#workspace-changes). The
-`base` field of `workspace-changes` is an object instead of a boolean. Sessions without
-a managed worktree can have a base, the merge base with the default branch. Requests
-add `to`, so that a `commit` baseline can end at a commit. Commits add `files`. The
-commit list no longer omits the first commit after the base. The SQLite format does
-not change.
-
-Protocol 34 adds the `image` side state to `workspace-file`. An image side has
-`mediaType` and `data`, and it holds at most 5 MiB. The SQLite format does not change.
-
-Protocol 35 adds `workspace-open` to the [workspace operations](#workspace-changes). The
-SQLite format does not change.
-
-Protocol 36 adds `title-tool-set`. A title tool saves only after it passes a title test.
-The `custom` title tool runs the new `titleCommand` of the settings. `settings-save`
-keeps the saved `titleTool` and `titleCommand`. The server owns the sample message of a
-test. `title-tools` returns an object with `tools` and `sample`, not a list. `title-test`
-no longer reads `text`. SQLite format 15 adds
-`titleCommand: ""`.
-
-Protocol 37 adds `workspace-reveal` to the [workspace operations](#workspace-changes).
-The SQLite format does not change.
-
-Database compatibility is separate from the WebSocket protocol version. Rebuild the
-executable. Start the new server. Reload the browser.
+### Projects
 
 Projects have stable IDs and unique canonical workspace paths. The server removes
 whitespace from the start and end of names. Names must contain 1–200 characters without
-control characters. General has ID `general`.
+control characters.
 
-The server creates it at startup under `<instance>/workspaces/general`. Rename and
-remove requests for General fail. Removing a custom project preserves sessions and
-running processes, clearing only their project membership. Session summaries include
-`projectId`, an empty string after their project is removed.
+General has ID `general`. The server creates it at startup under
+`<instance>/workspaces/general`. Rename and remove requests for General fail.
 
-Session-list includes unstarted drafts. After project removal, its drafts remain under
-Standalone. Their `workspace` remains the saved canonical path.
+Removing a custom project preserves sessions and running processes, clearing only their
+project membership. Session summaries include `projectId`, an empty string after their
+project is removed. Session-list includes unstarted drafts. After project removal, its
+drafts remain under Standalone. Their `workspace` remains the saved canonical path.
 
-`session-list` selects only the requested archive collection, then applies query,
-ordering, and group limits. A group holds the sessions of one saved project. Its key is
-the project ID. Sessions without a saved project form the Standalone group, with the key
-`""`. A family is a top-level session and its sub-sessions. It counts as one entry of
-its group. Each listed group gives its `limit` most recent families. With `offset`, the
-reply gives one window of one group: the `limit` families after the first `offset`
-families. A reply thus holds at most 100 families, or 101 with an included family. A
-family lists all of its members that the reply selects, without a separate limit. A
-client reads more groups or more families in more requests. `more` lists the keys of
-the listed groups that have more matching families after the listed ones. `sessions`
-keeps the order of all listed families together. Each family lists its top-level
-session first, then its sub-sessions in creation order. If the `session` ID matches the
-collection, the query, and a listed group, a reply without `offset` includes its family
-outside its group limit. Separate replies can see different activity, so a client that
-joins windows must drop repeated families.
+### Session list
 
-A family is listed when one of its members in the collection matches the query. A match
-of the top-level session lists all of its members in the collection. Otherwise the reply
-lists only the matching sub-sessions. The top-level session then has `context: true`.
-`context` also marks a top-level session from the other collection, for example a parent
-that is not archived of an archived sub-session. The latest member in the collection
-gives the position of the family. If a
-result exceeds the 16 MiB message limit, the reply is an `error`. Search matches session titles, IDs, workspace paths, and
-project names/paths using SQLite's ASCII case-insensitive matching. The query is a
-literal substring. It does not accept SQL or wildcard expressions and does not search
-event text.
+A `session-list` request has these fields:
 
-`session-archive` changes visibility without deleting records or files and without
-changing run/preparation state. Archive of a top-level session also archives its
-sub-sessions. Every member must be stopped. Each archive fails with no change unless
-the sub-sessions of the session that are not archived are exactly `members`. A
-sub-session has none. A missing or empty list confirms no sub-sessions. Restore of a top-level session also
-restores its archived sub-sessions. Restore of a sub-session also restores its archived parent.
-It shares the launch lock with session-start and rejects live sessions and unfinished
-launch claims. Archived drafts remain editable, but session-start rejects them until
-restored. Restoration starts no process. Direct reads, composer operations, and
-read-only SQL can still access archived data.
+| Field | Meaning |
+| --- | --- |
+| `groups` | Group keys. Required. |
+| `limit` | The number of families for each group. The default is 10. `limit` times the number of groups is at most 100. |
+| `offset` | Optional. The number of families to skip. The default is 0. It needs exactly one group. |
+| `session` | Optional. The ID of a session whose family to include. Not with `offset`. |
+| `archived` | The archive collection. The default is false. |
+| `query` | Optional. The search text, at most 800 bytes. |
+
+Groups, families, and windows have these rules:
+
+- `session-list` selects only the requested archive collection, then applies query,
+  ordering, and group limits.
+- A group holds the sessions of one saved project. Its key is the project ID. Sessions
+  without a saved project form the Standalone group, with the key `""`.
+- A family is a top-level session and its sub-sessions. It counts as one entry of its
+  group.
+- Each listed group gives its `limit` most recent families.
+- With `offset`, the reply gives one window of one group: the `limit` families after
+  the first `offset` families.
+- A reply thus holds at most 100 families, or 101 with an included family. A family
+  lists all of its members that the reply selects, without a separate limit.
+- A client reads more groups or more families in more requests.
+- `more` lists the keys of the listed groups that have more matching families after the
+  listed ones.
+- `sessions` keeps the order of all listed families together. Each family lists its
+  top-level session first, then its sub-sessions in creation order.
+- If the `session` ID matches the collection, the query, and a listed group, a reply
+  without `offset` includes its family outside its group limit.
+- Separate replies can see different activity, so a client that joins windows must drop
+  repeated families.
+- If a result exceeds the 16 MiB message limit, the reply is an `error`.
+
+The query has these rules:
+
+- A family is listed when one of its members in the collection matches the query.
+- A match of the top-level session lists all of its members in the collection.
+  Otherwise the reply lists only the matching sub-sessions. The top-level session then
+  has `context: true`.
+- `context` also marks a top-level session from the other collection, for example a
+  parent that is not archived of an archived sub-session.
+- The latest member in the collection gives the position of the family.
+- Search matches session titles, IDs, workspace paths, and project names/paths using
+  SQLite's ASCII case-insensitive matching.
+- The query is a literal substring. It does not accept SQL or wildcard expressions and
+  does not search event text.
+
+### Session order
 
 `session-list` orders by the latest `start`, `run`, `input`, `output`, or interruption
 `notice` event, newest first, falling back to session creation time. `updated` carries
 that timestamp. Timestamps compare in whole milliseconds. Event sequence determines the
 order when timestamps are equal. Creation order, newest first, breaks remaining ties.
+
 View changes, drafts, attachments, terminal replies, and saved screens do not affect
-order.
-Reattaching at the same dimensions does not resize the PTY or request an application
-redraw.
+order. Reattaching at the same dimensions does not resize the PTY or request an
+application redraw.
+
+### Session archive
+
+- `session-archive` changes visibility without deleting records or files and without
+  changing run/preparation state.
+- Archive of a top-level session also archives its sub-sessions. Every member must be
+  stopped.
+- Each archive fails with no change unless the sub-sessions of the session that are not
+  archived are exactly `members`. A sub-session has none. A missing or empty list
+  confirms no sub-sessions.
+- Restore of a top-level session also restores its archived sub-sessions. Restore of a
+  sub-session also restores its archived parent.
+- It shares the launch lock with session-start and rejects live sessions and unfinished
+  launch claims.
+- Archived drafts remain editable, but session-start rejects them until restored.
+  Restoration starts no process.
+- Direct reads, composer operations, and read-only SQL can still access archived data.
 
 ## Recorded-output search
+
+`history-search` finds literal text in the recorded terminal output. `history-context`
+reads the text around one match. Both operations are read-only. They change no schema,
+events, or live terminal state.
+
+### Search request
 
 Protocol 20 adds these read-only operations. A `history-search` request contains:
 
@@ -312,6 +397,8 @@ require their corresponding ID. All scopes include archived sessions. The query 
 literal text of 1–256 Unicode characters. Simple Unicode folding supplies
 case-insensitive matching. SQL patterns and regular expressions have no special meaning.
 
+### Search reply
+
 The reply contains `matches`, `more`, `incomplete`, `through`, and an optional `cursor`.
 Results follow the event sequence, from oldest to newest. A match uses the event that
 completes its text. Each match contains `title`, `workspace`, `terminal`, `tool`,
@@ -323,6 +410,8 @@ characters within that event. Length counts the matched characters across consec
 output events of that run. Tool names use the terminal selector's fallback for an older
 first terminal. Other missing names produce an empty `tool` field.
 
+### Pages
+
 The default limit is 20, with a range of 1–50. When `more` is true, send the returned
 `cursor` and `through` in the next search. Keep the query, scope, and case setting
 unchanged. The cursor contains `seq` and `offset`, which identify the next Unicode
@@ -331,6 +420,8 @@ The server restores per-terminal lookbehind, including split and overlapping mat
 This cutoff excludes later output from pagination and context. A new search without
 `through` selects a new cutoff.
 
+### Incomplete pages
+
 `incomplete` means a scan resource limit stopped this page before completion. Display
 its results and provide **Continue search** when `more` is true, including empty pages.
 If the deadline stops a request without cursor progress, `incomplete` is true and `more`
@@ -338,6 +429,8 @@ is false. There is no new continuation cursor. Retain the attempted cursor and `
 value for an explicit **Retry search** action. A changed query or scope starts a new
 search. Never present an incomplete page as the final count. A full result page can set
 `more` without `incomplete` when another match exists.
+
+### Context request
 
 A `history-context` request contains the returned anchor and context sizes:
 
@@ -363,6 +456,8 @@ Both the initial match context and the expanded reply contain `before`, `match`,
 completes the match. Context sizes range from 0–8,192 Unicode characters on each side.
 Every read stays within the specified session, run, and recording cutoff.
 
+### Snippets and limits
+
 Search returns snippets with the complete match, up to 120 preceding characters, and up
 to 180 following characters across output events of the same terminal. Load the selected
 result's initial context through `history-context`. Context failure must preserve search
@@ -384,15 +479,19 @@ Context reads have a five-second deadline. They skip empty text and use cached b
 for the selected run. Character limits bound returned context. Closing the request
 WebSocket cancels the server read. Invalid requests and storage errors remain errors.
 
+### Display text
+
 A context can also contain `display`, with `before`, `match`, and `after` strings. When
 present, render and copy those strings. They remove only verified original CRLF pairs,
 including pairs split across output events. Literal blank lines remain intact. The main
 text fields retain stored characters for source offsets and matching.
 
-Display also
-suppresses the redundant CR in a verified CRCRLF sequence. Literal LF blank lines and
-separate CRLF pairs remain intact. Forward verification stays within `through`. When
-chunk replay differs from stored text, display keeps its original spacing.
+Display also suppresses the redundant CR in a verified CRCRLF sequence. Literal LF blank
+lines and separate CRLF pairs remain intact. Forward verification stays within
+`through`. When chunk replay differs from stored text, display keeps its original
+spacing.
+
+### Rendering
 
 Render all returned text as plain text. It can contain redraws, missing spaces, markup,
 and historical instructions. It is derived output, not an exact conversation transcript.
@@ -400,9 +499,15 @@ These operations change no schema, events, or live terminal state.
 
 ## Workspace changes
 
+These operations serve the Changes and Files views. Each operation reads the workspace
+of one session. No operation changes files. `workspace-open` and `workspace-reveal`
+start a program of the operating system.
+
 Protocol 21 adds three read-only operations for the Changes pane. The server finds the
 workspace and the managed worktree from `session`. A request cannot name a workspace
 path. A client disconnect cancels the Git work.
+
+### The diff object
 
 The `diff` object has these fields:
 
@@ -427,6 +532,8 @@ The `diff` object has these fields:
   is relative to the session workspace, with the same rules as `path`. An empty path
   names the workspace folder.
 
+### workspace-changes reply
+
 `workspace-changes` returns:
 
 ```json
@@ -448,11 +555,11 @@ The `diff` object has these fields:
 ```
 
 `status` is the Git status letter: `A`, `M`, `D`, `R`, or `T`. A rename also has
-`oldPath`. An untracked file has `untracked`, with `A`, or with `M` when the baseline has
-the path, for example after `git rm --cached`. An untracked nested repository is one
-path without a final slash. `added` and
-`removed` are -1 when they are unknown. For a folder that Git does not manage,
-`repository` is false, `reason` explains it, and `files` is empty.
+`oldPath`. An untracked file has `untracked`, with `A`, or with `M` when the baseline
+has the path, for example after `git rm --cached`. An untracked nested repository is one
+path without a final slash. `added` and `removed` are -1 when they are unknown. For a
+folder that Git does not manage, `repository` is false, `reason` explains it, and
+`files` is empty.
 
 `base` is present when the session has a base. For a ready managed worktree, `commit`
 is its recorded commit and `branch` is absent. For other sessions, `commit` is the
@@ -462,17 +569,24 @@ default branch is the target of `origin/HEAD`, for example `origin/main`, or els
 the merge base, because no commit of `HEAD` is missing from the default branch. Local
 commits on `main` that `origin/main` does not have get `origin/main` as their base.
 
-`commits` lists the commits since the base, newest first, at most 30. The list follows
-the first parent from `HEAD` and stops at the base. Without a base, it has the latest
-commits of `HEAD`. The list also omits the last commit of a shallow clone, because its
-parent is not available. A root commit stays in the list. `files` counts the files that
-the commit changes in the session workspace. It finds renames and compares a root
-commit with the empty tree, as the file list does. `moreCommits` is true when older commits
-are not in the list. A repository without commits has an empty list. For a `commit`
-baseline, `baseline` also has `from`, an optional `to`, and `commit`, the first parent
-of `from`. A `workspace-file` reply can name the default baseline when `from`, `to`, or
-the base left the list after the `workspace-changes` reply. Read the changes again before you
-show such a file.
+The `commits` list has these rules:
+
+- `commits` lists the commits since the base, newest first, at most 30. The list
+  follows the first parent from `HEAD` and stops at the base. Without a base, it has
+  the latest commits of `HEAD`.
+- The list also omits the last commit of a shallow clone, because its parent is not
+  available. A root commit stays in the list.
+- `files` counts the files that the commit changes in the session workspace. It finds
+  renames and compares a root commit with the empty tree, as the file list does.
+- `moreCommits` is true when older commits are not in the list. A repository without
+  commits has an empty list.
+- For a `commit` baseline, `baseline` also has `from`, an optional `to`, and `commit`,
+  the first parent of `from`.
+- A `workspace-file` reply can name the default baseline when `from`, `to`, or the base
+  left the list after the `workspace-changes` reply. Read the changes again before you
+  show such a file.
+
+### workspace-files and workspace-file
 
 `workspace-files` returns the sorted paths that Git tracks or does not ignore, at most
 20,000. `workspace-file` returns both sides of one file. With `to`, the new side comes
@@ -504,6 +618,8 @@ image. SVG is text, so the client shows it from `text`:
 Since protocol 23, `workspace-file` also works without Git. For a folder that Git does
 not manage, or a server without a Git executable, the fields of `baseline` are empty,
 `old` is `missing`, and `new` is the current file.
+
+### workspace-folders
 
 Protocol 23 adds `workspace-folders` for the Files tree. It needs no Git repository. It
 returns one list for each requested folder, in request order:
@@ -541,6 +657,8 @@ The folders of one reply share this limit, in request order. Thus a folder can b
 `truncated` in a reply for more than one folder and complete in a reply of its own.
 Request such a folder alone before you replace its shown entries.
 
+### workspace-open
+
 Protocol 35 adds `workspace-open`. It opens a current HTML file of the session
 workspace in the default browser of the server user. `diff.path` names the file,
 with the same rules as `path`. The extension must be `.html` or `.htm`, in any case.
@@ -555,27 +673,60 @@ action. The operation does not change files. A browser loads the file as a `file
 Such a page has an opaque origin, so the server rejects its WebSocket connections. See
 [browser access](#browser-access).
 
-Protocol 37 adds `workspace-reveal`. It shows a current entry of the session workspace
-in Finder. `diff.path` names the entry, with the same rules as `path`. The entry can
-be a file of any type or a folder. No part of the path can be a symlink. On macOS, the
-server runs `open -R` with the absolute path. Finder then selects the entry and does
-not open it. The server waits up to 10 seconds and returns `{ "revealed": true }`. On
-other systems, the operation gives an error. A path that does not obey these rules, a
-missing entry, or a failed opener gives an error. The error of a failed opener gives
-only the cause, as for `workspace-open`. The operation does not change files.
+### workspace-reveal
+
+- Protocol 37 adds `workspace-reveal`. It shows a current entry of the session
+  workspace in Finder.
+- `diff.path` names the entry, with the same rules as `path`. The entry can be a file
+  of any type or a folder. No part of the path can be a symlink.
+- On macOS, the server runs `open -R` with the absolute path. Finder then selects the
+  entry and does not open it. The server waits up to 10 seconds and returns
+  `{ "revealed": true }`. On other systems, the operation gives an error.
+- A path that does not obey these rules, a missing entry, or a failed opener gives an
+  error. The error of a failed opener gives only the cause, as for `workspace-open`.
+- The operation does not change files.
 
 ## Settings and prepared launches
 
-Settings contain revision, defaultTool (empty means Shell), worktree, base (default
-HEAD), and an ordered tools array. Each tool has a stable client-generated id, name, and
-command. updateCheck turns the daily [release check](SPEC.md#release-check) on or off.
-port is the loopback port of the next server start, from 1024 to 65535. Port 0 selects
-the automatic port. A save of a new port fails when another program holds it at
-`127.0.0.1` or `::1`. A save also fails for a bad port of the Fetch Standard, such as
-6000. A saved port does not move the running server.
-Saving requires the current revision. Removing a default tool requires selecting
-another default in the same save. These operations do not install or authenticate
-tools.
+Settings hold the defaults and the tools of an instance. A preparation is the saved
+launch configuration of one session. Each of them has a revision, and a save needs the
+current revision.
+
+### Settings
+
+- Settings contain revision, defaultTool (empty means Shell), worktree, base (default
+  HEAD), and an ordered tools array. Each tool has a stable client-generated id, name,
+  and command.
+- A startup command is one shell line of at most 1,000 bytes, without control
+  characters. The server submits it once after the PTY opens. It records the command as
+  input, separate from the composer draft.
+- Settings include `appearance` with a value of `system`, `light`, or `dark`. A save
+  with an empty or omitted value uses `system`.
+- updateCheck turns the daily [release check](SPEC.md#release-check) on or off.
+- port is the loopback port of the next server start, from 1024 to 65535. Port 0
+  selects the automatic port. A save of a new port fails when another program holds it
+  at `127.0.0.1` or `::1`. A save also fails for a bad port of the Fetch Standard, such
+  as 6000. A saved port does not move the running server.
+- Saving requires the current revision. Removing a default tool requires selecting
+  another default in the same save.
+- These operations do not install or authenticate tools.
+
+### Title tool change
+
+`title-tool-set` changes the title tool with these rules:
+
+- For a tool other than `none`, it first runs the same test as `title-test`. A failed
+  test saves nothing. Its error tells that the tool is not configured and names the
+  tool that is saved after the test.
+- A passed test saves only when the title tool and the custom command are the same as
+  at the start of the test. Otherwise another change saved during the test, and the
+  request fails without a change.
+- `none` saves without a test, with an empty `title`. An empty `titleTool` is an error.
+- Only `custom` takes `titleCommand`. It needs one, and the command saves with the
+  choice.
+- A disconnect during the test stops it and saves nothing.
+
+### Preparation
 
 A prepared session includes preparation with revision, state, toolId, toolName, command,
 worktree, base, and branch. Configuration saves send the current preparation revision
@@ -588,6 +739,8 @@ existing snapshot, including a removed preset. Start uses that snapshot without
 resolving the preset again. Message drafts and attachments use the same session ID
 before and after launch.
 
+### Preparation states
+
 Preparation states are draft, creating, launched, and interrupted. Only draft accepts
 configuration changes or Start. Stale starts fail before effects. A failed preflight
 returns to draft only when no checkout could have been created. An uncertain launch
@@ -596,7 +749,24 @@ remains interrupted after restart and must not be automatically retried.
 After a lost start response, query session-config or session-list. Use session-resume to
 join its process or read history. Never repeat startup input.
 
+### Managed worktrees
+
+Managed worktree metadata includes path, repository, requested base, resolved commit,
+creation branch, and state (creating, ready, failed, or removed). Creation uses the
+server's Git and never copies uncommitted files. It fetches a remote-tracking base
+before it resolves the commit. If the server uses the local tracking ref because the
+fetch failed or no fetch refspec maps to it, the `session` message has a `notice`. The
+notice gives the reason and the commit of the worktree record. Removal rejects active
+bbflow workspaces and modified, untracked, or ignored files. It keeps the branch. See
+[SPEC.md](SPEC.md#session-preparation-settings-and-worktrees) for supported
+repositories.
+
 ## New terminals in ended sessions
+
+`session-continue` starts a new terminal in an ended session. Before the process
+starts, the server writes a handoff folder with the earlier terminals and messages.
+
+### session-continue
 
 `session-continue` starts a new run in an ended session. The session keeps its ID,
 workspace, worktree, message draft, and history. Send the ID of the latest run from
@@ -610,6 +780,13 @@ same `latestRun` fails after the first request started a terminal. After a lost
 response, read session-config. If its latest run changed, use session-resume to join
 the new terminal. Do not send session-continue again only because a response was lost.
 
+The server records and submits the selected tool's `command` once. Shell submits
+nothing. The client shows the handoff prompt for the user to send. The start event of
+the new run records `tool`, `continues` (the previous run ID), and `handoff` (the
+folder).
+
+### Handoff folder
+
 Before the process starts, the server rebuilds `<instance>/handoff/<session-id>/` from
 SQLite. It contains `README.md`, `messages.md`, and `terminals/<number>-<run-id>.txt`
 for each earlier terminal with output. `session-handoff` returns this folder and the
@@ -617,26 +794,14 @@ prompt that points to it, without side effects. Its `available` field is true wh
 folder has its `README.md`. Clients use it to show the prompt again after the new
 terminal started.
 
+### session-terminals
+
 `session-terminals` lists every run of a session as one terminal. `number` counts from 1
 in start order. `tool` comes from the start event of the run. Start events from bbflow
 0.0.4 and earlier have no tool, so the first run uses the tool of the preparation. A new
 terminal has no run record until its process starts. Until then, the list ends with a
 `starting` terminal that has an empty `run`. The operation starts no process and writes
 no files.
-
-The server records and submits the selected tool's `command` once. Shell submits
-nothing. The client shows the handoff prompt for the user to send. The start event of
-the new run records `tool`, `continues` (the previous run ID), and `handoff` (the folder).
-
-Managed worktree metadata includes path, repository, requested base, resolved commit,
-creation branch, and state (creating, ready, failed, or removed). Creation uses the
-server's Git and never copies uncommitted files. It fetches a remote-tracking base
-before it resolves the commit. If the server uses the local tracking ref because the
-fetch failed or no fetch refspec maps to it, the `session` message has a `notice`. The
-notice gives the reason and the commit of the worktree record. Removal rejects active
-bbflow workspaces and modified, untracked, or ignored files. It keeps the branch. See
-[SPEC.md](SPEC.md#session-preparation-settings-and-worktrees) for supported
-repositories.
 
 ## Side terminals
 
@@ -656,6 +821,8 @@ at most one live side terminal. It is separate from the terminal of the session.
 - The `session` message of a live side terminal has a `shell` ID. Each new shell gets a
   new ID.
 
+### Open, resume, and stop
+
 `side-terminal-open` needs a session that started a terminal. It rejects drafts,
 archived sessions, and a missing workspace. The server holds the launch lock, so two
 views that open at the same time join one shell. A lost view rejoins with
@@ -663,6 +830,8 @@ views that open at the same time join one shell. A lost view rejoins with
 `side-terminal-open` again only because a connection was lost. It can start a new shell
 when the earlier shell ended. Send the `shell` ID with `side-terminal-stop` too. Then a
 view of an ended shell cannot join or stop a shell that another view started later.
+
+### End of the shell
 
 Closing a view leaves the shell running. Stop session leaves it running too. The shell
 ends when it exits, on `side-terminal-stop`, when the session is archived, and when the
@@ -683,6 +852,8 @@ The stored status of a run and the state of a preparation keep their values.
 | `idle` | A live terminal had no application output in the last 10 seconds. |
 | `ended` | No terminal is live. The latest run `exited`, `stopped`, `failed`, or was `interrupted`, or the launch made no process. |
 
+### Derivation
+
 The server derives `running` and `idle` from output times only. It keeps the times in
 memory and tracks them without views. Output in the 300 milliseconds after an `input`,
 a `resize` that changes the PTY size, or a `signal` is not application output. This
@@ -698,15 +869,21 @@ A live view also gets the status in `status` messages on its
 an ended `session` message, and of an `exit` message is the stored run status, not this
 session status.
 
-`status-watch` keeps one stream open for all sessions. The server first sends a
-`statuses` message. Its `statuses` object maps the ID of each session that has a live
-terminal to `running` or `idle`. The server omits the object when no terminal is live.
-The server reads the statuses from memory five times each second. It sends the complete
-object again after each change. Its `revision` counts the session title changes since
-the server started. The server also sends the message after each title change. Then a
-client reads `session-list` again. A session is absent before its terminal starts and
-after its terminal ends. Read `session-list` for those sessions. The client sends `ping`
-at least every 30 seconds and gets `pong`. Closing the stream only removes the watch.
+### status-watch
+
+- `status-watch` keeps one stream open for all sessions. The server first sends a
+  `statuses` message.
+- Its `statuses` object maps the ID of each session that has a live terminal to
+  `running` or `idle`. The server omits the object when no terminal is live.
+- The server reads the statuses from memory five times each second. It sends the
+  complete object again after each change.
+- Its `revision` counts the session title changes since the server started. The server
+  also sends the message after each title change. Then a client reads `session-list`
+  again.
+- A session is absent before its terminal starts and after its terminal ends. Read
+  `session-list` for those sessions.
+- The client sends `ping` at least every 30 seconds and gets `pong`. Closing the stream
+  only removes the watch.
 
 ### Release offers
 
@@ -735,6 +912,12 @@ for example from another view, fails.
 
 ## Terminal streams
 
+A terminal stream carries the display of one terminal to one view, and the input of
+that view to the terminal. The server renders frames, and the client acknowledges each
+frame. All views of a session are equal.
+
+### Start of a stream
+
 After a session request, the server sends `session` with its ID and `active: true` for a
 live process. Ended replies instead include the `status` of the shown run. Multiple
 views share one process and emulator. Every view can send `input` and `signal`. There is
@@ -744,16 +927,20 @@ After `session`, a live view gets a `status` message with the
 [session status](#session-status), `running` or `idle`. The server sends the message
 again after each change. An ended session sends `exit` and no `status` message.
 
-The PTY uses the viewport size of one view, the size owner. A view becomes the size owner
-when it joins and no view owns the size. A view also becomes the size owner when it sends
-`input`, or when it sends `resize` and no view owns the size. Before the server writes
-input from a new size owner, it resizes the PTY to the size of that view. `signal` does
-not change the size owner.
+### Size owner
+
+The PTY uses the viewport size of one view, the size owner. A view becomes the size
+owner when it joins and no view owns the size. A view also becomes the size owner when
+it sends `input`, or when it sends `resize` and no view owns the size. Before the server
+writes input from a new size owner, it resizes the PTY to the size of that view.
+`signal` does not change the size owner.
 
 An input receipt always goes to the view that sent the input. Closing the socket removes
 that view. The PTY keeps its size until another view becomes the size owner. No process
 is stopped. Any view may use the separate `session-stop` operation to end work for
 everyone.
+
+### Stream messages
 
 | Direction | Type | Contents and effect |
 | --- | --- | --- |
@@ -769,6 +956,8 @@ everyone.
 | Server → client | `exit` | Exit `code`, the recorded run `status` (`exited`, `stopped`, or `failed`), the `run` ID, and optional `error`. `status` and `run` are absent when the terminal failed before its run started. Each view gets the same message. Follows the final frame acknowledgment. |
 | Server → client | `history-end` | End of a read-only ended-session view |
 | Server → client | `error` | Error description in `error` |
+
+### Emulator and frames
 
 The server owns a headless xterm-go emulator per running session. The server commits
 each original output and size event before it updates the emulator. It generates
@@ -787,16 +976,18 @@ oldest scrollback rows that do not fit.
 
 The first frame is always full. It contains the normal-buffer scrollback rows that the
 view keeps and the current visible screen, including an active alternate screen. The row
-limit depends on the frame width. See [terminal scrollback](SPEC.md#terminal-scrollback).
-A full frame has rendered cell styles, cursor position and supported input modes.
-Before parsing a full frame, clients reset their view, set the row limit of the frame
-width, and apply the frame's dimensions. Later frames contain only changed rows,
-scrollback additions and input-mode/cursor updates.
+limit depends on the frame width. See [terminal
+scrollback](SPEC.md#terminal-scrollback). A full frame has rendered cell styles, cursor
+position and supported input modes. Before parsing a full frame, clients reset their
+view, set the row limit of the frame width, and apply the frame's dimensions. Later
+frames contain only changed rows, scrollback additions and input-mode/cursor updates.
 
 A resize, history clear, incompatible baseline, or update larger than the frame limit
 produces another full frame. The display uses positioned rows. It does not reproduce
 application scroll regions, source escape sequences, hyperlinks, clipboard requests, or
 native process state.
+
+### Acknowledgments and timeouts
 
 Each view has its own baseline and at most one outstanding frame. After you render the
 frame, acknowledge its revision. The server computes the next frame from the latest
@@ -814,23 +1005,35 @@ five seconds, detect missing server activity after about 20 seconds, and retry t
 failures with delays from 0.5 to 5 seconds. A stalled transport may be closed, but its
 process and capture continue.
 
-A protocol or identity mismatch requires explicit recovery. The browser reconnects to
-its original verified instance. A complete greeting with the same `dataDir` and `port` and a
-different `instance` shows a replacement server. The `dataDir` is a claim of the server.
-It does not authenticate the program that owns the port. Then the browser page reloads to
-load the new UI, unless it has unsaved edits. If the server port changes, reopen the UI. During
-shutdown, the server allows connections up to five seconds to receive completion. Then
-it closes them.
+### Reconnection
 
-Ended sessions send one full frame of their latest run, wait for its acknowledgment,
-then send `history-end`. A request with `run` gets the same reply for that run, also
-while a later run is live. Its `session` message has the `status` of that run. The view
-never joins the live process. Without `run`, or with the ID of the live run, the view
-joins the live process. A `run` of another session or an unknown run fails before any
-frame. Normal completion stores a derived final view in a versioned `terminal-screen`
-SQLite event. Without that cache, the server emulates the original recording in bounded
-pages. Opening history never starts a process or sends recorded input. The browser
-retains the recorded dimensions and styles.
+- A protocol or identity mismatch requires explicit recovery. The browser reconnects to
+  its original verified instance.
+- A complete greeting with the same `dataDir` and `port` and a different `instance`
+  shows a replacement server. Then the browser page reloads to load the new UI, unless
+  it has unsaved edits.
+- The `dataDir` is a claim of the server. It does not authenticate the program that
+  owns the port.
+- If the server port changes, reopen the UI.
+- During shutdown, the server allows connections up to five seconds to receive
+  completion. Then it closes them.
+
+### Ended sessions
+
+- Ended sessions send one full frame of their latest run, wait for its acknowledgment,
+  then send `history-end`.
+- A request with `run` gets the same reply for that run, also while a later run is
+  live. Its `session` message has the `status` of that run. The view never joins the
+  live process.
+- Without `run`, or with the ID of the live run, the view joins the live process.
+- A `run` of another session or an unknown run fails before any frame.
+- Normal completion stores a derived final view in a versioned `terminal-screen` SQLite
+  event. Without that cache, the server emulates the original recording in bounded
+  pages.
+- Opening history never starts a process or sends recorded input. The browser retains
+  the recorded dimensions and styles.
+
+### Input receipts
 
 An input `id` is an opaque correlation value up to 80 bytes. A receipt without an error
 means the input was recorded and written to the PTY. It does not mean the application
@@ -841,6 +1044,13 @@ prevent duplicate input. Never resend input automatically. Reconnect uses
 `session-resume` for a known ID and never repeats `session-start`.
 
 ## Drafts and file references
+
+The message editor saves one draft for each session. `composer-draft` reads and saves
+it. `composer-watch` pushes it to each view. `composer-attach` stores a file, and
+`composer-sent` lists the sent messages. No operation in this section sends terminal
+input.
+
+### composer-draft
 
 `composer-draft` returns `{"draft": {...}, "attachments": [...]}`. A draft contains
 `revision` (event sequence, initially zero), `text`, `attachments` (attachment IDs), and
@@ -854,11 +1064,15 @@ not store a save from an older revision when that revision or a later one is pen
 The reply then contains the latest draft and `rejected: true`. A negative revision or a
 revision above the current revision fails with an error.
 
+### composer-watch
+
 `composer-watch` keeps one stream open for one session. The server first sends a `draft`
 message with `session` and the latest state in `composer`. It then sends a `draft`
 message after each newer save. A slow view can skip intermediate revisions. It never
 receives an older revision after a newer one. The client sends `ping` at least every 30
 seconds and gets `pong`. Closing the stream only removes the watch.
+
+### Limits and attachments
 
 Draft text is limited to 64 KiB of UTF-8 and at most 8 distinct attachments from that
 session. Each attachment contains `id`, `name`, `mediaType`, `size`, and `path`. Uploads
@@ -871,11 +1085,15 @@ not add themselves to a draft.
 Add the returned ID with `composer-draft`. Neither operation sends terminal input.
 Uploads are not automatically retried, and unused uploads remain in the archive.
 
+### Pending drafts
+
 The browser saves `pending: true` before sending input and clears the draft only after a
 successful receipt. A retained pending draft requires explicit user review before reuse.
 Plain draft text and uploaded files are never replayed as input by the server. Clients
 compose local file references and paste delimiters. The server preserves the submitted
 input bytes. It does not implement a provider message or image protocol.
+
+### composer-sent
 
 `composer-sent` lists these sends. Each pending draft revision is one sent message. A
 message contains `revision`, `created`, `text`, `attachments` (attachment metadata), and
@@ -890,6 +1108,11 @@ input.
 
 ## Browser access
 
+The server accepts HTTP and WebSocket requests only for its loopback host and from its
+own origin. These checks stop other web sites. They do not authenticate local programs.
+
+### Host and Origin
+
 The HTTP Host must be `127.0.0.1:PORT` or `localhost:PORT`. An Origin header, if
 present, must have the same host and port. CLI clients omit Origin. Browser clients send
 it automatically. The server rejects other sites, different ports, and opaque origins
@@ -898,6 +1121,8 @@ such as `file:` pages.
 The embedded UI is served from the same local origin at `/`. Separate UI development
 servers would need an explicit origin policy change or a same-origin proxy. There is no
 authentication token or TLS. Host and origin checks do not authenticate local programs.
+
+### Example client
 
 A browser client on the matching local origin can use the standard API:
 
@@ -923,21 +1148,85 @@ socket.onmessage = event => {
 A UI served by that instance uses its own local origin. A client connecting to an
 endpoint discovered elsewhere must also verify the expected instance identity.
 
+### Client configuration
+
 The embedded UI reads `GET /client-config` for the current `ServerInfo`, then checks
 protocol, directory, instance ID, and port against each WebSocket greeting before
 sending a request. It requires reload when the server identity changes. This endpoint
 only supplies browser connection information. Every session and history operation still
 uses the shared WebSocket protocol. Static assets are under `/assets/`.
 
+### HTTP responses
+
 All HTTP routes enforce the loopback Host check. Responses disable caching, MIME
 sniffing, embedding in frames, and external script loading. The UI uses text nodes for
 metadata and notices.
+
+### Display rules for a client
 
 Decode frame data from base64 before passing it to the display. The server answers
 source terminal queries. A client must not create replies from old recordings. The
 browser's terminal and optional composer share the same input stream.
 
+## Protocol versions
+
+Database compatibility is separate from the WebSocket protocol version. After a protocol
+change, rebuild the executable, start the new server, and reload the browser.
+
+- Protocol 15 supports multiple drafts per project, archive/restore, and paginated
+  collection search. Project records no longer contain a draftId. Session records and
+  summaries include an archived boolean. SQLite format 6 stores this independent flag.
+  Server startup applies the embedded migrations for supported formats.
+- Protocol 16 removes the controller role and the `control` and `take-control` messages.
+  Every view can send input. It adds `composer-watch` and the latest-save rule for
+  drafts. The SQLite format does not change.
+- Protocol 17 adds the read-only `composer-sent` operation. It lists the messages that
+  the message editor sent. The SQLite format does not change.
+- Protocol 18 adds `session-handoff` and `session-continue`. A session can have several
+  runs, one after another. Each run has its own terminal.
+- Protocol 19 adds `session-terminals` and the optional `run` field of `session-resume`.
+  A view can show an earlier terminal of a session. The SQLite format does not change.
+- Protocol 24 adds `side-terminal-open`, `side-terminal-resume`, and
+  `side-terminal-stop` for [side terminals](#side-terminals). The SQLite format does not
+  change.
+- Protocol 25 removes `continueCommand` from tools. SQLite format 9 removes this field
+  from saved tools.
+- Protocol 27 adds automatic session titles. Session records and summaries add
+  `autoTitle`, and `title` holds only the user title. Settings add `titleTool`. The
+  operations `title-tools` and `title-test` are new. A `statuses` message adds
+  `revision`. SQLite format 10 adds the `auto_title` column and `titleTool: "none"`.
+- Protocol 28 adds the `commit` baseline of the [workspace change
+  operations](#workspace-changes). The SQLite format does not change.
+- Protocol 30 adds `update-start`, the `version` request field, and the `update` field
+  of `statuses` messages for [release offers](#release-offers). Settings add
+  `updateCheck`. SQLite format 12 adds `updateCheck: true`.
+- Protocol 31 adds session families. `project-draft` accepts `parent`. Session summaries
+  add `parentId`, `context`, and `runStatus`. `session-list` limits and offsets count
+  families. `session-archive` archives and restores families. SQLite format 13 adds the
+  `sessions.parent_id` column.
+- Protocol 32 adds `port` to settings. `settings-save` rejects a new port that another
+  program holds. SQLite format 14 adds `port: 0`.
+- Protocol 33 changes the [workspace change operations](#workspace-changes). The `base`
+  field of `workspace-changes` is an object instead of a boolean. Sessions without a
+  managed worktree can have a base, the merge base with the default branch. Requests add
+  `to`, so that a `commit` baseline can end at a commit. Commits add `files`. The commit
+  list no longer omits the first commit after the base. The SQLite format does not
+  change.
+- Protocol 34 adds the `image` side state to `workspace-file`. An image side has
+  `mediaType` and `data`, and it holds at most 5 MiB. The SQLite format does not change.
+- Protocol 35 adds `workspace-open` to the [workspace operations](#workspace-changes).
+  The SQLite format does not change.
+- Protocol 36 adds `title-tool-set`. A title tool saves only after it passes a title
+  test. The `custom` title tool runs the new `titleCommand` of the settings.
+  `settings-save` keeps the saved `titleTool` and `titleCommand`. The server owns the
+  sample message of a test. `title-tools` returns an object with `tools` and `sample`,
+  not a list. `title-test` no longer reads `text`. SQLite format 15 adds
+  `titleCommand: ""`.
+- Protocol 37 adds `workspace-reveal` to the [workspace operations](#workspace-changes).
+  The SQLite format does not change.
+
+## Source files
+
 The Go message definitions are in `internal/protocol/protocol.go`. Their browser types
 and transport are in `web/src/protocol.ts`. Server routing is in
-`internal/server/server.go`. See [COMMANDS.md](COMMANDS.md) for user commands and
-[SPEC.md](SPEC.md) for storage and runtime behavior.
+`internal/server/server.go`.
