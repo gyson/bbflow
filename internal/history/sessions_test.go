@@ -284,7 +284,7 @@ func TestTitleToolSettings(t *testing.T) {
 		t.Fatalf("an empty title tool did not select none: %+v, %v", settings, err)
 	}
 	settings.TitleTool = "claude -p"
-	if _, err = store.SaveSettings(settings); err == nil || !strings.Contains(err.Error(), "none, claude, codex, code-puppy") {
+	if _, err = store.SaveSettings(settings); err == nil || !strings.Contains(err.Error(), "none, claude, codex, code-puppy, apple") {
 		t.Fatalf("accepted an unknown title tool: %v", err)
 	}
 }

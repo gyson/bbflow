@@ -31,7 +31,7 @@ Keys:
   default-tool  a tool name, or "" for the built-in Shell
   worktree      true or false
   base          the default Git branch or commit, such as HEAD
-  title-tool    none, claude, codex, or code-puppy for automatic session titles
+  title-tool    none, claude, codex, code-puppy, or apple for automatic session titles
   update-check  true or false: read the latest release from GitHub once a day
   port          1024 to 65535, or 0 for an automatic port; applies at the next server start`
 

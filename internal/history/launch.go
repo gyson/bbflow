@@ -25,7 +25,7 @@ type Settings struct {
 	Worktree    bool   `json:"worktree"`
 	Base        string `json:"base"`
 	Tools       []Tool `json:"tools"`
-	// TitleTool selects the agent CLI that makes automatic session titles. It is one of
+	// TitleTool selects the CLI that makes automatic session titles. It is one of
 	// TitleTools. "none" turns automatic titles off.
 	TitleTool string `json:"titleTool"`
 	// UpdateCheck lets the server read the latest release from GitHub once a day.
@@ -43,8 +43,8 @@ const MinPort = 1024
 var blockedPorts = []int{1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080}
 
 // TitleTools lists the values of Settings.TitleTool. The server owns the command of each
-// agent CLI.
-var TitleTools = []string{"none", "claude", "codex", "code-puppy"}
+// CLI.
+var TitleTools = []string{"none", "claude", "codex", "code-puppy", "apple"}
 
 // Preparation stores a snapshot of the selected preset. Preset changes never rewrite a
 // prepared or launched session. The server owns this state.
