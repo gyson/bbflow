@@ -76,8 +76,7 @@ func TestTitleToolCommandTestsBeforeItSaves(t *testing.T) {
 		stdout != "Code Puppy is configured. Its test made the title \"Fix login redirect\" from a sample message.\n" {
 		t.Fatalf("set code-puppy:\n%s%s", stdout, stderr)
 	}
-	if stdout, _ = passes("show"); !strings.HasPrefix(stdout, "Title tool: Code Puppy (built-in)\nCommand: code-puppy --no-tools ") ||
-		!strings.Contains(stdout, "bbflow supplies this command. A later release can change it.") {
+	if stdout, _ = passes("show"); stdout != "Title tool: Code Puppy (built-in)\nCommand: code-puppy --no-tools --model codex-gpt-6-luna -p \"$(cat)\"\n" {
 		t.Fatal(stdout)
 	}
 	before := saved()

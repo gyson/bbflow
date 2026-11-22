@@ -123,7 +123,7 @@ func showTitleTool(target client.Target) error {
 	case "custom":
 		fmt.Printf("Title tool: Custom\nCommand: %s\nThis is your own command. bbflow does not limit what it can do.\n", command)
 	default:
-		fmt.Printf("Title tool: %s (built-in)\nCommand: %s\nbbflow supplies this command. A later release can change it.\n", name, command)
+		fmt.Printf("Title tool: %s (built-in)\nCommand: %s\n", name, command)
 	}
 	if settings.TitleTool != "custom" && settings.TitleCommand != "" {
 		fmt.Printf("Saved custom command: %s\n", settings.TitleCommand)
