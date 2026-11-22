@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,8 +35,9 @@ const (
 // Each command reads the request on standard input and selects a small model. The Claude
 // and Codex commands turn off the agent tools, hooks, plugins, and MCP servers of their
 // CLI, so that the model gets only the request text. Code Puppy turns off its tools and
-// MCP servers, but it always loads the user plugins. The empty temporary folder is not a
-// file access limit. Tests replace the commands.
+// MCP servers, but it always loads the user plugins. Apple runs the on-device model of
+// macOS, which has no tools in this command. The empty temporary folder is not a file
+// access limit. Tests replace the commands.
 var titleTools = []protocol.TitleTool{
 	// --restricted ignores the settings files, with their hooks and plugins. It also
 	// limits @ file references to the working folder. --tools "" turns off all
@@ -54,6 +56,12 @@ var titleTools = []protocol.TitleTool{
 	// servers. It always attaches existing files whose paths are in the prompt, so
 	// titleRequest masks paths.
 	{ID: "code-puppy", Name: "Code Puppy", Command: `code-puppy --no-tools --model codex-gpt-6-luna -p "$(cat)"`},
+	// fm is the Apple Foundation Models CLI of macOS 27. Without a prompt argument, it
+	// reads the prompt from standard input. --model system keeps the request on the
+	// on-device model. The permissive guardrail level is for transformations of the
+	// supplied text, such as a summary. --greedy gives the same title for the same
+	// message. --no-stream prints the answer once.
+	{ID: "apple", Name: "Apple", Command: "fm respond --model system --guardrails permissive-content-transformations --greedy --no-stream"},
 }
 
 // pathMask replaces the characters that start or separate a local path in the message.
@@ -121,10 +129,16 @@ func markerIndex(text string) int {
 	return -1
 }
 
+// terminalEscapes matches the escape sequences for colors, cursor control, and links. A
+// CLI can print them also when its output is not a terminal. For example, fm prints
+// its license error in color.
+var terminalEscapes = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[ -/]*[0-~])`)
+
 // parseTitle reads the title from the command output. It uses the last line that
 // starts with the marker, after Markdown marks and spaces. Other output is rejected,
 // because it can be an error message or a status line.
 func parseTitle(output string) (string, error) {
+	output = terminalEscapes.ReplaceAllString(output, "")
 	lines := 0
 	for _, line := range slices.Backward(strings.Split(output, "\n")) {
 		line = strings.Map(func(r rune) rune {
@@ -232,7 +246,7 @@ func runTitleCommand(ctx context.Context, command, message string) (string, erro
 		return "", fmt.Errorf("the command did not finish in %s", titleTimeout)
 	}
 	if err != nil {
-		detail := strings.TrimSpace(stderr.String())
+		detail := strings.TrimSpace(terminalEscapes.ReplaceAllString(stderr.String(), ""))
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 127 {
 			return "", fmt.Errorf("the CLI is not installed or not on the PATH of the server: %s", detail)

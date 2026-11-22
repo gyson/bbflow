@@ -536,7 +536,7 @@ bbflow settings set port 50000
 | `default-tool` | The name of a tool. An empty value, `""`, selects the built-in Shell. |
 | `worktree` | `true` or `false`. `true` selects **Use worktree** for new drafts in Git folders. A new installation starts with `true`. An upgrade keeps the saved value. |
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
-| `title-tool` | `none`, `claude`, `codex`, or `code-puppy`. It selects the agent CLI that makes automatic session titles. `none` turns them off. A new installation and an upgrade start with `none`. See [session titles](SPEC.md#session-titles) for the commands. |
+| `title-tool` | `none`, `claude`, `codex`, `code-puppy`, or `apple`. It selects the CLI that makes automatic session titles. `apple` uses the on-device model of macOS 27. `none` turns them off. A new installation and an upgrade start with `none`. See [session titles](SPEC.md#session-titles) for the commands. |
 | `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
 | `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port, or when browsers refuse the port, such as 6000 and 10080. See [Instance directory](#instance-directory). |
 

@@ -32,6 +32,8 @@ func TestParseTitle(t *testing.T) {
 			"<message>\nFix the login\n</message>\nCurrent version: 0.0.969\n\nbbflow-title: Fix Blank Page After Login\n\n",
 			"Fix Blank Page After Login"},
 		{"bbflow-title: Old\nbbflow-title: New", "New"},
+		// Colors, a link, and a cursor change do not stay in the title.
+		{"\x1b[1mbbflow-title:\x1b[0m \x1b[38;2;255;107;128mFix\x1b[0m \x1b]8;;https://example.com\x07login\x1b]8;;\x07\x1b7\n", "Fix login"},
 	} {
 		got, err := parseTitle(test.output)
 		if err != nil || got != test.want {
@@ -132,6 +134,8 @@ func TestRunTitleCommandReportsFailures(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	for _, test := range []struct{ name, body, message, want string }{
 		{"exit", "echo 'not signed in' >&2; exit 3", "Fix it", "not signed in"},
+		// Synthetic error in the form of fm before the license agreement.
+		{"color", `printf '\033[38;2;255;107;128mRun sudo fm license.\n\033[0m' >&2; exit 69`, "Fix it", "exit status 69: Run sudo fm license."},
 		{"empty", "echo ' '", "Fix it", "printed no title"},
 		{"no-message", "echo Title", " ", "message is empty"},
 	} {
@@ -151,9 +155,16 @@ func TestRunTitleCommandReportsFailures(t *testing.T) {
 }
 
 func TestTitleToolsMatchSettings(t *testing.T) {
+	// Each tool runs its own CLI. The Apple command must keep the on-device model.
+	starts := map[string]string{
+		"claude":     "claude -p ",
+		"codex":      "codex exec ",
+		"code-puppy": "code-puppy ",
+		"apple":      "fm respond --model system ",
+	}
 	var ids []string
 	for _, tool := range titleTools {
-		if _, err := titleCommand(tool.ID); err != nil || tool.Name == "" || !strings.Contains(tool.Command, tool.ID) {
+		if _, err := titleCommand(tool.ID); err != nil || tool.Name == "" || starts[tool.ID] == "" || !strings.HasPrefix(tool.Command, starts[tool.ID]) {
 			t.Errorf("title tool %+v: %v", tool, err)
 		}
 		ids = append(ids, tool.ID)

@@ -894,9 +894,9 @@ older session keeps its title and has an empty derived title. The archive cannot
 which send was its first, so it never gets an automatic title, also after the user
 clears its title.
 
-**Automatic titles** in Settings selects the title tool: None, Claude, Codex, or Code
-Puppy. The settings JSON stores `titleTool` as `none`, `claude`, `codex`, or
-`code-puppy`. None turns automatic titles off. This is the default.
+**Automatic titles** in Settings selects the title tool: None, Claude, Codex, Code
+Puppy, or Apple. The settings JSON stores `titleTool` as `none`, `claude`, `codex`,
+`code-puppy`, or `apple`. None turns automatic titles off. This is the default.
 `bbflow settings set title-tool` sets the same value. A change saves at once.
 
 The server owns the command of each title tool. Users cannot edit these commands:
@@ -906,9 +906,11 @@ The server owns the command of each title tool. Users cannot edit these commands
 | Claude | `claude -p --model haiku --restricted --tools "" --strict-mcp-config` |
 | Codex | `codex exec --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --disable shell_tool --disable unified_exec --disable view_image --disable code_mode_host --disable apps --disable plugins --disable hooks --disable multi_agent --disable browser_use --disable computer_use --disable image_generation --disable mentions_v2 -c web_search=disabled --model gpt-6-luna -c model_reasoning_effort=low -` |
 | Code Puppy | `code-puppy --no-tools --model codex-gpt-6-luna -p "$(cat)"` |
+| Apple | `fm respond --model system --guardrails permissive-content-transformations --greedy --no-stream` |
 
-Claude uses Haiku. Codex and Code Puppy use Luna. Settings shows the command of the
-selected tool. Each command gives the model only the request text:
+Claude uses Haiku. Codex and Code Puppy use Luna. Apple uses the on-device Apple
+Foundation Model. Settings shows the command of the selected tool. Each command gives
+the model only the request text:
 
 - Claude: `--restricted` ignores the settings files, with their hooks and plugins. It
   also limits `@` file references to the working folder. `--tools ""` turns off all
@@ -923,6 +925,16 @@ selected tool. Each command gives the model only the request text:
   request. Code Puppy 0.0.969 also always loads the user plugins in
   `~/.code_puppy/plugins`, and no option turns them off. So a title run can execute
   plugin code that the user installed for Code Puppy.
+- Apple: `fm` is the Apple Foundation Models CLI of macOS 27. It needs a Mac with Apple
+  silicon and Apple Intelligence. Without a prompt argument, it reads the prompt from
+  standard input. `--model system` selects the on-device model, so the request stays on
+  the Mac. The command adds no image, tool, or transcript, so the model gets only the
+  request text. The `permissive-content-transformations` guardrail level is for a
+  summary or other change of supplied text. Coding text can still trigger the safety
+  guardrails. `--greedy` gives the same title for the same message. `--no-stream`
+  prints the answer once. `fm` runs only after an administrator accepts its terms with
+  `sudo fm license`. Until then, it ends with exit status 69. The terms can change with
+  a macOS update, and then need a new acceptance.
 
 The empty temporary folder alone is not a file access limit, because an absolute path
 or `~` reaches other folders.
@@ -971,15 +983,15 @@ request back prints no marker.
 The server reads up to 64 KiB of standard output. It uses the last line that starts
 with the marker, after Markdown marks and spaces. The server rejects output without
 such a line, also one line of text, because agent CLIs can print status lines and errors
-on standard output with exit status 0. It removes control characters,
-`Title:` labels, Markdown marks, quotes, and a final period. It keeps at most 200
-characters.
+on standard output with exit status 0. It removes terminal escape sequences, such as
+colors, control characters, `Title:` labels, Markdown marks, quotes, and a final
+period. It keeps at most 200 characters.
 
 The server stops the command process group after 90 seconds or at server stop. A
 nonzero exit, a timeout, or empty output keeps the current title. Exit status 127
 reports that the CLI is not installed or not on the PATH of the server. The server writes
-the error and the first 4 KiB of standard error to `server.log`. Server stop waits for
-title commands before the archive closes. A title command that is running at a server
+the error and the first 4 KiB of standard error to `server.log`, without terminal escape
+sequences. Server stop waits for title commands before the archive closes. A title command that is running at a server
 crash or restart is lost. The server does not run it again.
 
 After each title change, the status watch sends a new title revision. Each view then
@@ -995,9 +1007,10 @@ result shows the sample message first. Under it, a green line shows **Test passe
 with the title from the sample message. A red line shows **Test failed** with the
 error. A change of the title tool hides the result.
 
-The title tool sends the first message to its provider. It uses the installation and
-authentication of the user. Claude and Code Puppy can save each call in their own
-history. Codex saves none.
+Claude, Codex, and Code Puppy send the first message to their provider. They use the
+installation and authentication of the user. Claude and Code Puppy can save each call in
+their own history. Codex saves none. Apple keeps the message on the Mac. `fm respond`
+saves a transcript only with `--save-transcript`, and the command does not use it.
 
 Code Puppy prints status lines and the request before the answer. It prints request
 errors on standard output with exit status 0. It also asks for `puppy_name` and
@@ -2353,7 +2366,19 @@ accepted sends, and the second send runs no request. A fixture reopens the archi
 second send then runs no second request. Live checks used
 Claude Code 2.1.312, Codex CLI 0.160.0, and Code Puppy 0.0.969 with synthetic messages.
 A message that named a local canary file did not give its content to the hardened
-Claude and Codex commands.
+Claude and Codex commands. Fixtures verify that terminal escape sequences do not stay
+in a title or an error.
+
+Live checks of the Apple command used `fm` of macOS 27.0.1 with the FM1 terms, version
+1.0. Before the terms were accepted, `fm` ended with exit status 69 and a colored notice
+on standard error. After acceptance, 11 synthetic messages each gave a marker line and
+a title in 0.2 to 0.8 seconds. The messages were in English, Chinese, Japanese, and
+German. They included paths, process and SQL injection words, and a 3,480-byte message
+that the server cut at 2,000 bytes. No message triggered the guardrails. Three runs of
+one message gave the same title. A message that told the model to reply with a fixed
+title got that title. Thus the first message can choose its own title. In a demo
+instance, **Test** passed, and a first send in a new session set the derived title and
+recorded the `title` event.
 
 A compiled release binary also passed startup, SQL queries, restart, and shutdown with
 temporary format 3–6 fixtures, running outside the repository. Checks confirmed format

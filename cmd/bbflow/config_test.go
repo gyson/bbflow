@@ -77,7 +77,7 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "80")
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "auto")
 	fails("unknown settings key", "settings", "set", "theme", "dark")
-	fails("title tool must be one of none, claude, codex, code-puppy", "settings", "set", "title-tool", "claude -p")
+	fails("title tool must be one of none, claude, codex, code-puppy, apple", "settings", "set", "title-tool", "claude -p")
 	fails(`tool "Absent" does not exist`, "tool", "remove", "Absent")
 	fails(`tool "Absent" does not exist`, "settings", "set", "default-tool", "Absent")
 	if after := saved(); after.Revision != settings.Revision {
