@@ -375,7 +375,7 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
 #title-custom { max-width: 640px; }
 #title-custom > label { margin-bottom: 8px; }
 .title-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-#title-tool-command, #title-test-command { overflow-wrap: anywhere; }
+#title-tool-command { overflow-wrap: anywhere; }
 #title-test-result { margin-top: 12px; }
 #title-test-outcome { margin: 0; font-size: 12px; font-weight: 550; line-height: 1.6; overflow-wrap: anywhere; color: var(--text-muted); }
 #title-test-result.passed #title-test-outcome { color: var(--positive); }

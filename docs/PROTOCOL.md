@@ -108,8 +108,8 @@ storage-report operations.
 | `settings-get` | none | `result`, saved settings and revision |
 | `settings-save` | `settings`, including current revision | `result`, updated settings and revision. It keeps the saved `titleTool` and `titleCommand`. |
 | `title-tools` | None | `result`, containing `tools`, the built-in title tools with `id`, `name`, and the exact `command`, and `sample`, the message of a title test. Custom is not in the list. |
-| `title-test` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the `command` that ran and the `title`. It runs the title tool once with the sample message and saves nothing. `custom` without `titleCommand` runs the saved custom command. |
-| `title-tool-set` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the saved `settings` with a new revision, and the `command` and the `title` of the test. For a tool other than `none`, it first runs the same test as `title-test`. A failed test saves nothing. Its error tells that the tool is not configured and names the saved tool. `none` saves without a test, with an empty `command` and `title`. Only `custom` takes `titleCommand`, and it saves with the choice. A disconnect during the test stops it and saves nothing. |
+| `title-test` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the `title`. It runs the title tool once with the sample message and saves nothing. `custom` without `titleCommand` runs the saved custom command. |
+| `title-tool-set` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the saved `settings` with a new revision, and the `title` of the test. For a tool other than `none`, it first runs the same test as `title-test`. A failed test saves nothing. Its error tells that the tool is not configured and names the saved tool. `none` saves without a test, with an empty `title`. Only `custom` takes `titleCommand`, and it saves with the choice. A disconnect during the test stops it and saves nothing. |
 | `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
 | `project-draft` | `project` ID, or `parent` session ID for a sub-session draft | `result`, a new independent draft with saved defaults and `status`. With `parent`, the draft joins the family of that session. A top-level session becomes the parent. For a sub-session, its parent becomes the parent, so the draft is a sibling. The draft takes the project of the family. The request fails for a missing session, a family without a saved project, and an archived parent. Starts no process. |
 | `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
@@ -223,7 +223,7 @@ Protocol 36 adds `title-tool-set`. A title tool saves only after it passes a tit
 The `custom` title tool runs the new `titleCommand` of the settings. `settings-save`
 keeps the saved `titleTool` and `titleCommand`. The server owns the sample message of a
 test. `title-tools` returns an object with `tools` and `sample`, not a list. `title-test`
-no longer reads `text`, and its result adds `command`. SQLite format 15 adds
+no longer reads `text`. SQLite format 15 adds
 `titleCommand: ""`.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the

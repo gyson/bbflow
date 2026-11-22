@@ -916,7 +916,7 @@ Standard input does not do this.
 
 A change to a title tool other than None saves only after the tool passes a title test.
 The server runs the tool once with the fixed sample message, as **Test** does. When the
-tool gives a title, the server saves the tool and returns the command and the title.
+tool gives a title, the server saves the tool and returns the title.
 For Custom, the command saves together with the choice. When the test fails or times
 out, the server saves nothing. The error tells that the tool is not configured, names
 the saved tool, and gives the reason, for example `Codex is not configured. The title
@@ -940,19 +940,21 @@ In Settings, a selection in the tool list starts the change. A spinner shows nex
 list until the change ends. The spinner does not turn when the system asks for reduced
 motion. The list, **Test**, and the custom command controls stay disabled during the
 change. The list shows the new tool, and the status shows **Saving…**. The result area
-shows the sample message, the exact command, and a line such as **Testing Codex. This
-can take up to 90 seconds.** After a passed test, a green line tells that the tool is
+shows the sample message and a line such as **Testing Codex. This can take up to 90
+seconds.** After a passed test, a green line tells that the tool is
 configured, with the title from the sample message. After a failed test, the list shows
 the saved tool again. A red line under it shows the error and tells the user to fix the
 problem and select the tool again. A reload or close of the page during the test
 cancels the change. The page asks for confirmation first.
 
-For a built-in tool, Settings shows the exact command from the server. A built-in tool
-has no edit action. To run another command, select Custom. A selection of Custom with a saved command tests that command at once.
-Without a saved command, the field waits for a command, and **Save and test** starts the
-change. A custom command that fails its test stays in the field, with Custom in the
-list, so that the user can fix it. The status then shows **Changes not saved**. The CLI
-also has no edit command for a built-in tool. Use `bbflow title-tool set custom COMMAND`.
+For a built-in tool, Settings shows the exact command from the server under the list.
+The test result does not repeat it. A built-in tool has no edit action. To run another
+command, select Custom. A selection of Custom with a saved command tests that command
+at once. Without a saved command, the field waits for a command, and **Save and test**
+starts the change. A custom command that fails its test stays in the field, with Custom
+in the list, so that the user can fix it. The status then shows **Changes not saved**.
+The CLI also has no edit command for a built-in tool. Use
+`bbflow title-tool set custom COMMAND`.
 
 In the CLI, `bbflow title-tool set` writes the tool name and its exact command to
 standard error before the test. It waits 100 seconds for the reply, longer than the
@@ -1070,7 +1072,7 @@ tool stays selected, also after another view changes the tool. The browser waits
 seconds for the reply, longer than the 90-second server limit. It sends a fixed sample
 message, not a message of a session, and saves nothing. The server owns the sample
 message, and `title-tools` returns it with the built-in tools. The result shows the
-sample message and the command first. Under them, a green line shows **Test passed**
+sample message first. Under it, a green line shows **Test passed**
 with the title from the sample message. A red line shows **Test failed** with the
 error. A change of the title tool replaces the result with the result of the change.
 

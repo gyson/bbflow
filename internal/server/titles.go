@@ -133,15 +133,15 @@ func (s *Server) requestedTitleTool(id, command string) (protocol.TitleTool, his
 // titleSample is the message of a title test. It is like a first message of a session.
 const titleSample = "The login page redirects to a blank page after sign-in. Find the cause and fix it."
 
-// testTitleTool runs a title tool once with the sample message and returns the title and
-// the command that ran. It saves nothing.
+// testTitleTool runs a title tool once with the sample message and returns the title. It
+// saves nothing.
 func (s *Server) testTitleTool(ctx context.Context, id, command string) (protocol.TitleTest, error) {
 	tool, _, err := s.requestedTitleTool(id, command)
 	if err != nil {
 		return protocol.TitleTest{}, err
 	}
 	title, err := runTitleCommand(ctx, tool.Command, titleSample)
-	return protocol.TitleTest{Command: tool.Command, Title: title}, err
+	return protocol.TitleTest{Title: title}, err
 }
 
 // setTitleTool saves the title tool of the settings. Each tool except none must first
@@ -158,7 +158,6 @@ func (s *Server) setTitleTool(ctx context.Context, id, command string) (protocol
 		if err != nil {
 			return result, err
 		}
-		result.Command = tool.Command
 		if result.Title, err = runTitleCommand(ctx, tool.Command, titleSample); err != nil {
 			return result, fmt.Errorf("%s is not configured. The title tool is still %s. The test failed: %w", tool.Name, titleToolName(saved.TitleTool), err)
 		}

@@ -45,8 +45,6 @@ export class SettingsView {
   private readonly titleTest = element('title-test', HTMLButtonElement);
   private readonly testResult = element('title-test-result', HTMLElement);
   private readonly testSample = element('title-test-sample', HTMLElement);
-  private readonly testRun = element('title-test-run', HTMLElement);
-  private readonly testCommand = element('title-test-command', HTMLElement);
   private readonly testOutcome = element('title-test-outcome', HTMLElement);
   private readonly testDetail = element('title-test-detail', HTMLElement);
 
@@ -365,26 +363,23 @@ export class SettingsView {
     this.titleSpinner.hidden = !this.busy;
   }
 
-  // Show the state of a test: the sample message, the command, the outcome, and a note.
-  // state is running, passed, or failed. A result without a test shows no sample.
-  private showTest(state: 'running' | 'passed' | 'failed', outcome: string, detail = '', sample = true, command = ''): void {
+  // Show the state of a test: the sample message, the outcome, and a note. state is
+  // running, passed, or failed. A result without a test shows no sample. The command
+  // shows only once, under the list or in the custom command field.
+  private showTest(state: 'running' | 'passed' | 'failed', outcome: string, detail = '', sample = true): void {
     this.testResult.className = state;
     this.testSample.textContent = `Sample message: ${this.titleSample}`;
     this.testSample.hidden = !sample;
-    this.testCommand.textContent = command;
-    this.testRun.hidden = !command;
     this.testOutcome.textContent = outcome;
     this.testDetail.textContent = detail;
     this.testDetail.hidden = !detail;
     this.testResult.hidden = false;
   }
 
-  // The name of a title tool and the command that a test of it runs. Custom without a
-  // command runs the saved custom command.
-  private describeTitleTool(tool: string, command = ''): { name: string; run: string } {
-    if (tool === 'custom') return { name: 'Custom', run: command || this.saved?.titleCommand || '' };
-    const builtin = this.titleTools.find(candidate => candidate.id === tool);
-    return { name: builtin?.name ?? 'None', run: builtin?.command ?? '' };
+  // The name of a title tool for a message.
+  private titleToolName(tool: string): string {
+    if (tool === 'custom') return 'Custom';
+    return this.titleTools.find(candidate => candidate.id === tool)?.name ?? 'None';
   }
 
   // A selection in the list starts a title tool change. Custom with a saved command
@@ -428,22 +423,22 @@ export class SettingsView {
       this.render();
       return;
     }
-    const { name, run } = this.describeTitleTool(tool, command);
+    const name = this.titleToolName(tool);
     this.busy = true;
     this.settingTool = this.testedTool = tool;
     this.render();
-    if (tool !== 'none') this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`, '', true, run);
+    if (tool !== 'none') this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`);
     else this.testResult.hidden = true;
     try {
       const result = await call(server, { operation: 'title-tool-set', settings: { titleTool: tool, titleCommand: command } });
       if (tool === 'custom') this.customCommand.value = this.renderedCustom = result.settings.titleCommand;
       this.customOpen = false;
       this.saves.update(result.settings);
-      if (tool !== 'none') this.showTest('passed', `✓ ${name} is configured. Its test made the title “${result.title}” from the sample message.`, '', true, result.command);
+      if (tool !== 'none') this.showTest('passed', `✓ ${name} is configured. Its test made the title “${result.title}” from the sample message.`);
     } catch (error) {
       this.customOpen = tool === 'custom';
       const detail = tool === 'custom' ? 'Fix the command, then click Save and test again.' : tool === 'none' ? '' : 'Fix the problem, then select the tool again.';
-      this.showTest('failed', `✕ ${errorMessage(error)}`, detail, tool !== 'none', run);
+      this.showTest('failed', `✕ ${errorMessage(error)}`, detail, tool !== 'none');
     } finally {
       this.busy = false;
       this.settingTool = null;
@@ -459,20 +454,20 @@ export class SettingsView {
     const server = this.server();
     const tool = this.titleTool.value;
     if (!server || tool === 'none' || this.busy) return;
-    const { name, run } = this.describeTitleTool(tool);
+    const name = this.titleToolName(tool);
     const runNumber = ++this.titleRun;
     this.busy = true;
     this.testedTool = tool;
     this.showTitleTool();
-    this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`, '', true, run);
+    this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`);
     try {
       const result = await call(server, { operation: 'title-test', settings: { titleTool: tool } });
       if (runNumber === this.titleRun && tool === this.titleTool.value) {
-        this.showTest('passed', `✓ Test passed. ${name} made the title “${result.title}” from the sample message.`, '', true, result.command);
+        this.showTest('passed', `✓ Test passed. ${name} made the title “${result.title}” from the sample message.`);
       }
     } catch (error) {
       if (runNumber === this.titleRun && tool === this.titleTool.value) {
-        this.showTest('failed', `✕ Test failed: ${errorMessage(error)}`, 'Sessions keep their current title when the tool fails.', true, run);
+        this.showTest('failed', `✕ Test failed: ${errorMessage(error)}`, 'Sessions keep their current title when the tool fails.');
       }
     } finally {
       if (runNumber === this.titleRun) {

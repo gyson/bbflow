@@ -399,8 +399,8 @@ export class Peer {
 }
 
 export function call(server: ServerInfo, request: SettingsRequest): Promise<Settings>;
-export function call(server: ServerInfo, request: TitleTestRequest, signal?: AbortSignal): Promise<{ command: string; title: string }>;
-export function call(server: ServerInfo, request: TitleToolSetRequest): Promise<{ settings: Settings; command: string; title: string }>;
+export function call(server: ServerInfo, request: TitleTestRequest, signal?: AbortSignal): Promise<{ title: string }>;
+export function call(server: ServerInfo, request: TitleToolSetRequest): Promise<{ settings: Settings; title: string }>;
 export function call(server: ServerInfo, request: TitleToolsRequest): Promise<TitleTools>;
 export function call(server: ServerInfo, request: InspectRequest): Promise<RepositoryInfo>;
 export function call(server: ServerInfo, request: UpdateRequest): Promise<{ updating: boolean }>;

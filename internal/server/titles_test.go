@@ -574,12 +574,12 @@ func TestTitleToolSavesOnlyAfterItsTest(t *testing.T) {
 	passing, dir := writeTitleScript(t, "echo bbflow-title: Fix login redirect")
 	titleTools[0].Command = passing
 	// A test alone saves nothing.
-	if test, err := s.testTitleTool(context.Background(), "claude", ""); err != nil || test.Title != "Fix login redirect" || test.Command != passing {
+	if test, err := s.testTitleTool(context.Background(), "claude", ""); err != nil || test.Title != "Fix login redirect" {
 		t.Fatalf("test: %+v %v", test, err)
 	}
 	unchanged()
 	result, err := s.setTitleTool(context.Background(), "claude", "")
-	if err != nil || result.Title != "Fix login redirect" || result.Command != passing || result.Settings.TitleTool != "claude" || result.Settings.Revision != before.Revision+1 {
+	if err != nil || result.Title != "Fix login redirect" || result.Settings.TitleTool != "claude" || result.Settings.Revision != before.Revision+1 {
 		t.Fatalf("passed test: %+v %v", result, err)
 	}
 	input, err := os.ReadFile(filepath.Join(dir, "input"))
@@ -591,7 +591,7 @@ func TestTitleToolSavesOnlyAfterItsTest(t *testing.T) {
 	if err = os.Remove(filepath.Join(dir, "input")); err != nil {
 		t.Fatal(err)
 	}
-	if result, err = s.setTitleTool(context.Background(), "none", ""); err != nil || result.Title != "" || result.Command != "" || result.Settings.TitleTool != "none" {
+	if result, err = s.setTitleTool(context.Background(), "none", ""); err != nil || result.Title != "" || result.Settings.TitleTool != "none" {
 		t.Fatalf("none: %+v %v", result, err)
 	}
 	if _, err = os.Stat(filepath.Join(dir, "input")); !os.IsNotExist(err) {
@@ -622,20 +622,21 @@ func TestCustomTitleToolSavesItsCommandAfterItsTest(t *testing.T) {
 
 	custom, dir := writeTitleScript(t, "echo bbflow-title: Custom title")
 	result, err := s.setTitleTool(context.Background(), "custom", custom)
-	if err != nil || result.Title != "Custom title" || result.Command != custom || result.Settings.TitleTool != "custom" || result.Settings.TitleCommand != custom {
+	if err != nil || result.Title != "Custom title" || result.Settings.TitleTool != "custom" || result.Settings.TitleCommand != custom {
 		t.Fatalf("custom set: %+v %v", result, err)
 	}
 	if input := ranTitle(t, s, dir); !strings.Contains(input, titleSample) {
 		t.Fatalf("custom test input: %q", input)
 	}
-	// Another tool keeps the custom command. Custom then tests the saved command again.
+	// Another tool keeps the custom command. Custom then tests the saved command again. The
+	// built-in Claude command gives another title, so the title tells which command ran.
 	if result, err = s.setTitleTool(context.Background(), "claude", ""); err != nil || result.Settings.TitleCommand != custom {
 		t.Fatalf("switch to claude: %+v %v", result, err)
 	}
-	if test, err := s.testTitleTool(context.Background(), "custom", ""); err != nil || test.Command != custom || test.Title != "Custom title" {
+	if test, err := s.testTitleTool(context.Background(), "custom", ""); err != nil || test.Title != "Custom title" {
 		t.Fatalf("test of the saved custom command: %+v %v", test, err)
 	}
-	if result, err = s.setTitleTool(context.Background(), "custom", ""); err != nil || result.Command != custom || result.Settings.TitleTool != "custom" {
+	if result, err = s.setTitleTool(context.Background(), "custom", ""); err != nil || result.Title != "Custom title" || result.Settings.TitleTool != "custom" {
 		t.Fatalf("custom with the saved command: %+v %v", result, err)
 	}
 	ranTitle(t, s, dir)
