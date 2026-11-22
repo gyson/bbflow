@@ -170,7 +170,7 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined;
 // The sidebar shows the most recent sessions of each project group. Show more adds a step.
 // The group key is a project ID, or '' for Standalone. The list and Archived keep separate
 // limits. moreGroups holds the groups that have more sessions.
-const sessionStep = 10;
+const sessionStep = 5;
 const groupLimits = { list: new Map<string, number>(), archived: new Map<string, number>() };
 let moreGroups = new Set<string>();
 const limits = () => archivedList ? groupLimits.archived : groupLimits.list;

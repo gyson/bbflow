@@ -414,10 +414,12 @@ The sidebar lists saved projects and groups sessions, including drafts, through
 `project-list` and `session-list`. General appears first. Custom projects follow in name
 order. Groups can be collapsed in each view. A group lists
 [session families](#session-families): a top-level session and its sub-sessions count
-as one family. Each group shows its 10 most recent families. **Show more** below a group
-shows 10 more of its families. It has no upper limit. Each reply holds at most 100
-families. Thus the list reads the 10 most recent families of 10 groups in each request.
-It reads the families after the first 10 of a group in separate windows of at most 100
+as one family. Each group shows its 5 most recent families. **Show more** below a group
+shows 5 more of its families. It has no upper limit. A reply holds at most 100 families,
+plus the family of the selected session. See
+[`session-list`](PROTOCOL.md#connections-and-requests) for the exact rule. Thus the list
+reads the 5 most recent families of 20 groups in each request.
+It reads the families after the first 5 of a group in separate windows of at most 100
 families. When the group then shows all of its families, the keyboard focus moves from
 **Show more** to its last session. The list and Archived keep separate group sizes until
 reload. The family of the selected session stays in its group, also when it is older
