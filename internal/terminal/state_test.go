@@ -172,6 +172,43 @@ func TestWiderResizeLimitsAllocation(t *testing.T) {
 	}
 }
 
+// xterm-go makes the rows of a narrower reflow at the earlier width, and it keeps their
+// arrays. After a narrower resize, the rows must use memory for the new width only.
+func TestNarrowerResizeReleasesRowStorage(t *testing.T) {
+	var out strings.Builder
+	for i := range 6300 {
+		fmt.Fprintf(&out, "L%05d %s\r\n", i, strings.Repeat("x", 193)) // 200 columns
+	}
+	input := []byte(out.String())
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	state := New(protocol.Size{Cols: 256, Rows: 10})
+	state.Apply(history.Event{Kind: "output", Data: input})
+	state.Apply(history.Event{Kind: "resize", Data: []byte(`{"cols":40,"rows":10}`)})
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	lines := state.term.NormalBuffer().Lines
+	if got := lines.Length() - 10; got != ScrollbackRows(40) {
+		t.Fatalf("narrower terminal has %d history rows, want %d", got, ScrollbackRows(40))
+	}
+	excess := 0
+	for i := range lines.Length() {
+		// At its own width, Resize only reports if CleanupMemory would free memory.
+		if line := lines.Get(i); line.Resize(line.Len, nil) {
+			excess++
+		}
+	}
+	if excess > 0 {
+		t.Fatalf("%d of %d rows keep memory for 256 columns", excess, lines.Length())
+	}
+	// 12 bytes for each cell. Without the release, the rows keep about 77 MB.
+	if retained := after.HeapAlloc - min(before.HeapAlloc, after.HeapAlloc); retained > 3*uint64(ScrollbackRows(40))*40*12 {
+		t.Fatalf("narrower terminal keeps %d MB", retained>>20)
+	}
+	runtime.KeepAlive(state)
+}
+
 func visibleText(s string) string {
 	lines := strings.Split(s, "\n")
 	for i := range lines {

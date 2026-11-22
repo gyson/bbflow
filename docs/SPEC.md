@@ -901,9 +901,11 @@ minimum keeps the row count of earlier releases at every width. The 50,000-row m
 limits the fixed memory cost of each row.
 
 The emulator itself allows 50,000 rows. After a resize or a terminal reset, the server
-decreases the buffer to the limit of the width. Thus a resize reflows all rows before
-the server drops the oldest rows. Short lines do not join when a terminal gets wider, so
-a wider terminal can drop the oldest rows above its smaller limit.
+decreases the buffer to the limit of the width. Thus a resize to fewer columns reflows
+all rows before the server drops the oldest rows. The emulator makes the new rows of
+that reflow at the earlier width. After the reflow, the server releases the extra cells
+of each row. Short lines do not join when a terminal gets wider, so a wider terminal can
+drop the oldest rows above its smaller limit.
 
 The emulator widens all history rows before it joins wrapped rows. Before a resize to
 more columns, the server thus keeps at most 5,120,000 history cells: 10,000 rows at 512
@@ -913,8 +915,8 @@ that the new limit could keep.
 Each view keeps the limit of its own width. A view wider than the terminal gets only the
 newest rows of its smaller limit. The 8 MiB budget of rendered rows can keep fewer rows.
 Before the browser parses a full frame, it sets the xterm.js scrollback to the limit of
-the frame width. A saved final screen keeps the rows of its terminal. The server reads
-saved screens with up to 50,000 history rows.
+the frame width. A saved final screen keeps the rows of its terminal. When the server
+reads a saved screen, it keeps the newest rows within the limit of the saved width.
 
 ### Session titles
 

@@ -150,6 +150,28 @@ func (s *State) trimHistory(rows int) {
 	}
 }
 
+// resize changes the size of the emulator and applies the row limit of the new width.
+func (s *State) resize(cols, rows int) {
+	narrower := cols < s.term.Cols()
+	if cols > s.term.Cols() {
+		// xterm-go widens all history rows before it joins wrapped rows. Drop the oldest
+		// rows first, so that the resize allocates no more than widenCells.
+		s.trimHistory(widenCells / cols)
+	}
+	s.term.Resize(cols, rows)
+	s.limitHistory()
+	if narrower {
+		// xterm-go makes the new rows of a reflow at the earlier width. When it makes a
+		// row narrower, it keeps the array of the row. Release the extra cells of the
+		// rows that stay, so that their memory follows the new width.
+		lines := s.term.NormalBuffer().Lines
+		for i := range lines.Length() {
+			lines.Get(i).CleanupMemory()
+		}
+	}
+	s.epoch++ // A resize can reflow history. Send a fresh view.
+}
+
 // Apply feeds one event to the emulator. Live output and the replay of a stored run both
 // use it. An emulator panic must not stop the server and every session with it. Apply
 // logs the panic and starts a blank emulator for this terminal. The archive keeps the
@@ -172,11 +194,7 @@ func (s *State) Apply(event history.Event) (responses []byte, err error) {
 		}
 		target = size // After a reset, keep the size that the PTY and the views now use.
 		if int(size.Cols) != s.term.Cols() || int(size.Rows) != s.term.Rows() {
-			if int(size.Cols) > s.term.Cols() {
-				s.trimHistory(widenCells / int(size.Cols))
-			}
-			s.term.Resize(int(size.Cols), int(size.Rows))
-			s.epoch++ // A resize can reflow history. Send a fresh view.
+			s.resize(int(size.Cols), int(size.Rows))
 		}
 	case "output":
 		s.term.Write(event.Data)
@@ -295,17 +313,22 @@ func (s *State) ViewFor(size protocol.Size, cache *Cache) *View {
 			v.Lines = append(v.Lines, line)
 		}
 	}
-	if excess := len(v.History) - ScrollbackRows(int(size.Cols)); excess > 0 {
-		v.Offset += int64(excess)
-		v.History = v.History[excess:]
-	}
 	if v.CursorX >= int(size.Cols) || v.CursorY < top {
 		v.Modes += "\x1b[?25l"
 	}
 	v.CursorX = min(v.CursorX, int(size.Cols)-1)
 	v.CursorY = max(0, v.CursorY-top)
 	v.Size = size
+	v.TrimHistory()
 	return v
+}
+
+// TrimHistory keeps only the newest history rows within the row limit of the view width.
+func (v *View) TrimHistory() {
+	if excess := len(v.History) - ScrollbackRows(int(v.Size.Cols)); excess > 0 {
+		v.Offset += int64(excess)
+		v.History = v.History[excess:]
+	}
 }
 
 func renderLine(line *xterm.BufferLine, cols int) string {

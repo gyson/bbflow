@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -256,6 +257,25 @@ func TestSavedScreenKeepsTheRowLimitOfItsWidth(t *testing.T) {
 	}
 	if len(view.History) != terminal.ScrollbackRows(40) {
 		t.Fatalf("saved screen has %d history rows, want %d", len(view.History), terminal.ScrollbackRows(40))
+	}
+	// A saved screen with more rows than the limit of its width loads with the newest
+	// rows. A rejected screen could not show its session.
+	wide := &terminal.View{Size: protocol.Size{Cols: 120, Rows: 2}, Lines: []string{"a", "b"}, Offset: 5}
+	for i := range terminal.ScrollbackRows(120) + 1 {
+		wide.History = append(wide.History, fmt.Sprintf("row %05d", i))
+	}
+	data, err := json.Marshal(savedScreen{Format: 1, View: wide})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Append(session.ID, "wide", "terminal-screen", data, ""); err != nil {
+		t.Fatal(err)
+	}
+	if view, err = s.loadScreen(session.ID, "wide"); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.History) != terminal.ScrollbackRows(120) || view.History[0] != "row 00001" || view.Offset != 6 {
+		t.Fatalf("wide saved screen has %d history rows from %q at offset %d", len(view.History), view.History[0], view.Offset)
 	}
 }
 
