@@ -16,10 +16,20 @@ import (
 	xterm "github.com/eugenioenko/xterm-go"
 )
 
-// Scrollback is the maximum number of normal-buffer history rows in a view.
-const Scrollback = 10000
-
 const (
+	// historyCells limits the normal-buffer history of a terminal to about this number of
+	// cells. The emulator allocates all cells of a row, also blank cells. Thus rows ×
+	// columns sets its memory, not the length of the text. A narrow terminal wraps text
+	// into more rows, so it keeps more rows.
+	historyCells = 1_000_000
+	// minScrollbackRows keeps the 10,000 rows of earlier releases at every width.
+	minScrollbackRows = 10_000
+	// MaxScrollbackRows limits the fixed cost of each row in a very narrow terminal.
+	MaxScrollbackRows = 50_000
+	// widenCells limits the cells that a resize to more columns allocates. xterm-go widens
+	// all history rows before it joins wrapped rows. This is the largest steady state:
+	// minScrollbackRows rows at 512 columns.
+	widenCells = minScrollbackRows * 512
 	// historyBudget limits the rendered history rows that a view keeps. Rows with many
 	// styles can be large. The budget bounds memory, saved screens, and frames.
 	historyBudget = 8 << 20
@@ -29,6 +39,12 @@ const (
 
 func ValidSize(size protocol.Size) bool {
 	return size.Cols >= 2 && size.Cols <= 512 && size.Rows >= 1 && size.Rows <= 256
+}
+
+// ScrollbackRows returns the number of normal-buffer history rows that a terminal or a
+// view of this width keeps. The browser client uses the same function.
+func ScrollbackRows(cols int) int {
+	return min(MaxScrollbackRows, max(minScrollbackRows, historyCells/cols))
 }
 
 // State requires the owning session's lock. It generates responses even without a
@@ -86,12 +102,14 @@ func New(size protocol.Size) *State {
 // reset starts a blank emulator. The OnData handler holds s, so reset a State in place.
 // Do not copy a State.
 func (s *State) reset(size protocol.Size) {
-	s.term = xterm.New(xterm.WithCols(int(size.Cols)), xterm.WithRows(int(size.Rows)), xterm.WithScrollback(Scrollback))
+	// The emulator allows the largest limit. limitHistory applies the limit of the width.
+	s.term = xterm.New(xterm.WithCols(int(size.Cols)), xterm.WithRows(int(size.Rows)), xterm.WithScrollback(MaxScrollbackRows))
 	// The display clients do not encode Kitty extended keyboard events. Do not advertise
 	// that optional protocol to applications in this terminal.
 	s.term.RegisterCsiHandler(xterm.FunctionIdentifier{Prefix: '?', Final: 'u'}, func(*xterm.Params) bool { return true })
 	s.term.OnData(func(data string) { s.responses = append(s.responses, data...) })
 	s.trackBuffer()
+	s.limitHistory()
 }
 
 // Size returns the current size of the terminal.
@@ -106,6 +124,30 @@ func (s *State) trackBuffer() {
 	}
 	s.lines, s.trim, s.epoch = lines, 0, s.epoch+1
 	lines.OnTrimEmitter.Event(func(n int) { s.trim += int64(n) })
+}
+
+// limitHistory applies the row limit of the current width to the normal buffer.
+// xterm-go sets the length of a buffer only when it makes the buffer or resizes it. Its
+// own limit is MaxScrollbackRows, so a resize reflows all rows before this trims them.
+func (s *State) limitHistory() {
+	rows := ScrollbackRows(s.term.Cols())
+	lines := s.term.NormalBuffer().Lines
+	if length := s.term.Rows() + rows; lines.MaxLength() != length {
+		s.trimHistory(rows)
+		lines.SetMaxLength(length)
+	}
+}
+
+// trimHistory drops the oldest normal-buffer rows above this number of history rows. It
+// adjusts the buffer as xterm-go Buffer.Resize does when it decreases the buffer length.
+func (s *State) trimHistory(rows int) {
+	b := s.term.NormalBuffer()
+	if n := b.Lines.Length() - s.term.Rows() - rows; n > 0 {
+		b.Lines.TrimStart(n)
+		b.YBase = max(b.YBase-n, 0)
+		b.YDisp = max(b.YDisp-n, 0)
+		b.SavedState.Y = max(b.SavedState.Y-n, 0)
+	}
 }
 
 // Apply feeds one event to the emulator. Live output and the replay of a stored run both
@@ -130,6 +172,9 @@ func (s *State) Apply(event history.Event) (responses []byte, err error) {
 		}
 		target = size // After a reset, keep the size that the PTY and the views now use.
 		if int(size.Cols) != s.term.Cols() || int(size.Rows) != s.term.Rows() {
+			if int(size.Cols) > s.term.Cols() {
+				s.trimHistory(widenCells / int(size.Cols))
+			}
 			s.term.Resize(int(size.Cols), int(size.Rows))
 			s.epoch++ // A resize can reflow history. Send a fresh view.
 		}
@@ -137,6 +182,7 @@ func (s *State) Apply(event history.Event) (responses []byte, err error) {
 		s.term.Write(event.Data)
 	}
 	s.trackBuffer()
+	s.limitHistory()
 	return s.responses, nil
 }
 
@@ -249,7 +295,7 @@ func (s *State) ViewFor(size protocol.Size, cache *Cache) *View {
 			v.Lines = append(v.Lines, line)
 		}
 	}
-	if excess := len(v.History) - Scrollback; excess > 0 {
+	if excess := len(v.History) - ScrollbackRows(int(size.Cols)); excess > 0 {
 		v.Offset += int64(excess)
 		v.History = v.History[excess:]
 	}

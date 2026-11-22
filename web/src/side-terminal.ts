@@ -161,7 +161,7 @@ export class SideTerminal {
 
   private makeTerminal(): Terminal {
     const view = this.view = new Terminal({
-      cursorBlink: true, fontSize: 12, lineHeight: 1.2, scrollback: 10000,
+      cursorBlink: true, fontSize: 12, lineHeight: 1.2,
       fontFamily: 'Menlo, Monaco, Consolas, monospace', disableStdin: true, screenReaderMode: true,
       theme: this.theme(),
       // Terminal output must not open links, read the browser clipboard, or write to it.

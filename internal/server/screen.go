@@ -40,7 +40,7 @@ func (s *Server) loadScreen(id, runID string) (*terminal.View, error) {
 		if err = json.Unmarshal(data, &saved); err != nil {
 			return nil, err
 		}
-		if saved.Format != 1 || saved.View == nil || !terminal.ValidSize(saved.View.Size) || len(saved.View.Lines) != int(saved.View.Size.Rows) || len(saved.View.History) > terminal.Scrollback {
+		if saved.Format != 1 || saved.View == nil || !terminal.ValidSize(saved.View.Size) || len(saved.View.Lines) != int(saved.View.Size.Rows) || len(saved.View.History) > terminal.MaxScrollbackRows {
 			return nil, errors.New("unsupported saved terminal screen")
 		}
 		return saved.View, nil

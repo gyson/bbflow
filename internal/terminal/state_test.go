@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"unsafe"
@@ -17,7 +18,7 @@ import (
 
 func TestRenderTracksScreenAcrossRedrawResizeAndScroll(t *testing.T) {
 	state := New(protocol.Size{Cols: 28, Rows: 8})
-	display := xterm.New(xterm.WithCols(28), xterm.WithRows(8), xterm.WithScrollback(Scrollback))
+	display := xterm.New(xterm.WithCols(28), xterm.WithRows(8), xterm.WithScrollback(MaxScrollbackRows))
 	var previous *View
 	apply := func(kind string, data []byte) {
 		t.Helper()
@@ -55,7 +56,7 @@ func TestRenderTracksScreenAcrossRedrawResizeAndScroll(t *testing.T) {
 	}
 	// Scroll far past the retained history, including skipped render opportunities.
 	for i := 0; i < 8; i++ {
-		apply("output", []byte(strings.Repeat(fmt.Sprintf("line %d: café 你好\r\n", i), Scrollback/7)))
+		apply("output", []byte(strings.Repeat(fmt.Sprintf("line %d: café 你好\r\n", i), MaxScrollbackRows/7)))
 	}
 	apply("output", []byte("\x1b[3J\x1b[2J\x1b[Hclear\r\n"))
 	apply("output", []byte("\x1bcreset\r\n"))
@@ -83,6 +84,91 @@ func TestSizeLimits(t *testing.T) {
 		if _, err := state.Apply(history.Event{Kind: "resize", Data: data}); err == nil {
 			t.Fatal("accepted size", size)
 		}
+	}
+}
+
+// Keep these values the same as the scrollbackRows test in web/terminal-size.test.mjs.
+func TestScrollbackRowsByWidth(t *testing.T) {
+	for cols, want := range map[int]int{2: 50000, 20: 50000, 30: 33333, 40: 25000, 80: 12500, 100: 10000, 120: 10000, 512: 10000} {
+		if got := ScrollbackRows(cols); got != want {
+			t.Errorf("%d columns: %d rows, want %d", cols, got, want)
+		}
+	}
+}
+
+// The row limit follows the width. A narrower terminal keeps its wrapped history, and a
+// wider terminal drops only the rows above its smaller limit.
+func TestHistoryLimitFollowsWidth(t *testing.T) {
+	state := New(protocol.Size{Cols: 80, Rows: 10})
+	apply := func(kind, data string) {
+		t.Helper()
+		if _, err := state.Apply(history.Event{Kind: kind, Data: []byte(data)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lines := func(from, to int) string {
+		var out strings.Builder
+		for i := from; i < to; i++ {
+			fmt.Fprintf(&out, "L%05d %s\r\n", i, strings.Repeat("x", 53)) // 60 columns
+		}
+		return out.String()
+	}
+	limit := func(step string, cols int) *View {
+		t.Helper()
+		view := state.View()
+		if got, want := state.term.NormalBuffer().Lines.MaxLength(), 10+ScrollbackRows(cols); got != want {
+			t.Fatalf("%s: emulator keeps %d rows, want %d", step, got, want)
+		}
+		if len(view.History) > ScrollbackRows(cols) {
+			t.Fatalf("%s: %d history rows, limit %d", step, len(view.History), ScrollbackRows(cols))
+		}
+		return view
+	}
+	// 6,000 lines wrap into 12,000 rows at 40 columns. A limit of 10,000 rows drops the
+	// oldest lines. The limit of 25,000 rows keeps them.
+	apply("output", lines(0, 6000))
+	limit("80 columns", 80)
+	apply("resize", `{"cols":40,"rows":10}`)
+	if view := limit("narrower", 40); !strings.HasPrefix(view.PlainText(), "L00000 ") {
+		t.Fatalf("narrower terminal dropped wrapped history: %.40q", view.PlainText())
+	}
+	apply("output", lines(6000, 20000))
+	if view := limit("full at 40 columns", 40); len(view.History) != ScrollbackRows(40) {
+		t.Fatalf("full history has %d rows, want %d", len(view.History), ScrollbackRows(40))
+	}
+	// A wider view keeps the newest rows of its own limit.
+	wide := state.ViewFor(protocol.Size{Cols: 120, Rows: 10}, nil)
+	if all := state.View(); len(wide.History) != ScrollbackRows(120) || wide.History[len(wide.History)-1] != all.History[len(all.History)-1] {
+		t.Fatalf("wider view has %d history rows, want the newest %d", len(wide.History), ScrollbackRows(120))
+	}
+	apply("resize", `{"cols":80,"rows":10}`)
+	if view := limit("wider", 80); !strings.Contains(view.PlainText(), "L19990 ") {
+		t.Fatal("wider terminal lost the newest output")
+	}
+	// A terminal reset makes a new buffer. The limit applies to it too.
+	apply("output", "\x1bcreset\r\n")
+	limit("reset", 80)
+}
+
+// xterm-go widens all rows before it joins wrapped rows. A resize from the narrowest to
+// the widest terminal must not allocate cells for all 50,000 narrow rows.
+func TestWiderResizeLimitsAllocation(t *testing.T) {
+	state := New(protocol.Size{Cols: 20, Rows: 10})
+	var out strings.Builder
+	for i := range MaxScrollbackRows + 100 {
+		fmt.Fprintf(&out, "L%05d\r\n", i)
+	}
+	state.Apply(history.Event{Kind: "output", Data: []byte(out.String())})
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	state.Apply(history.Event{Kind: "resize", Data: []byte(`{"cols":512,"rows":10}`)})
+	runtime.ReadMemStats(&after)
+	// 12 bytes for each cell. Without the limit, the resize allocates about 300 MB.
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 2*widenCells*12 {
+		t.Fatalf("resize allocated %d MB", allocated>>20)
+	}
+	if view := state.View(); len(view.History) != ScrollbackRows(512) || !strings.Contains(view.PlainText(), fmt.Sprintf("L%05d", MaxScrollbackRows+99)) {
+		t.Fatalf("wider terminal has %d history rows", len(view.History))
 	}
 }
 
@@ -157,7 +243,7 @@ func TestViewerProjectionDoesNotResizeSharedTerminal(t *testing.T) {
 	state := New(protocol.Size{Cols: 8, Rows: 5})
 	state.Apply(history.Event{Kind: "output", Data: []byte("one\r\ntwo\r\nabcdef\r\nx你好\r\nlast")})
 	original := state.term.String()
-	display := xterm.New(xterm.WithCols(4), xterm.WithRows(3), xterm.WithScrollback(Scrollback))
+	display := xterm.New(xterm.WithCols(4), xterm.WithRows(3), xterm.WithScrollback(MaxScrollbackRows))
 	view := state.ViewFor(protocol.Size{Cols: 4, Rows: 3}, nil)
 	data, _ := view.Render(nil)
 	display.Write(data)
@@ -195,7 +281,7 @@ func frameMessage(t *testing.T, view *View, data []byte, full bool) int {
 
 func TestHistoryBudgetKeepsNewestRows(t *testing.T) {
 	state := New(protocol.Size{Cols: 160, Rows: 10})
-	// Each row has about 3 KiB of styles. The budget keeps fewer rows than Scrollback.
+	// Each row has about 3 KiB of styles. The budget keeps fewer rows than the row limit.
 	write := func(from, to int) {
 		var out strings.Builder
 		for i := from; i < to; i++ {
@@ -295,7 +381,7 @@ func TestNarrowViewCacheMatchesFreshRender(t *testing.T) {
 	check("one new row")
 	apply("resize", `{"cols":30,"rows":6}`)
 	check("resize")
-	apply("output", strings.Repeat("scroll past the limit\r\n", Scrollback+50))
+	apply("output", strings.Repeat("scroll past the limit\r\n", ScrollbackRows(30)+50))
 	check("trimmed rows")
 	apply("output", "\x1b[3J\x1b[2J\x1b[Hcleared\r\n")
 	if view := check("history clear"); len(view.History) != 2 {

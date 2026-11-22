@@ -229,6 +229,36 @@ func TestEndedScreenCacheAndArchiveReconstruction(t *testing.T) {
 	}
 }
 
+// A narrow terminal keeps more than 10,000 history rows. Its saved screen must load.
+func TestSavedScreenKeepsTheRowLimitOfItsWidth(t *testing.T) {
+	store, err := history.Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	session, err := store.CreateSession("fixture", t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store}
+	r := &runningSession{id: session.ID, terminal: terminal.New(protocol.Size{Cols: 40, Rows: 8})}
+	var out strings.Builder
+	for i := range 30000 {
+		fmt.Fprintf(&out, "row %05d\r\n", i)
+	}
+	r.terminal.Apply(history.Event{Kind: "output", Data: []byte(out.String())})
+	if err = s.saveScreen(r); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.loadScreen(session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.History) != terminal.ScrollbackRows(40) {
+		t.Fatalf("saved screen has %d history rows, want %d", len(view.History), terminal.ScrollbackRows(40))
+	}
+}
+
 // Each run has its own terminal. An interrupted later run must not show the saved
 // screen of an earlier run, and replay must not mix the output of two runs.
 func TestEachRunReplaysOnlyItsOwnTerminal(t *testing.T) {

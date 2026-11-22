@@ -42,7 +42,7 @@ test('server frames match raw PTY rendering in real xterm.js', async () => {
 test('ack waits for parsing and a stale session view cannot acknowledge', () => {
   let parsed, current = true;
   const acks = [];
-  const view = { reset() {}, resize() {}, write(bytes, callback) { parsed = callback; } };
+  const view = { options: {}, reset() {}, resize() {}, write(bytes, callback) { parsed = callback; } };
   const stream = new TerminalStream(view, { current: () => current, acknowledge: n => acks.push(n), ready() {}, fail: e => assert.fail(e) });
   stream.push({ type: 'frame', revision: 1, full: true, size: { cols: 80, rows: 24 } });
   assert.deepEqual(acks, []);
@@ -54,10 +54,23 @@ test('ack waits for parsing and a stale session view cannot acknowledge', () => 
   assert.deepEqual(acks, [1]);
 });
 
+test('a full frame sets the history row limit of its width', () => {
+  const view = { options: { scrollback: 1 }, reset() {}, resize() {}, write(bytes, callback) { callback(); } };
+  const stream = new TerminalStream(view, { current: () => true, acknowledge() {}, ready() {}, fail: e => assert.fail(e) });
+  stream.push({ type: 'frame', revision: 1, full: true, size: { cols: 40, rows: 24 } });
+  assert.equal(view.options.scrollback, 25000);
+  // A delta frame has the same width, so it keeps the limit.
+  view.options.scrollback = 1;
+  stream.push({ type: 'frame', revision: 2, size: { cols: 40, rows: 24 } });
+  assert.equal(view.options.scrollback, 1);
+  stream.push({ type: 'frame', revision: 3, full: true, size: { cols: 120, rows: 24 } });
+  assert.equal(view.options.scrollback, 10000);
+});
+
 test('reject a delta without a baseline or a second unacknowledged frame', () => {
   for (const full of [false, true]) {
     const errors = [];
-    const stream = new TerminalStream({ reset() {}, resize() {}, write() {} }, {
+    const stream = new TerminalStream({ options: {}, reset() {}, resize() {}, write() {} }, {
       current: () => true, acknowledge() {}, ready() {}, fail: e => errors.push(e),
     });
     stream.push({ type: 'frame', revision: 1, full, size: { cols: 80, rows: 24 } });

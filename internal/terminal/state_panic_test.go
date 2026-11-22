@@ -29,7 +29,7 @@ func TestApplyOverflowingShrinkKeepsNewestOutput(t *testing.T) {
 	logged := captureLog(t)
 	for _, cols := range []int{80, 40, 20} {
 		s := New(protocol.Size{Cols: 153, Rows: 34})
-		for i := range Scrollback + 100 {
+		for i := range minScrollbackRows + 100 {
 			s.Apply(history.Event{Kind: "output", Data: fmt.Appendf(nil, "L%05d%s\r\n", i, strings.Repeat(".", 140))})
 		}
 		s.Apply(history.Event{Kind: "output", Data: []byte("TAILMARK\r\n")})
@@ -43,7 +43,7 @@ func TestApplyOverflowingShrinkKeepsNewestOutput(t *testing.T) {
 			t.Fatalf("%d columns: the emulator panicked:\n%s", cols, logged)
 		}
 		text := s.View().PlainText()
-		if !strings.Contains(text, "TAILMARK") || !strings.Contains(text, fmt.Sprintf("L%05d", Scrollback+99)) {
+		if !strings.Contains(text, "TAILMARK") || !strings.Contains(text, fmt.Sprintf("L%05d", minScrollbackRows+99)) {
 			t.Fatalf("%d columns: the newest output is not in the view; tail:\n%s", cols, text[max(0, len(text)-300):])
 		}
 	}

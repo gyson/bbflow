@@ -1,7 +1,7 @@
-import type { Terminal } from '@xterm/xterm';
 import { ConnectionError, Peer, retryLimit } from './protocol.js';
 import type { ServerInfo, ServerMessage, Size, StreamRequest } from './protocol.js';
 import { TerminalStream } from './terminal-stream.js';
+import type { Display } from './terminal-stream.js';
 
 const rejoins = (request: StreamRequest) => request.operation === 'session-resume' || request.operation === 'side-terminal-resume';
 
@@ -30,7 +30,7 @@ export class SessionConnection {
 
   constructor(
     private readonly server: ServerInfo,
-    private readonly view: Pick<Terminal, 'write' | 'resize' | 'reset'>,
+    private readonly view: Display,
     private request: StreamRequest,
     private readonly host: {
       size(): Size;

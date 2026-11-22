@@ -845,8 +845,9 @@ the dialog opened. That dialog also shows the message, because it covers the pag
 10 seconds shows the same message. The old page cannot save edits to the new server. Other protocol and instance mismatches require
 explicit recovery. A changed server port requires reopening the UI. Input and session creation are never retried automatically.
 
-The server sends a full current screen and up to 10,000 normal-buffer scrollback rows,
-then generated row changes. Each frame is acknowledged after xterm finishes parsing it.
+The server sends a full current screen and the normal-buffer scrollback rows that the
+view keeps, then generated row changes. [Terminal scrollback](#terminal-scrollback) gives
+the row limit. Each frame is acknowledged after xterm finishes parsing it.
 Each view has at most one outstanding frame, so slow rendering coalesces intermediate
 redraws while capture continues. Partial source escape sequences and UTF-8 remain inside
 the server's emulator. Clients receive complete render operations.
@@ -879,6 +880,41 @@ sent messages, recorded-output search, a read-only Changes pane, and a side term
 There is no browser
 SQL client. The `bbflow query` command reads archived events. There is no semantic chat
 transcript.
+
+### Terminal scrollback
+
+The limit of normal-buffer history rows depends on the terminal width. A terminal keeps
+about 1,000,000 history cells (rows × columns), with at least 10,000 rows and at most
+50,000 rows:
+
+| Columns | History rows |
+|---|---|
+| 20 or fewer | 50,000 |
+| 40 | 25,000 |
+| 80 | 12,500 |
+| 100 or more | 10,000 |
+
+The emulator allocates all cells of a row, also blank cells. Thus rows × columns sets
+its memory, not the length of the text. A narrower terminal wraps the same text into
+more rows, so the limit keeps about the same amount of wrapped text. The 10,000-row
+minimum keeps the row count of earlier releases at every width. The 50,000-row maximum
+limits the fixed memory cost of each row.
+
+The emulator itself allows 50,000 rows. After a resize or a terminal reset, the server
+decreases the buffer to the limit of the width. Thus a resize reflows all rows before
+the server drops the oldest rows. Short lines do not join when a terminal gets wider, so
+a wider terminal can drop the oldest rows above its smaller limit.
+
+The emulator widens all history rows before it joins wrapped rows. Before a resize to
+more columns, the server thus keeps at most 5,120,000 history cells: 10,000 rows at 512
+columns. A resize from a very narrow to a very wide terminal can thus drop wrapped rows
+that the new limit could keep.
+
+Each view keeps the limit of its own width. A view wider than the terminal gets only the
+newest rows of its smaller limit. The 8 MiB budget of rendered rows can keep fewer rows.
+Before the browser parses a full frame, it sets the xterm.js scrollback to the limit of
+the frame width. A saved final screen keeps the rows of its terminal. The server reads
+saved screens with up to 50,000 history rows.
 
 ### Session titles
 
@@ -2274,8 +2310,9 @@ or tampered metadata, protocol checks, idle peers, and shutdown with stalled vie
 
 Frame fixtures cover independent viewport sizes, size owner changes, input from every
 view, receipt routing, slow views, final-frame ordering, and ended-screen
-reconstruction. Terminal tests cover the scrollback size budget, frames at the message
-limit, and the narrower-view row cache. Cross-engine fixtures compare Go-generated
+reconstruction. Terminal tests cover the row limit of each width, the allocation of a
+resize to more columns, the scrollback size budget, frames at the message limit, and the
+narrower-view row cache. Cross-engine fixtures compare Go-generated
 frames with xterm.js for cells, styles, cursor, scrollback, resize, split escapes,
 Unicode, and alternate screens.
 
@@ -2552,7 +2589,8 @@ Search history can read matching output and bounded context from earlier termina
 Their saved transcripts remain available in the handoff folder, and `bbflow query` reads
 their original events.
 
-A handoff transcript has at most the newest 10,000 scrollback rows of a terminal.
+A handoff transcript has only the scrollback rows that its terminal keeps. See
+[Terminal scrollback](#terminal-scrollback) for the row limit of each width.
 The server rebuilds the handoff folder while it holds the launch lock. A large interrupted
 recording can delay other launches during this rebuild. A transcript keeps
 only the last screen of a program that uses the alternate screen, such as Codex CLI

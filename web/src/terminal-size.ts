@@ -12,3 +12,12 @@ export function terminalSize(value: Size): Size {
     cols: Math.max(minCols, Math.min(maxCols, value.cols)),
   };
 }
+
+// A view keeps about 1,000,000 history cells: 10,000–50,000 rows, by width. Keep this
+// function the same as ScrollbackRows in internal/terminal/state.go.
+const historyCells = 1_000_000, minScrollbackRows = 10_000, maxScrollbackRows = 50_000;
+
+// Return the number of history rows that a view of this width keeps.
+export function scrollbackRows(cols: number): number {
+  return Math.min(maxScrollbackRows, Math.max(minScrollbackRows, Math.floor(historyCells / cols)));
+}

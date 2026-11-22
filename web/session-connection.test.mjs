@@ -28,7 +28,7 @@ function fixture(t, request = resume) {
     });
   }
   const connection = new SessionConnection(server, {
-    reset() {}, resize() {}, write(_bytes, parsed) { frames.push(parsed); },
+    options: {}, reset() {}, resize() {}, write(_bytes, parsed) { frames.push(parsed); },
   }, request, {
     size: () => size, message() {}, ready() {},
     disconnected(error, retrying) { errors.push({ error, retrying }); },
