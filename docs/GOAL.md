@@ -90,7 +90,8 @@ these principles.
   from it.
 - **The server owns the work.** A background server owns each terminal process and its
   history, so a view can close and open again while the work and the recording
-  continue. Only an explicit stop ends a session.
+  continue. A session ends only when its shell exits, when the user stops it, or when
+  the server stops.
 - **Use ordinary terminal access.** Run each agent through its normal interactive CLI
   and preserve its arguments, authentication, and approval prompts. Do not depend on an
   SDK, structured output, or a native session API, although richer integrations can

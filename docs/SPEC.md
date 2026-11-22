@@ -34,7 +34,7 @@ The Web client section has these features:
 | [Session families](#session-families) | Sub-sessions and their parent. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
 | [Projects and launches](#projects-and-launches) | Projects, Start session, the shell, the terminal view, and reconnection. |
-| [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, the draft of a session, and managed worktrees. |
+| [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, the launch preparation of a session, and managed worktrees. |
 | [Session status](#session-status) | The four statuses, the sidebar icon, the session toolbar, and the More actions menu. |
 | [Session titles](#session-titles) | User titles, derived titles, and the title tools. |
 | [Message editor](#message-editor) | Send, the shared draft, sent messages, and attachments. |
@@ -978,8 +978,9 @@ This section has three related parts:
 
 - **Settings** is one page for the instance. It has the appearance, the server port,
   the tools with their startup commands, and the session defaults.
-- A **preparation** is the draft of a session. It keeps the project, the tool, the
-  worktree choices, and the message until Start.
+- A **preparation** holds the launch choices of a session that did not start: the
+  project, the tool, and the worktree choices. The message draft saves separately.
+  Start does not send it. It stays in the editor for the user to send.
 - A **managed worktree** gives a session its own checkout and branch. bbflow creates it
   at Start from a base commit.
 
@@ -2496,9 +2497,10 @@ reconnection. When the shell ended during the disconnection, the view shows
 
 ## Terminal runtime
 
-Each terminal is a shell in its own PTY and process group. The server records input
-and output before it delivers or shows them. A closed view never stops the work. Only
-an explicit stop, a server stop, or the end of the shell ends a terminal.
+Each session terminal is a shell in its own PTY and process group. The server records
+the input and output of a session terminal before it delivers or shows them. A closed
+view never stops the work. A session terminal ends when its shell exits, on an explicit
+stop, or when the server stops. The [side terminal](#side-terminal) is not recorded.
 
 ### Launch and recording
 
@@ -2696,9 +2698,11 @@ server is a no-op.
 
 ## History and storage
 
-All durable bbflow data is in one SQLite file, `history.sqlite`, in the instance
-directory. Events are append-only and have stable sequence numbers. The original
-terminal bytes are authoritative, and the readable text is derived from them.
+All durable bbflow data is in one SQLite database, `history.sqlite`, in the instance
+directory. SQLite also keeps committed data in its write-ahead log (WAL) file, so the
+main database file alone is not a consistent copy while writes are active. Events are
+append-only and have stable sequence numbers. The original terminal bytes are
+authoritative, and the readable text is derived from them.
 
 ### Archive contents
 

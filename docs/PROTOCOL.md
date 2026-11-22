@@ -22,14 +22,16 @@ each operation, and each stream. See [COMMANDS.md](COMMANDS.md) for user command
 | [Terminal streams](#terminal-streams) | The messages of a live terminal, frames, and receipts. |
 | [Drafts and file references](#drafts-and-file-references) | The message editor operations. |
 | [Browser access](#browser-access) | The Host and Origin rules, and the HTTP routes. |
-| [Protocol versions](#protocol-versions) | The changes of each protocol version. |
+| [Protocol versions](#protocol-versions) | The changes of each protocol version from 15. |
 | [Source files](#source-files) | The code that defines the protocol. |
 
 ## Transport
 
 Each operation uses one WebSocket connection to a loopback port. Each message is one
-JSON object in a text message. The server and the client must use the same protocol
-version.
+JSON object in a text message. Session operations, queries, and health checks need the
+same protocol version in the server and the client. Shutdown is the exception. It uses
+the version that the verified server advertises, so a client can stop a server with
+another protocol version.
 
 ### Endpoint
 
@@ -68,8 +70,9 @@ and [Protocol versions](#protocol-versions).
 ## Connections and requests
 
 Open one connection per operation. The server sends a greeting first. The client
-verifies the greeting, and then sends one request. Most operations send one reply and
-close the connection. Some operations keep a stream open.
+verifies the greeting, and then sends one request. A health check is the exception. It
+verifies the greeting and closes the connection without a request. Most operations send
+one reply and close the connection. Some operations keep a stream open.
 
 ### Greeting
 
@@ -1108,15 +1111,20 @@ input.
 
 ## Browser access
 
-The server accepts HTTP and WebSocket requests only for its loopback host and from its
-own origin. These checks stop other web sites. They do not authenticate local programs.
+The server has two checks. Each HTTP request, including a WebSocket upgrade, must name
+the loopback host of the server. A WebSocket upgrade must also come from the same
+origin. The other HTTP routes have no origin check. These checks stop other web sites.
+They do not authenticate local programs.
 
 ### Host and Origin
 
-The HTTP Host must be `127.0.0.1:PORT` or `localhost:PORT`. An Origin header, if
-present, must have the same host and port. CLI clients omit Origin. Browser clients send
-it automatically. The server rejects other sites, different ports, and opaque origins
-such as `file:` pages.
+The HTTP Host must be `127.0.0.1:PORT` or `localhost:PORT`. This check applies to each
+HTTP route and to the WebSocket upgrade.
+
+Only the WebSocket upgrade checks the Origin header. An Origin header, if present, must
+have the same host and port as the Host. CLI clients omit Origin. Browser clients send
+it automatically. Thus the server rejects WebSocket connections from other sites,
+different ports, and opaque origins such as `file:` pages.
 
 The embedded UI is served from the same local origin at `/`. Separate UI development
 servers would need an explicit origin policy change or a same-origin proxy. There is no
@@ -1173,6 +1181,9 @@ browser's terminal and optional composer share the same input stream.
 Database compatibility is separate from the WebSocket protocol version. After a protocol
 change, rebuild the executable, start the new server, and reload the browser.
 
+The list starts at protocol 15. This file does not record the changes of the earlier
+versions.
+
 - Protocol 15 supports multiple drafts per project, archive/restore, and paginated
   collection search. Project records no longer contain a draftId. Session records and
   summaries include an archived boolean. SQLite format 6 stores this independent flag.
@@ -1186,17 +1197,30 @@ change, rebuild the executable, start the new server, and reload the browser.
   runs, one after another. Each run has its own terminal.
 - Protocol 19 adds `session-terminals` and the optional `run` field of `session-resume`.
   A view can show an earlier terminal of a session. The SQLite format does not change.
+- Protocol 20 adds `history-search` and `history-context`. See
+  [Recorded-output search](#recorded-output-search). The SQLite format does not change.
+- Protocol 21 adds `workspace-changes`, `workspace-files`, and `workspace-file`. See
+  [Workspace changes](#workspace-changes).
+- Protocol 22 adds the derived `status` of a session. See
+  [Session status](#session-status). The SQLite format does not change.
+- Protocol 23 adds `workspace-folders`, and `workspace-file` also works without Git. See
+  [Workspace changes](#workspace-changes).
 - Protocol 24 adds `side-terminal-open`, `side-terminal-resume`, and
   `side-terminal-stop` for [side terminals](#side-terminals). The SQLite format does not
   change.
 - Protocol 25 removes `continueCommand` from tools. SQLite format 9 removes this field
   from saved tools.
+- Protocol 26 changes `session-list`. A request names its `groups`, `limit` applies to
+  each group, and `session` can include one more session. The reply has `sessions` and
+  `more`. See [Session list](#session-list). The SQLite format does not change.
 - Protocol 27 adds automatic session titles. Session records and summaries add
   `autoTitle`, and `title` holds only the user title. Settings add `titleTool`. The
   operations `title-tools` and `title-test` are new. A `statuses` message adds
   `revision`. SQLite format 10 adds the `auto_title` column and `titleTool: "none"`.
 - Protocol 28 adds the `commit` baseline of the [workspace change
   operations](#workspace-changes). The SQLite format does not change.
+- Protocol 29 adds `storage-report`. See [storage report](SPEC.md#storage-report). The
+  SQLite format does not change.
 - Protocol 30 adds `update-start`, the `version` request field, and the `update` field
   of `statuses` messages for [release offers](#release-offers). Settings add
   `updateCheck`. SQLite format 12 adds `updateCheck: true`.
