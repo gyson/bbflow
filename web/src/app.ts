@@ -5,7 +5,7 @@ import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
 import { SideTerminal } from './side-terminal.js';
 import { WorkspacePane } from './workspace-pane.js';
-import { continueAction, continueDialogProblem, defaultContinueTool } from './continue.js';
+import { continueAction, continueDialogError, continueDialogProblem, defaultContinueTool } from './continue.js';
 import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
 import { Watch } from './watch.js';
@@ -28,6 +28,8 @@ import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
 import { UpdateNotice } from './update.js';
+import { ErrorToasts } from './toasts.js';
+import { pageBar } from './page-bar.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
 import { DialogEdits, lastReload, onServerReplaced, recordReload, reloadPlan, restartedMessage } from './restart.js';
@@ -72,7 +74,10 @@ const elements = {
   'rename-error': element('rename-error', HTMLElement),
   'rename-submit': element('rename-submit', HTMLButtonElement),
   'cancel-rename': element('cancel-rename', HTMLButtonElement),
-  'notice': element('notice', HTMLElement),
+  'page-bar': element('page-bar', HTMLElement),
+  'page-bar-text': element('page-bar-text', HTMLElement),
+  'page-bar-reload': element('page-bar-reload', HTMLButtonElement),
+  'list-problem': element('list-problem', HTMLElement),
   'stop': element('stop', HTMLButtonElement),
   'reconnect': element('reconnect', HTMLButtonElement),
   'reload-output': element('reload-output', HTMLButtonElement),
@@ -97,9 +102,11 @@ const elements = {
   'workspace': element('workspace', HTMLElement),
   'workspace-path': element('workspace-path', HTMLElement),
   'workspace-removed': element('workspace-removed', HTMLElement),
+  'workspace-warning': element('workspace-warning', HTMLButtonElement),
   'terminal': element('terminal', HTMLElement),
   'status': element('status', HTMLElement),
   'terminal-hint': element('terminal-hint', HTMLElement),
+  'terminal-announce': element('terminal-announce', HTMLElement),
   'welcome': element('welcome', HTMLElement),
   'session-view': element('session-view', HTMLElement),
   'instance-dir': element('instance-dir', HTMLElement),
@@ -148,6 +155,8 @@ let renderedSidebar = '';
 const statusMarks: { session: SessionInfo; button: HTMLElement; icon: HTMLElement; label: HTMLElement; place: string; archive: HTMLButtonElement; menu: HTMLButtonElement; fixed: boolean }[] = [];
 let selected: SessionView | null = null;
 let continueRun: string | undefined;
+// The reason that the open Continue dialog shows for a session change, or empty.
+let continueProblem = '';
 // The handoff prompt of the selected session. It stays available after a new terminal
 // starts, so the user can copy or send it later.
 let handoff: { session: string; info: Handoff } | null = null;
@@ -178,7 +187,7 @@ const handoffPrompt = new HandoffPrompt({ insert: text => composer.insert(text) 
 // A view shows one terminal of the selected session. Earlier terminals show their saved
 // final screen. The live process continues while a view shows an earlier terminal.
 const terminalPicker = new TerminalPicker({
-  select: run => action(async () => { if (selected?.id) await openSession(selected, undefined, run); }),
+  select: run => action(async () => { if (selected?.id) await openSession(selected, undefined, run); }, failed('show the terminal of', selected)),
   refresh: () => { if (selected?.id) void loadTerminals(selected.id); },
 });
 const historySearch = new HistorySearch(() => server);
@@ -203,7 +212,7 @@ const preparation = new PreparationEditor({
   start: session => action(async () => {
     await composer.flush();
     await openSession({ ...session, status: 'draft' }, { kind: 'start' });
-  }),
+  }, failed('start', session)),
 });
 
 // The status watch sends the release offer of the server. An update restarts the server,
@@ -218,19 +227,33 @@ const updateNotice = new UpdateNotice({
     await preparation.flush();
     await composer.flush();
     await call(server, { operation: 'update-start', version: offer.available, revision: offer.revision });
-    notice(`bbflow updates to ${offer.available}. This page reloads when the new server starts.`);
   },
 });
 
-let noticeSource: 'action' | 'list' | 'stream' = 'action';
-function notice(text = '', source: typeof noticeSource = 'action') {
-  noticeSource = source;
-  $('notice').textContent = text;
-  $('notice').hidden = !text;
+// Each message shows next to its subject. A failed action without such a place shows an
+// error toast that names the action.
+const toasts = new ErrorToasts();
+
+// The page bar shows a restart of the server, or an update in progress from the status
+// watch. Call this after either one changes.
+let restarted = false;
+function showPageBar() {
+  const bar = pageBar(restarted, updateNotice.current);
+  $('page-bar').hidden = !bar.text;
+  $('page-bar').className = bar.kind;
+  $('page-bar-text').textContent = bar.text;
+  $('page-bar-reload').hidden = !bar.reload;
 }
 
-function clearNotice(source: typeof noticeSource) {
-  if (noticeSource === source) notice();
+// The sidebar tells when the session list cannot load. An empty text removes the problem.
+function listProblem(text = '') {
+  $('list-problem').textContent = text;
+  $('list-problem').hidden = !text;
+}
+
+// The title of the error toast of a failed action on a session.
+function failed(what: string, session?: { title: string; autoTitle?: string } | null): string {
+  return session ? `Could not ${what} “${sessionTitle(session) || 'Untitled session'}”.` : `Could not ${what}.`;
 }
 
 // These dialogs keep their text only until submission. A reload would discard it.
@@ -264,8 +287,11 @@ onServerReplaced(() => {
     location.reload();
     return;
   }
-  notice(restartedMessage);
-  // A modal dialog covers the page notice. Show the message in the dialog too.
+  restarted = true;
+  showPageBar();
+  // The page bar tells the user to reload, so the list does not repeat it.
+  listProblem();
+  // A modal dialog covers the page bar. Show the message in the dialog too.
   const error = dialog && dialogErrors.get(dialog);
   if (error) {
     error.textContent = restartedMessage;
@@ -299,8 +325,12 @@ function shownTool(): string {
   return terminalPicker.shown()?.tool ?? '';
 }
 
+// The server sends a start warning only to the view that started the session, such as a
+// base fetch that failed. This page keeps it for each session until the page reloads.
+const startWarnings = new Map<string, string>();
+
 // Show the tool of the shown terminal, the worktree branch, and the workspace path. An
-// empty path hides the line.
+// empty path hides the line. A start warning of the session shows as a mark at the end.
 function showWorkspace(path: string, worktree?: Worktree) {
   const tool = shownTool();
   const branch = worktree ? `⑂ ${worktree.branch}` : '';
@@ -310,13 +340,23 @@ function showWorkspace(path: string, worktree?: Worktree) {
   $('workspace-path').textContent = label;
   $('workspace-removed').hidden = !removed;
   $('workspace').title = removed ? `${label} · ${branch}` : label;
+  const warning = path && !removed && selected?.id ? startWarnings.get(selected.id) ?? '' : '';
+  const mark = $('workspace-warning');
+  mark.hidden = !warning;
+  mark.dataset.tip = warning;
+  mark.setAttribute('aria-label', `Start warning: ${warning}`);
+  if (!warning) mark.classList.remove('tip-open');
 }
 
 // The hint below the terminal tells why this view cannot send input. A view of the live
-// terminal has no hint.
-function hint(text = '') {
+// terminal has no hint. An error or information hint has its own color.
+function hint(text = '', kind: '' | 'error' | 'info' = '') {
   $('terminal-hint').textContent = text;
   $('terminal-hint').hidden = !text;
+  $('terminal-hint').className = kind;
+  // The focus can stay in the terminal, so a screen reader also announces an error or
+  // information hint. The live region always exists, so that a change is announced.
+  $('terminal-announce').textContent = kind ? text : '';
 }
 
 function controls() {
@@ -355,12 +395,15 @@ function controls() {
     delete continueControl.dataset.tip;
     continueControl.removeAttribute('tabindex');
   }
+  // The session or the server changed while the dialog was open. The dialog then tells
+  // why it cannot start a terminal, and its start button stays off. Cancel closes it.
   if ($('continue-dialog').open) {
-    const problem = continueDialogProblem(continuation, selected?.run?.id, continueRun);
-    if (problem) {
-      $('continue-dialog').close();
-      notice(problem);
-    }
+    const next = continueDialogError({ text: $('continue-error').textContent ?? '', hidden: $('continue-error').hidden === true }, continueProblem,
+      continueDialogProblem(continuation, selected?.run?.id, continueRun), restarted);
+    $('continue-error').textContent = next.error.text;
+    $('continue-error').hidden = next.error.hidden;
+    continueProblem = next.shown;
+    if (next.blocked) $('continue-submit').disabled = true;
   }
   $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
   $('handoff-open').disabled = busy;
@@ -381,11 +424,12 @@ function controls() {
   for (const button of $('sessions').querySelectorAll('button')) button.disabled = busy;
 }
 
-async function action(work: () => Promise<void>): Promise<void> {
+// failure is the title of the error toast when the work fails. It names the action.
+async function action(work: () => Promise<void>, failure = 'The action failed.'): Promise<void> {
   if (busy) return;
   busy = true;
   controls();
-  try { await work(); } catch (error) { notice(errorMessage(error)); }
+  try { await work(); } catch (error) { toasts.show(failure, errorMessage(error)); }
   finally { busy = false; controls(); }
 }
 
@@ -441,7 +485,7 @@ function sessionRow(session: SessionInfo, options: RowOptions): HTMLElement {
     workspace.textContent = session.workspace;
     button.append(workspace);
   }
-  button.onclick = () => action(() => openSession(session));
+  button.onclick = () => action(() => openSession(session), failed('open', session));
   const row = document.createElement('div');
   row.className = 'session-row' + (parent ? ' sub-session' : '') + (context ? ' context' : '');
   row.append(button);
@@ -449,7 +493,7 @@ function sessionRow(session: SessionInfo, options: RowOptions): HTMLElement {
   const actions: RowAction[] = [];
   // A sub-session draft needs a saved project. A family has one level.
   const canAdd = !parent && !context && !archivedList && projects.some(project => project.id === session.projectId);
-  if (canAdd) actions.push({ label: 'New sub-session', run: () => void action(() => showSubLaunch(session.id)) });
+  if (canAdd) actions.push({ label: 'New sub-session', run: () => void action(() => showSubLaunch(session.id), failed('add a sub-session to', session)) });
   // A context row is not in this collection. Its own row in the other list changes it.
   if (!context) actions.push({ label: session.archived ? 'Restore' : 'Archive', run: keyboard => void archiveFromList(session, keyboard) });
   const mark = { session, button, icon, label, place };
@@ -518,7 +562,7 @@ function familyBlock(family: Family, showWorkspace: boolean): HTMLElement {
 // then gets the nearest session row that shows, or else a sidebar control.
 async function archiveFromList(session: SessionInfo, keyboard: boolean): Promise<void> {
   const before = shownSessionKeys();
-  await action(() => requestArchive(session, !session.archived));
+  await action(() => requestArchive(session, !session.archived), failed(session.archived ? 'restore' : 'archive', session));
   if (!keyboard || (document.activeElement && document.activeElement !== document.body)) return;
   const key = nearestRow(before, `session:${session.id}`, shownSessionKeys());
   if (key) focusSidebar(key);
@@ -599,7 +643,7 @@ function renderSessions() {
       add.title = `New draft in ${name}`;
       add.setAttribute('aria-label', add.title);
       add.dataset.focus = `add:${id}`;
-      add.onclick = () => action(() => showLaunch(project.id));
+      add.onclick = () => action(() => showLaunch(project.id), `Could not add a draft to ${name}.`);
       heading.append(add);
       if (id !== 'general') {
         const edit = document.createElement('button');
@@ -626,7 +670,7 @@ function renderSessions() {
         await action(async () => {
           limits().set(id, (limits().get(id) ?? sessionStep) + sessionStep);
           await refreshSessions();
-        });
+        }, `Could not show more sessions of ${name}.`);
         if (keyboard && (document.activeElement === document.body || !document.activeElement)) focusSidebar(more.dataset.focus!);
       };
       list.append(more);
@@ -669,6 +713,7 @@ function watchStatuses(info: ServerInfo) {
       liveStatuses = next;
       // The update dialog counts the live sessions of the same message as the offer.
       updateNotice.show(message.update, Object.keys(next));
+      showPageBar();
       renderSessions();
       // A terminal started or ended, or a session title changed. Read the stored session
       // data again.
@@ -680,6 +725,7 @@ function watchStatuses(info: ServerInfo) {
     failed() {
       liveStatuses = {};
       updateNotice.lost();
+      showPageBar();
       renderSessions();
     },
   });
@@ -729,7 +775,7 @@ async function refreshSessions() {
     updateNotice.sessionsChanged();
     if (detail && selected && selected.id === selectedId) selected.archived = detail.archived;
     showConnection(true);
-    clearNotice('list');
+    listProblem();
     if (selected && !showingSettings && !preparation.visible) {
       if (detail && selected.id === detail.id) {
         selected = withDetail(selected, detail);
@@ -742,7 +788,7 @@ async function refreshSessions() {
   } catch (error) {
     if (generation !== refreshGeneration) return;
     showConnection(false);
-    notice(errorMessage(error), 'list');
+    if (!restarted) listProblem(`Cannot load the session list. The list can be out of date. ${errorMessage(error)}`);
   } finally {
     if (generation === refreshGeneration) controls();
   }
@@ -834,7 +880,6 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   }
   endReason = null;
   await composer.select('');
-  notice();
   // A start or a continue adds a terminal, so the list of the session is stale. Until the
   // new list arrives, the view shows no terminal selector and no tool.
   if (start || selected?.id !== session.id) terminalPicker.update([]);
@@ -878,7 +923,6 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   connection = new SessionConnection(server, view, request, {
     size: () => size(view),
     ready() {
-      clearNotice('stream');
       view.options.disableStdin = !connection?.peer?.active;
       showStatus();
       requestFit();
@@ -901,7 +945,10 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           void loadTerminals(message.session);
           view.options.disableStdin = true;
           history.replaceState(null, '', sessionURL(message.session));
-          if (message.notice) notice(message.notice);
+          if (message.notice) {
+            startWarnings.set(message.session, message.notice);
+            showWorkspace(selected.workspace, selected.worktree);
+          }
           refreshSessions();
           view.focus();
           break;
@@ -918,8 +965,8 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           endReason = { run: message.run ?? '', text: exitReason(message.code, message.status) };
           view.options.disableStdin = true;
           showStatus();
-          hint('Process ended. Showing saved terminal output.');
-          if (message.error) notice(message.error);
+          if (message.error) hint(`Process ended with an error: ${message.error}`, 'error');
+          else hint('Process ended. Showing saved terminal output.');
           refreshSessions();
           void loadTerminals(selected.id ?? '');
           break;
@@ -930,15 +977,21 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
     disconnected(error, retrying) {
       view.options.disableStdin = true;
       $('status').textContent = retrying ? 'Reconnecting' : 'Disconnected';
-      hint('Connection lost. Showing the last screen. Input is off until this view connects again.');
-      notice(errorMessage(error), 'stream');
+      hint(`Connection lost: ${errorMessage(error).replace(/\.$/, '')}. Showing the last screen. Input is off until this view connects again.`, 'error');
       controls();
       refreshSessions();
     },
   });
   try { await connection.connect(); }
   catch (error) {
-    if (start && session.id) { await openSession(session); notice(errorMessage(error)); return; }
+    if (start && session.id) {
+      await openSession(session);
+      // A start that failed leaves the draft, and its form shows the reason. Otherwise the
+      // session has a terminal now, and an error toast shows the reason.
+      if (preparation.visible) preparation.showError(error);
+      else toasts.show(failed('start', session), errorMessage(error));
+      return;
+    }
     throw error;
   } finally {
     if (selected?.id) {
@@ -987,8 +1040,7 @@ async function showContinue(): Promise<void> {
   const problem = continueDialogProblem(continuation, selected.run?.id);
   if (problem) {
     showWorkspace(selected.workspace, selected.worktree);
-    notice(problem);
-    return;
+    throw new Error(problem);
   }
   $('continue-tool').replaceChildren(new Option('Shell', ''), ...settings.tools.map(tool => new Option(tool.name || 'Unnamed tool', tool.id)));
   $('continue-tool').value = defaultContinueTool(settings.tools, selected.preparation?.toolId, settings.defaultTool);
@@ -996,6 +1048,7 @@ async function showContinue(): Promise<void> {
   $('continue-workspace').textContent = selected.worktree ? `⑂ ${selected.worktree.branch} · ${selected.workspace}` : selected.workspace;
   $('continue-warning').hidden = selected.run?.status !== 'interrupted';
   $('continue-error').hidden = true;
+  continueProblem = '';
   $('continue-copy').textContent = 'Copy prompt';
   continueRun = selected.run?.id;
   showDialog($('continue-dialog'));
@@ -1160,7 +1213,6 @@ async function setArchived(id: string, archived: boolean, family = false, member
     }
   }
   await refreshSessions();
-  notice(archived ? `${family ? 'Family' : 'Session'} archived. Find it in Archived and restore it any time.` : 'Session restored.');
 }
 
 async function initialize() {
@@ -1168,8 +1220,12 @@ async function initialize() {
   controls();
   $('archive-session').onclick = () => action(async () => {
     if (selected?.id) await requestArchive({ ...selected, id: selected.id }, !selected.archived);
-  });
+  }, failed(selected?.archived ? 'restore' : 'archive', selected));
   $('cancel-archive').onclick = () => $('archive-dialog').close();
+  $('page-bar-reload').onclick = () => location.reload();
+  // A click shows the start warning on devices without hover. A focus loss hides it.
+  $('workspace-warning').onclick = () => $('workspace-warning').classList.toggle('tip-open');
+  $('workspace-warning').onblur = () => $('workspace-warning').classList.remove('tip-open');
   $('archive-form').onsubmit = event => {
     event.preventDefault();
     action(async () => {
@@ -1189,37 +1245,36 @@ async function initialize() {
         $('archive-error').textContent = message;
         $('archive-error').hidden = false;
       }
-    });
+    }, failed('archive', archiving?.session));
   };
   $('new-sub-session').onclick = () => action(async () => {
     if (selected?.id) await showSubLaunch(selected.id);
-  });
+  }, failed('add a sub-session to', selected));
   $('archives-open').onclick = () => action(async () => {
     archivedList = !archivedList;
     await refreshSessions();
-  });
+  }, 'Could not change the session list.');
   $('sessions-open').onclick = () => action(async () => {
     archivedList = false;
     await refreshSessions();
-  });
+  }, 'Could not change the session list.');
   $('home-link').onclick = event => {
     // Keep a plain click in this page so drafts save. Let modified clicks open a new tab.
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    void action(showWelcome);
+    void action(showWelcome, 'Could not open Home.');
   };
-  $('settings-open').onclick = () => action(showSettings);
+  $('settings-open').onclick = () => action(showSettings, 'Could not open Settings.');
   $('settings-close').onclick = () => action(async () => {
     settingsView.close(); showingSettings = false;
     if (selected) await openSession(selected);
     else await showWelcome();
-  });
+  }, 'Could not leave Settings.');
   $('remove-worktree').onclick = () => action(async () => {
     if (!server || !selected?.id) return;
     await call(server, { operation: 'worktree-remove', session: selected.id });
     await refreshSessions();
-    notice('Worktree removed. Its branch and session history are preserved.');
-  });
+  }, failed('remove the worktree of', selected));
   $('add-project').onclick = () => showProject();
   $('cancel-project').onclick = () => $('project-dialog').close();
   $('project-form').onsubmit = event => {
@@ -1240,7 +1295,7 @@ async function initialize() {
         $('project-error').textContent = errorMessage(error);
         $('project-error').hidden = false;
       }
-    });
+    }, 'Could not save the project.');
   };
   $('project-remove').onclick = () => action(async () => {
     if (!server || !editingProject) return;
@@ -1251,12 +1306,11 @@ async function initialize() {
       $('project-dialog').close();
       await refreshSessions();
       if (selected?.projectId === editingProject.id) await openSession(selected);
-      notice('Project removed. Its sessions are now under Standalone. Files and running sessions are unchanged.');
     } catch (error) {
       $('project-error').textContent = errorMessage(error);
       $('project-error').hidden = false;
     }
-  });
+  }, 'Could not remove the project.');
   $('rename-session').onclick = () => {
     // An empty title removes the user title. The session then shows its derived title.
     $('rename-name').value = selected?.title ?? '';
@@ -1267,8 +1321,8 @@ async function initialize() {
   $('copy-session-id').onclick = () => action(async () => {
     if (!selected?.id) return;
     await navigator.clipboard.writeText(selected.id);
-    notice('Session ID copied.');
-  });
+    sessionMenu.confirm('Session ID copied');
+  }, failed('copy the session ID of', selected));
   $('cancel-rename').onclick = () => $('rename-dialog').close();
   $('rename-form').onsubmit = event => {
     event.preventDefault();
@@ -1283,7 +1337,7 @@ async function initialize() {
         $('rename-error').textContent = errorMessage(error);
         $('rename-error').hidden = false;
       }
-    });
+    }, failed('rename', selected));
   };
   $('history-open').onclick = () => historySearch.open({
     ...(selected?.id ? { session: selected.id, title: sessionTitle(selected) } : {}),
@@ -1302,14 +1356,15 @@ async function initialize() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { void refreshSessions(); }, 200);
   };
-  $('reconnect').onclick = $('reload-output').onclick = () => action(async () => { if (selected) await openSession(selected); });
-  $('continue-session').onclick = () => action(showContinue);
+  $('reconnect').onclick = () => action(async () => { if (selected) await openSession(selected); }, failed('reconnect to', selected));
+  $('reload-output').onclick = () => action(async () => { if (selected) await openSession(selected); }, failed('reload the output of', selected));
+  $('continue-session').onclick = () => action(showContinue, failed('continue', selected));
   $('handoff-open').onclick = () => action(async () => {
     if (!selected?.id) return;
     await loadHandoff(selected.id);
     if (handoff?.session === selected.id && handoff.info.available) handoffPrompt.open(handoff.info);
-    else notice('The handoff folder of this session is not available. Continue in a new terminal to write it again.');
-  });
+    else composer.problem('The handoff folder of this session is not available. Continue in a new terminal to write it again.');
+  }, failed('show the handoff prompt of', selected));
   $('cancel-continue').onclick = () => $('continue-dialog').close();
   $('continue-copy').onclick = async () => {
     try {
@@ -1323,28 +1378,28 @@ async function initialize() {
   $('continue-form').onsubmit = event => {
     event.preventDefault();
     action(async () => {
-      // action checks the dialog against the latest session state before submit.
       if (!$('continue-dialog').open || !selected?.id) return;
+      // The session or the server can change after the dialog opened. The dialog then
+      // shows the problem.
+      const continuation = continueAction(selected, !!connection?.peer?.active, terminalPicker.shownRun);
+      if (restarted || continueDialogProblem(continuation, selected.run?.id, continueRun)) return;
       const tool = $('continue-tool').value;
       $('continue-dialog').close();
       await openSession(selected, { kind: 'continue', tool });
-    });
+    }, failed('start a new terminal in', selected));
   };
   $('stop').onclick = () => action(async () => {
     if (!server || !selected?.id || terminalPicker.shownRun) return;
     const { stopped } = await call(server, { operation: 'session-stop', session: selected.id });
-    if (stopped) {
-      selected.status = 'ended';
-      notice('Session stopped. Terminal output is saved.');
-    } else {
-      notice('The session has no live terminal. Nothing was stopped.');
-    }
+    // The status and the exit hint show a stop. The hint also shows a stop without effect.
+    if (stopped) selected.status = 'ended';
+    else hint('The session has no live terminal. Nothing was stopped.', 'info');
     // A view of an earlier terminal gets no exit message. The refresh reads the stored
     // status of the stopped run.
     await refreshSessions();
     if (stopped) showStatus();
     await loadTerminals(selected.id);
-  });
+  }, failed('stop', selected));
   new ResizeObserver(requestFit).observe($('terminal'));
   window.addEventListener('pagehide', () => connection?.close());
   try {
@@ -1358,8 +1413,8 @@ async function initialize() {
     await refreshSessions();
     watchStatuses(info);
     const route = parseRoute(location.pathname);
-    if (route.page === 'settings') await action(showSettings);
-    else if (route.page === 'session') await action(() => openSession(sessions.find(s => s.id === route.id) || { id: route.id, title: 'Session', workspace: '', status: 'unknown' }));
+    if (route.page === 'settings') await action(showSettings, 'Could not open Settings.');
+    else if (route.page === 'session') await action(() => openSession(sessions.find(s => s.id === route.id) || { id: route.id, title: 'Session', workspace: '', status: 'unknown' }), 'Could not open the session of this address.');
     setInterval(() => {
       if (document.hidden || busy) return;
       refreshSessions();
@@ -1369,7 +1424,8 @@ async function initialize() {
   } catch (error) {
     server = null;
     showConnection(false);
-    notice(errorMessage(error));
+    $('sessions').replaceChildren();
+    listProblem(`Cannot connect to the bbflow server. ${errorMessage(error)}`);
   }
   controls();
 }

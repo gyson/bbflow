@@ -146,7 +146,8 @@ export class PreparationEditor {
     this.timer = setTimeout(() => { void this.flush().catch(() => {}); }, 400);
   }
 
-  private showError(error: unknown): void { this.error.textContent = errorMessage(error); this.error.hidden = false; }
+  // Show why the draft cannot save or start. The app also uses it after a start fails.
+  showError(error: unknown): void { this.error.textContent = errorMessage(error); this.error.hidden = false; }
 
   async flush(): Promise<void> {
     clearTimeout(this.timer);

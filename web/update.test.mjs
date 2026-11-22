@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { UpdateNotice, restartWarning, updateDialog, updateLabel } from './dist/update.js';
+import { pageBar } from './dist/page-bar.js';
 
 const offer = { revision: 1, version: '0.0.14', available: '0.0.15', state: 'available' };
 
@@ -192,4 +193,40 @@ test('a start that succeeds after a new offer closes the dialog', async () => {
   save.resolve();
   await tick();
   assert.ok(!dialog.open);
+});
+
+// The page bar of the view that started the update reads the latest status of the watch.
+const shown = notice => pageBar(false, notice.current).text;
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
+test('a failed status before or after the start reply leaves no update bar', async () => {
+  for (const order of ['status first', 'reply first']) {
+    const { notice, open, confirm, hold } = setup();
+    notice.show(offer, []);
+    open();
+    const start = hold();
+    confirm();
+    const failed = { ...offer, state: 'failed', error: 'download failed' };
+    if (order === 'status first') notice.show(failed, []);
+    start.resolve();
+    await settle();
+    if (order === 'reply first') {
+      notice.show({ ...offer, state: 'updating' }, []);
+      assert.match(shown(notice), /^bbflow updates to 0\.0\.15\./, order);
+      notice.show(failed, []);
+    }
+    assert.equal(shown(notice), '', order);
+  }
+});
+
+test('a late failed status of an earlier attempt does not hide the bar of a retry', () => {
+  const { notice } = setup();
+  notice.show({ ...offer, state: 'updating' }, []);
+  notice.show({ ...offer, state: 'failed', error: 'download failed' }, []);
+  assert.equal(shown(notice), '');
+  notice.show({ ...offer, revision: 2, state: 'updating' }, []);
+  assert.match(shown(notice), /updates to 0\.0\.15/);
+  // The bar stays while the watch is lost, because the server restarts.
+  notice.lost();
+  assert.match(shown(notice), /updates to 0\.0\.15/);
 });

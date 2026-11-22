@@ -13,6 +13,7 @@
     <a id="home-link" class="brand" href="/" title="Home" aria-label="bbflow home">bbflow</a>
     <label class="search-label"><span class="sr-only">Search projects and sessions</span><input id="filter" type="search" maxlength="200" placeholder="Search names and folders…"></label>
     <div id="archived-heading" class="section-heading" hidden><span>ARCHIVED SESSIONS</span><button id="sessions-open" title="Back to sessions" aria-label="Back to sessions">← Back</button></div>
+    <p id="list-problem" role="status" hidden></p>
     <nav id="sessions" aria-label="Projects and sessions"><p class="muted">Connecting…</p></nav>
     <button id="update-open" class="update-notice" aria-haspopup="dialog" hidden></button>
     <div class="sidebar-actions"><button id="add-project" aria-haspopup="dialog" aria-label="Add project" title="Add project">＋ Project</button><button id="archives-open" aria-pressed="false" title="Show archived sessions">Archived</button><button id="settings-open">Settings</button></div>
@@ -20,9 +21,10 @@
   </aside>
   <div id="sidebar-divider" role="separator" tabindex="0" aria-label="Sidebar width" aria-orientation="vertical" aria-controls="sidebar" aria-valuemin="240" aria-valuemax="480" aria-valuenow="278" title="Drag to resize. Use Left and Right arrow keys when focused. Double-click to reset."></div>
   <main>
+    <div id="page-bar" role="status" hidden><span id="page-bar-text"></span><button id="page-bar-reload" hidden>Reload page</button></div>
     <header class="toolbar">
       <div class="toolbar-title"><button id="sidebar-toggle" class="toolbar-icon" aria-controls="sidebar" aria-expanded="true" aria-label="Hide sidebar" aria-keyshortcuts="Meta+B" data-tip="Hide sidebar (⌘B)"><svg viewBox="0 0 20 20" aria-hidden="true"><path class="panel" d="M5.25 3.75h2.5v12.5h-2.5a2.5 2.5 0 0 1-2.5-2.5v-7.5a2.5 2.5 0 0 1 2.5-2.5z"/><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M7.75 3.75v12.5"/></svg></button>
-        <div class="session-heading"><div class="session-title-row"><h1 id="session-title">Home</h1><span id="status" class="badge" hidden></span></div><p id="workspace" hidden><span id="workspace-path"></span> <span id="workspace-removed" hidden>(worktree removed)</span></p></div></div>
+        <div class="session-heading"><div class="session-title-row"><h1 id="session-title">Home</h1><span id="status" class="badge" hidden></span></div><p id="workspace" hidden><span id="workspace-path"></span> <span id="workspace-removed" hidden>(worktree removed)</span><button id="workspace-warning" type="button" title="" hidden>⚠ Start warning</button></p></div></div>
       <div class="actions">
         <div id="continue-action" role="group" aria-describedby="continue-unavailable" hidden>
           <button id="continue-session" aria-describedby="continue-unavailable" data-tip="Start a new terminal in this session. The new agent can read the earlier terminals.">Continue in new terminal</button>
@@ -33,12 +35,11 @@
         <button id="pane-changes" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show changes" data-tip="Show changes" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6.5 6.5h7M10 3v7M6.5 14.5h7"/><rect x="2.75" y="2.75" width="14.5" height="14.5" rx="2.5"/></svg></button>
         <button id="pane-files" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show files" data-tip="Show files" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.75 6a2 2 0 0 1 2-2h3.2l1.8 2h5.5a2 2 0 0 1 2 2v6.25a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2z"/></svg></button>
         <button id="pane-terminal" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show terminal" data-tip="Show terminal" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M6 8l2.5 2L6 12"/><path d="M10.5 12.5h3.5"/></svg></button>
-        <button id="reconnect" hidden data-tip="Connect this view to the live terminal again.">Reconnect</button>
-        <span id="session-menu-box"><button id="session-menu-open" class="toolbar-icon" aria-haspopup="menu" aria-expanded="false" aria-controls="session-menu" aria-label="More actions" data-tip="More actions" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><g class="dots"><circle cx="4.5" cy="10" r="1.4"/><circle cx="10" cy="10" r="1.4"/><circle cx="15.5" cy="10" r="1.4"/></g></svg></button>
+        <span id="session-menu-box"><span id="session-menu-status" class="sr-only" role="status"></span><button id="session-menu-open" class="toolbar-icon" aria-haspopup="menu" aria-expanded="false" aria-controls="session-menu" aria-label="More actions" data-tip="More actions" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><g class="dots"><circle cx="4.5" cy="10" r="1.4"/><circle cx="10" cy="10" r="1.4"/><circle cx="15.5" cy="10" r="1.4"/></g></svg></button>
           <div id="session-menu" role="menu" aria-label="More actions" hidden><button id="rename-session" role="menuitem" hidden>Rename</button><button id="copy-session-id" role="menuitem" hidden>Copy session ID</button><button id="new-sub-session" role="menuitem" hidden>New sub-session</button><button id="archive-session" role="menuitem" hidden>Archive</button><button id="reload-output" role="menuitem" hidden>Reload output</button><button id="remove-worktree" role="menuitem" class="danger" hidden>Remove worktree</button></div></span>
       </div>
     </header>
-    <div id="notice" role="status" hidden></div>
+    <div id="toasts" aria-label="Errors"></div>
     <section id="welcome" class="welcome">
       <p>Select a session in the sidebar, or click ＋ beside a project to start one.</p>
     </section>
@@ -73,7 +74,8 @@
           <div id="terminal-list" role="group" aria-label="Terminals of this session" hidden></div>
         </div>
         <div id="terminal" aria-label="Session terminal"></div>
-        <div class="terminal-footer"><span id="terminal-hint" hidden></span><button id="terminal-latest" hidden>Back to live terminal</button></div>
+        <span id="terminal-announce" class="sr-only" role="status"></span>
+        <div class="terminal-footer"><span id="terminal-hint" hidden></span><button id="reconnect" hidden data-tip="Connect this view to the live terminal again.">Reconnect</button><button id="terminal-latest" hidden>Back to live terminal</button></div>
       </div>
       <div id="session-divider" role="separator" tabindex="0" aria-label="Terminal size" aria-orientation="horizontal" aria-controls="terminal-pane" aria-valuemin="0" aria-valuemax="100" aria-valuenow="65" title="Drag to resize. Use Up and Down arrow keys when focused." hidden><span aria-hidden="true"></span></div>
       <section id="composer" aria-label="Message editor">

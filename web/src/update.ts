@@ -90,6 +90,9 @@ export class UpdateNotice {
     else this.dialog.close();
   }
 
+  // The latest offer of the status watch. A lost watch keeps only an update in progress.
+  get current(): Update | undefined { return this.update; }
+
   // The session list changed, for example after a rename. An open dialog reads the
   // titles again.
   sessionsChanged(): void {
