@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { defaultLabels, duplicateName, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, statusText, titleControls } from './dist/settings-model.js';
+import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -70,6 +70,67 @@ test('a tool name that another tool has is a duplicate', () => {
   // The tool of the entry can keep its own name. Names match exactly, as in the CLI.
   assert.ok(!duplicateName([agent, other], 'Other', 'b'));
   assert.ok(!duplicateName([agent, other], 'other', 'new'));
+});
+
+// A save service whose first save conflicts. The read then gives latest.
+function conflictOnce(latest) {
+  const sent = [];
+  return {
+    sent,
+    async save(next) {
+      sent.push(next);
+      if (sent.length === 1) throw new Error('settings changed');
+      return { ...next, revision: next.revision + 1 };
+    },
+    async get() { return latest; },
+    conflict: () => true,
+  };
+}
+
+test('a tool name from another client stops the add after a revision conflict', async () => {
+  // The CLI added a tool with the name New after this view read the settings.
+  const latest = { ...settings, revision: 5, tools: [agent, other, { id: 'cli', name: 'New', command: 'new' }], port: 0 };
+  const server = conflictOnce(latest);
+  const saves = new SettingsSaves(server, () => {}, () => {});
+  saves.saved = { ...settings, port: 0 };
+  await assert.rejects(saves.save(toolEdit({ id: 'page', name: 'New', command: 'page' })), new RegExp(duplicateNameError));
+  assert.equal(server.sent.length, 1, 'the second attempt sent a duplicate name');
+  assert.deepEqual(saves.saved.tools.map(tool => tool.name), ['Agent', 'Other', 'New']);
+});
+
+test('an edit that keeps its name saves, also when another tool has that name', async () => {
+  const copy = { id: 'copy', name: 'Agent', command: 'copy' };
+  const server = conflictOnce({ ...settings, revision: 5, tools: [agent, other, copy], port: 0 });
+  const saves = new SettingsSaves(server, () => {}, () => {});
+  saves.saved = { ...settings, port: 0 };
+  await saves.save(toolEdit({ ...agent, command: 'agent --new' }, agent));
+  assert.deepEqual(saves.saved.tools[0], { ...agent, command: 'agent --new' });
+  // A rename to the name of another tool does not save.
+  await assert.rejects(saves.save(toolEdit({ ...other, name: 'Agent' }, other)), new RegExp(duplicateNameError));
+});
+
+test('a removal asks again when the tool became the default tool after the warning', async () => {
+  // The dialog opened for a tool that was not the default. The CLI then made it the default.
+  const server = conflictOnce({ ...settings, revision: 5, defaultTool: 'b', port: 0 });
+  const saves = new SettingsSaves(server, () => {}, () => {});
+  saves.saved = { ...settings, port: 0 };
+  const removal = toolRemoval('b', false);
+  await saves.save(removal.change);
+  assert.ok(removal.reconfirm());
+  assert.equal(server.sent.length, 1, 'the removal saved without the warning');
+  assert.equal(saves.saved.defaultTool, 'b');
+  assert.equal(saves.saved.tools.length, 2);
+  // The user confirms the warning. The removal saves and selects Shell.
+  const warned = toolRemoval('b', true);
+  await saves.save(warned.change);
+  assert.ok(!warned.reconfirm());
+  assert.equal(saves.saved.defaultTool, '');
+  assert.deepEqual(saves.saved.tools, [agent]);
+  // A removal of a tool that is not the default needs no warning.
+  const plain = toolRemoval('a', false);
+  await saves.save(plain.change);
+  assert.ok(!plain.reconfirm());
+  assert.deepEqual(saves.saved.tools, []);
 });
 
 test('the Settings page has one Clear for the add row and asks before a removal', () => {
@@ -245,7 +306,45 @@ test('a rejected default stays pending and saves with the next default', async (
   saves.saved = { ...settings, port: 0 };
   await assert.rejects(saves.saveDefault('base', 'bad'), /invalid/);
   assert.deepEqual(saves.defaults, { base: 'bad' });
+  assert.deepEqual([...saves.rejected], ['base']);
   await saves.saveDefault('base', 'main');
+  assert.equal(saves.saved.base, 'main');
+  assert.deepEqual(saves.defaults, {});
+  assert.equal(saves.rejected.size, 0);
+});
+
+test('a discarded rejected default does not join a later save', async () => {
+  const server = service();
+  server.save = async next => {
+    server.sent.push(next);
+    if (next.base === 'bad') throw new Error('invalid default Git base');
+    return { ...next, revision: next.revision + 1 };
+  };
+  const saves = new SettingsSaves(server, () => {}, () => {});
+  saves.saved = { ...settings, port: 0 };
+  await assert.rejects(saves.saveDefault('base', 'bad'), /invalid/);
+  // The user leaves Settings, or presses Escape in the field.
+  saves.discardRejected();
+  assert.deepEqual(saves.defaults, {});
+  assert.equal(saves.rejected.size, 0);
+  await saves.saveDefault('appearance', 'dark');
+  assert.equal(server.sent.at(-1).base, 'HEAD');
+  assert.equal(saves.saved.appearance, 'dark');
+});
+
+test('a discard keeps a default whose save waits or runs', async () => {
+  const server = service();
+  let reply;
+  server.save = next => new Promise(resolve => { reply = () => resolve({ ...next, revision: next.revision + 1 }); });
+  const saves = new SettingsSaves(server, () => {}, () => {});
+  saves.saved = { ...settings, port: 0 };
+  const saving = saves.saveDefault('base', 'main');
+  // The user leaves Settings before the reply. The save is not a rejected one.
+  saves.discardRejected();
+  assert.deepEqual(saves.defaults, { base: 'main' });
+  await new Promise(resolve => setImmediate(resolve));
+  reply();
+  await saving;
   assert.equal(saves.saved.base, 'main');
   assert.deepEqual(saves.defaults, {});
 });

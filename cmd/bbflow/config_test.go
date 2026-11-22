@@ -53,13 +53,25 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	if settings = saved(); settings.Tools[0].ID != agent || settings.Tools[0].Command != "agent --slow" {
 		t.Fatalf("tools after update: %+v", settings)
 	}
-	// The list is text with one tool on each line. The commands start in one column.
-	if output := cli("tool", "list"); output != "Agent  agent --slow\nOther  other\n" {
+	// The list is text with one tool on each line. A tab divides the name and the command.
+	if output := cli("tool", "list"); output != "Agent\tagent --slow\nOther\tother\n" {
 		t.Fatalf("tool list: %q", output)
 	}
 	// The flag package reads an option only before NAME.
 	fails("put --default before NAME", "tool", "add", "Agent", "agent --slow", "--default")
 	fails("put --default before NAME", "tool", "add", "Agent", "--default")
+	// After the option terminator, --default is a name.
+	if output := cli("tool", "add", "--", "--default", "true"); !strings.Contains(output, `Added tool "--default"`) {
+		t.Fatal(output)
+	}
+	if output := cli("tool", "add", "--default", "--", "--default", "false"); !strings.Contains(output, `Updated tool "--default"`) {
+		t.Fatal(output)
+	}
+	if settings = saved(); settings.Tools[2].Command != "false" || settings.DefaultTool != settings.Tools[2].ID {
+		t.Fatalf("tool with the name of the option: %+v", settings)
+	}
+	cli("tool", "remove", "--", "--default")
+	cli("settings", "set", "default-tool", "Agent")
 
 	// Each set prints the saved value. A get of one key prints it in the form of set.
 	if output := cli("settings", "set", "appearance", "dark"); output != "Saved appearance: dark.\n" {
@@ -147,6 +159,15 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	}
 	fails("more than one tool has the name", "tool", "add", "Agent", "agent")
 	fails("more than one tool has the name", "tool", "remove", "Agent")
+	// settings set cannot select the default tool by a name that two tools have, so get
+	// does not print that name.
+	settings = saved()
+	settings.DefaultTool = "copy"
+	if _, err := (client.Target{Dir: directory}).Call(protocol.Request{Operation: "settings-save", Settings: &settings}); err != nil {
+		t.Fatal(err)
+	}
+	fails("more than one tool has the name", "settings", "get", "default-tool")
+	cli("settings", "set", "default-tool", "")
 
 	// An empty list tells so.
 	settings = saved()

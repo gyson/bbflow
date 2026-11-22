@@ -1,11 +1,13 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { defaultLabels, duplicateName, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, sameTools, SettingsSaves, statusText, titleControls } from './settings-model.js';
+import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, parsePort, PortField, portStatus, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './settings-model.js';
 import type { Defaults, SettingsChange } from './settings-model.js';
 
 const portRange = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
 const portNotSaved = 'The port did not save.';
+const defaultNotSaved = 'A setting did not save.';
+const titleToolNotSaved = 'The title tool did not save.';
 
 function toolEditor(prefix: string) {
   return {
@@ -84,8 +86,8 @@ export class SettingsView {
   private toolBusy = false;
   private renderedTools: Tool[] | null = null;
 
-  // report shows an error toast. It tells about a port that did not save when the user
-  // left Settings, because the Port field then shows the saved port again.
+  // report shows an error toast. It tells about an entry that did not save when the user
+  // left Settings, because the hidden view keeps no entry and no error of it.
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void,
     private readonly report: (title: string, detail: string) => void) {
     const connected = (): ServerInfo => {
@@ -109,9 +111,7 @@ export class SettingsView {
     this.base.oninput = () => this.showStatus();
     // Escape restores the saved value of a text field that saves on blur.
     this.base.onkeydown = event => {
-      if (event.key !== 'Escape' || this.base.value === this.renderedBase) return;
-      this.base.value = this.renderedBase;
-      this.showStatus();
+      if (event.key === 'Escape' && (this.base.value !== this.renderedBase || this.saves.rejected.has('base'))) this.restoreBase();
     };
     this.port.onkeydown = event => {
       if (event.key === 'Escape' && this.portField.edited) this.restorePort();
@@ -175,14 +175,24 @@ export class SettingsView {
   close(): void {
     this.panel.hidden = true;
     if (this.removeDialog.open) this.removeDialog.close();
+    // A default that a save rejected does not join a later save from the hidden view.
+    // As for the port below, the click on Done can save a field and get the rejection
+    // before the click ends, so the toast repeats the error.
+    if (this.saves.rejected.size && !this.error.hidden) this.report(defaultNotSaved, this.error.textContent ?? '');
+    this.saves.discardRejected();
+    this.error.hidden = true;
     this.base.value = this.renderedBase;
-    if (this.portField.edited && parsePort(this.port.value) === null) this.report(portNotSaved, portRange);
-    this.restorePort();
-    if (!this.busy && (this.customOpen || this.customCommand.value !== this.renderedCustom)) {
-      this.customOpen = false;
-      this.customCommand.value = this.renderedCustom;
-      this.testResult.hidden = true;
+    // The click on Done first takes focus from the Port field, and the field saves. The
+    // server can reject the port before the click ends. The error of the field is then
+    // in view only for a moment, so the toast repeats it. A reply after this close
+    // gives its own toast.
+    if (this.portField.edited) {
+      const reason = !this.portError.hidden ? this.portError.textContent ?? '' : parsePort(this.port.value) === null ? portRange : '';
+      if (reason) this.report(portNotSaved, reason);
     }
+    this.restorePort();
+    // A running title tool change continues. Its end discards the custom entry.
+    if (!this.busy) this.discardCustom();
     this.newToolId = '';
     this.addTool.form.reset();
     this.addTool.error.hidden = true;
@@ -216,6 +226,23 @@ export class SettingsView {
   private showStatus(): void {
     this.status.textContent = statusText(this.saving(), this.unsavedNames());
     this.addTool.cancel.hidden = !(this.addTool.name.value || this.addTool.command.value);
+  }
+
+  // Show the saved starting branch or commit again. A rejected value does not stay
+  // pending.
+  private restoreBase(): void {
+    this.saves.discard('base');
+    this.base.value = this.renderedBase;
+    if (!this.saves.rejected.size) this.error.hidden = true;
+    this.render();
+  }
+
+  // Discard a custom title command that is not saved, and the result of its test.
+  private discardCustom(): void {
+    if (!this.customOpen && this.customCommand.value === this.renderedCustom) return;
+    this.customOpen = false;
+    this.customCommand.value = this.renderedCustom;
+    this.testResult.hidden = true;
   }
 
   // Show the saved port again, and hide the error of the discarded text.
@@ -315,6 +342,7 @@ export class SettingsView {
   private confirmRemove(tool: Tool): void {
     if (!this.saved || this.toolBusy) return;
     this.removing = tool;
+    this.toolError.hidden = true;
     this.removeSummary.textContent = `“${tool.name}” leaves the tool list. Drafts and sessions that use it keep their own copy of the command. A removal has no undo.`;
     this.removeDefault.textContent = `“${tool.name}” is the default tool. After the removal, Shell is the default tool.`;
     this.removeDefault.hidden = this.saved.defaultTool !== tool.id;
@@ -322,17 +350,20 @@ export class SettingsView {
   }
 
   // The close of the dialog returns focus to Remove of the row. The change then moves
-  // focus to the nearest row.
+  // focus to the nearest row. Another view or the CLI can make the tool the default tool
+  // while the dialog is open. Then the removal does not save, and the dialog opens again
+  // with the warning about the default tool.
   private removeTool(): void {
     const tool = this.removing;
+    const warned = !this.removeDefault.hidden;
     this.removing = null;
     this.removeDialog.close();
     if (!tool) return;
-    void this.changeTool(settings => ({
-      ...settings,
-      defaultTool: settings.defaultTool === tool.id ? '' : settings.defaultTool,
-      tools: settings.tools.filter(current => current.id !== tool.id),
-    }));
+    const removal = toolRemoval(tool.id, warned);
+    void this.changeTool(removal.change).then(() => {
+      const latest = this.saved?.tools.find(current => current.id === tool.id);
+      if (removal.reconfirm() && latest && !this.panel.hidden) this.confirmRemove(latest);
+    });
   }
 
   private openEditor(original: Tool): void {
@@ -376,17 +407,15 @@ export class SettingsView {
     }
     const id = original?.id ?? (this.newToolId ||= crypto.randomUUID());
     // An edit that keeps its name can save, also when an earlier save made a duplicate.
+    // This check gives the error without a request. The change checks the name again
+    // against the latest settings, which can have a tool from another view or the CLI.
     if (name !== original?.name && duplicateName(this.saved.tools, name, id)) {
-      editor.error.textContent = 'Another tool has this name. Enter a different name.';
+      editor.error.textContent = duplicateNameError;
       editor.error.hidden = false;
       editor.name.focus();
       return;
     }
-    const edited = { id, name, command };
-    void this.changeTool(settings => ({
-      ...settings,
-      tools: mergeToolEdit(settings.tools, edited, original ?? undefined),
-    }), editor.error, () => {
+    void this.changeTool(toolEdit({ id, name, command }, original ?? undefined), editor.error, () => {
       if (original) this.closeEditor();
       else this.resetAddTool();
     });
@@ -552,6 +581,12 @@ export class SettingsView {
       const failed = failedTitleChange(tool, before, latest);
       this.customOpen = failed.customOpen;
       this.showTest('failed', `✕ ${errorMessage(error)}`, failed.detail, tool !== 'none');
+      // The user left Settings during the test. The hidden view keeps no entry, so a
+      // toast tells about the failure.
+      if (this.panel.hidden) {
+        this.discardCustom();
+        this.report(titleToolNotSaved, errorMessage(error));
+      }
     } finally {
       this.busy = false;
       this.settingTool = null;
@@ -636,6 +671,14 @@ export class SettingsView {
       this.error.hidden = true;
       this.render();
     }, (error: unknown) => {
+      // The user left Settings before the reply. The rejected default does not stay
+      // pending in the hidden view, so a toast tells about it.
+      if (this.panel.hidden) {
+        this.saves.discardRejected();
+        this.report(defaultNotSaved, errorMessage(error));
+        this.render();
+        return;
+      }
       this.error.textContent = errorMessage(error);
       this.error.hidden = false;
     });

@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"bbflow/internal/client"
 	"bbflow/internal/history"
@@ -21,7 +20,7 @@ const toolUsage = `Usage:
   bbflow [--dir DIR] tool add [--default] NAME COMMAND
   bbflow [--dir DIR] tool remove NAME
 
-list prints the name and the command of each tool, one tool on each line.
+list prints one tool on each line: the name, a tab, and the command.
 add creates a tool or replaces the command of the tool with this name.
 Put --default before NAME. Quote a command that contains spaces.`
 
@@ -65,12 +64,10 @@ func toolCommand(target client.Target, args []string) error {
 			fmt.Println("No tools are saved.")
 			return nil
 		}
-		width := 0
+		// A name and a command have no control characters, so the tab divides each line.
+		// Padding to one column would need the display width of each character.
 		for _, tool := range settings.Tools {
-			width = max(width, utf8.RuneCountInString(tool.Name))
-		}
-		for _, tool := range settings.Tools {
-			fmt.Printf("%-*s  %s\n", width, tool.Name, tool.Command)
+			fmt.Printf("%s\t%s\n", tool.Name, tool.Command)
 		}
 		return nil
 	case "add":
@@ -78,8 +75,11 @@ func toolCommand(target client.Target, args []string) error {
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
-		// The flag package stops at NAME, so an option after it is an argument.
-		if slices.Contains(flags.Args(), "--default") || slices.Contains(flags.Args(), "-default") {
+		// The flag package stops at NAME, so an option after it is an argument. After
+		// the option terminator --, the first argument is NAME, also when it is --default.
+		rest := args[1:]
+		terminated := flags.NArg() < len(rest) && rest[len(rest)-flags.NArg()-1] == "--"
+		if !terminated && flags.NArg() > 1 && (slices.Contains(flags.Args()[1:], "--default") || slices.Contains(flags.Args()[1:], "-default")) {
 			return errors.New("put --default before NAME, for example: bbflow tool add --default Codex \"codex --search\"")
 		}
 		if flags.NArg() != 2 {
@@ -241,8 +241,10 @@ func settingsCommand(target client.Target, args []string) error {
 }
 
 // settingValue returns the text of one setting, in the form that settings set accepts.
-// The built-in Shell is the empty default tool. The title tool has its own command, so
-// its key is an error that names the title-tool subcommand to use.
+// The built-in Shell is the empty default tool. A default tool whose name another tool
+// has is an error, because settings set cannot select it by that name. The title tool
+// has its own command, so its key is an error that names the title-tool subcommand to
+// use.
 func settingValue(settings history.Settings, key, titleTool string) (string, error) {
 	switch key {
 	case "appearance":
@@ -250,7 +252,8 @@ func settingValue(settings history.Settings, key, titleTool string) (string, err
 	case "default-tool":
 		for _, tool := range settings.Tools {
 			if tool.ID == settings.DefaultTool {
-				return tool.Name, nil
+				_, err := findTool(settings.Tools, tool.Name)
+				return tool.Name, err
 			}
 		}
 		return "", nil

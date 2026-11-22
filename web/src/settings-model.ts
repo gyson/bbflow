@@ -41,6 +41,39 @@ export function duplicateName(tools: Tool[], name: string, id: string): boolean 
   return tools.some(tool => tool.id !== id && tool.name === name);
 }
 
+export const duplicateNameError = 'Another tool has this name. Enter a different name.';
+
+// toolEdit is the change that adds a tool, or that saves an edit of original. It checks
+// the name against the settings of each attempt, because another client can add the
+// name before a save after a conflict. An edit that keeps its name can save, also when
+// an earlier save made two tools with one name.
+export function toolEdit(edited: Tool, original?: Tool): SettingsChange {
+  return settings => {
+    if (edited.name !== original?.name && duplicateName(settings.tools, edited.name, edited.id)) throw new Error(duplicateNameError);
+    return { ...settings, tools: mergeToolEdit(settings.tools, edited, original) };
+  };
+}
+
+// toolRemoval is the change that removes a tool. A removal of the default tool makes
+// Shell the default tool. warned tells that the user confirmed this result. Another
+// client can make the tool the default tool after the user confirmed. The change then
+// keeps the settings, and reconfirm() tells the view to ask again with the warning.
+export function toolRemoval(id: string, warned: boolean): { change: SettingsChange; reconfirm: () => boolean } {
+  let reconfirm = false;
+  return {
+    change: settings => {
+      reconfirm = settings.defaultTool === id && !warned;
+      if (reconfirm) return settings;
+      return {
+        ...settings,
+        defaultTool: settings.defaultTool === id ? '' : settings.defaultTool,
+        tools: settings.tools.filter(tool => tool.id !== id),
+      };
+    },
+    reconfirm: () => reconfirm,
+  };
+}
+
 // The server calls of the Settings saves. conflict tells a rejected save that another
 // save can cause, such as a revision change.
 export interface SettingsService {
@@ -57,6 +90,8 @@ export class SettingsSaves {
   saved: Settings | null = null;
   // A default stays pending until a save with its value succeeds.
   readonly defaults: Partial<Defaults> = {};
+  // The pending defaults that the last save of them rejected. No save of them runs.
+  readonly rejected = new Set<keyof Defaults>();
   writes = 0;
   private queue = Promise.resolve();
 
@@ -95,17 +130,41 @@ export class SettingsSaves {
 
   saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K]): Promise<void> {
     this.defaults[key] = value;
+    this.rejected.delete(key);
     return this.enqueue(async () => {
       const defaults = { ...this.defaults };
-      await this.save(settings => {
-        const next = { ...settings, ...defaults };
-        if (next.defaultTool && !next.tools.some(tool => tool.id === next.defaultTool)) next.defaultTool = settings.defaultTool;
-        return next;
-      });
-      for (const key of Object.keys(defaults) as (keyof Defaults)[]) {
-        if (this.defaults[key] === defaults[key]) delete this.defaults[key];
+      const keys = Object.keys(defaults) as (keyof Defaults)[];
+      try {
+        await this.save(settings => {
+          const next = { ...settings, ...defaults };
+          if (next.defaultTool && !next.tools.some(tool => tool.id === next.defaultTool)) next.defaultTool = settings.defaultTool;
+          return next;
+        });
+      } catch (error) {
+        for (const key of keys) {
+          if (this.defaults[key] === defaults[key]) this.rejected.add(key);
+        }
+        throw error;
+      }
+      for (const key of keys) {
+        if (this.defaults[key] !== defaults[key]) continue;
+        delete this.defaults[key];
+        this.rejected.delete(key);
       }
     });
+  }
+
+  // discard removes a pending default, so that it does not join a later save. A save
+  // that already runs keeps its copy of the value.
+  discard(key: keyof Defaults): void {
+    delete this.defaults[key];
+    this.rejected.delete(key);
+  }
+
+  // discardRejected removes each default that a save rejected. A default that waits for
+  // its save, or whose save runs, stays.
+  discardRejected(): void {
+    for (const key of [...this.rejected]) this.discard(key);
   }
 
   savePort(port: number): Promise<void> {

@@ -1020,11 +1020,18 @@ entry is saved. Otherwise it names each entry that is not saved, for example
 a default that failed to save.
 
 - When the user leaves Settings, the page discards the entries that are not saved. The
-  fields then show the saved values.
+  fields then show the saved values. A default that the server rejected is such an
+  entry. It does not join a later save.
 - A running save or title tool change continues after the user leaves.
-- If the discarded Port text is not a valid port, an error toast tells that the port
-  did not save. The toast also shows when the server rejects a port after the user
-  left.
+- A hidden Settings page shows no error, so an error toast tells about an entry that
+  did not save:
+  - The Port text was not a valid port, or the page showed the error of a rejected port
+    or default. The click on **Done** first saves a text field, so the server can
+    reject the value before the page closes.
+  - The server rejected a port, a default, or a title tool after the user left. The
+    page then also discards that entry.
+- Escape in **Starting branch or commit** also discards a value that the server
+  rejected.
 - While Settings shows an entry that is not saved, the browser can warn when the user
   reloads or closes the tab. The page also does not reload after a server restart. See
   [Reconnection after a server restart](#reconnection-after-a-server-restart).
@@ -1061,12 +1068,18 @@ fields. The primary action spans **Edit** and **Move up**. **Cancel** or **Clear
 The page does not add a tool with the name of another tool. It also does not rename a
 tool to such a name. The error shows in the row. The CLI selects a tool by its name, so
 two tools with one name stop `tool add` and `tool remove`. An edit that keeps its name
-saves, also when an earlier save made two tools with one name.
+saves, also when an earlier save made two tools with one name. The page checks the name
+again after a revision conflict, against the latest settings. Thus a name that another
+view or the CLI added meanwhile also stops the save.
 
 **Remove** opens a dialog that names the tool. The dialog tells that drafts and sessions
 keep their own copy of the command, and that a removal has no undo. For the default
 tool, it also tells that Shell becomes the default tool. **Remove tool** saves the
 removal. The move buttons save at once.
+
+Another view or the CLI can make the tool the default tool while the dialog is open.
+Then **Remove tool** saves nothing. The dialog opens again with the warning about the
+default tool, and the user confirms again.
 
 A move returns keyboard focus to its button if another move in that direction is
 available. Otherwise focus goes to **Edit** on the moved row. After a removal, focus
@@ -3101,6 +3114,9 @@ These shell fixtures do not establish model availability or agent CLI compatibil
 Web fixtures cover settings comparison, edits that preserve fields changed by another
 view, and repeated add requests. They cover the status text with the names of the
 entries that are not saved, and the check for a tool name that another tool has. They
+cover that check after a revision conflict, and a removal that asks again after the
+tool became the default tool. They cover a rejected default that the page discards, and
+a default whose save runs during the discard. They
 cover the range check of the Port field and a reset of that field during a save. They
 verify that the page has **Clear** for the add row, the Remove dialog, and Tools before
 the session defaults. Protocol fixtures verify that a server error reply is
@@ -3112,7 +3128,9 @@ marked apart from a transport failure.
   a tool named `shell` can be the default tool, and that only an empty value selects the
   built-in Shell.
 - They verify the text of `tool list`, also for an empty list, and the error for
-  `--default` after `NAME`.
+  `--default` after `NAME`. They verify that `--` before a name `--default` adds that
+  tool, and that `settings get default-tool` fails when two tools have the name of the
+  default tool.
 - They verify that `settings set` prints the saved value, and that `settings get KEY`
   prints one value in the form that `set` accepts. They verify that the restart note
   prints only for a changed port, that only `true` and `false` are on and off values,
@@ -3149,6 +3167,13 @@ A later browser check with the demo instance verified the saves in Settings:
 - **Done** with the port text 99 showed the toast that the port did not save.
 - **Done** with a name in the add row and an open Custom field discarded both.
 - **Test** did not show for None or for a Custom that is not saved.
+- With the CLI as a second client, a tool name that the CLI added stopped the add in
+  an open page. A removal asked again after the CLI made the tool the default tool.
+- A starting branch of 270 UTF-8 bytes, which the server rejects, went away on Escape.
+  **Done** discarded it with a toast, and a later appearance save passed.
+- A click on **Done** with port 6000 in the field gave one toast.
+- A custom title command that failed after **Done** gave a toast. The hidden page then
+  had no entry, and the browser did not warn at a close of the tab.
 
 ### Checks of the session status and toolbar
 
