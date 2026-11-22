@@ -231,19 +231,18 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		}
 		s.reply(conn, map[string]bool{"renamed": err == nil}, err)
 	case "title-tools":
-		s.reply(conn, titleTools, nil)
-	case "title-test":
+		s.reply(conn, protocol.TitleTools{Tools: titleTools, Sample: titleSample}, nil)
+	case "title-test", "title-tool-set":
 		if request.Settings == nil {
 			s.reply(conn, nil, errors.New("missing title tool"))
 			return
 		}
+		// A disconnect cancels the test. Then title-tool-set saves nothing.
 		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) {
-			command, err := titleCommand(request.Settings.TitleTool)
-			if err != nil {
-				return nil, err
+			if request.Operation == "title-test" {
+				return s.testTitleTool(ctx, request.Settings.TitleTool, request.Settings.TitleCommand)
 			}
-			title, err := runTitleCommand(ctx, command, request.Text)
-			return map[string]string{"title": title}, err
+			return s.setTitleTool(ctx, request.Settings.TitleTool, request.Settings.TitleCommand)
 		})
 	case "session-resume":
 		s.resumeSession(conn, request.Session, request.Run, request.Size)

@@ -62,10 +62,9 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	if settings := saved(); settings.TitleTool != "none" || !settings.UpdateCheck {
 		t.Fatal("automatic titles are on or the update check is off by default", settings)
 	}
-	cli("settings", "set", "title-tool", "code-puppy")
 	cli("settings", "set", "update-check", "false")
 	settings = saved()
-	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != settings.Tools[1].ID || settings.TitleTool != "code-puppy" || settings.UpdateCheck {
+	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != settings.Tools[1].ID || settings.TitleTool != "none" || settings.UpdateCheck {
 		t.Fatalf("settings after set: %+v", settings)
 	}
 
@@ -77,7 +76,8 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "80")
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "auto")
 	fails("unknown settings key", "settings", "set", "theme", "dark")
-	fails("title tool must be one of none, claude, codex, code-puppy, apple", "settings", "set", "title-tool", "claude -p")
+	// bbflow title-tool selects the title tool.
+	fails("unknown settings key", "settings", "set", "title-tool", "codex")
 	fails(`tool "Absent" does not exist`, "tool", "remove", "Absent")
 	fails(`tool "Absent" does not exist`, "settings", "set", "default-tool", "Absent")
 	if after := saved(); after.Revision != settings.Revision {

@@ -15,7 +15,8 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
   return updated;
 }
 
-export type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'titleTool' | 'updateCheck'>;
+// The title tool is not a default. It saves alone, after its test.
+export type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'updateCheck'>;
 export type SettingsChange = (settings: Settings) => Settings;
 
 // The server calls of the Settings saves. conflict tells a rejected save that another
@@ -58,15 +59,14 @@ export class SettingsSaves {
       const next = change(saved);
       if (sameSettings(next, saved)) return;
       try {
-        this.saved = await this.service.save(next);
-        this.changed();
+        this.update(await this.service.save(next));
         return;
       } catch (error) {
         if (!this.service.conflict(error) || attempt === 2) throw error;
         const latest = await this.service.get().catch(() => null);
         if (!latest || latest.revision === saved.revision) throw error;
-        this.saved = latest;
-        this.changed();
+        // A read can reply after a newer title tool change. Keep the newer settings.
+        this.update(latest);
       }
     }
   }
@@ -89,12 +89,42 @@ export class SettingsSaves {
   savePort(port: number): Promise<void> {
     return this.enqueue(() => this.save(settings => ({ ...settings, port })));
   }
+
+  // update takes the settings that a request outside the queue saved, such as a title
+  // tool change. Only a newer revision applies, so a late reply cannot undo a later save.
+  update(settings: Settings): void {
+    if (this.saved && settings.revision <= this.saved.revision) return;
+    this.saved = settings;
+    this.changed();
+  }
 }
 
-// The revision tracks saves. The other fields determine if a save is necessary.
+// The saved title tool and custom command.
+export type TitleChoice = Pick<Settings, 'titleTool' | 'titleCommand'>;
+
+// failedTitleChange returns the state of the Settings view after a failed title tool
+// change. tool is the tool of the change. before is the saved choice at the start of the
+// change, and after is the saved choice after it, or null when the read failed.
+// customOpen keeps Custom in the list only when Custom is not saved. A failed new
+// command for a saved Custom then stays in the field as an edit. detail tells what to do.
+// When another change of the title tool saved meanwhile, the tool or the command can
+// have no fault, so detail tells about that change.
+export function failedTitleChange(tool: string, before: TitleChoice, after: TitleChoice | null): { customOpen: boolean; detail: string } {
+  const saved = after ?? before;
+  const changed = !!after && (after.titleTool !== before.titleTool || after.titleCommand !== before.titleCommand);
+  let detail = '';
+  if (changed) detail = 'Another change of the title tool saved during the test.';
+  else if (tool === 'custom') detail = 'Fix the command, then click Save and test again.';
+  else if (tool !== 'none') detail = 'Fix the problem, then select the tool again.';
+  return { customOpen: tool === 'custom' && saved.titleTool !== 'custom', detail };
+}
+
+// The revision tracks saves. The other fields determine if a save is necessary. A
+// settings save keeps the saved title tool and custom title command, so they are not
+// among them.
 export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&
-    a.worktree === b.worktree && a.base === b.base && a.titleTool === b.titleTool &&
+    a.worktree === b.worktree && a.base === b.base &&
     a.updateCheck === b.updateCheck && a.port === b.port && sameTools(a.tools, b.tools);
 }
 
@@ -163,9 +193,19 @@ export function sameTools(a: Tool[], b: Tool[]): boolean {
   });
 }
 
-// The state of the title tool controls. Test needs a tool and no running test. A save of
-// another setting does not change this state.
-export function titleControls(tools: TitleTool[], selected: string, testing: boolean): { command: string; test: boolean; select: boolean } {
-  const tool = tools.find(tool => tool.id === selected);
-  return { command: tool?.command ?? '', test: !!tool && !testing, select: !testing };
+// The state of the title tool controls. shown is the tool in the list, and saved is the
+// saved tool. busy reports a running title test or title tool change. edited reports an
+// edit in the custom command field. command is the exact command of a built-in tool.
+// custom shows the custom command field. Test needs the saved tool, other than none, and
+// no busy state. For Custom, Test also needs a field without edits, because Test runs
+// the saved command. A save of another setting does not change this state.
+export function titleControls(tools: TitleTool[], shown: string, saved: string, busy: boolean, edited = false):
+  { command: string; custom: boolean; test: boolean; select: boolean } {
+  const tool = tools.find(tool => tool.id === shown);
+  return {
+    command: tool?.command ?? '',
+    custom: shown === 'custom',
+    test: shown !== 'none' && shown === saved && !busy && !(shown === 'custom' && edited),
+    select: !busy,
+  };
 }

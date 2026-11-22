@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, titleControls } from './dist/settings-model.js';
+import { failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, titleControls } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -29,17 +29,107 @@ test('adding the same tool twice keeps one copy', () => {
   assert.deepEqual(mergeToolEdit(tools, agent), tools);
 });
 
-test('a running title test keeps Test and the tool list disabled', () => {
+test('a running title test or title tool change keeps the title controls disabled', () => {
   const tools = [{ id: 'claude', name: 'Claude', command: 'claude -p' }];
-  assert.deepEqual(titleControls(tools, 'claude', false), { command: 'claude -p', test: true, select: true });
-  // A save of another setting renders again during the test. Test stays disabled.
-  assert.deepEqual(titleControls(tools, 'claude', true), { command: 'claude -p', test: false, select: false });
-  assert.deepEqual(titleControls(tools, 'none', false), { command: '', test: false, select: true });
+  assert.deepEqual(titleControls(tools, 'claude', 'claude', false), { command: 'claude -p', custom: false, test: true, select: true });
+  // A save of another setting renders again during the test. The controls stay disabled.
+  assert.deepEqual(titleControls(tools, 'claude', 'claude', true), { command: 'claude -p', custom: false, test: false, select: false });
+  assert.deepEqual(titleControls(tools, 'none', 'none', false), { command: '', custom: false, test: false, select: true });
 });
 
-test('a title tool change needs a save', () => {
-  const titled = { ...settings, titleTool: 'none' };
-  assert.ok(!sameSettings(titled, { ...titled, titleTool: 'codex' }));
+test('Custom shows its command field, and Test runs only the saved tool', () => {
+  const tools = [{ id: 'claude', name: 'Claude', command: 'claude -p' }];
+  // Custom has no built-in command. Its field shows, also before it saves.
+  assert.deepEqual(titleControls(tools, 'custom', 'none', false), { command: '', custom: true, test: false, select: true });
+  assert.deepEqual(titleControls(tools, 'custom', 'custom', false), { command: '', custom: true, test: true, select: true });
+  // During a change, the list shows the new tool. Test waits for the save.
+  assert.equal(titleControls(tools, 'claude', 'none', true).test, false);
+  assert.equal(titleControls(tools, 'claude', 'custom', false).test, false);
+  // Test runs the saved custom command. An edit in the field must save first.
+  assert.equal(titleControls(tools, 'custom', 'custom', false, true).test, false);
+  assert.equal(titleControls(tools, 'custom', 'custom', false, true).select, true);
+  assert.equal(titleControls(tools, 'claude', 'claude', false, true).test, true);
+});
+
+test('a settings save does not save the title tool or the custom command', () => {
+  // The title tool saves alone, after its test. A settings save keeps the saved values.
+  const titled = { ...settings, titleTool: 'none', titleCommand: '' };
+  assert.ok(sameSettings(titled, { ...titled, titleTool: 'custom', titleCommand: 'my-llm' }));
+});
+
+test('settings from a title tool change apply only when they are newer', () => {
+  let changes = 0;
+  const saves = new SettingsSaves(service(), () => changes++, () => {});
+  saves.saved = { ...settings, titleTool: 'none', port: 0 };
+  saves.update({ ...saves.saved, revision: 5, titleTool: 'codex' });
+  assert.equal(saves.saved.titleTool, 'codex');
+  assert.equal(changes, 1);
+  // A late reply of an earlier save does not undo the title tool change.
+  saves.update({ ...saves.saved, revision: 5, titleTool: 'none' });
+  saves.update({ ...saves.saved, revision: 4, titleTool: 'none' });
+  assert.equal(saves.saved.titleTool, 'codex');
+  assert.equal(changes, 1);
+});
+
+test('a failed title change keeps Custom in the list only when Custom is not saved', () => {
+  const none = { titleTool: 'none', titleCommand: '' };
+  const custom = { titleTool: 'custom', titleCommand: 'title-pass' };
+  // A failed first custom command keeps Custom in the list, so that it can be fixed.
+  assert.deepEqual(failedTitleChange('custom', none, none), { customOpen: true, detail: 'Fix the command, then click Save and test again.' });
+  // With a saved Custom, the list shows the saved Custom. The failed command is an edit.
+  assert.deepEqual(failedTitleChange('custom', custom, custom), { customOpen: false, detail: 'Fix the command, then click Save and test again.' });
+  // When the settings read fails, the choice from the start decides.
+  assert.equal(failedTitleChange('custom', custom, null).customOpen, false);
+  assert.deepEqual(failedTitleChange('codex', none, none), { customOpen: false, detail: 'Fix the problem, then select the tool again.' });
+  assert.deepEqual(failedTitleChange('none', none, null), { customOpen: false, detail: '' });
+});
+
+test('a title change that another change replaced does not ask for a fix', () => {
+  const custom = { titleTool: 'custom', titleCommand: 'title-pass' };
+  const none = { titleTool: 'none', titleCommand: 'title-pass' };
+  // Another client selected None during a test of Custom. The command has no fault.
+  assert.deepEqual(failedTitleChange('custom', custom, none), { customOpen: true, detail: 'Another change of the title tool saved during the test.' });
+  assert.equal(failedTitleChange('codex', custom, none).detail, 'Another change of the title tool saved during the test.');
+  // A new custom command from another client is also another change.
+  assert.equal(failedTitleChange('claude', custom, { ...custom, titleCommand: 'title-slow' }).detail, 'Another change of the title tool saved during the test.');
+});
+
+test('a delayed settings read after a conflict does not undo a title tool change', async () => {
+  const saves = new SettingsSaves({
+    sent: [],
+    async save(next) {
+      this.sent.push(next);
+      throw new Error('settings changed');
+    },
+    get() {
+      // A title tool change saves revision 6 before this read of revision 5 replies.
+      saves.update({ ...settings, appearance: 'dark', revision: 6, titleTool: 'codex', port: 0 });
+      return Promise.resolve({ ...settings, appearance: 'dark', revision: 5, titleTool: 'none', port: 0 });
+    },
+    conflict: () => true,
+  }, () => {}, () => {});
+  saves.saved = { ...settings, titleTool: 'none', port: 0 };
+  await saves.saveDefault('appearance', 'dark');
+  assert.equal(saves.saved.revision, 6);
+  assert.equal(saves.saved.titleTool, 'codex');
+  assert.deepEqual(saves.defaults, {});
+});
+
+test('a save reply older than a title tool change does not undo it', async () => {
+  const server = service();
+  const saves = new SettingsSaves(server, () => {}, () => {});
+  saves.saved = { ...settings, titleTool: 'none', port: 0 };
+  let reply;
+  server.save = next => new Promise(resolve => { reply = () => resolve({ ...next, revision: next.revision + 1 }); });
+  const saving = saves.saveDefault('appearance', 'dark');
+  await new Promise(resolve => setImmediate(resolve));
+  // The title tool change commits after the save, but its reply comes first.
+  saves.update({ ...saves.saved, appearance: 'dark', revision: 6, titleTool: 'codex' });
+  reply();
+  await saving;
+  assert.equal(saves.saved.revision, 6);
+  assert.equal(saves.saved.titleTool, 'codex');
+  assert.deepEqual(saves.defaults, {});
 });
 
 test('an update check change needs a save', () => {

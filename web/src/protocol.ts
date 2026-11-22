@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/35';
+export const VERSION = 'bbflow/36';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -29,9 +29,14 @@ export interface Project { id: string; name: string; workspace: string; created:
 
 export interface Tool { id: string; name: string; command: string }
 // port 0 selects the automatic port. A saved port applies at the next server start.
-export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[]; titleTool: string; updateCheck: boolean; port: number }
-// The server owns the command of each title tool. Settings.titleTool is none or a tool ID.
+// titleCommand is the command of the custom title tool. It stays saved when another title
+// tool is selected.
+export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[]; titleTool: string; titleCommand: string; updateCheck: boolean; port: number }
+// The server owns the command of each built-in title tool. Settings.titleTool is none, a
+// built-in tool ID, or custom.
 export interface TitleTool { id: string; name: string; command: string }
+// sample is the message that a title test sends to the title tool.
+export interface TitleTools { tools: TitleTool[]; sample: string }
 export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }
 export interface Worktree { path: string; repository: string; base: string; commit: string; branch: string; state: string }
 export interface Run { id: string; status: string }
@@ -149,7 +154,14 @@ type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: st
 type RenameRequest = { operation: 'project-rename'; project: string; name: string } | { operation: 'session-rename'; session: string; name: string };
 type ProjectRemoveRequest = { operation: 'project-remove'; project: string };
 type SettingsRequest = { operation: 'settings-get' } | { operation: 'settings-save'; settings: Settings };
-type TitleTestRequest = { operation: 'title-test'; settings: Pick<Settings, 'titleTool'>; text: string };
+// The title tool of a test or a change. Only custom takes titleCommand, and it needs
+// one. The server does not use the saved custom command in its place. The client sends
+// the custom command that it shows.
+type TitleChoice = Pick<Settings, 'titleTool'> & Partial<Pick<Settings, 'titleCommand'>>;
+// title-test runs a title tool once with the sample message and saves nothing.
+type TitleTestRequest = { operation: 'title-test'; settings: TitleChoice };
+// title-tool-set saves a title tool after it passes the same test. None has no test.
+type TitleToolSetRequest = { operation: 'title-tool-set'; settings: TitleChoice };
 type TitleToolsRequest = { operation: 'title-tools' };
 type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
 // The server does what the offer with this version and revision says, then restarts.
@@ -163,7 +175,7 @@ type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
 // shell stops only that shell. Without shell, the request stops the live shell.
 type StopSideRequest = { operation: 'side-terminal-stop'; session: string; shell?: string };
-type RPCRequest = UpdateRequest | DiffRPC | TitleTestRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = UpdateRequest | DiffRPC | TitleTestRequest | TitleToolSetRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -248,7 +260,8 @@ export class ConnectionError extends Error {
 // waits a little longer for the reply. See titleTimeout in internal/server/titles.go.
 export const titleTestLimit = 100000;
 // The time that the browser waits for the reply of a request.
-const responseLimit = (request: Request) => request.operation === 'title-test' ? titleTestLimit : 12000;
+const responseLimit = (request: Request) =>
+  request.operation === 'title-test' || request.operation === 'title-tool-set' ? titleTestLimit : 12000;
 
 export class Peer {
   readonly socket: Socket;
@@ -388,7 +401,8 @@ export class Peer {
 
 export function call(server: ServerInfo, request: SettingsRequest): Promise<Settings>;
 export function call(server: ServerInfo, request: TitleTestRequest, signal?: AbortSignal): Promise<{ title: string }>;
-export function call(server: ServerInfo, request: TitleToolsRequest): Promise<TitleTool[]>;
+export function call(server: ServerInfo, request: TitleToolSetRequest): Promise<{ settings: Settings; title: string }>;
+export function call(server: ServerInfo, request: TitleToolsRequest): Promise<TitleTools>;
 export function call(server: ServerInfo, request: InspectRequest): Promise<RepositoryInfo>;
 export function call(server: ServerInfo, request: UpdateRequest): Promise<{ updating: boolean }>;
 export function call(server: ServerInfo, request: PrepareRequest | ConfigRequest): Promise<PreparedSession>;

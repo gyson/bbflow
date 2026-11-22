@@ -26,8 +26,11 @@ type Settings struct {
 	Base        string `json:"base"`
 	Tools       []Tool `json:"tools"`
 	// TitleTool selects the CLI that makes automatic session titles. It is one of
-	// TitleTools. "none" turns automatic titles off.
+	// TitleTools. "none" turns automatic titles off. "custom" runs TitleCommand.
 	TitleTool string `json:"titleTool"`
+	// TitleCommand is the command of the custom title tool. It stays saved when another
+	// title tool is selected. The server owns the commands of the other title tools.
+	TitleCommand string `json:"titleCommand"`
 	// UpdateCheck lets the server read the latest release from GitHub once a day.
 	UpdateCheck bool `json:"updateCheck"`
 	// Port is the loopback port that the server uses at its next start. 0 selects the
@@ -43,8 +46,8 @@ const MinPort = 1024
 var blockedPorts = []int{1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080}
 
 // TitleTools lists the values of Settings.TitleTool. The server owns the command of each
-// CLI.
-var TitleTools = []string{"none", "claude", "codex", "code-puppy", "apple"}
+// CLI, except custom, which runs Settings.TitleCommand.
+var TitleTools = []string{"none", "claude", "codex", "code-puppy", "apple", "custom"}
 
 // Preparation stores a snapshot of the selected preset. Preset changes never rewrite a
 // prepared or launched session. The server owns this state.
@@ -77,10 +80,15 @@ func ValidateCommand(command string) error {
 }
 
 func (s *Store) Settings() (Settings, error) {
+	return scanSettings(s.db.QueryRow("SELECT revision,data FROM settings WHERE id=1"))
+}
+
+// scanSettings reads the revision and the data of the settings row.
+func scanSettings(row *sql.Row) (Settings, error) {
 	var settings Settings
 	var data string
 	var revision int64
-	err := s.db.QueryRow("SELECT revision,data FROM settings WHERE id=1").Scan(&revision, &data)
+	err := row.Scan(&revision, &data)
 	if err == nil {
 		err = json.Unmarshal([]byte(data), &settings)
 	}
@@ -91,6 +99,10 @@ func (s *Store) Settings() (Settings, error) {
 	return settings, err
 }
 
+// SaveSettings saves the settings from their current revision. It keeps the saved title
+// tool and custom title command, because only SetTitleTool changes them. A title tool
+// change between the read of the saved values and the write changes the revision, so
+// the write then fails.
 func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	switch settings.Appearance {
 	case "":
@@ -121,12 +133,6 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 			return settings, err
 		}
 	}
-	if settings.TitleTool == "" {
-		settings.TitleTool = "none"
-	}
-	if !slices.Contains(TitleTools, settings.TitleTool) {
-		return settings, fmt.Errorf("title tool must be one of %s", strings.Join(TitleTools, ", "))
-	}
 	if !seen[settings.DefaultTool] {
 		return settings, errors.New("default tool does not exist")
 	}
@@ -145,6 +151,11 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	if settings.Tools == nil {
 		settings.Tools = []Tool{}
 	}
+	saved, err := s.Settings()
+	if err != nil {
+		return settings, err
+	}
+	settings.TitleTool, settings.TitleCommand = saved.TitleTool, saved.TitleCommand
 	data, err := json.Marshal(settings)
 	if err != nil {
 		return settings, err
@@ -155,6 +166,65 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	}
 	settings.Revision++
 	return settings, nil
+}
+
+// TitleChoice is a selected title tool and the saved custom command. Command is empty
+// for a change to a built-in tool or none, because such a change keeps the saved custom
+// command.
+type TitleChoice struct {
+	Tool    string
+	Command string
+}
+
+// Choice returns the title tool and the custom command of the settings.
+func (s Settings) Choice() TitleChoice {
+	return TitleChoice{Tool: s.TitleTool, Command: s.TitleCommand}
+}
+
+// ErrTitleChanged reports that another change of the title tool or the custom command
+// saved first. SetTitleTool then saves nothing.
+var ErrTitleChanged = errors.New("the title tool changed during the test")
+
+// SetTitleTool saves next, with a new revision, and returns the saved settings. It
+// saves only while the settings still have the title tool and the custom command of
+// from. A test can run for 90 seconds, and a later change must not be undone by an
+// earlier test. Other settings can change meanwhile. For custom, next.Command is the
+// custom command, and it saves too. Other tools take no command. SetTitleTool does not
+// test the tool. The server tests it before this call.
+func (s *Store) SetTitleTool(next, from TitleChoice) (Settings, error) {
+	if !slices.Contains(TitleTools, next.Tool) {
+		return Settings{}, fmt.Errorf("title tool must be one of %s", strings.Join(TitleTools, ", "))
+	}
+	var row *sql.Row
+	const unchanged = " WHERE id=1 AND json_extract(data,'$.titleTool')=? AND json_extract(data,'$.titleCommand')=? RETURNING revision,data"
+	if next.Tool != "custom" {
+		if next.Command != "" {
+			return Settings{}, errors.New("only the custom title tool takes a command")
+		}
+		row = s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?)"+unchanged, next.Tool, from.Tool, from.Command)
+	} else {
+		if err := ValidateTitleCommand(next.Command); err != nil {
+			return Settings{}, err
+		}
+		row = s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?,'$.titleCommand',?)"+unchanged, next.Tool, next.Command, from.Tool, from.Command)
+	}
+	settings, err := scanSettings(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Settings{}, ErrTitleChanged
+	}
+	return settings, err
+}
+
+// ValidateTitleCommand checks a custom title command. It follows the rules of a tool
+// startup command, and it cannot be empty.
+func ValidateTitleCommand(command string) error {
+	if strings.TrimSpace(command) == "" {
+		return errors.New("enter a command for the custom title tool")
+	}
+	if len(command) > 1000 || !utf8.ValidString(command) || strings.IndexFunc(command, unicode.IsControl) >= 0 {
+		return errors.New("the custom title command must be one line, at most 1000 bytes, without control characters")
+	}
+	return nil
 }
 
 func revisionChanged(result sql.Result, err error) error {

@@ -31,9 +31,10 @@ Keys:
   default-tool  a tool name, or "" for the built-in Shell
   worktree      true or false
   base          the default Git branch or commit, such as HEAD
-  title-tool    none, claude, codex, code-puppy, or apple for automatic session titles
   update-check  true or false: read the latest release from GitHub once a day
-  port          1024 to 65535, or 0 for an automatic port; applies at the next server start`
+  port          1024 to 65535, or 0 for an automatic port; applies at the next server start
+
+Use bbflow title-tool to select the title tool.`
 
 func toolCommand(target client.Target, args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
@@ -162,8 +163,6 @@ func settingsCommand(target client.Target, args []string) error {
 				settings.Worktree = enabled
 			case "base":
 				settings.Base = value
-			case "title-tool":
-				settings.TitleTool = strings.TrimSpace(value)
 			case "update-check":
 				enabled, err := strconv.ParseBool(value)
 				if err != nil {
@@ -177,7 +176,7 @@ func settingsCommand(target client.Target, args []string) error {
 				}
 				settings.Port = port
 			default:
-				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, title-tool, update-check, or port", key)
+				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, update-check, or port", key)
 			}
 			return nil
 		})

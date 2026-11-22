@@ -17,6 +17,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"bbflow/internal/history"
 	"bbflow/internal/protocol"
 )
 
@@ -31,7 +32,8 @@ const (
 	titleRunes = 200
 )
 
-// titleTools holds the command of each title tool in history.TitleTools, except none.
+// titleTools holds the command of each title tool in history.TitleTools, except none and
+// custom. A release can change these commands. Settings save only the ID.
 // Each command reads the request on standard input and selects a small model. The Claude
 // and Codex commands turn off the agent tools, hooks, plugins, and MCP servers of their
 // CLI, so that the model gets only the request text. Code Puppy turns off its tools and
@@ -72,17 +74,123 @@ var titleTools = []protocol.TitleTool{
 var pathMask = strings.NewReplacer("/", "\u2215", "~", "\u223c")
 var pathUnmask = strings.NewReplacer("\u2215", "/", "\u223c", "~")
 
-// titleCommand returns the command of a title tool.
-func titleCommand(tool string) (string, error) {
-	for _, candidate := range titleTools {
-		if candidate.ID == tool {
-			return candidate.Command, nil
+// customTitleTool is the name of the title tool that runs the custom command of the user.
+const customTitleTool = "Custom"
+
+// findTitleTool returns the title tool with the ID. For custom, command is the custom
+// command. The other tools have a command from titleTools. None has no title tool.
+func findTitleTool(id, command string) (protocol.TitleTool, error) {
+	if id == "custom" {
+		if err := history.ValidateTitleCommand(command); err != nil {
+			return protocol.TitleTool{}, err
+		}
+		return protocol.TitleTool{ID: id, Name: customTitleTool, Command: command}, nil
+	}
+	for _, tool := range titleTools {
+		if tool.ID == id {
+			return tool, nil
 		}
 	}
-	if tool == "" || tool == "none" {
-		return "", errors.New("choose a title tool")
+	if id == "" || id == "none" {
+		return protocol.TitleTool{}, errors.New("choose a title tool")
 	}
-	return "", fmt.Errorf("unknown title tool %q", tool)
+	return protocol.TitleTool{}, fmt.Errorf("title tool must be one of %s", strings.Join(history.TitleTools, ", "))
+}
+
+// titleToolName returns the name of a title tool ID for a message, also for none.
+func titleToolName(id string) string {
+	switch id {
+	case "", "none":
+		return "None"
+	case "custom":
+		return customTitleTool
+	}
+	for _, tool := range titleTools {
+		if tool.ID == id {
+			return tool.Name
+		}
+	}
+	return id
+}
+
+// chosenTitleTool returns the title tool of a test or a change. Only custom takes a
+// command, and it needs one. The client sends the custom command that it shows, so the
+// test runs exactly that command, also after another client saves another one.
+func chosenTitleTool(id, command string) (protocol.TitleTool, error) {
+	if id != "custom" && command != "" {
+		return protocol.TitleTool{}, errors.New("only the custom title tool takes a command")
+	}
+	return findTitleTool(id, command)
+}
+
+// titleSample is the message of a title test. It is like a first message of a session.
+const titleSample = "The login page redirects to a blank page after sign-in. Find the cause and fix it."
+
+// testTitleTool runs a title tool once with the sample message and returns the title. It
+// saves nothing.
+func (s *Server) testTitleTool(ctx context.Context, id, command string) (protocol.TitleTest, error) {
+	tool, err := chosenTitleTool(id, command)
+	if err != nil {
+		return protocol.TitleTest{}, err
+	}
+	title, err := runTitleCommand(ctx, tool.Command, titleSample)
+	return protocol.TitleTest{Title: title}, err
+}
+
+// setTitleTool saves the title tool of the settings. Each tool except none must first
+// pass a title test. A failed test saves nothing, and its error tells that the tool is
+// not configured. The test holds no lock, so other settings can save while it runs. The
+// save applies only when no other title tool change saved during the test. A client
+// that disconnects during the test cancels it, and the tool does not save.
+func (s *Server) setTitleTool(ctx context.Context, id, command string) (protocol.TitleToolSet, error) {
+	var result protocol.TitleToolSet
+	before, err := s.store.Settings()
+	if err != nil {
+		return result, err
+	}
+	name := "None"
+	if id == "none" {
+		if command != "" {
+			return result, errors.New("only the custom title tool takes a command")
+		}
+	} else {
+		tool, err := chosenTitleTool(id, command)
+		if err != nil {
+			return result, err
+		}
+		name = tool.Name
+		if result.Title, err = runTitleCommand(ctx, tool.Command, titleSample); err != nil {
+			return result, s.notConfigured(tool, err)
+		}
+		if err = ctx.Err(); err != nil {
+			return result, err
+		}
+	}
+	result.Settings, err = s.store.SetTitleTool(history.TitleChoice{Tool: id, Command: command}, before.Choice())
+	if errors.Is(err, history.ErrTitleChanged) {
+		current := "another tool"
+		if latest, readErr := s.store.Settings(); readErr == nil {
+			current = titleToolName(latest.TitleTool)
+		}
+		return result, fmt.Errorf("%s did not save, because another change selected %s during the test", name, current)
+	}
+	return result, err
+}
+
+// notConfigured returns the error of a failed title test. It names the title tool that
+// is saved now, because another change can save during the test.
+func (s *Server) notConfigured(tool protocol.TitleTool, err error) error {
+	current, readErr := s.store.Settings()
+	switch {
+	case readErr != nil:
+		return fmt.Errorf("%s is not configured. The test failed: %w", tool.Name, err)
+	case current.TitleTool == tool.ID && (tool.ID != "custom" || current.TitleCommand == tool.Command):
+		return fmt.Errorf("%s is still the title tool, but its test failed: %w", tool.Name, err)
+	case tool.ID == "custom" && current.TitleTool == "custom":
+		return fmt.Errorf("Custom is not configured with the new command. The title tool is still Custom, with its saved command. The test failed: %w", err)
+	default:
+		return fmt.Errorf("%s is not configured. The title tool is still %s. The test failed: %w", tool.Name, titleToolName(current.TitleTool), err)
+	}
 }
 
 // titleMarker starts the answer line. Agent CLIs can print status lines, the request,
@@ -337,12 +445,12 @@ func (s *Server) claimTitle(sid string, revision int64, data []byte) (text, comm
 	if err != nil || session.AutoTitle == "" {
 		return "", "", false
 	}
-	command, err = titleCommand(settings.TitleTool)
+	tool, err := findTitleTool(settings.TitleTool, settings.TitleCommand)
 	requested := err == nil && session.Title == ""
 	if claimed, err := s.store.ClaimTitle(sid, revision, settings.TitleTool, requested); err != nil || !claimed || !requested {
 		return "", "", false
 	}
-	return send.Text, command, true
+	return send.Text, tool.Command, true
 }
 
 // generateTitle replaces the derived title of a session with a summary of its first

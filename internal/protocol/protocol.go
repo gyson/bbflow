@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/35"
+const Version = "bbflow/36"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -66,7 +66,6 @@ type Request struct {
 	Size      Size     `json:"size,omitempty"`
 	Draft     *Draft   `json:"draft,omitempty"`
 	Upload    *Upload  `json:"upload,omitempty"`
-	Text      string   `json:"text,omitempty"`    // A sample message for title-test.
 	Version   string   `json:"version,omitempty"` // The release of the offer that update-start confirms.
 
 	Search  *history.SearchFilter   `json:"search,omitempty"`
@@ -314,6 +313,25 @@ type TitleTool struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Command string `json:"command"`
+}
+
+// TitleTools lists the built-in title tools. Sample is the message that a title test
+// sends. The custom title tool is not in the list, because its command is in Settings.
+type TitleTools struct {
+	Tools  []TitleTool `json:"tools"`
+	Sample string      `json:"sample"`
+}
+
+// TitleTest is the title that a title test made from the sample message.
+type TitleTest struct {
+	Title string `json:"title"`
+}
+
+// TitleToolSet holds the settings after a title tool change, and the title of its test.
+// Title is empty for none, which has no test.
+type TitleToolSet struct {
+	Settings history.Settings `json:"settings"`
+	Title    string           `json:"title"`
 }
 
 // Update offers a newer bbflow release to the server. Revision identifies the offer.

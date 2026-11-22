@@ -19,12 +19,14 @@ const usage = `Usage:
   bbflow [--dir DIR] storage [--redact]
   bbflow [--dir DIR] tool list|add|remove
   bbflow [--dir DIR] settings get|set
+  bbflow [--dir DIR] title-tool list|show|set|test
   bbflow skill
 
 --dir selects a bbflow instance, not the agent's working directory.
 Start the server with bbflow server start, then open bbflow ui.
 Create and manage interactive shell sessions in the web UI.
 Use tool and settings to prepare tools and defaults from a setup script.
+Use title-tool to select and test the tool for automatic session titles.
 Closing a browser view leaves its session running.
 Agents: run bbflow skill to learn how to read sessions and recorded history.`
 
@@ -85,6 +87,8 @@ func run(args []string) error {
 		return toolCommand(target, args[1:])
 	case "settings":
 		return settingsCommand(target, args[1:])
+	case "title-tool":
+		return titleToolCommand(target, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}

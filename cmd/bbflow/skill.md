@@ -161,7 +161,7 @@ instance.
 | --- | --- |
 | `id` | Always `1`. |
 | `revision` | Revision of the settings. |
-| `data` | JSON with the appearance, launch defaults, tools, title tool, `updateCheck`, and `port`. Each tool has an ID, name, and startup command. `port` is the port of the next server start, or `0` for the automatic port. |
+| `data` | JSON with the appearance, launch defaults, tools, `titleTool`, `titleCommand`, `updateCheck`, and `port`. Each tool has an ID, name, and startup command. `titleTool` is `none`, a built-in title tool ID, or `custom`. `titleCommand` is the command of the custom title tool, or empty. `port` is the port of the next server start, or `0` for the automatic port. |
 
 ### `server`
 
