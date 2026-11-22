@@ -319,6 +319,14 @@ added. Preserve them across database upgrades too.
 
 - Keep changes focused and document capability limitations instead of hiding them behind
   success states.
+- Implement what the user explicitly asked for. If you think that an addition is
+  necessary, you can implement it. An addition is a behavior, option, command, UI
+  element, or data change that the user did not explicitly ask for. A user approval of
+  a whole plan does not make each item in it a request. An item that only you proposed
+  stays an addition.
+- State each addition explicitly, with the reason that it is necessary. Tell the user in
+  the conversation, separate from the requested work. Also list it in the PR
+  description. See [Reviewable pull requests](#reviewable-pull-requests).
 - Verify CLI behavior against the installed version and official interfaces. Earlier
   research is a snapshot, not a permanent compatibility guarantee.
 - Use fixtures to exercise importers and adapters, including partial or malformed data.
@@ -336,9 +344,9 @@ added. Preserve them across database upgrades too.
 - Keep `GOAL.md` focused on intent, `PLAN.md` on future implementation, `SPEC.md` on
   current behavior, `DEVELOPMENT.md` on build, check, and release procedures, and this
   file on contributor guidance.
-- In the completion report, state what changed, what was verified, and any remaining
-  limitations. Distinguish interface inspection, fixture tests, and actual end-to-end
-  runs.
+- In the completion report, state what changed, each addition, what was verified, and
+  any remaining limitations. Distinguish interface inspection, fixture tests, and actual
+  end-to-end runs.
 
 ## Reviewable pull requests
 
@@ -361,6 +369,9 @@ Every description should explain:
   tradeoffs, and decisions for future work.
 - **Validation:** checks performed and their results. Name useful commands. Distinguish
   automated tests from manual checks. Identify gaps or unresolved limitations.
+- **Agent additions:** each addition that the user did not explicitly ask for, and the
+  reason that it is necessary. Write "None" when the change has no addition. See
+  [Implementation and validation](#implementation-and-validation).
 
 Use this starting format. Adjust the structure and detail to the change:
 
@@ -378,9 +389,13 @@ Use this starting format. Adjust the structure and detail to the change:
 
 ## Validation
 <Actual checks and outcomes, plus relevant unverified behavior.>
+
+## Agent additions
+<Each addition that the user did not explicitly ask for, and its reason. Or "None".>
 ```
 
-A small change may combine these answers into a short paragraph. A complex change may
+A small change may combine these answers into a short paragraph. Keep the agent
+additions in their own section, also in a short description. A complex change may
 need separate design sections. Add reviewer notes, compatibility or migration details,
 risks, or screenshots only when they help assess the change. There is no target word
 count. Include alternatives or abandoned approaches only when they explain an important
