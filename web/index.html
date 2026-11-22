@@ -168,7 +168,7 @@
           <h3>Automatic titles</h3>
           <p class="form-help">bbflow asks the title tool once for a title, after your first sent message. A title that you set has priority. A tool saves only after it passes a test with a sample message, which can take up to 90 seconds.</p>
           <label>Title tool<span class="title-select"><select id="title-tool"></select><span id="title-spinner" class="spinner" role="img" aria-label="Testing" hidden></span></span></label>
-          <div id="title-builtin" hidden><p class="form-help">Command: <code id="title-tool-command"></code></p><p class="form-help">bbflow supplies this command. A later release can change it.</p></div>
+          <p id="title-builtin" class="form-help" hidden>Command: <code id="title-tool-command"></code></p>
           <form id="title-custom" hidden>
             <label>Custom command<input id="title-custom-command" maxlength="1000" placeholder="my-llm --fast" spellcheck="false" autocomplete="off"></label>
             <p class="form-help">The command gets the request on standard input. It must print one line that starts with bbflow-title: and then the title. bbflow does not limit what a custom command can do. Prefer standard input to "$(cat)", because other programs on this Mac can read the arguments of a command.</p>

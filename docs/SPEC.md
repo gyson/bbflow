@@ -947,9 +947,8 @@ the saved tool again. A red line under it shows the error and tells the user to 
 problem and select the tool again. A reload or close of the page during the test
 cancels the change. The page asks for confirmation first.
 
-For a built-in tool, Settings shows the exact command from the server and a note that a
-later release can change it. A built-in tool has no edit action. To run another command,
-select Custom. A selection of Custom with a saved command tests that command at once.
+For a built-in tool, Settings shows the exact command from the server. A built-in tool
+has no edit action. To run another command, select Custom. A selection of Custom with a saved command tests that command at once.
 Without a saved command, the field waits for a command, and **Save and test** starts the
 change. A custom command that fails its test stays in the field, with Custom in the
 list, so that the user can fix it. The status then shows **Changes not saved**. The CLI
