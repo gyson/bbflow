@@ -200,7 +200,7 @@ new Sidebar();
 new FileListWidth();
 
 let showingSettings = false;
-const settingsView = new SettingsView(() => server, updateTerminalTheme);
+const settingsView = new SettingsView(() => server, updateTerminalTheme, (title, detail) => toasts.show(title, detail));
 const preparation = new PreparationEditor({
   server: () => server,
   changed(session) {
@@ -1193,7 +1193,7 @@ async function requestArchive(session: ArchiveTarget, archived: boolean): Promis
 
 // Archive or restore a session. The selected session first saves its launch choices and
 // message editor. Its view then closes, or opens in the normal list after a restore.
-// Settings stays open. Back to session then opens the welcome view or the restored session.
+// Settings stays open. Done then opens the welcome view or the restored session.
 async function setArchived(id: string, archived: boolean, family = false, members?: string[]): Promise<void> {
   if (!server) return;
   // The archive of a family also archives a selected sub-session of that family.

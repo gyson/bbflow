@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, titleControls } from './dist/settings-model.js';
+import { defaultLabels, duplicateName, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, statusText, titleControls } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -31,24 +31,57 @@ test('adding the same tool twice keeps one copy', () => {
 
 test('a running title test or title tool change keeps the title controls disabled', () => {
   const tools = [{ id: 'claude', name: 'Claude', command: 'claude -p' }];
-  assert.deepEqual(titleControls(tools, 'claude', 'claude', false), { command: 'claude -p', custom: false, test: true, select: true });
+  assert.deepEqual(titleControls(tools, 'claude', 'claude', false), { command: 'claude -p', custom: false, test: true, testShown: true, select: true });
   // A save of another setting renders again during the test. The controls stay disabled.
-  assert.deepEqual(titleControls(tools, 'claude', 'claude', true), { command: 'claude -p', custom: false, test: false, select: false });
-  assert.deepEqual(titleControls(tools, 'none', 'none', false), { command: '', custom: false, test: false, select: true });
+  assert.deepEqual(titleControls(tools, 'claude', 'claude', true), { command: 'claude -p', custom: false, test: false, testShown: true, select: false });
+  // None has nothing to test, so Test does not show.
+  assert.deepEqual(titleControls(tools, 'none', 'none', false), { command: '', custom: false, test: false, testShown: false, select: true });
 });
 
 test('Custom shows its command field, and Test runs only the saved tool', () => {
   const tools = [{ id: 'claude', name: 'Claude', command: 'claude -p' }];
   // Custom has no built-in command. Its field shows, also before it saves.
-  assert.deepEqual(titleControls(tools, 'custom', 'none', false), { command: '', custom: true, test: false, select: true });
-  assert.deepEqual(titleControls(tools, 'custom', 'custom', false), { command: '', custom: true, test: true, select: true });
-  // During a change, the list shows the new tool. Test waits for the save.
+  // Only Save and test shows for a Custom that is not saved.
+  assert.deepEqual(titleControls(tools, 'custom', 'none', false), { command: '', custom: true, test: false, testShown: false, select: true });
+  assert.deepEqual(titleControls(tools, 'custom', 'custom', false), { command: '', custom: true, test: true, testShown: true, select: true });
+  // During a change, the list shows the new tool. Test shows, and it waits for the save.
   assert.equal(titleControls(tools, 'claude', 'none', true).test, false);
+  assert.equal(titleControls(tools, 'claude', 'none', true).testShown, true);
   assert.equal(titleControls(tools, 'claude', 'custom', false).test, false);
-  // Test runs the saved custom command. An edit in the field must save first.
+  // Test runs the saved custom command. An edit in the field must save first, so Test
+  // does not show.
   assert.equal(titleControls(tools, 'custom', 'custom', false, true).test, false);
+  assert.equal(titleControls(tools, 'custom', 'custom', false, true).testShown, false);
   assert.equal(titleControls(tools, 'custom', 'custom', false, true).select, true);
   assert.equal(titleControls(tools, 'claude', 'claude', false, true).test, true);
+});
+
+test('the status names each entry that is not saved', () => {
+  assert.equal(statusText(false, []), 'All settings saved');
+  assert.equal(statusText(false, ['Port']), 'Not saved: Port');
+  assert.equal(statusText(false, [defaultLabels.base, 'New tool']), 'Not saved: Starting branch or commit, New tool');
+  // A running save has priority, because its entries are about to save.
+  assert.equal(statusText(true, ['Port']), 'Saving…');
+});
+
+test('a tool name that another tool has is a duplicate', () => {
+  assert.ok(duplicateName([agent, other], 'Other', 'new'));
+  assert.ok(duplicateName([agent, other], 'Other', 'a'));
+  // The tool of the entry can keep its own name. Names match exactly, as in the CLI.
+  assert.ok(!duplicateName([agent, other], 'Other', 'b'));
+  assert.ok(!duplicateName([agent, other], 'other', 'new'));
+});
+
+test('the Settings page has one Clear for the add row and asks before a removal', () => {
+  const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  // The add row has no example of a saved tool, and Clear shows only with text.
+  assert.match(html, /<input id="add-tool-name"[^>]*placeholder="Name"/);
+  assert.match(html, /<button id="add-tool-cancel" type="button" hidden>Clear<\/button>/);
+  assert.match(html, /<dialog id="tool-remove-dialog"/);
+  // Tools come before the default tool that selects one of them.
+  assert.ok(html.indexOf('id="settings-tools"') < html.indexOf('id="settings-tool"'));
+  // Test does not show before the first render.
+  assert.match(html, /<button id="title-test" type="button" hidden disabled>/);
 });
 
 test('a settings save does not save the title tool or the custom command', () => {
@@ -148,9 +181,10 @@ test('the Port field reads a whole number or an empty field', () => {
   assert.equal(parsePort('  '), 0);
   assert.equal(parsePort(' 50001 '), 50001);
   assert.equal(parsePort('0'), 0);
-  // The server rejects a port outside the range.
-  assert.equal(parsePort('80'), 80);
-  for (const text of ['auto', '50 001', '5e4', '-1', '1.5', '123456']) assert.equal(parsePort(text), null, text);
+  assert.equal(parsePort('1024'), 1024);
+  assert.equal(parsePort('65535'), 65535);
+  // A port outside the range gets the message of the page, not a server error.
+  for (const text of ['auto', '50 001', '5e4', '-1', '1.5', '123456', '80', '1023', '65536']) assert.equal(parsePort(text), null, text);
   assert.equal(portText(0), '');
   assert.equal(portText(50001), '50001');
 });
@@ -283,6 +317,21 @@ test('a Port field with the saved text has no edit, and a failed save keeps the 
   assert.equal(field.render(50001), '6000');
   const again = field.begin();
   assert.ok(field.done(again, true));
+  assert.equal(field.render(50001), '50001');
+});
+
+test('a reset of the Port field shows the saved port, and a running save is not current', () => {
+  const field = new PortField();
+  field.input('6000', 50001);
+  field.reset();
+  assert.ok(!field.edited);
+  assert.equal(field.render(50001), '50001');
+  // The user leaves Settings during a port save. The reply does not show an error.
+  field.input('50002', 50001);
+  const token = field.begin();
+  field.reset();
+  assert.ok(!field.done(token, false));
+  assert.ok(!field.edited);
   assert.equal(field.render(50001), '50001');
 });
 

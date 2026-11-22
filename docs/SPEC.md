@@ -814,7 +814,7 @@ the selected session opens it in the normal list. A restore of another session k
 the archived list.
 
 While Settings is open, an archive or restore from a row menu keeps Settings open. When
-the row is the session behind Settings, **Back to session** then opens the welcome view
+the row is the session behind Settings, **Done** then opens the welcome view
 after an archive, or the restored session. After an archive or restore with the
 keyboard, focus moves to the nearest later session row that shows, or else the nearest
 earlier one. Rows of a collapsed group do not count. Without such a row, focus moves to
@@ -986,28 +986,60 @@ This section has three related parts:
 
 #### Settings page
 
-Settings is an instance-wide page at `/settings`. Its URL has no session ID.
+Settings is an instance-wide page at `/settings`. Its URL has no session ID. The cards
+are **Appearance**, **Tools**, **Session defaults**, **Automatic titles**, **Updates**,
+and **Server**. Tools come before the session defaults, because the default tool is one
+of them.
+
 **Appearance** offers **System**, **Light**, and **Dark**. System is the default and
-follows the device appearance. A theme selection applies to the current view at once.
-Other views read the saved theme on reload or when they open Settings without unsaved
-edits. The server includes the theme in each page so it applies before the first render.
-If the server cannot read the settings, the page uses System.
+follows the device appearance. A selection applies to the current view at once. Other
+views read the saved appearance on reload or when they open Settings. The server
+includes the appearance in each page so it applies before the first render. If the
+server cannot read the settings, the page uses System.
 
-Appearance and session defaults save to SQLite automatically. The default starting
-branch or commit saves when the field loses focus.
+The toolbar title of Settings is **Settings**. A bar at the top of the page holds the
+save status and **Done**. The bar stays in view while the page scrolls. **Done** leaves
+Settings.
 
-The toolbar title of Settings is **Settings**. **Back to session** is at the top right
-of the page.
+#### Saves in Settings
+
+Settings has no save action for the whole page. Each control saves to SQLite in its own
+way:
+
+| Control | Save |
+| --- | --- |
+| Appearance, default tool, worktree default, update check | At once, on selection. |
+| Starting branch or commit, Port | On Enter, or when the field loses focus. Escape restores the saved value. |
+| Tools | **Add tool** and **Save** in the row. **Remove** asks first. The move buttons save at once. |
+| Title tool | After a passed test. See [Title controls in Settings](#title-controls-in-settings). |
+
+The status shows **Saving…** during a save. It shows **All settings saved** when each
+entry is saved. Otherwise it names each entry that is not saved, for example
+**Not saved: Port, New tool**. The names are **Starting branch or commit**, **Port**,
+**Custom title command**, **New tool**, **Edit of** with the tool name, and the name of
+a default that failed to save.
+
+- When the user leaves Settings, the page discards the entries that are not saved. The
+  fields then show the saved values.
+- A running save or title tool change continues after the user leaves.
+- If the discarded Port text is not a valid port, an error toast tells that the port
+  did not save. The toast also shows when the server rejects a port after the user
+  left.
+- While Settings shows an entry that is not saved, the browser can warn when the user
+  reloads or closes the tab. The page also does not reload after a server restart. See
+  [Reconnection after a server restart](#reconnection-after-a-server-restart).
 
 #### Server port
 
 - In **Server**, **Port** sets the port of the next server start. An empty field
   selects the automatic port.
-- The field saves when it loses focus or on Enter.
+- The field saves when it loses focus or on Enter. Escape restores the saved port and
+  hides the error.
 - The card shows the port that the server uses now and when a saved port applies.
-- Text that is not a whole number, a port outside 1024 to 65535, and a new port that
-  another program holds fail to save. A port that browsers refuse to open also fails.
-  The error shows below the field.
+- Text that is not a whole number, and a port outside 1024 to 65535, send no save. The
+  page shows its range message below the field.
+- A new port that another program holds fails to save. A port that browsers refuse to
+  open also fails. The server error shows below the field.
 - A failed port save does not join a later save of another setting.
 - An edit made during a port save stays in the field after the reply, with its own
   error.
@@ -1015,15 +1047,26 @@ of the page.
 
 #### Tools
 
-In **Tools**, enter a name and command in the blank row at the bottom. Click **Add
-tool** to save the new tool. Click **Edit** beside a saved tool to edit it in its row.
-Click **Save** to apply changes. The add row stays at the bottom during an edit.
+In **Tools**, enter a name and command in the blank row at the bottom. Its placeholders
+are **Name** and **Startup command**. Click **Add tool** to save the new tool. **Clear**
+shows while the row has text. It empties the row. Click **Edit** beside a saved tool to
+edit it in its row. Click **Save** to apply changes. The add row stays at the bottom
+during an edit.
 
 In a wide view, **Name** and **Command** head the columns for saved tools and editor
-fields. The primary action spans **Edit** and **Move up**. **Cancel** spans
+fields. The primary action spans **Edit** and **Move up**. **Cancel** or **Clear** spans
 **Move down** and **Remove**. A narrow view puts each label above its field.
-**Cancel** discards the current entry or edit. An error keeps the entered values.
-**Remove** and the move buttons save at once. Remove has no undo.
+**Cancel** discards the edit. An error keeps the entered values.
+
+The page does not add a tool with the name of another tool. It also does not rename a
+tool to such a name. The error shows in the row. The CLI selects a tool by its name, so
+two tools with one name stop `tool add` and `tool remove`. An edit that keeps its name
+saves, also when an earlier save made two tools with one name.
+
+**Remove** opens a dialog that names the tool. The dialog tells that drafts and sessions
+keep their own copy of the command, and that a removal has no undo. For the default
+tool, it also tells that Shell becomes the default tool. **Remove tool** saves the
+removal. The move buttons save at once.
 
 A move returns keyboard focus to its button if another move in that direction is
 available. Otherwise focus goes to **Edit** on the moved row. After a removal, focus
@@ -1031,8 +1074,7 @@ goes to **Edit** on the nearest row. If the list is empty, focus goes to the add
 
 The page sends one settings save at a time. If another view or the CLI saved first,
 the page applies the requested change to the latest settings. An edit keeps the latest
-value of each tool field that the user did not change. The browser can warn about
-unsaved changes when the user reloads or closes the tab.
+value of each tool field that the user did not change.
 
 #### Theme
 
@@ -1050,7 +1092,9 @@ New installations and upgrades start with the setting on. See
 #### Session defaults and tool commands
 
 Settings also has a default tool, default worktree choice, default Git base, and an
-ordered list of named commands. Shell is built in and sends no startup command.
+ordered list of named commands. In **Session defaults**, their labels are **Default
+tool**, **Start new Git sessions in a new worktree**, and **Starting branch or commit
+for new worktrees**. Shell is built in and sends no startup command.
 Users can add, edit, reorder, and remove other presets. A command is one line of shell
 syntax, at most 1,000 UTF-8 bytes, without control characters. bbflow does not install
 tools, choose models, or check provider-specific arguments. Commands may contain secrets
@@ -1423,6 +1467,9 @@ A built-in tool and Custom have different controls:
 
 - For a built-in tool, Settings shows the exact command from the server under the list.
   The test result does not repeat it.
+- A list below the controls tells what the built-in tools need and where they send the
+  message. It shows for each selection, so that the user can read it before a
+  selection starts a test.
 - A built-in tool has no edit action. To run another command, select Custom. The CLI
   also has no edit command for a built-in tool. Use
   `bbflow title-tool set custom COMMAND`.
@@ -1432,11 +1479,11 @@ A built-in tool and Custom have different controls:
 - A custom command that fails its test stays in the field, so that the user can fix it.
 - When Custom is not saved, the list also keeps Custom. When Custom is saved, the list
   shows it, and the failed command is an edit of the saved one. The status then shows
-  **Changes not saved** until the field shows the saved command again or the edit
-  saves.
+  **Not saved: Custom title command** until the field shows the saved command again or
+  the edit saves.
 - An edit in the field hides an earlier result.
-- **Test** runs the saved custom command, so it is not available until the edit saves.
-  **Save and test** stays available.
+- **Test** runs the saved custom command, so it does not show until the edit saves.
+  Only **Save and test** shows then.
 - When another change of the title tool saved during the test, the note under the error
   tells about that change, because the tool or the command can have no fault.
 
@@ -1583,8 +1630,9 @@ reads the session list again.
 
 #### Test button
 
-- **Test** in Settings runs the saved title tool once. It is not available for None, or
-  while the list shows a tool that is not saved.
+- **Test** in Settings runs the saved title tool once. It does not show for None, or
+  for a Custom that is not saved or has an edit. It is disabled while the list shows
+  another tool that is not saved.
 - Test and the tool list stay disabled until the test ends, even when another setting
   saves.
 - A result shows only while its tool stays selected, even after another view changes the
@@ -3051,7 +3099,11 @@ shell availability afterward, reconnect without replay, and an untouched compose
 These shell fixtures do not establish model availability or agent CLI compatibility.
 
 Web fixtures cover settings comparison, edits that preserve fields changed by another
-view, and repeated add requests. Protocol fixtures verify that a server error reply is
+view, and repeated add requests. They cover the status text with the names of the
+entries that are not saved, and the check for a tool name that another tool has. They
+cover the range check of the Port field and a reset of that field during a save. They
+verify that the page has **Clear** for the add row, the Remove dialog, and Tools before
+the session defaults. Protocol fixtures verify that a server error reply is
 marked apart from a transport failure.
 
 - CLI fixtures run `bbflow tool` and `bbflow settings` against a temporary server. They
@@ -3059,6 +3111,12 @@ marked apart from a transport failure.
   tool selects Shell, and that duplicate names stop `add` and `remove`. They verify that
   a tool named `shell` can be the default tool, and that only an empty value selects the
   built-in Shell.
+- They verify the text of `tool list`, also for an empty list, and the error for
+  `--default` after `NAME`.
+- They verify that `settings set` prints the saved value, and that `settings get KEY`
+  prints one value in the form that `set` accepts. They verify that the restart note
+  prints only for a changed port, that only `true` and `false` are on and off values,
+  and that the `title-tool` key names the `title-tool` command.
 - They verify that server validation errors change nothing, and that a change applies
   again after a revision conflict.
 
@@ -3078,6 +3136,19 @@ A rejected command stayed in the editor, and a session default saved during the 
 After a reload, the tool and the default showed their saved values. A move changed the
 tool order. A new terminal started the Demo agent. **Put in message editor** inserted
 the handoff prompt, and **Send** delivered it to the simulated agent.
+
+A later browser check with the demo instance verified the saves in Settings:
+
+- The status bar stayed at the top of the page while the page scrolled.
+- A second tool with the name Codex did not save, and the status showed
+  **Not saved: New tool**. **Clear** emptied the row and then did not show.
+- **Remove** opened the dialog. For the default tool, the dialog named Shell as the
+  next default tool. **Remove tool** removed a tool, and focus went to **Edit** on the
+  nearest row.
+- Port 80 showed the range message of the page. Escape restored the saved port.
+- **Done** with the port text 99 showed the toast that the port did not save.
+- **Done** with a name in the add row and an open Custom field discarded both.
+- **Test** did not show for None or for a Custom that is not saved.
 
 ### Checks of the session status and toolbar
 

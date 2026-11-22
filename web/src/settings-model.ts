@@ -19,6 +19,28 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
 export type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'updateCheck'>;
 export type SettingsChange = (settings: Settings) => Settings;
 
+// The names of the defaults in the status of the Settings view.
+export const defaultLabels: Record<keyof Defaults, string> = {
+  appearance: 'Appearance',
+  defaultTool: 'Default tool',
+  worktree: 'Worktree default',
+  base: 'Starting branch or commit',
+  updateCheck: 'Update check',
+};
+
+// statusText is the status of the Settings view. unsaved names each entry that is not
+// saved, so that the user knows which field to complete or restore.
+export function statusText(saving: boolean, unsaved: string[]): string {
+  if (saving) return 'Saving…';
+  return unsaved.length ? `Not saved: ${unsaved.join(', ')}` : 'All settings saved';
+}
+
+// duplicateName tells if a tool other than id has the name. The CLI selects a tool by
+// its name, so the Settings view does not add a second tool with the same name.
+export function duplicateName(tools: Tool[], name: string, id: string): boolean {
+  return tools.some(tool => tool.id !== id && tool.name === name);
+}
+
 // The server calls of the Settings saves. conflict tells a rejected save that another
 // save can cause, such as a revision change.
 export interface SettingsService {
@@ -129,11 +151,14 @@ export function sameSettings(a: Settings, b: Settings): boolean {
 }
 
 // parsePort reads the Port field. An empty field selects the automatic port, 0. Text
-// that is not a whole number gives null. The server checks the range.
+// that is not a whole number from 1024 to 65535, or 0, gives null. The server checks the
+// range too, and it rejects the ports that browsers refuse.
 export function parsePort(text: string): number | null {
   const value = text.trim();
   if (!value) return 0;
-  return /^\d{1,5}$/.test(value) ? Number(value) : null;
+  if (!/^\d{1,5}$/.test(value)) return null;
+  const port = Number(value);
+  return port === 0 || (port >= 1024 && port <= 65535) ? port : null;
 }
 
 // portText shows a saved port in the Port field. The automatic port shows an empty field.
@@ -160,6 +185,13 @@ export class PortField {
   render(saved: number): string {
     if (!this.edited) this.text = portText(saved);
     return this.text;
+  }
+
+  // reset discards the edit, so that the field shows the saved port again. A running
+  // save is then not current, and its reply does not change the error of the field.
+  reset(): void {
+    this.inputs++;
+    this.edited = false;
   }
 
   // begin returns the token for done.
@@ -198,14 +230,18 @@ export function sameTools(a: Tool[], b: Tool[]): boolean {
 // edit in the custom command field. command is the exact command of a built-in tool.
 // custom shows the custom command field. Test needs the saved tool, other than none, and
 // no busy state. For Custom, Test also needs a field without edits, because Test runs
-// the saved command. A save of another setting does not change this state.
+// the saved command. testShown shows Test. None has nothing to test, and a Custom that
+// is not saved or has an edit shows only Save and test. A save of another setting does
+// not change this state.
 export function titleControls(tools: TitleTool[], shown: string, saved: string, busy: boolean, edited = false):
-  { command: string; custom: boolean; test: boolean; select: boolean } {
+  { command: string; custom: boolean; test: boolean; testShown: boolean; select: boolean } {
   const tool = tools.find(tool => tool.id === shown);
+  const unsavedCustom = shown === 'custom' && (saved !== 'custom' || edited);
   return {
     command: tool?.command ?? '',
     custom: shown === 'custom',
-    test: shown !== 'none' && shown === saved && !busy && !(shown === 'custom' && edited),
+    test: shown !== 'none' && shown === saved && !busy && !unsavedCustom,
+    testShown: shown !== 'none' && !unsavedCustom,
     select: !busy,
   };
 }

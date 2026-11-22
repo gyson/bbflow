@@ -282,7 +282,11 @@ func parseTitle(output string) (string, error) {
 			break
 		}
 	}
-	return "", fmt.Errorf("the command printed %d lines, but no line starts with %s. First line: %s", lines, titleMarker, first)
+	count := "lines"
+	if lines == 1 {
+		count = "line"
+	}
+	return "", fmt.Errorf("the command printed %d %s, but no line starts with %q. First line: %s", lines, count, titleMarker, first)
 }
 
 // cleanTitle removes common labels, quotes, and Markdown marks from one line. It changes

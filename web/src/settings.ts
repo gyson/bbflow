@@ -1,8 +1,11 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, sameTools, SettingsSaves, titleControls } from './settings-model.js';
+import { defaultLabels, duplicateName, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, sameTools, SettingsSaves, statusText, titleControls } from './settings-model.js';
 import type { Defaults, SettingsChange } from './settings-model.js';
+
+const portRange = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
+const portNotSaved = 'The port did not save.';
 
 function toolEditor(prefix: string) {
   return {
@@ -35,6 +38,11 @@ export class SettingsView {
   private readonly addTool = toolEditor('add-tool');
   private readonly editTool = toolEditor('edit-tool');
   private readonly toolError = element('tool-error', HTMLElement);
+  private readonly removeDialog = element('tool-remove-dialog', HTMLDialogElement);
+  private readonly removeForm = element('tool-remove-form', HTMLFormElement);
+  private readonly removeCancel = element('cancel-tool-remove', HTMLButtonElement);
+  private readonly removeSummary = element('tool-remove-summary', HTMLElement);
+  private readonly removeDefault = element('tool-remove-default', HTMLElement);
   private readonly titleCard = element('title-settings', HTMLElement);
   private readonly titleTool = element('title-tool', HTMLSelectElement);
   private readonly titleSpinner = element('title-spinner', HTMLElement);
@@ -70,11 +78,16 @@ export class SettingsView {
   // The saved custom command that the field showed last. Other text is an edit.
   private renderedCustom = '';
   private editing: Tool | null = null;
+  // The tool of the open Remove dialog.
+  private removing: Tool | null = null;
   private newToolId = '';
   private toolBusy = false;
   private renderedTools: Tool[] | null = null;
 
-  constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void) {
+  // report shows an error toast. It tells about a port that did not save when the user
+  // left Settings, because the Port field then shows the saved port again.
+  constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void,
+    private readonly report: (title: string, detail: string) => void) {
     const connected = (): ServerInfo => {
       const server = this.server();
       if (!server) throw new Error('Settings are unavailable.');
@@ -94,6 +107,15 @@ export class SettingsView {
     this.updateCheck.onchange = () => this.saveDefault('updateCheck', this.updateCheck.checked);
     this.base.onchange = () => this.saveBase();
     this.base.oninput = () => this.showStatus();
+    // Escape restores the saved value of a text field that saves on blur.
+    this.base.onkeydown = event => {
+      if (event.key !== 'Escape' || this.base.value === this.renderedBase) return;
+      this.base.value = this.renderedBase;
+      this.showStatus();
+    };
+    this.port.onkeydown = event => {
+      if (event.key === 'Escape' && this.portField.edited) this.restorePort();
+    };
     this.form.onsubmit = event => { event.preventDefault(); this.saveBase(); };
     this.port.onchange = () => this.savePort();
     this.port.oninput = () => {
@@ -104,6 +126,8 @@ export class SettingsView {
     this.addTool.cancel.onclick = () => this.resetAddTool();
     this.editTool.cancel.onclick = () => this.closeEditor();
     this.addTool.form.oninput = this.editTool.form.oninput = () => this.showStatus();
+    this.removeCancel.onclick = () => this.removeDialog.close();
+    this.removeForm.onsubmit = event => { event.preventDefault(); this.removeTool(); };
     this.titleTool.onchange = () => this.selectTitleTool(this.titleTool.value);
     this.customForm.onsubmit = event => { event.preventDefault(); this.saveCustom(); };
     this.customCommand.oninput = () => {
@@ -144,17 +168,61 @@ export class SettingsView {
     this.panel.hidden = false;
   }
 
-  close(): void { this.panel.hidden = true; }
-
-  private pending(): boolean {
-    return this.saves.writes > 0 || Object.keys(this.saves.defaults).length > 0 || this.base.value !== this.renderedBase ||
-      this.portField.edited || this.settingTool !== null || this.customOpen || this.customCommand.value !== this.renderedCustom ||
-      !!(this.addTool.name.value || this.addTool.command.value) ||
-      !!this.editing && (this.editTool.name.value !== this.editing.name || this.editTool.command.value !== this.editing.command);
+  // Leave Settings. Entries that are not saved do not stay in the hidden view. There
+  // they would block the reload after a server restart, and the browser would warn about
+  // them at a close of the tab, with no entry in view. A running save or title tool
+  // change continues.
+  close(): void {
+    this.panel.hidden = true;
+    if (this.removeDialog.open) this.removeDialog.close();
+    this.base.value = this.renderedBase;
+    if (this.portField.edited && parsePort(this.port.value) === null) this.report(portNotSaved, portRange);
+    this.restorePort();
+    if (!this.busy && (this.customOpen || this.customCommand.value !== this.renderedCustom)) {
+      this.customOpen = false;
+      this.customCommand.value = this.renderedCustom;
+      this.testResult.hidden = true;
+    }
+    this.newToolId = '';
+    this.addTool.form.reset();
+    this.addTool.error.hidden = true;
+    if (this.editing) {
+      this.editing = null;
+      this.editTool.form.hidden = true;
+      this.renderTools();
+    }
+    this.render();
   }
 
+  // The entries that are not saved, by the names that the status shows.
+  private unsavedNames(): string[] {
+    const names = new Set<string>();
+    for (const key of Object.keys(this.saves.defaults) as (keyof Defaults)[]) names.add(defaultLabels[key]);
+    if (this.base.value !== this.renderedBase) names.add(defaultLabels.base);
+    if (this.portField.edited) names.add('Port');
+    if (this.customOpen || this.customCommand.value !== this.renderedCustom) names.add('Custom title command');
+    if (this.addTool.name.value || this.addTool.command.value) names.add('New tool');
+    if (this.editing && (this.editTool.name.value !== this.editing.name || this.editTool.command.value !== this.editing.command)) {
+      names.add(`Edit of ${this.editing.name}`);
+    }
+    return [...names];
+  }
+
+  private saving(): boolean { return this.saves.writes > 0 || this.settingTool !== null; }
+
+  private pending(): boolean { return this.saving() || this.unsavedNames().length > 0; }
+
+  // Clear shows only while the add row has text.
   private showStatus(): void {
-    this.status.textContent = this.saves.writes || this.settingTool !== null ? 'Saving…' : this.pending() ? 'Changes not saved' : 'All settings saved';
+    this.status.textContent = statusText(this.saving(), this.unsavedNames());
+    this.addTool.cancel.hidden = !(this.addTool.name.value || this.addTool.command.value);
+  }
+
+  // Show the saved port again, and hide the error of the discarded text.
+  private restorePort(): void {
+    this.portField.reset();
+    this.portError.hidden = true;
+    this.render();
   }
 
   private applyAppearance(appearance: string): void {
@@ -231,11 +299,7 @@ export class SettingsView {
       action('Edit', 'Edit', () => this.openEditor(tool));
       action('Move up', '↑', () => this.moveTool(tool.id, -1), index === 0);
       action('Move down', '↓', () => this.moveTool(tool.id, 1), index === tools.length - 1);
-      action('Remove', 'Remove', () => void this.changeTool(settings => ({
-        ...settings,
-        defaultTool: settings.defaultTool === tool.id ? '' : settings.defaultTool,
-        tools: settings.tools.filter(current => current.id !== tool.id),
-      })));
+      action('Remove', 'Remove', () => this.confirmRemove(tool));
       row.append(name, command, actions);
       rows.push(row);
     }
@@ -244,6 +308,31 @@ export class SettingsView {
     this.editTool.form.before(...before);
     this.addTool.form.before(...after);
     if (focusedRowButton) document.getElementById(focusedRowButton.id)?.focus({ preventScroll: true });
+  }
+
+  // A removal has no undo, so a dialog asks first. It also tells when the removal changes
+  // the default tool.
+  private confirmRemove(tool: Tool): void {
+    if (!this.saved || this.toolBusy) return;
+    this.removing = tool;
+    this.removeSummary.textContent = `“${tool.name}” leaves the tool list. Drafts and sessions that use it keep their own copy of the command. A removal has no undo.`;
+    this.removeDefault.textContent = `“${tool.name}” is the default tool. After the removal, Shell is the default tool.`;
+    this.removeDefault.hidden = this.saved.defaultTool !== tool.id;
+    this.removeDialog.showModal();
+  }
+
+  // The close of the dialog returns focus to Remove of the row. The change then moves
+  // focus to the nearest row.
+  private removeTool(): void {
+    const tool = this.removing;
+    this.removing = null;
+    this.removeDialog.close();
+    if (!tool) return;
+    void this.changeTool(settings => ({
+      ...settings,
+      defaultTool: settings.defaultTool === tool.id ? '' : settings.defaultTool,
+      tools: settings.tools.filter(current => current.id !== tool.id),
+    }));
   }
 
   private openEditor(original: Tool): void {
@@ -286,6 +375,13 @@ export class SettingsView {
       return;
     }
     const id = original?.id ?? (this.newToolId ||= crypto.randomUUID());
+    // An edit that keeps its name can save, also when an earlier save made a duplicate.
+    if (name !== original?.name && duplicateName(this.saved.tools, name, id)) {
+      editor.error.textContent = 'Another tool has this name. Enter a different name.';
+      editor.error.hidden = false;
+      editor.name.focus();
+      return;
+    }
     const edited = { id, name, command };
     void this.changeTool(settings => ({
       ...settings,
@@ -368,6 +464,7 @@ export class SettingsView {
     this.customForm.hidden = this.customSave.hidden = !controls.custom;
     this.customCommand.disabled = this.customSave.disabled = !controls.select;
     this.titleTest.disabled = !controls.test;
+    this.titleTest.hidden = !controls.testShown;
     this.titleTool.disabled = !controls.select;
     this.titleSpinner.hidden = !this.busy;
   }
@@ -514,7 +611,7 @@ export class SettingsView {
   private savePort(): void {
     const port = parsePort(this.port.value);
     if (port === null) {
-      this.portError.textContent = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
+      this.portError.textContent = portRange;
       this.portError.hidden = false;
       return;
     }
@@ -524,7 +621,10 @@ export class SettingsView {
       if (this.portField.done(token, true)) this.portError.hidden = true;
       this.render();
     }, (error: unknown) => {
-      if (!this.portField.done(token, false)) return;
+      if (!this.portField.done(token, false)) {
+        if (this.panel.hidden) this.report(portNotSaved, errorMessage(error));
+        return;
+      }
       this.portError.textContent = errorMessage(error);
       this.portError.hidden = false;
     });

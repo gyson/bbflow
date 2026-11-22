@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"bbflow/internal/client"
 	"bbflow/internal/history"
@@ -19,12 +21,15 @@ const toolUsage = `Usage:
   bbflow [--dir DIR] tool add [--default] NAME COMMAND
   bbflow [--dir DIR] tool remove NAME
 
+list prints the name and the command of each tool, one tool on each line.
 add creates a tool or replaces the command of the tool with this name.
-Put options before NAME. Quote a command that contains spaces.`
+Put --default before NAME. Quote a command that contains spaces.`
 
 const settingsUsage = `Usage:
-  bbflow [--dir DIR] settings get
+  bbflow [--dir DIR] settings get [KEY]
   bbflow [--dir DIR] settings set KEY VALUE
+
+get prints all settings as JSON. get KEY prints one value as text.
 
 Keys:
   appearance    system, light, or dark
@@ -34,6 +39,7 @@ Keys:
   update-check  true or false: read the latest release from GitHub once a day
   port          1024 to 65535, or 0 for an automatic port; applies at the next server start
 
+In the JSON, default-tool is defaultTool and update-check is updateCheck.
 Use bbflow title-tool to select the title tool.`
 
 func toolCommand(target client.Target, args []string) error {
@@ -55,18 +61,33 @@ func toolCommand(target client.Target, args []string) error {
 		if err != nil {
 			return err
 		}
-		return printJSON(settings.Tools)
+		if len(settings.Tools) == 0 {
+			fmt.Println("No tools are saved.")
+			return nil
+		}
+		width := 0
+		for _, tool := range settings.Tools {
+			width = max(width, utf8.RuneCountInString(tool.Name))
+		}
+		for _, tool := range settings.Tools {
+			fmt.Printf("%-*s  %s\n", width, tool.Name, tool.Command)
+		}
+		return nil
 	case "add":
 		makeDefault := flags.Bool("default", false, "make this tool the default tool")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
+		}
+		// The flag package stops at NAME, so an option after it is an argument.
+		if slices.Contains(flags.Args(), "--default") || slices.Contains(flags.Args(), "-default") {
+			return errors.New("put --default before NAME, for example: bbflow tool add --default Codex \"codex --search\"")
 		}
 		if flags.NArg() != 2 {
 			return errors.New("provide a name and one quoted command, for example: bbflow tool add Codex \"codex --search\"")
 		}
 		name, command := strings.TrimSpace(flags.Arg(0)), flags.Arg(1)
 		added := false
-		err := changeSettings(target, func(settings *history.Settings) error {
+		_, err := changeSettings(target, func(settings *history.Settings) error {
 			index, err := findTool(settings.Tools, name)
 			if err != nil {
 				return err
@@ -97,7 +118,7 @@ func toolCommand(target client.Target, args []string) error {
 			return errors.New("provide the name of one tool to remove")
 		}
 		name := strings.TrimSpace(flags.Arg(0))
-		err := changeSettings(target, func(settings *history.Settings) error {
+		_, err := changeSettings(target, func(settings *history.Settings) error {
 			index, err := findTool(settings.Tools, name)
 			if err != nil {
 				return err
@@ -132,11 +153,23 @@ func settingsCommand(target client.Target, args []string) error {
 			return err
 		}
 		return printJSON(settings)
+	case args[0] == "get" && len(args) == 2:
+		settings, err := loadSettings(target)
+		if err != nil {
+			return err
+		}
+		value, err := settingValue(settings, args[1], "show")
+		if err == nil {
+			fmt.Println(value)
+		}
+		return err
 	case args[0] == "get":
-		return errors.New("settings get takes no arguments")
+		return errors.New("settings get takes at most one key")
 	case args[0] == "set" && len(args) == 3:
 		key, value := args[1], args[2]
-		err := changeSettings(target, func(settings *history.Settings) error {
+		port := 0
+		saved, err := changeSettings(target, func(settings *history.Settings) error {
+			port = settings.Port
 			switch key {
 			case "appearance":
 				settings.Appearance = value
@@ -156,39 +189,95 @@ func settingsCommand(target client.Target, args []string) error {
 				}
 				settings.DefaultTool = settings.Tools[index].ID
 			case "worktree":
-				enabled, err := strconv.ParseBool(value)
+				enabled, err := parseSwitch(key, value)
 				if err != nil {
-					return errors.New("worktree must be true or false")
+					return err
 				}
 				settings.Worktree = enabled
 			case "base":
 				settings.Base = value
 			case "update-check":
-				enabled, err := strconv.ParseBool(value)
+				enabled, err := parseSwitch(key, value)
 				if err != nil {
-					return errors.New("update-check must be true or false")
+					return err
 				}
 				settings.UpdateCheck = enabled
 			case "port":
-				port, err := strconv.Atoi(strings.TrimSpace(value))
+				number, err := strconv.Atoi(strings.TrimSpace(value))
 				if err != nil {
 					return fmt.Errorf("port must be from %d to 65535, or 0 for an automatic port", history.MinPort)
 				}
-				settings.Port = port
+				settings.Port = number
 			default:
-				return fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, update-check, or port", key)
+				_, err := settingValue(*settings, key, "set TOOL")
+				return err
 			}
 			return nil
 		})
-		if err == nil && key == "port" {
+		if err != nil {
+			return err
+		}
+		// Print the saved value, because the server replaces an empty value by its default.
+		shown, err := settingValue(saved, key, "")
+		if err != nil {
+			return err
+		}
+		switch {
+		case key == "default-tool" && shown == "":
+			shown = "the built-in Shell"
+		case key == "port" && shown == "0":
+			shown = "0, the automatic port"
+		}
+		fmt.Printf("Saved %s: %s.\n", key, shown)
+		if key == "port" && saved.Port != port {
 			fmt.Println("The port applies at the next server start. A server restart stops all sessions.")
 		}
-		return err
+		return nil
 	case args[0] == "set":
 		return errors.New("provide one key and one value, for example: bbflow settings set appearance dark")
 	default:
 		return fmt.Errorf("unknown settings command %q\n%s", args[0], settingsUsage)
 	}
+}
+
+// settingValue returns the text of one setting, in the form that settings set accepts.
+// The built-in Shell is the empty default tool. The title tool has its own command, so
+// its key is an error that names the title-tool subcommand to use.
+func settingValue(settings history.Settings, key, titleTool string) (string, error) {
+	switch key {
+	case "appearance":
+		return settings.Appearance, nil
+	case "default-tool":
+		for _, tool := range settings.Tools {
+			if tool.ID == settings.DefaultTool {
+				return tool.Name, nil
+			}
+		}
+		return "", nil
+	case "worktree":
+		return strconv.FormatBool(settings.Worktree), nil
+	case "base":
+		return settings.Base, nil
+	case "update-check":
+		return strconv.FormatBool(settings.UpdateCheck), nil
+	case "port":
+		return strconv.Itoa(settings.Port), nil
+	case "title-tool":
+		return "", fmt.Errorf("title-tool is not a settings key; use bbflow title-tool %s", titleTool)
+	}
+	return "", fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, update-check, or port", key)
+}
+
+// parseSwitch reads the value of a setting that is on or off. Only true and false are
+// values, as the help tells.
+func parseSwitch(key, value string) (bool, error) {
+	switch value {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	}
+	return false, fmt.Errorf("%s must be true or false", key)
 }
 
 // findTool returns -1 when no tool has the name. Names are not unique in Settings, so
@@ -219,23 +308,28 @@ func loadSettings(target client.Target) (history.Settings, error) {
 
 // changeSettings applies change to the latest saved settings. The server rejects a
 // save from an earlier revision. If another client saved first, apply the change again
-// to the new revision.
-func changeSettings(target client.Target, change func(*history.Settings) error) error {
+// to the new revision. It returns the saved settings.
+func changeSettings(target client.Target, change func(*history.Settings) error) (history.Settings, error) {
 	for attempt := 0; ; attempt++ {
 		settings, err := loadSettings(target)
 		if err != nil {
-			return err
+			return settings, err
 		}
 		revision := settings.Revision
 		if err = change(&settings); err != nil {
-			return err
+			return settings, err
 		}
-		_, err = target.Call(protocol.Request{Operation: "settings-save", Settings: &settings})
-		if err == nil || attempt == 2 {
-			return err
+		result, err := target.Call(protocol.Request{Operation: "settings-save", Settings: &settings})
+		if err == nil {
+			var saved history.Settings
+			err = json.Unmarshal(result, &saved)
+			return saved, err
+		}
+		if attempt == 2 {
+			return settings, err
 		}
 		if latest, readErr := loadSettings(target); readErr != nil || latest.Revision == revision {
-			return err
+			return settings, err
 		}
 	}
 }

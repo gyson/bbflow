@@ -128,24 +128,16 @@
     </aside>
     </div>
     <section id="settings-view" aria-label="Settings" hidden>
-      <div class="settings-actions"><span id="settings-status" role="status"></span><button id="settings-close">Back to session</button></div>
+      <div class="settings-actions"><span id="settings-status" role="status"></span><button id="settings-close">Done</button></div>
       <div class="settings-content">
         <p id="settings-error" class="form-error" role="alert" hidden></p>
-        <form id="settings-form">
-          <section class="settings-card"><h3>Appearance</h3>
-            <label>Theme<select id="settings-appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
-            <p class="form-help">System follows your device appearance.</p>
-          </section>
-          <section class="settings-card"><h3>Session defaults</h3>
-            <label>Default tool<select id="settings-tool"></select></label>
-            <label class="checkbox"><input id="settings-worktree" type="checkbox">Use worktree for new Git sessions</label>
-            <label>Default starting branch or commit<input id="settings-base" placeholder="HEAD" maxlength="250"></label>
-            <p class="form-help">HEAD uses the current commit of the project, without uncommitted changes.</p>
-          </section>
-        </form>
+        <section class="settings-card"><h3>Appearance</h3>
+          <select id="settings-appearance" aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+          <p class="form-help">System follows the appearance of your device.</p>
+        </section>
         <section class="settings-card">
           <div class="settings-heading"><h3>Tools</h3></div>
-          <p class="form-help">Commands use your shell syntax. For Codex, add <code>--no-alt-screen</code> to record the scrollback.</p>
+          <p class="form-help">A tool starts a session. bbflow runs the command in your shell when the session starts. For Codex, add <code>--no-alt-screen</code> so that bbflow can record the scrollback.</p>
           <div class="tool-grid">
             <p id="tool-error" class="form-error" role="alert" hidden></p>
             <div class="tool-columns" aria-hidden="true"><span>Name</span><span>Command</span></div>
@@ -157,26 +149,38 @@
                 <p id="edit-tool-error" class="form-error" role="alert" hidden></p>
               </form>
               <form id="add-tool-editor" class="tool-row" aria-label="Add tool">
-                <label><span class="tool-field-label">Name</span><input id="add-tool-name" maxlength="200" placeholder="Codex" required></label>
-                <label><span class="tool-field-label">Command</span><input id="add-tool-command" class="tool-command" maxlength="1000" placeholder="codex --no-alt-screen" spellcheck="false" required></label>
-                <div class="tool-actions"><button id="add-tool-submit" type="submit" class="primary">Add tool</button><button id="add-tool-cancel" type="button">Cancel</button></div>
+                <label><span class="tool-field-label">Name</span><input id="add-tool-name" maxlength="200" placeholder="Name" required></label>
+                <label><span class="tool-field-label">Command</span><input id="add-tool-command" class="tool-command" maxlength="1000" placeholder="Startup command" spellcheck="false" required></label>
+                <div class="tool-actions"><button id="add-tool-submit" type="submit" class="primary">Add tool</button><button id="add-tool-cancel" type="button" hidden>Clear</button></div>
                 <p id="add-tool-error" class="form-error" role="alert" hidden></p>
               </form>
             </div>
           </div>
         </section>
+        <form id="settings-form">
+          <section class="settings-card"><h3>Session defaults</h3>
+            <label>Default tool<select id="settings-tool"></select></label>
+            <label class="checkbox"><input id="settings-worktree" type="checkbox">Start new Git sessions in a new worktree</label>
+            <label>Starting branch or commit for new worktrees<input id="settings-base" placeholder="HEAD" maxlength="250"></label>
+            <p class="form-help">HEAD is the current commit of the project. Uncommitted changes are not included. The field saves when you press Enter or leave it. Press Esc to restore the saved value.</p>
+          </section>
+        </form>
         <section id="title-settings" class="settings-card">
           <h3>Automatic titles</h3>
-          <p class="form-help">bbflow asks the title tool once for a title, after your first sent message. A title that you set has priority. A tool saves only after it passes a test with a sample message, which can take up to 90 seconds.</p>
+          <p class="form-help">bbflow asks the title tool once for a title, after your first sent message. A title that you set has priority. bbflow tests a title tool before it saves it. The test can take up to 90 seconds. A title tool is separate from the tools that start sessions.</p>
           <label>Title tool<select id="title-tool"></select></label>
           <p id="title-builtin" class="form-help" hidden>Command: <code id="title-tool-command"></code></p>
           <form id="title-custom" hidden>
             <label>Custom command<input id="title-custom-command" maxlength="1000" placeholder="my-llm --fast" spellcheck="false" autocomplete="off"></label>
             <p class="form-help">The command gets the request on standard input. It must print one line that starts with bbflow-title: and then the title. bbflow does not limit what a custom command can do. Prefer standard input to "$(cat)", because other programs on this Mac can read the arguments of a command.</p>
           </form>
-          <div class="title-actions"><button id="title-custom-save" type="submit" form="title-custom" hidden>Save and test</button><button id="title-test" type="button" disabled>Test</button><span id="title-spinner" class="spinner" role="img" aria-label="Testing" hidden></span></div>
+          <div class="title-actions"><button id="title-custom-save" type="submit" form="title-custom" hidden>Save and test</button><button id="title-test" type="button" hidden disabled>Test</button><span id="title-spinner" class="spinner" role="img" aria-label="Testing" hidden></span></div>
           <div id="title-test-result" role="status" hidden><p id="title-test-sample" class="form-help"></p><p id="title-test-outcome"></p><p id="title-test-detail" class="form-help"></p></div>
-          <p class="form-help">Claude, Codex, and Code Puppy must be installed on the PATH of the server and signed in. They send your first message to their provider, with paths masked and the tools of the CLI turned off. Code Puppy still runs your user plugins. Claude and Code Puppy can save each call in their own history. Apple uses the on-device model of macOS 27 and keeps your message on this Mac. Before you use Apple, run sudo /usr/bin/fm license and accept the terms.</p>
+          <ul class="form-help title-notes">
+            <li><strong>Claude</strong>, <strong>Codex</strong>, and <strong>Code Puppy</strong> must be installed on the PATH of the server and signed in. They send your first message to their provider, with paths masked and the tools of the CLI turned off.</li>
+            <li><strong>Claude</strong> and <strong>Code Puppy</strong> can save each call in their own history. Code Puppy still runs your user plugins.</li>
+            <li><strong>Apple</strong> uses the on-device model of macOS 27 and keeps your message on this Mac. Before you use Apple, run <code>sudo /usr/bin/fm license</code> and accept the terms.</li>
+          </ul>
         </section>
         <section class="settings-card">
           <h3>Updates</h3>
@@ -189,7 +193,7 @@
             <label>Port<input id="settings-port" inputmode="numeric" placeholder="Automatic" spellcheck="false" autocomplete="off"></label>
             <p id="settings-port-error" class="form-error" role="alert" hidden></p>
             <p id="settings-port-status" class="form-help" role="status"></p>
-            <p class="form-help">Enter a port from 1024 to 65535, or leave the field empty for an automatic port. A new port applies after a server restart, which stops all sessions.</p>
+            <p class="form-help">Enter a port from 1024 to 65535, or leave the field empty for an automatic port. The field saves when you press Enter or leave it. Press Esc to restore the saved port. A new port applies after a server restart, which stops all sessions.</p>
           </section>
         </form>
       </div>
@@ -214,6 +218,14 @@
       <p class="form-help">Restore of the parent brings back all of its sub-sessions. Nothing is deleted.</p>
       <p id="archive-error" class="form-error" role="alert" hidden></p>
       <button id="archive-submit" type="submit" class="primary">Archive family</button>
+    </form>
+  </dialog>
+  <dialog id="tool-remove-dialog" aria-labelledby="tool-remove-title">
+    <form id="tool-remove-form">
+      <div class="dialog-heading"><h2 id="tool-remove-title">Remove this tool?</h2><button type="button" id="cancel-tool-remove" class="text-button" aria-label="Close remove tool">✕</button></div>
+      <p id="tool-remove-summary" class="form-help"></p>
+      <p id="tool-remove-default" class="form-help" hidden></p>
+      <button id="tool-remove-submit" type="submit" class="primary">Remove tool</button>
     </form>
   </dialog>
   <dialog id="rename-dialog" aria-labelledby="rename-title">
