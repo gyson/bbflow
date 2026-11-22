@@ -43,7 +43,8 @@ findings that are correct. Decline the others with a reason.
    next round comment.
 
 2. If a finding has the mark **Decision needed**, stop and ask the user.
-3. Make a decision for each blocking, non-blocking, and open finding.
+3. Make a decision for each new finding and each open earlier finding. Each finding is
+   a request for a change. Do not skip a finding.
    - **Fix** it when the finding is correct.
    - **Decline** it when it is incorrect, out of scope, or against a decision of the
      user or a rule in `AGENTS.md`. Give the technical reason.
