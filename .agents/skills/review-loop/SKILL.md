@@ -11,9 +11,9 @@ Two sessions work on one pull request (PR):
 - The **reviewer** is a new session. It knows only the PR and the repository.
 - The **implementer** is the session that wrote the change. It has the full context.
 
-The reviewer posts findings. The implementer fixes them and replies. The loop continues
-until the reviewer posts LGTM ("looks good to me"). The two sessions communicate only
-through PR comments.
+The reviewer posts findings. Each finding is a request for a change. The implementer
+fixes or declines each finding and replies. The loop continues until the reviewer posts
+LGTM ("looks good to me"). The two sessions communicate only through PR comments.
 
 ## Start
 
@@ -72,6 +72,11 @@ round, the commit, and the result.
 | Implementer | `**[review-loop implementer] round N, commit SHA: READY**` |
 
 - Write the first line exactly, with no other text. The wait script reads it.
+- The reviewer uses LGTM only when no finding is open. If not, it uses CHANGES
+  REQUESTED. A finding stays open until the reviewer confirms the fix or accepts the
+  decline.
+- Put the findings of a round under `## Findings` in the reviewer round comment. Do
+  not sort them by severity. The wait script does not read this section.
 - `N` is the round number. The reviewer starts at 1 and adds 1 for each review. The
   implementer uses the round number of the latest review. A READY comment answers a
   review only when it has the same round number and comes after that review.

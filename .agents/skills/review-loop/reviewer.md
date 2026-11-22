@@ -55,28 +55,30 @@ for context. If the PR does not explain a decision, that is a finding.
 5. Run the checks that apply to the change. `AGENTS.md` and `docs/DEVELOPMENT.md` name
    them. For a runtime or UI change, use a temporary instance directory. Stop each
    server that you start.
-6. Classify each finding.
-   - **Blocking:** incorrect behavior, a risk of data loss, a broken `AGENTS.md` rule or
-     invariant, a missing necessary test or document update, or a security problem.
-     A stale title or description that misstates or omits an important change or
-     validation result is also blocking.
-   - **Non-blocking:** an improvement that the PR can merge without.
+6. Write a finding for each change that the PR needs. Each finding is a request for a
+   change. Do not sort findings by severity.
+   - Look for incorrect behavior, a risk of data loss, a broken `AGENTS.md` rule or
+     invariant, a missing test or document update, and security problems.
+   - A stale title or description that misstates or omits an important change or
+     validation result is also a finding.
+   - Report an improvement only when this PR must include it. Do not report optional
+     ideas.
 7. Read the head commit, title, body, and comments again with the first command in
    step 3. If the head differs from `head`, return to loop step 1. If the title or body
    changed, check the new text and update your findings. If the implementer posted a
    new round comment, include its replies in your review.
 
-8. Post the round comment. Use LGTM when no blocking finding is open. If not, use
+8. Post the round comment. Use LGTM when no finding is open. If not, use
    CHANGES REQUESTED.
 
 ## Keep the loop short
 
 - Report all the findings that you can find in round 1.
-- In later rounds, raise a new finding only for changed code, or when it is blocking.
+- In later rounds, examine the open findings and the changed code first. If you find a
+  missed problem in unchanged code, report it too.
 - Do not report style that a formatter or linter controls.
-- Do not repeat a non-blocking finding after the implementer declined it.
-- When the implementer declines a blocking finding, examine the reason. If the reason
-  is correct, accept it and close the finding.
+- When the implementer declines a finding, examine the reason. If the reason is
+  correct, accept it and close the finding. Do not report that finding again.
 - If the reason is not correct, keep the finding open one time and add evidence. If the
   implementer declines it again, mark it **Decision needed**, post the round, and stop.
   The user decides.
@@ -91,14 +93,11 @@ rounds. Omit a section that has no items. Follow the shared
 **[review-loop reviewer] round 2, commit 0123456789abcdef0123456789abcdef01234567: CHANGES REQUESTED**
 Tool: <tool>. Model: <full model name or ID>. Reasoning effort: <effort>.
 
-## Blocking
+## Findings
 
 - **R2-1** `internal/server/launch.go:120`: <the problem and its effect>. <The evidence.>
   <A possible fix, if you know one.>
-
-## Non-blocking
-
-- **R2-2** `docs/SPEC.md:88`: <the improvement and its reason>.
+- **R2-2** `docs/SPEC.md:88`: <the necessary change and its reason>.
 
 ## Earlier findings
 
@@ -113,5 +112,5 @@ Tool: <tool>. Model: <full model name or ID>. Reasoning effort: <effort>.
 - Not checked: <what you could not verify, and why>.
 ```
 
-For LGTM, use the same structure. Write `LGTM` in the first line, and list the
-non-blocking findings that stay open as optional.
+For LGTM, use the same structure without the Findings section. Write `LGTM` in the
+first line. LGTM means that no finding is open.

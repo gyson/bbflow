@@ -74,7 +74,7 @@ soon() {
 	echo $(($(date +%s) + ${1:-60}))
 }
 
-review1="tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: CHANGES REQUESTED**\nTool: Claude Code. Model: Claude Opus 5.5. Reasoning effort: unknown.\n\n## Blocking\n- R1-1"
+review1="tester|2026-01-01T00:00:01Z|**[review-loop reviewer] round 1, commit $A: CHANGES REQUESTED**\nTool: Claude Code. Model: Claude Opus 5.5. Reasoning effort: unknown.\n\n## Findings\n- R1-1"
 reply1="tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 1, commit $B: READY**\nTool: Codex. Model: GPT-6.1 Sol. Reasoning effort: Extra High.\n\n- R1-1 fixed"
 reply1_old="tester|2026-01-01T00:00:02Z|**[review-loop implementer] round 1, commit $A: READY**\nTool: Codex. Model: GPT-6."
 lgtm2="tester|2026-01-01T00:00:03Z|**[review-loop reviewer] round 2, commit $B: LGTM**\nTool: Claude Code. Model: Claude Opus 5.5. Reasoning effort: unknown.\n\nLGTM."
