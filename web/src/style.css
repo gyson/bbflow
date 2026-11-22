@@ -576,6 +576,10 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .diff-path-group { flex: 1 1 0; min-width: min(200px, 100%); display: flex; align-items: center; gap: 8px; }
 #diff-path { flex: 0 1 auto; min-width: 0; display: flex; font-family: Menlo, Monaco, monospace; font-size: 11px; }
 #diff-preview { flex: none; }
+/* In a narrow pane, the ⋯ button stays at the right end of the second row. Its tooltip
+   then opens to the left. With its padding, the tooltip fits in the narrowest pane. */
+#diff-menu-box { margin-left: auto; }
+#diff-menu-open::after { max-width: min(280px, 70vw); }
 #diff-menu-open { display: flex; padding: 3px 6px; }
 #diff-menu-open svg { width: 16px; height: 16px; fill: currentColor; }
 .diff-file-header .action-menu button { padding: 6px 10px; font-size: 12px; }

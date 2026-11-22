@@ -52,10 +52,8 @@ func (s *Server) workspaceOpen(ctx context.Context, id string, request *protocol
 	}
 	ctx, cancel := context.WithTimeout(ctx, openTimeout)
 	defer cancel()
-	if err = s.open(ctx, path); err != nil {
-		return fmt.Errorf("cannot open the file: %w", err)
-	}
-	return nil
+	// The error gives the cause only. The client names the action that failed.
+	return s.open(ctx, path)
 }
 
 // workspaceReveal shows a current file of the session workspace in Finder. Finder
@@ -76,10 +74,8 @@ func (s *Server) workspaceReveal(ctx context.Context, id string, request *protoc
 	}
 	ctx, cancel := context.WithTimeout(ctx, openTimeout)
 	defer cancel()
-	if err = s.reveal(ctx, path); err != nil {
-		return fmt.Errorf("cannot show the file in Finder: %w", err)
-	}
-	return nil
+	// The error gives the cause only. The client names the action that failed.
+	return s.reveal(ctx, path)
 }
 
 // workspaceEntry returns the absolute path of an entry of the session workspace. The

@@ -63,11 +63,15 @@ export class ActionMenu {
     clearTimeout(this.confirmTimer);
     this.button.dataset.tip = this.status.textContent = text;
     this.button.classList.add('tip-open');
-    this.confirmTimer = setTimeout(() => {
-      this.button.dataset.tip = this.tip;
-      this.status.textContent = '';
-      this.button.classList.remove('tip-open');
-    }, duration);
+    this.confirmTimer = setTimeout(() => this.clear(), duration);
+  }
+
+  // End the confirmation that shows now, for example when its subject goes away.
+  clear(): void {
+    clearTimeout(this.confirmTimer);
+    this.button.dataset.tip = this.tip;
+    this.status.textContent = '';
+    this.button.classList.remove('tip-open');
   }
 
   // Call this after the host changes the items.

@@ -550,7 +550,8 @@ runs `open -a` with that browser and the absolute path. It waits up to 10 second
 returns `{ "opened": true }`. On other systems, the operation gives an error.
 
 A path that does not obey these rules, a missing file, or a failed opener gives an
-error. The operation does not change files. A browser loads the file as a `file:` page.
+error. The error of a failed opener gives only the cause, so that a client can name the
+action. The operation does not change files. A browser loads the file as a `file:` page.
 Such a page has an opaque origin, so the server rejects its WebSocket connections. See
 [browser access](#browser-access).
 
@@ -560,7 +561,8 @@ be a file of any type or a folder. No part of the path can be a symlink. On macO
 server runs `open -R` with the absolute path. Finder then selects the entry and does
 not open it. The server waits up to 10 seconds and returns `{ "revealed": true }`. On
 other systems, the operation gives an error. A path that does not obey these rules, a
-missing entry, or a failed opener gives an error. The operation does not change files.
+missing entry, or a failed opener gives an error. The error of a failed opener gives
+only the cause, as for `workspace-open`. The operation does not change files.
 
 ## Settings and prepared launches
 

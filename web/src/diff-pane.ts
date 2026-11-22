@@ -92,9 +92,10 @@ export class DiffPane {
   private readonly fileGeneration = new Generation();
   private listAbort: AbortController | null = null;
   private fileAbort: AbortController | null = null;
-  // Counts the clicks of Show in Finder and Open in browser. Only the reply of the
-  // latest click shows.
+  // Counts the clicks of the file menu and the changes of its file. Only the result of
+  // the latest click on the selected file shows.
   private menuRequest = 0;
+  private menuSubject = ''; // The session and the file of the shown result.
 
   constructor(
     private readonly server: () => ServerInfo | null,
@@ -785,6 +786,14 @@ export class DiffPane {
   // The file menu shows for a selected file. Show in Finder shows only for a current
   // file that is in the workspace now. Open in browser shows only for such an HTML file.
   private renderFileMenu(): void {
+    // A result is about its file. Another file or session ends the result, and a later
+    // reply of an earlier click does not show.
+    const subject = `${this.session}\n${this.selected}`;
+    if (subject !== this.menuSubject) {
+      this.menuSubject = subject;
+      this.menuRequest++;
+      this.fileMenu.clear();
+    }
     this.copyPathItem.hidden = this.copyRelativeItem.hidden = !this.selected;
     this.revealItem.hidden = !this.revealFile();
     this.openItem.hidden = !this.openFile();
@@ -794,22 +803,19 @@ export class DiffPane {
 
   // Copy a path of the selected file. The tooltip of the menu button shows the result.
   private async copy(text: string, done: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(text);
-      this.fileMenu.confirm(done);
-    } catch (error) {
-      this.fileMenu.confirm(`Cannot copy the path: ${errorMessage(error)}`, errorTime);
-    }
+    await this.fileRequest(done, 'Cannot copy the path', () => navigator.clipboard.writeText(text));
   }
 
   // The loaded file of the selection, when the view shows its current version and the
   // file is in the workspace now. A scope that ends at a commit does not show the
   // current file. Thus the item goes away when Changes selects such a scope, before the
-  // file reply. The server rejects a symlink, so the item does not show for one.
+  // file reply. A file that the pane read at a commit is not the current file either,
+  // also after Changes selects another scope. The server rejects a symlink, so the item
+  // does not show for one.
   private revealFile(): WorkspaceFile | null {
     if (this.scope === 'changed' && this.choice?.to) return null;
     const file = this.file;
-    return file && file.path === this.selected && file.new.state !== 'missing' && !file.new.symlink ? file : null;
+    return file && file.path === this.selected && !file.baseline.to && file.new.state !== 'missing' && !file.new.symlink ? file : null;
   }
 
   // The loaded file of the selection, when it is a current HTML file that the browser can
@@ -826,7 +832,7 @@ export class DiffPane {
     const server = this.server();
     const file = this.revealFile();
     if (!server || !file) return;
-    void this.fileRequest(file.path, 'Shown in Finder', 'Cannot show the file in Finder',
+    void this.fileRequest('Shown in Finder', 'Cannot show the file in Finder',
       () => this.send(server, { operation: 'workspace-reveal', session: this.session, diff: { path: file.path } }));
   }
 
@@ -836,16 +842,15 @@ export class DiffPane {
     const server = this.server();
     const file = this.openFile();
     if (!server || !file) return;
-    void this.fileRequest(file.path, 'Opened in browser', 'Cannot open the file in the browser',
+    void this.fileRequest('Opened in browser', 'Cannot open the file in the browser',
       () => this.send(server, { operation: 'workspace-open', session: this.session, diff: { path: file.path } }));
   }
 
-  // Send the request of a file menu item. The tooltip of the menu button shows the
-  // result. Only the reply of the latest click shows, and only while its file stays
-  // selected.
-  private async fileRequest(path: string, done: string, failed: string, send: () => Promise<unknown>): Promise<void> {
+  // Run the action of a file menu item. The tooltip of the menu button shows the result.
+  // The result names the action. An error also gives the reason. Only the result of the
+  // latest click shows, and only while its file stays selected. See renderFileMenu.
+  private async fileRequest(done: string, failed: string, send: () => Promise<unknown>): Promise<void> {
     const request = ++this.menuRequest;
-    const session = this.session;
     let text = done;
     let duration: number | undefined;
     try {
@@ -854,7 +859,7 @@ export class DiffPane {
       text = `${failed}: ${errorMessage(error)}`;
       duration = errorTime;
     }
-    if (request === this.menuRequest && session === this.session && path === this.selected) this.fileMenu.confirm(text, duration);
+    if (request === this.menuRequest) this.fileMenu.confirm(text, duration);
   }
 
   // The loaded file of the selection, when it is a Markdown file that Preview can show.

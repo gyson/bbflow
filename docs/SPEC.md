@@ -1523,7 +1523,9 @@ are only in the Changes header. The Files header has **Refresh** and **×** only
   open. Use **Refresh**, then **Preview** again, to see a later change.
 - In a narrow pane, the line counts, **View source**, **View file**, and the ⋯ button
   go to a second row of the file header. The path and **Preview** keep at least 200
-  pixels.
+  pixels. The ⋯ button stays at the right end of the second row. Thus its tooltip
+  opens to the left. The tooltip is at most 280 pixels wide, so it stays in the pane at
+  the minimum pane width of 320 pixels.
 - Preview uses markdown-it with CommonMark, GitHub tables, strikethrough, and task
   lists. Raw HTML shows as text. Images do not load. The dialog shows "Image not
   loaded" with the alternative text and the source. Task list checkboxes are disabled.
@@ -1646,10 +1648,12 @@ Only macOS has these two openers now. On other systems, a click shows an error.
 
 After a choice, the tooltip of the ⋯ button shows **Path copied**, **Relative path
 copied**, **Shown in Finder**, or **Opened in browser** for 1.8 seconds. An error shows
-there for 6 seconds. A screen reader reads the result from a status element. For
-**Show in Finder** and **Open in browser**, only the reply of the latest click shows.
-It does not show when another file is selected before the reply. The menu has the keys
-of the [More actions](#session-status) menu.
+there for 6 seconds. It names the action, then gives the reason from the server or the
+browser, for example `Cannot show the file in Finder: exit status 1: …`. A screen reader
+reads the result from a status element. Only the result of the latest click shows. A
+change of the selected file or of the session ends the result at once. A reply that
+comes after such a change does not show. The menu has the keys of the
+[More actions](#session-status) menu.
 
 ### Side terminal
 
@@ -2274,8 +2278,11 @@ a change of the file.
 
 File menu fixtures cover **Copy path** with and without a known workspace, **Copy
 relative path**, and a failed copy. They also cover the `workspace-reveal` request,
-**Shown in Finder**, an error, a late reply of an earlier click, and no **Show in
-Finder** for a deleted file, a symlink, a commit scope, or a file before its reply.
+**Shown in Finder**, the full text of an opener error, and a late reply of an earlier
+click. They cover the end of a result at a change of the file and of the session, and
+a reply after that change. They also cover no **Show in Finder** for a deleted file, a
+symlink, a commit scope, a file before its reply, and a file at a commit after a change
+to **Uncommitted changes**. Server fixtures check that an opener error has no prefix.
 Server fixtures cover a file, a script file, and a folder. They also cover a symlink, a
 path through a symlink, a path outside the workspace, a missing file, `..` and absolute
 paths, an unknown session, a failed opener, and a server without an opener. A WebSocket
@@ -2793,8 +2800,8 @@ between tracked files with similar content. An untracked new file and its delete
 original show as two changes.
 
 **Open in browser** and **Show in Finder** need the browser and the server on the same
-computer. They work only on macOS now. It uses the default browser, which can be different from the
-browser of the bbflow tab. Browsers can block module scripts and `fetch()` in a `file:`
+computer. They work only on macOS now. **Open in browser** uses the default browser,
+which can be different from the browser of the bbflow tab. Browsers can block module scripts and `fetch()` in a `file:`
 page. A report that must work in all browsers keeps its scripts and data in the HTML
 file or in classic `<script>` files.
 

@@ -85,8 +85,9 @@ func TestWorkspaceOpenOpensOnlyRegularHTMLFiles(t *testing.T) {
 		t.Fatalf("a rejected request reached the opener: %q", opened)
 	}
 
+	// The error of the opener has no prefix. The page adds the name of the action.
 	s.open = func(context.Context, string) error { return errors.New("no browser") }
-	if err := s.workspaceOpen(ctx, id, &protocol.DiffRequest{Path: "reports/coverage.html"}); err == nil || !strings.Contains(err.Error(), "no browser") {
+	if err := s.workspaceOpen(ctx, id, &protocol.DiffRequest{Path: "reports/coverage.html"}); err == nil || err.Error() != "no browser" {
 		t.Fatalf("opener failure: %v", err)
 	}
 	s.open = nil
@@ -170,8 +171,8 @@ func TestWorkspaceRevealShowsEntriesOfTheWorkspace(t *testing.T) {
 		t.Fatalf("a rejected request reached the opener: %q", revealed)
 	}
 
-	s.reveal = func(context.Context, string) error { return errors.New("no Finder") }
-	if err := s.workspaceReveal(ctx, id, &protocol.DiffRequest{Path: "docs/notes.md"}); err == nil || !strings.Contains(err.Error(), "no Finder") {
+	s.reveal = func(context.Context, string) error { return errors.New("exit status 1: no Finder") }
+	if err := s.workspaceReveal(ctx, id, &protocol.DiffRequest{Path: "docs/notes.md"}); err == nil || err.Error() != "exit status 1: no Finder" {
 		t.Fatalf("opener failure: %v", err)
 	}
 	s.reveal = nil

@@ -452,6 +452,33 @@ test('a reply for an earlier file does not show for the selected file', async ()
   pending[4].reject(new Error('cannot open b.html'));
   await settle();
   assert.equal(status.textContent, 'Cannot open the file in the browser: cannot open b.html');
+  assert.equal(nodes['diff-menu-open'].dataset.tip, 'Cannot open the file in the browser: cannot open b.html');
+
+  // A result that shows goes away when the selection changes.
+  list(nodes['diff-list']).find(node => node.dataset.file === 'a.html').onclick();
+  assert.equal(status.textContent, '');
+  assert.equal(nodes['diff-menu-open'].dataset.tip, '');
+});
+
+test('a result goes away when the view selects another session', async () => {
+  const { nodes, pending, pane } = setup();
+  pending[0].resolve(changes(baselines.head));
+  await settle();
+  pending[1].resolve(file(baselines.head));
+  await settle();
+  nodes['diff-reveal'].onclick();
+  pending[2].reject(new Error('exit status 1'));
+  await settle();
+  assert.equal(nodes['diff-menu-status'].textContent, 'Cannot show the file in Finder: exit status 1');
+
+  // A reply that comes after the change does not show either.
+  nodes['diff-reveal'].onclick();
+  pane.select('other');
+  assert.equal(nodes['diff-menu-status'].textContent, '');
+  assert.equal(nodes['diff-menu-open'].hidden, true);
+  pending[3].reject(new Error('late failure'));
+  await settle();
+  assert.equal(nodes['diff-menu-status'].textContent, '');
 });
 
 // The IDs of the shown items of the file menu.
@@ -519,11 +546,12 @@ test('Show in Finder asks the server to show the current file', async () => {
   // Only the reply of the latest click shows.
   nodes['diff-reveal'].onclick();
   nodes['diff-reveal'].onclick();
-  pending[4].reject(new Error('the file is not in the session workspace now'));
+  // The server gives the cause of a failed opener, and the page names the action.
+  pending[4].reject(new Error('exit status 1: The file /work/a.txt does not exist.'));
   await settle();
   pending[3].resolve({ revealed: true });
   await settle();
-  assert.equal(nodes['diff-menu-status'].textContent, 'Cannot show the file in Finder: the file is not in the session workspace now');
+  assert.equal(nodes['diff-menu-status'].textContent, 'Cannot show the file in Finder: exit status 1: The file /work/a.txt does not exist.');
 
   // A deleted file and a symlink have no Show in Finder. The copy items stay.
   const list = node => [node, ...node.children.flatMap(list)];
@@ -557,6 +585,36 @@ test('Show in Finder goes away when Changes selects a scope that ends at a commi
   await settle();
   assert.equal(nodes['diff-reveal'].hidden, true);
   assert.equal(nodes['diff-copy-path'].hidden, false);
+});
+
+test('Show in Finder stays away for a file at a commit after Changes selects Uncommitted changes', async () => {
+  const { nodes, pending } = setup();
+  pending[0].resolve(changes(baselines.head));
+  await settle();
+  pending[1].resolve(file(baselines.head));
+  await settle();
+  nodes['diff-scope'].onclick();
+  row(nodes, 1).onclick();
+  pending[2].resolve(changes(baselines.commit));
+  await settle();
+  pending[3].resolve(file(baselines.commit));
+  await settle();
+  assert.equal(nodes['diff-reveal'].hidden, true);
+
+  // The loaded file is still the file at the commit. Before the replies of the new
+  // scope, the item stays away and a click sends nothing.
+  nodes['diff-scope'].onclick();
+  row(nodes, 0).onclick();
+  assert.equal(pending.length, 5);
+  assert.equal(nodes['diff-reveal'].hidden, true);
+  assert.equal(nodes['diff-reveal-line'].hidden, true);
+  nodes['diff-reveal'].onclick();
+  assert.equal(pending.length, 5, 'a hidden item sent a request');
+  pending[4].resolve(changes(baselines.head));
+  await settle();
+  pending[5].resolve(file(baselines.head));
+  await settle();
+  assert.equal(nodes['diff-reveal'].hidden, false);
 });
 
 test('absolutePath joins the workspace and the relative path', () => {
