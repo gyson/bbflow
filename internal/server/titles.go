@@ -56,12 +56,14 @@ var titleTools = []protocol.TitleTool{
 	// servers. It always attaches existing files whose paths are in the prompt, so
 	// titleRequest masks paths.
 	{ID: "code-puppy", Name: "Code Puppy", Command: `code-puppy --no-tools --model codex-gpt-6-luna -p "$(cat)"`},
-	// fm is the Apple Foundation Models CLI of macOS 27. Without a prompt argument, it
-	// reads the prompt from standard input. --model system keeps the request on the
-	// on-device model. The permissive guardrail level is for transformations of the
-	// supplied text, such as a summary. --greedy gives the same title for the same
-	// message. --no-stream prints the answer once.
-	{ID: "apple", Name: "Apple", Command: "fm respond --model system --guardrails permissive-content-transformations --greedy --no-stream"},
+	// fm is the Apple Foundation Models CLI of macOS 27. The full system path makes sure
+	// that no other program named fm on the PATH gets the message. It also works when the
+	// PATH of the server does not include /usr/bin. Without a prompt argument, fm reads
+	// the prompt from standard input. --model system keeps the request on the on-device
+	// model. The permissive guardrail level is for transformations of the supplied text,
+	// such as a summary. --greedy gives the same title for the same message. --no-stream
+	// prints the answer once.
+	{ID: "apple", Name: "Apple", Command: "/usr/bin/fm respond --model system --guardrails permissive-content-transformations --greedy --no-stream"},
 }
 
 // pathMask replaces the characters that start or separate a local path in the message.
@@ -100,10 +102,12 @@ Reply with one line only. Start the line with the word bbflow-title and a colon,
 </message>
 `
 
-// titleRequest returns the standard input for the title command. It cuts the message
-// at a rune boundary and masks local paths. It breaks each marker in the message, so
-// that the message cannot supply the answer line.
+// titleRequest returns the standard input for the title command. It removes terminal
+// escape sequences, as parseTitle does, cuts the message at a rune boundary, and masks
+// local paths. It breaks each marker in the message, so that the message cannot supply
+// the answer line.
 func titleRequest(message string) string {
+	message = terminalEscapes.ReplaceAllString(message, "")
 	message = pathMask.Replace(strings.TrimSpace(message))
 	if len(message) > titleInput {
 		cut := titleInput

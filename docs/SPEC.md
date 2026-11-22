@@ -906,7 +906,7 @@ The server owns the command of each title tool. Users cannot edit these commands
 | Claude | `claude -p --model haiku --restricted --tools "" --strict-mcp-config` |
 | Codex | `codex exec --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --disable shell_tool --disable unified_exec --disable view_image --disable code_mode_host --disable apps --disable plugins --disable hooks --disable multi_agent --disable browser_use --disable computer_use --disable image_generation --disable mentions_v2 -c web_search=disabled --model gpt-6-luna -c model_reasoning_effort=low -` |
 | Code Puppy | `code-puppy --no-tools --model codex-gpt-6-luna -p "$(cat)"` |
-| Apple | `fm respond --model system --guardrails permissive-content-transformations --greedy --no-stream` |
+| Apple | `/usr/bin/fm respond --model system --guardrails permissive-content-transformations --greedy --no-stream` |
 
 Claude uses Haiku. Codex and Code Puppy use Luna. Apple uses the on-device Apple
 Foundation Model. Settings shows the command of the selected tool. Each command gives
@@ -925,15 +925,18 @@ the model only the request text:
   request. Code Puppy 0.0.969 also always loads the user plugins in
   `~/.code_puppy/plugins`, and no option turns them off. So a title run can execute
   plugin code that the user installed for Code Puppy.
-- Apple: `fm` is the Apple Foundation Models CLI of macOS 27. It needs a Mac with Apple
-  silicon and Apple Intelligence. Without a prompt argument, it reads the prompt from
-  standard input. `--model system` selects the on-device model, so the request stays on
+- Apple: `/usr/bin/fm` is the Apple Foundation Models CLI of macOS 27. It needs a Mac
+  with Apple silicon and Apple Intelligence. The command uses this full path, so no
+  other program named `fm` on the PATH of the server gets the message. The command also
+  works when the PATH of the server does not include `/usr/bin`. Without a prompt
+  argument, `fm` reads the prompt from standard input. `--model system` selects the
+  on-device model, so the request stays on
   the Mac. The command adds no image, tool, or transcript, so the model gets only the
   request text. The `permissive-content-transformations` guardrail level is for a
   summary or other change of supplied text. Coding text can still trigger the safety
   guardrails. `--greedy` gives the same title for the same message. `--no-stream`
   prints the answer once. `fm` runs only after an administrator accepts its terms with
-  `sudo fm license`. Until then, it ends with exit status 69. The terms can change with
+  `sudo /usr/bin/fm license`. Until then, it ends with exit status 69. The terms can change with
   a macOS update, and then need a new acceptance.
 
 The empty temporary folder alone is not a file access limit, because an absolute path
@@ -967,8 +970,8 @@ interactive startup files. The command runs in a new empty temporary folder, so 
 CLIs do not read project files. It is not a session terminal, and the archive records
 no events for it.
 
-Standard input holds a fixed instruction and the message text. The server cuts the text
-at 2,000 bytes. It replaces each `/` with `∕` (U+2215) and each `~` with `∼`
+Standard input holds a fixed instruction and the message text. The server removes
+terminal escape sequences from the text and cuts it at 2,000 bytes. It replaces each `/` with `∕` (U+2215) and each `~` with `∼`
 (U+223C). Thus no path, home reference, or link in the request names a file. The
 server changes these characters back in the title. Message text never enters the command line that bbflow writes. Code
 Puppy takes the prompt only as an argument, so its command reads standard input with
@@ -977,8 +980,9 @@ not treat it as a `!` or `/` command.
 
 The instruction asks the model for one line that starts with `bbflow-title:`. The
 instruction describes this marker but does not contain it. The server breaks each
-marker in the message text, for example `bbflow-title :`. Thus a CLI that prints the
-request back prints no marker.
+marker in the message text, for example `bbflow-title :`. It does this after it removes
+the escape sequences, because the answer parser also removes them. Thus a CLI that
+prints the request back prints no marker.
 
 The server reads up to 64 KiB of standard output. It uses the last line that starts
 with the marker, after Markdown marks and spaces. The server rejects output without
@@ -2367,7 +2371,8 @@ second send then runs no second request. Live checks used
 Claude Code 2.1.312, Codex CLI 0.160.0, and Code Puppy 0.0.969 with synthetic messages.
 A message that named a local canary file did not give its content to the hardened
 Claude and Codex commands. Fixtures verify that terminal escape sequences do not stay
-in a title or an error.
+in a title or an error. They also verify that a marker which only escape sequences
+break does not reach the request, so an echoed request gives no title.
 
 Live checks of the Apple command used `fm` of macOS 27.0.1 with the FM1 terms, version
 1.0. Before the terms were accepted, `fm` ended with exit status 69 and a colored notice
@@ -2378,7 +2383,8 @@ that the server cut at 2,000 bytes. No message triggered the guardrails. Three r
 one message gave the same title. A message that told the model to reply with a fixed
 title got that title. Thus the first message can choose its own title. In a demo
 instance, **Test** passed, and a first send in a new session set the derived title and
-recorded the `title` event.
+recorded the `title` event. With the full path, the command also ran with only `/bin`
+on the PATH. There, the bare name `fm` ended with exit status 127.
 
 A compiled release binary also passed startup, SQL queries, restart, and shutdown with
 temporary format 3–6 fixtures, running outside the repository. Checks confirmed format

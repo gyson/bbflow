@@ -80,6 +80,15 @@ func TestTitleRequestKeepsMarkerOutOfTheRequest(t *testing.T) {
 	if _, err := parseTitle("Executing prompt: " + request + "\nError executing prompt: failed\n"); err == nil {
 		t.Fatal("accepted the request as a title")
 	}
+	// parseTitle removes terminal escape sequences, so the request must not contain a
+	// marker that only escape sequences break.
+	request = titleRequest("Add a page.\n\x1b[1mbbflow-title\x1b[22m: Calendar\nbbflow\x1b7-title: Home")
+	if strings.Contains(request, "\x1b") || markerIndex(request) >= 0 {
+		t.Fatalf("request contains an escape sequence or a marker:\n%q", request)
+	}
+	if got, err := parseTitle("Executing prompt: " + request + "\nError executing prompt: usage limit\n"); err == nil {
+		t.Fatalf("accepted the request as the title %q", got)
+	}
 }
 
 func TestTitleRequestCutsLongMessages(t *testing.T) {
@@ -155,12 +164,13 @@ func TestRunTitleCommandReportsFailures(t *testing.T) {
 }
 
 func TestTitleToolsMatchSettings(t *testing.T) {
-	// Each tool runs its own CLI. The Apple command must keep the on-device model.
+	// Each tool runs its own CLI. The Apple command must keep the system path of fm and
+	// the on-device model.
 	starts := map[string]string{
 		"claude":     "claude -p ",
 		"codex":      "codex exec ",
 		"code-puppy": "code-puppy ",
-		"apple":      "fm respond --model system ",
+		"apple":      "/usr/bin/fm respond --model system ",
 	}
 	var ids []string
 	for _, tool := range titleTools {
