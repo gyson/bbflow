@@ -86,18 +86,23 @@ export class SettingsView {
   private toolBusy = false;
   private renderedTools: Tool[] | null = null;
 
+  // The number of times that the user left Settings. A request that started before the
+  // latest close has no entry in the view any more, and no place for its error.
+  private visits = 0;
+
   // report shows an error toast. It tells about an entry that did not save when the user
-  // left Settings, because the hidden view keeps no entry and no error of it.
+  // left Settings, because the view keeps no entry and no error of it. send is the server
+  // call. A fixture replaces it to control the time of each reply.
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void,
-    private readonly report: (title: string, detail: string) => void) {
+    private readonly report: (title: string, detail: string) => void, private readonly send: typeof call = call) {
     const connected = (): ServerInfo => {
       const server = this.server();
       if (!server) throw new Error('Settings are unavailable.');
       return server;
     };
     this.saves = new SettingsSaves({
-      save: settings => call(connected(), { operation: 'settings-save', settings }),
-      get: () => call(connected(), { operation: 'settings-get' }),
+      save: settings => this.send(connected(), { operation: 'settings-save', settings }),
+      get: () => this.send(connected(), { operation: 'settings-get' }),
       conflict: error => error instanceof ConnectionError && error.fromServer,
     }, () => this.render(), () => this.showStatus());
     this.appearance.onchange = () => {
@@ -120,6 +125,8 @@ export class SettingsView {
     this.port.onchange = () => this.savePort();
     this.port.oninput = () => {
       this.portField.input(this.port.value, this.saved?.port ?? 0);
+      // The error is about the earlier text. Leaving Settings reports an error in view.
+      this.portError.hidden = true;
       this.showStatus();
     };
     this.portForm.onsubmit = event => { event.preventDefault(); this.savePort(); };
@@ -154,11 +161,11 @@ export class SettingsView {
     const server = this.server();
     if (!server) return;
     if (!this.titleTools.length) {
-      ({ tools: this.titleTools, sample: this.titleSample } = await call(server, { operation: 'title-tools' }));
+      ({ tools: this.titleTools, sample: this.titleSample } = await this.send(server, { operation: 'title-tools' }));
       this.titleTool.replaceChildren(new Option('None', 'none'), ...this.titleTools.map(tool => new Option(tool.name, tool.id)), new Option('Custom', 'custom'));
     }
     if (!this.pending() && !this.editing) {
-      const settings = await call(server, { operation: 'settings-get' });
+      const settings = await this.send(server, { operation: 'settings-get' });
       if (!this.pending() && !this.editing) {
         // A title tool change can save while this read runs. Keep the newer settings.
         this.saves.update(settings);
@@ -174,6 +181,7 @@ export class SettingsView {
   // change continues.
   close(): void {
     this.panel.hidden = true;
+    this.visits++;
     if (this.removeDialog.open) this.removeDialog.close();
     // A default that a save rejected does not join a later save from the hidden view.
     // As for the port below, the click on Done can save a field and get the rejection
@@ -360,7 +368,7 @@ export class SettingsView {
     this.removeDialog.close();
     if (!tool) return;
     const removal = toolRemoval(tool.id, warned);
-    void this.changeTool(removal.change).then(() => {
+    void this.changeTool(removal.change, `The removal of “${tool.name}” did not save.`).then(() => {
       const latest = this.saved?.tools.find(current => current.id === tool.id);
       if (removal.reconfirm() && latest && !this.panel.hidden) this.confirmRemove(latest);
     });
@@ -415,13 +423,15 @@ export class SettingsView {
       editor.name.focus();
       return;
     }
-    void this.changeTool(toolEdit({ id, name, command }, original ?? undefined), editor.error, () => {
+    const failure = original ? `The edit of “${original.name}” did not save.` : `The new tool “${name}” did not save.`;
+    void this.changeTool(toolEdit({ id, name, command }, original ?? undefined), failure, editor.error, () => {
       if (original) this.closeEditor();
       else this.resetAddTool();
     });
   }
 
   private moveTool(id: string, offset: number): void {
+    const name = this.saved?.tools.find(tool => tool.id === id)?.name ?? '';
     void this.changeTool(settings => {
       const tools = [...settings.tools];
       const index = tools.findIndex(tool => tool.id === id);
@@ -432,7 +442,7 @@ export class SettingsView {
       tools.splice(index, 1);
       tools.splice(destination, 0, tool);
       return { ...settings, tools };
-    });
+    }, `The move of “${name}” did not save.`);
   }
 
   private setToolBusy(busy: boolean): void {
@@ -442,8 +452,12 @@ export class SettingsView {
     }
   }
 
-  private async changeTool(change: SettingsChange, error = this.toolError, done?: () => void): Promise<void> {
+  // Save a change of the tools. failure names the action for the error toast. The toast
+  // shows when the user left Settings before the reply, because the close discarded the
+  // entry of the row. Otherwise the error shows in error.
+  private async changeTool(change: SettingsChange, failure: string, error = this.toolError, done?: () => void): Promise<void> {
     if (this.toolBusy) return;
+    const visit = this.visits;
     const focused = document.activeElement;
     const toolId = focused?.closest<HTMLElement>('#settings-tools > [data-tool-id]')?.dataset.toolId;
     const index = this.saved?.tools.findIndex(tool => tool.id === toolId) ?? -1;
@@ -455,12 +469,16 @@ export class SettingsView {
       await this.saves.enqueue(() => this.saves.save(change));
       saved = true;
     } catch (cause) {
-      error.textContent = errorMessage(cause);
-      error.hidden = false;
+      if (visit !== this.visits) this.report(failure, errorMessage(cause));
+      else {
+        error.textContent = errorMessage(cause);
+        error.hidden = false;
+      }
     } finally {
       this.setToolBusy(false);
       this.renderTools();
-      if (saved && done) done();
+      // After a close, the rows have no entry of this change to reset.
+      if (saved && done && visit === this.visits) done();
       else if (focused instanceof HTMLButtonElement && toolId && index >= 0 &&
           document.activeElement === document.body && !this.panel.hidden) {
         this.restoreToolFocus(focused.id, toolId, index);
@@ -562,13 +580,14 @@ export class SettingsView {
     }
     const name = this.titleToolName(tool);
     const before = { titleTool: this.saved.titleTool, titleCommand: this.saved.titleCommand };
+    const visit = this.visits;
     this.busy = true;
     this.settingTool = this.testedTool = tool;
     this.render();
     if (tool !== 'none') this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`);
     else this.testResult.hidden = true;
     try {
-      const result = await call(server, { operation: 'title-tool-set', settings: { titleTool: tool, titleCommand: command } });
+      const result = await this.send(server, { operation: 'title-tool-set', settings: { titleTool: tool, titleCommand: command } });
       if (tool === 'custom') this.customCommand.value = this.renderedCustom = result.settings.titleCommand;
       this.customOpen = false;
       this.saves.update(result.settings);
@@ -576,14 +595,14 @@ export class SettingsView {
     } catch (error) {
       // Another change can save during the test. Read the settings, so that the list
       // shows the saved tool.
-      const latest = await call(server, { operation: 'settings-get' }).catch(() => null);
+      const latest = await this.send(server, { operation: 'settings-get' }).catch(() => null);
       if (latest) this.saves.update(latest);
       const failed = failedTitleChange(tool, before, latest);
       this.customOpen = failed.customOpen;
       this.showTest('failed', `✕ ${errorMessage(error)}`, failed.detail, tool !== 'none');
-      // The user left Settings during the test. The hidden view keeps no entry, so a
-      // toast tells about the failure.
-      if (this.panel.hidden) {
+      // The user left Settings during the test. The view keeps no entry of the change,
+      // so a toast tells about the failure.
+      if (visit !== this.visits) {
         this.discardCustom();
         this.report(titleToolNotSaved, errorMessage(error));
       }
@@ -619,7 +638,7 @@ export class SettingsView {
     this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`);
     try {
       const titleCommand = tool === 'custom' ? this.customCommand.value : '';
-      const result = await call(server, { operation: 'title-test', settings: { titleTool: tool, titleCommand } });
+      const result = await this.send(server, { operation: 'title-test', settings: { titleTool: tool, titleCommand } });
       if (runNumber === this.titleRun && tool === this.titleTool.value) {
         this.showTest('passed', `✓ Test passed. ${name} made the title “${result.title}” from the sample message.`);
       }
@@ -651,13 +670,14 @@ export class SettingsView {
       return;
     }
     if (!this.saved) return;
+    const visit = this.visits;
     const token = this.portField.begin();
     void this.saves.savePort(port).then(() => {
       if (this.portField.done(token, true)) this.portError.hidden = true;
       this.render();
     }, (error: unknown) => {
       if (!this.portField.done(token, false)) {
-        if (this.panel.hidden) this.report(portNotSaved, errorMessage(error));
+        if (visit !== this.visits) this.report(portNotSaved, errorMessage(error));
         return;
       }
       this.portError.textContent = errorMessage(error);
@@ -667,13 +687,14 @@ export class SettingsView {
 
   private saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K]): void {
     if (!this.saved) return;
+    const visit = this.visits;
     void this.saves.saveDefault(key, value).then(() => {
       this.error.hidden = true;
       this.render();
     }, (error: unknown) => {
       // The user left Settings before the reply. The rejected default does not stay
-      // pending in the hidden view, so a toast tells about it.
-      if (this.panel.hidden) {
+      // pending, so a toast tells about it.
+      if (visit !== this.visits) {
         this.saves.discardRejected();
         this.report(defaultNotSaved, errorMessage(error));
         this.render();

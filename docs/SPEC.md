@@ -1030,6 +1030,11 @@ a default that failed to save.
     reject the value before the page closes.
   - The server rejected a port, a default, or a title tool after the user left. The
     page then also discards that entry.
+  - A save of a new tool, an edit, a move, or a removal failed after the user left. The
+    toast names the action and the tool, for example **The new tool “Codex” did not
+    save.**
+- A reply that comes after the user opened Settings again also goes to a toast, because
+  the close discarded the entry of that request.
 - Escape in **Starting branch or commit** also discards a value that the server
   rejected.
 - While Settings shows an entry that is not saved, the browser can warn when the user
@@ -1045,6 +1050,7 @@ a default that failed to save.
 - The card shows the port that the server uses now and when a saved port applies.
 - Text that is not a whole number, and a port outside 1024 to 65535, send no save. The
   page shows its range message below the field.
+- New text in the field hides the error, because the error is about the earlier text.
 - A new port that another program holds fails to save. A port that browsers refuse to
   open also fails. The server error shows below the field.
 - A failed port save does not join a later save of another setting.
@@ -3112,7 +3118,11 @@ shell availability afterward, reconnect without replay, and an untouched compose
 These shell fixtures do not establish model availability or agent CLI compatibility.
 
 Web fixtures cover settings comparison, edits that preserve fields changed by another
-view, and repeated add requests. They cover the status text with the names of the
+view, and repeated add requests. View fixtures run the Settings view on a small fake DOM
+and send each server reply at a chosen time. They cover a tool save, a port, a default,
+and a custom title command that fail after **Done**, each with its toast and no entry
+left. They cover a corrected port that saves after **Done** without a toast, and a
+removal that asks again. They cover the status text with the names of the
 entries that are not saved, and the check for a tool name that another tool has. They
 cover that check after a revision conflict, and a removal that asks again after the
 tool became the default tool. They cover a rejected default that the page discards, and
