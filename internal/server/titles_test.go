@@ -44,12 +44,12 @@ func TestParseTitle(t *testing.T) {
 		{"\n \n", "printed no title"},
 		{"bbflow-title:  **  ", "empty title"},
 		// One line without the marker can be a status line or an error.
-		{"Fix login redirect\n", "no line starts with bbflow-title:"},
-		{"Error executing prompt: usage limit\n", "no line starts with bbflow-title:"},
+		{"Fix login redirect\n", `printed 1 line, but no line starts with "bbflow-title:"`},
+		{"Error executing prompt: usage limit\n", `no line starts with "bbflow-title:"`},
 		// The marker must start the line.
-		{"The answer is bbflow-title: Fix it\n", "no line starts with bbflow-title:"},
+		{"The answer is bbflow-title: Fix it\n", `no line starts with "bbflow-title:"`},
 		// An error message with exit status 0 must not become a title.
-		{"🎯 Using model: small\nExecuting prompt: Write a short title\nError executing prompt: usage limit\n", "no line starts with bbflow-title:"},
+		{"🎯 Using model: small\nExecuting prompt: Write a short title\nError executing prompt: usage limit\n", `printed 3 lines, but no line starts with "bbflow-title:"`},
 	} {
 		if got, err := parseTitle(test.output); err == nil || !strings.Contains(err.Error(), test.want) {
 			t.Errorf("parseTitle(%q) = %q, %v, want error %q", test.output, got, err, test.want)

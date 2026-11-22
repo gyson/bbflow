@@ -553,7 +553,10 @@ bbflow tool add --default Codex 'codex --no-alt-screen'
 bbflow tool add Claude claude
 ```
 
-`tool list` prints the saved tools as a JSON array with `id`, `name`, and `command`.
+`tool list` prints one saved tool on each line, in the saved order: the name, a tab, and
+the startup command. A name and a command contain no tab, so a script can divide each
+line at the tab. The list does not align the commands in one column. Without a tool, it
+prints `No tools are saved.` For the tool IDs, use `settings get`, which prints JSON.
 
 `tool add` creates a tool at the end of the list. If a tool has the same name, the
 command replaces its startup command and keeps its position and ID. `--default` makes
@@ -563,8 +566,10 @@ the tool the default for new drafts.
 the default tool. Drafts and sessions keep their own copy of the command.
 
 Names match exactly after bbflow removes leading and trailing spaces. If two tools have
-the same name, `add` and `remove` fail. Rename one of them in Settings. Put options
-before `NAME`. Quote a command that contains spaces. The
+the same name, `add` and `remove` fail. Rename one of them in Settings. Put `--default`
+before `NAME`. After `NAME`, it is an error. For a name that starts with `-`, put `--`
+before it, for example `bbflow tool add -- --default true`. Quote a command that
+contains spaces. The
 [Settings rules](SPEC.md#session-preparation-settings-and-worktrees) for names and
 commands apply.
 
@@ -576,11 +581,13 @@ applies its change again to the latest settings. Do not put secrets in a shared 
 ## Manage settings
 
 ```text
-bbflow [--dir DIR] settings get
+bbflow [--dir DIR] settings get [KEY]
 bbflow [--dir DIR] settings set KEY VALUE
 ```
 
 ```sh
+bbflow settings get
+bbflow settings get default-tool
 bbflow settings set appearance dark
 bbflow settings set default-tool Codex
 bbflow settings set worktree true
@@ -590,23 +597,33 @@ bbflow settings set port 50000
 ```
 
 `settings get` prints the saved settings as JSON, including the revision and the tools.
+The JSON uses the field names of the protocol, so `default-tool` is `defaultTool` and
+`update-check` is `updateCheck`.
 
-`settings set` changes one value:
+`settings get KEY` prints one value as text, in the form that `settings set` accepts.
+For `default-tool`, it prints the tool name, or an empty line for the built-in Shell.
+If another tool has the name of the default tool, `set` cannot select it by that name.
+`settings get default-tool` then fails and tells you to rename one tool in Settings.
+
+`settings set` changes one value. It then prints the saved value, for example
+`Saved appearance: dark.` The server can replace a value, such as an empty `base`, and
+the command prints the result.
 
 | Key | Value |
 | --- | --- |
 | `appearance` | `system`, `light`, or `dark` |
 | `default-tool` | The name of a tool. An empty value, `""`, selects the built-in Shell. |
-| `worktree` | `true` or `false`. `true` selects **Use worktree** for new drafts in Git folders. A new installation starts with `true`. An upgrade keeps the saved value. |
+| `worktree` | `true` or `false`. No other spelling is a value. `true` selects **Use worktree** for new drafts in Git folders. A new installation starts with `true`. An upgrade keeps the saved value. |
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
 | `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
 | `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port, or when browsers refuse the port, such as 6000 and 10080. See [Instance directory](#instance-directory). |
 
 **Impact:** the same as `tool add`. A rejected value changes nothing. A `port` change
-does not move the running server. The command tells you that the port applies at the
-next server start. A restart stops all sessions.
+does not move the running server. After a changed port, the command tells you that the
+port applies at the next server start. A restart stops all sessions.
 
-Use [`title-tool`](#title-tool) to select the title tool.
+Use [`title-tool`](#title-tool) to select the title tool. `title-tool` is not a settings
+key. `settings get title-tool` and `settings set title-tool` fail and name that command.
 
 ## Title tool
 
