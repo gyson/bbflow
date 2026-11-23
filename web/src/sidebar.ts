@@ -23,6 +23,12 @@ export function nearestRow(before: string[], removed: string, after: string[]): 
   return order.find(key => key !== removed && shown.has(key));
 }
 
+function mainArea(): HTMLElement {
+  const main = document.querySelector('main');
+  if (!main) throw new Error('Missing UI element: main');
+  return main;
+}
+
 // Sidebar holds the width and the visibility of the sidebar. In the mobile layout, the
 // sidebar is a drawer above the main area. The drawer has its own state. It starts
 // closed, except on the welcome view, and a change of the layout sets it again.
@@ -31,17 +37,23 @@ export class Sidebar {
   private readonly scrim = element('sidebar-scrim', HTMLElement);
   private readonly divider = element('sidebar-divider', HTMLElement);
   private readonly toggle = element('sidebar-toggle', HTMLButtonElement);
+  private readonly main = mainArea();
   // These preferences belong to the view. Session changes preserve them. Reload resets them.
   // A null width uses the default width from the style sheet.
   private width: number | null = null;
   private visible = true;
   private drawer: boolean;
+  // The element that had the focus before the drawer opened. It gets the focus again when
+  // the drawer closes.
+  private returnFocus: HTMLElement | null = null;
   private readonly drawerLayout = matchMedia(mobileQuery);
   private readonly stopDrag: () => void;
 
   // home tells if the page shows the welcome view.
   constructor(private readonly home: () => boolean) {
     this.drawer = home();
+    // The drawer takes the focus when no row of the drawer can take it.
+    this.sidebar.tabIndex = -1;
     this.stopDrag = dragDivider(this.divider, 'x', 'resizing-sidebar', {
       start: () => this.sidebar.getBoundingClientRect().width,
       move: (width, offset) => this.resize(width + offset),
@@ -101,18 +113,39 @@ export class Sidebar {
 
   private show(shown: boolean): void {
     this.stopDrag();
+    const focus = document.activeElement;
+    const opens = this.narrow && shown && !this.drawer;
+    if (opens) this.returnFocus = focus instanceof HTMLElement && !this.sidebar.contains(focus) ? focus : null;
     if (this.narrow) this.drawer = shown;
     else this.visible = shown;
-    // Keep keyboard focus on a visible control.
-    const focus = document.activeElement;
-    if (!shown && (this.sidebar.contains(focus) || focus === this.divider)) this.toggle.focus();
     this.apply();
+    // The open drawer covers the main area, so it takes the keyboard focus. When the drawer
+    // closes, the focus goes back to where it was. Keep keyboard focus on a visible control.
+    if (opens) this.focusDrawer();
+    else if (!shown && (this.sidebar.contains(focus) || focus === this.divider || (this.narrow && (!focus || focus === document.body)))) {
+      this.restoreFocus();
+    }
+  }
+
+  // Give the focus to the row of the selected session, or else to the drawer.
+  private focusDrawer(): void {
+    this.sidebar.querySelector<HTMLElement>('#sessions [aria-current="true"]')?.focus();
+    if (!this.sidebar.contains(document.activeElement)) this.sidebar.focus();
+  }
+
+  private restoreFocus(): void {
+    const target = this.returnFocus;
+    this.returnFocus = null;
+    if (this.narrow && target?.isConnected) target.focus();
+    if (!target || document.activeElement !== target) this.toggle.focus();
   }
 
   private apply(): void {
     const shown = this.shown;
     this.sidebar.hidden = this.divider.hidden = !shown;
     this.scrim.hidden = !shown || !this.narrow;
+    // The main area under the open drawer takes no focus and no input.
+    this.main.inert = shown && this.narrow;
     const label = shown ? 'Hide sidebar' : 'Show sidebar';
     this.toggle.setAttribute('aria-expanded', String(shown));
     this.toggle.setAttribute('aria-label', label);

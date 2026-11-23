@@ -630,18 +630,24 @@ the height of the window and shows one part at a time:
   the workspace pane. A wider window that cannot hold the session and the pane has the
   same switch.
 - The toolbar has one row.
-- In Changes and Files, the file list and the file view show one at a time, as in each
-  [narrow pane](#file-list-in-a-narrow-pane). The rows of the list are higher.
+- In Changes and Files, the rows of the file list are higher. A view narrower than 560
+  pixels shows the list and the file view one at a time. See
+  [file list in a narrow pane](#file-list-in-a-narrow-pane).
 
 A wider window uses the regular layout. A change of the width changes the layout at
 once and keeps the selected session and the shown view.
 
 #### Sidebar drawer
 
-- The toolbar button at the left of the session title opens and closes the drawer.
-  Command-B does the same on macOS.
-- A click outside the drawer or Escape closes it. An open row menu or dialog takes
-  Escape first.
+- The toolbar button at the left of the session title opens the drawer. The open
+  drawer covers this button.
+- A click outside the drawer or Escape closes the drawer. An open row menu or dialog
+  takes Escape first.
+- Command-B opens and closes the drawer on macOS.
+- The open drawer takes the keyboard focus. The row of the selected session gets it, or
+  else the drawer. The main area under the drawer takes no focus and no input.
+- When the drawer closes, the focus goes back to the control that had it before. If that
+  control is gone, the toolbar button gets the focus.
 - The drawer closes when a session or Settings opens.
 - The drawer is open on the welcome view, and closed in each other view, after a page
   load and after a change to the mobile layout.
@@ -2160,6 +2166,10 @@ the [mobile layout](#mobile-layout), it uses the full width.
 - **Session** shows the terminal and the message editor of the session.
 - The other buttons show a view of the pane in the full main area. A hidden session
   terminal stays connected and keeps its PTY size.
+- A session can open while a view of its pane shows. Its hidden terminal then joins with
+  its last shown size in the browser tab. Without that size, it uses the last shown size
+  of another session terminal. Without any such size, it joins with 80 columns and 24
+  rows.
 - The switch replaces the three pane icons of the toolbar and **×** in the header of
   each view. The switch and the icons use the same [pane state](#pane-state). Thus a
   change of the window width keeps the shown view.
@@ -2462,7 +2472,10 @@ available. The file view then has the full width of the pane.
 - **← Back** in the file header shows the list again and gives the focus to the row of
   the file.
 - **View diff** from Files shows the diff of the file in Changes.
-- A change of the view or of the session shows the list again.
+- A change between Changes and Files, or a change of the session, shows the list again.
+  The two views have different lists.
+- Session and Terminal keep the state of the view. A return to Changes or Files shows
+  the same file view or list as before.
 - A wider pane shows the list and the file view side by side again, with the same file.
 
 This applies to a narrow pane next to the session and to the
@@ -3753,8 +3766,13 @@ repository, and a folder outside Git, each with a shell session.
   stays connected and keeps its size.
 - Web fixtures check the view switch: one pressed button, the same state as the icons,
   a shell start from **Terminal**, and no switch without a session. They also check
-  that a click on a file shows the file view, and that **← Back**, another view, and
-  another session show the list.
+  that a click on a file shows the file view, that **← Back**, a change between Changes
+  and Files, and another session show the list, and that a return from Session or
+  Terminal keeps the file view.
+- Web fixtures check the focus of the sidebar drawer. The open drawer gives the focus to
+  the selected row or to itself, and the main area is inert. Escape and a click outside
+  the drawer give the focus back to the terminal, or to the toolbar button when the
+  terminal is gone. The sidebar of the regular layout does not make the main area inert.
 - A browser check of the mobile layout used a demo instance at a width of 390 pixels.
   It checked that the page does not scroll, the drawer with its three ways to close, the
   four views of the switch, the file list and **← Back**, **Stop session** and
@@ -3767,6 +3785,11 @@ repository, and a folder outside Git, each with a shell session.
   and the pane showed side by side, with 82 terminal columns in the session. In the
   pane of 455 pixels at 1500 pixels, the file list and the file view showed one at a
   time. At 1700 pixels, the pane showed them side by side.
+- A browser check at 390 pixels opened the drawer with Command-B from a focused live
+  terminal, then typed `x` and pressed Escape. The drawer closed, the terminal got the
+  focus again, and the archive recorded no input. A second check showed Changes,
+  selected another session, and returned. The archive recorded no resize, and the PTY
+  kept 40 columns and 18 rows.
 
 ### Checks of terminal views
 

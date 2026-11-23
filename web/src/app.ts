@@ -1,5 +1,5 @@
 import { call, encodeBytes, errorMessage, sessionTitle, VERSION } from './protocol.js';
-import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
+import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Worktree, ServerInfo, SessionInfo, Size, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
 import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
@@ -811,13 +811,32 @@ async function refreshSessions() {
 
 function size(view: Terminal) { return terminalSize(view); }
 
+// A hidden terminal has no size. A narrow main area hides the session while it shows the
+// workspace pane. A hidden terminal joins with the last size of the session terminal while
+// it showed, or else with the last size of another session terminal. The map keeps the
+// latest entry last. Thus a join keeps the PTY size until the terminal shows again.
+const shownSizes = new Map<string, Size>();
+
+function terminalShown(): boolean {
+  return !!$('terminal').clientWidth && !!$('terminal').clientHeight;
+}
+
+function rememberSize(value: Size): void {
+  if (!selected?.id) return;
+  shownSizes.delete(selected.id);
+  shownSizes.set(selected.id, value);
+}
+
+function hiddenSize(): Size | undefined {
+  return (selected?.id ? shownSizes.get(selected.id) : undefined) ?? [...shownSizes.values()].at(-1);
+}
+
 function requestFit() {
   if (!terminal || !connection?.ready || !connection?.peer?.active || connection?.resizing) return;
-  // A hidden terminal has no size. A narrow main area hides the session while it shows
-  // the workspace pane. Keep the PTY size until the terminal shows again.
-  if (!$('terminal').clientWidth || !$('terminal').clientHeight) return;
+  if (!terminalShown()) return;
   const proposed = fit?.proposeDimensions();
   const dimensions = proposed && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows) ? terminalSize(proposed) : undefined;
+  if (dimensions) rememberSize(dimensions);
   if (dimensions && (dimensions.cols !== terminal.cols || dimensions.rows !== terminal.rows)) {
     // Apply the server's size event in stream order, after output at the old size.
     connection.peer.send({ type: 'resize', size: dimensions });
@@ -858,7 +877,13 @@ function makeTerminal(): Terminal {
   host.className = 'terminal-host';
   $('terminal').append(host);
   terminal.open(host);
-  fit.fit();
+  const hidden = terminalShown() ? undefined : hiddenSize();
+  if (!hidden) {
+    fit.fit();
+    if (terminalShown()) rememberSize(size(view));
+  } else {
+    view.resize(hidden.cols, hidden.rows);
+  }
   hint();
   terminal.onData(data => {
     if (!connection?.ready || !connection.peer?.active) return;

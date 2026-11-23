@@ -482,14 +482,14 @@ test('a result goes away when the view selects another session', async () => {
   assert.equal(nodes['diff-menu-status'].textContent, '');
 });
 
-test('a click on a file shows the file view, and Back, another view, or another session shows the list', async () => {
+test('a click on a file shows the file view, and Back, Changes or Files, or another session shows the list', async () => {
   const { nodes, pending, pane } = setup();
   const reading = () => nodes['diff-pane'].classes.has('reading');
   const list = node => [node, ...node.children.flatMap(list)];
   const click = () => list(nodes['diff-list']).find(node => node.dataset.file === 'a.txt').onclick();
   pending[0].resolve(changes(baselines.head));
   await settle();
-  // The pane selects the first changed file itself. The mobile layout still shows the list.
+  // The pane selects the first changed file itself. A narrow pane still shows the list.
   assert.equal(reading(), false);
   click();
   assert.equal(reading(), true);
@@ -498,6 +498,10 @@ test('a click on a file shows the file view, and Back, another view, or another 
   assert.equal(document.activeElement.dataset.file, 'a.txt', 'the focus goes back to the row of the file');
 
   click();
+  // Session or Terminal hides Changes. A return to Changes shows the same file.
+  pane.setShown(false);
+  pane.setShown(true);
+  assert.equal(reading(), true, 'a return from Session or Terminal keeps the file view');
   pane.setShown(true, 'files');
   assert.equal(reading(), false, 'another view starts with its list');
   pane.setShown(true, 'changed');
