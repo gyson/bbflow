@@ -22,6 +22,7 @@ async function fixture(t, writeInput) {
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
   let revision = 0;
   const saved = [], sockets = [];
+  let rejection = null; // The reply to the next save, when the server rejects it.
   class Socket {
     readyState = 1;
     bufferedAmount = 0;
@@ -34,6 +35,12 @@ async function fixture(t, writeInput) {
       const empty = { revision, text: '', attachments: [], pending: false };
       if (request.operation === 'composer-watch') this.reply({ type: 'draft', session: request.session, composer: { draft: empty, attachments: [] } });
       if (request.operation !== 'composer-draft') return;
+      if (rejection) {
+        this.reply({ type: 'result', result: { ...rejection, rejected: true } });
+        revision = rejection.draft.revision;
+        rejection = null;
+        return;
+      }
       const draft = { ...request.draft, revision: ++revision };
       saved.push(draft);
       this.reply({ type: 'result', result: { draft, attachments: [] } });
@@ -69,7 +76,8 @@ async function fixture(t, writeInput) {
   };
   const watch = () => sockets.findLast(socket => socket.operation === 'composer-watch');
   // advance adds draft revisions that another view saved.
-  return { nodes, saved, writes, send, watch, reports: () => reports, advance: count => { revision += count; } };
+  return { nodes, saved, writes, send, watch, reports: () => reports, advance: count => { revision += count; },
+    reject: state => { rejection = state; } };
 }
 
 test('a send with a receipt reports one sent message after the draft is clear', async t => {
@@ -142,5 +150,23 @@ test('a draft watch that connects again reports a newer draft, and no report wit
   await new Promise(resolve => setTimeout(resolve, 1200));
   await settle();
   assert.notEqual(watch(), second);
+  assert.equal(reports(), 1);
+});
+
+test('a save that the server rejects reports the send from another view', async t => {
+  const { nodes, watch, reports, reject } = await fixture(t, () => Promise.resolve());
+  // Another view sent a message. The server rejects the save of this view and returns
+  // the latest draft, which is clear.
+  reject({ draft: { revision: 3, text: '', attachments: [], pending: false }, attachments: [] });
+  nodes['composer-text'].value = 'my edit';
+  nodes['composer-text'].oninput();
+  await new Promise(resolve => setTimeout(resolve, 450));
+  await settle();
+  assert.equal(nodes['composer-status'].textContent, 'A message was sent from another view. Your last edit here was not saved.');
+  assert.equal(nodes['composer-text'].value, '');
+  assert.equal(reports(), 1);
+  // The watch gives the same draft. This view has it, so it reports nothing more.
+  watch().reply(pushed(3));
+  await settle();
   assert.equal(reports(), 1);
 });

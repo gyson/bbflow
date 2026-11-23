@@ -189,7 +189,10 @@ export class Composer {
         const result = await call(server, { operation: 'composer-draft', session: this.session,
           draft: { ...this.state.draft, attachments: [...this.state.draft.attachments] } });
         if (result.rejected) {
+          // The server rejects a save only after a send from another view. The watch
+          // gives the same draft later, so report the send here.
           this.apply(result, sentElsewhere);
+          this.host.sent();
           return;
         }
         this.state.draft.revision = result.draft.revision;

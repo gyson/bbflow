@@ -1073,8 +1073,11 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
     throw error;
   } finally {
     if (selected?.id) {
-      messageNav.select(selected.id);
-      messageNav.window(terminalPicker.shown());
+      // A start that failed shows the draft form again. A draft has no terminal.
+      if (!preparation.visible) {
+        messageNav.select(selected.id);
+        messageNav.window(terminalPicker.shown());
+      }
       await composer.select(selected.id);
       await loadHandoff(selected.id);
     }
@@ -1164,6 +1167,7 @@ async function showWelcome(): Promise<void> {
   selected = null;
   workspacePane.select('');
   terminalPicker.update([]); terminalPicker.show('');
+  messageNav.detach();
   terminal?.dispose(); terminal = null; fit = null;
   sessionSplit.setEnabled(false);
   $('session-view').hidden = true;

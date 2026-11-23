@@ -155,3 +155,29 @@ test('a reload reports a change only when the newest sent messages differ', asyn
   assert.equal(changes(), 2);
   assert.match(nodes['message-open'].textContent, /^(Message \d of 2|2 sent messages below)/);
 });
+
+test('a detached view hides the bar, stops its search, and reads nothing more', async t => {
+  const { nav, view, nodes, requests } = fixture(t, () => ({ messages: [sent(1, 'first question')], more: false }));
+  await write(view, lines(2) + '> first question\r\n' + lines(1).trimEnd());
+  nav.select('one');
+  await settle();
+  assert.equal(nav.state(1), 'found');
+  assert.equal(nodes['message-bar'].hidden, false);
+  // A frame and a reload are waiting when the host leaves the session and disposes the terminal.
+  nav.rendered();
+  nav.reload();
+  nav.detach();
+  view.dispose();
+  await new Promise(resolve => setTimeout(resolve, 400));
+  await settle();
+  // The reload from before the detach reached the server. Its reply has no effect.
+  const count = requests.length;
+  assert.equal(nodes['message-bar'].hidden, true);
+  assert.equal(nav.state(1), 'missing');
+  nav.reload();
+  nav.rendered();
+  nav.step(-1);
+  assert.equal(nav.go(1), false);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(requests.length, count, 'no request after the view left the session');
+});

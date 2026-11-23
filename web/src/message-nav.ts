@@ -81,6 +81,15 @@ export class MessageNav {
     this.schedule(0);
   }
 
+  // Leave the terminal of the view, before the host disposes it. No later search reads
+  // that terminal.
+  detach(): void {
+    for (const listener of this.listeners) listener.dispose();
+    this.listeners = [];
+    this.select('');
+    this.view = null;
+  }
+
   // Select the session of the view and read its sent messages. An empty session, for a
   // draft, hides the bar.
   select(session: string): void {
@@ -155,6 +164,8 @@ export class MessageNav {
 
   private reset(): void {
     this.request++;
+    clearTimeout(this.timer);
+    this.timer = undefined;
     this.cache = emptyCache();
     this.loading = this.reading = this.again = false;
     this.pinned = null;

@@ -1525,8 +1525,8 @@ later terminal, each view shows the stored status of the later run.
   list with the new terminal arrives.
 - The toolbar does not show the startup command. The shell usually echoes it at the top
   of the terminal, and the start event records it.
-- At the right, a search icon opens **Search history**. Three icons show the Changes,
-  Files, and Terminal views of the workspace pane.
+- At the right, a search icon opens **Search history**. Four icons show the Messages,
+  Changes, Files, and Terminal views of the workspace pane.
 - The session toolbar shows **Stop session** to the left of the icons when you view the
   live terminal.
 - During worktree creation, the session shows `running` before a terminal exists.
@@ -2082,7 +2082,8 @@ replaces the oldest one.
 - Each newer draft that the editor gets from another view also causes this read. A
   send saves a pending draft and then a clear draft, and the server gives a view only
   the latest draft. Thus a newer draft of any kind can follow a send. This also covers
-  a draft watch that connects again.
+  a draft watch that connects again. A save that the server rejects, because another
+  view sent a message, causes the same read.
 - A read that gives a different newest page tells the Messages view to read its list
   again. A read that arrives during another read causes one more read after it.
 - The newest page continues the kept messages only when it reaches a message that the
@@ -2093,7 +2094,9 @@ replaces the oldest one.
 
 The row above the terminal shows the message bar at its right end. The bar shows for
 each session terminal, also for an ended session and an earlier terminal. Thus the
-terminal keeps its height when the first message is sent.
+terminal keeps its height when the first message is sent. When the row cannot hold the
+[terminal selector](#terminal-selector) and the bar, the bar goes to a second row below
+the selector.
 
 - The bar names the message that the view reads: the last found message at or above
   the top row of the view. Its label has the number of the message among the found
@@ -3922,12 +3925,14 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
   on when the view moves from the first message into its response. An earlier terminal
   gets its message when a later terminal fills the newest page. A jump target near the
   end does not return after the view scrolls away and back. A reload reports a change
-  only when the newest sent messages differ.
+  only when the newest sent messages differ. A view that leaves its session hides the
+  bar, stops its search, and reads nothing more.
 - `web/composer.test.mjs` covers the report of a send to the list: one report after a
   send with a receipt, one report after a lost receipt with the draft still pending,
   and no report for a message that the editor rejects. A newer draft from another view
   gives one report, from a connected watch and from a watch that connects again, also
-  while this view has an edit that is not saved.
+  while this view has an edit that is not saved. A save that the server rejects gives
+  one report.
 - `web/workspace-pane.test.mjs` covers the **Messages** view: its panel, its switch
   button, and the close of the pane for a jump.
 - A second browser check verified the order of the view switch and the toolbar icons,
@@ -3947,6 +3952,9 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
 - At 375 x 812 pixels, the view switch showed **Messages**. **Show in terminal** closed
   the pane, showed the session, and scrolled to the message. The terminal did not take
   the keyboard focus.
+- At 375 x 812 pixels, the demo session with two terminals showed the terminal selector
+  on one row and the message bar on a second row, with no overlap. The terminal list
+  opened below both rows.
 - In the demo session with two terminals, the latest terminal showed **No sent message
   in this terminal**. The earlier terminal showed the one message that was sent in it.
   The ended demo session showed its two messages.
