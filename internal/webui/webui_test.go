@@ -86,8 +86,10 @@ func TestPageLinksOpaqueAppleTouchIcon(t *testing.T) {
 		}
 	}
 	// The tile is a neutral mid gray, so it stays visible on light and dark wallpapers.
+	// Each channel is in the mid range, and the channels differ by at most 16.
 	for _, pixel := range []color.NRGBA{at(0, 0), at(0, 179)} {
-		if pixel.R < 0x28 || pixel.R > 0x58 || pixel.B < pixel.R || pixel.B-pixel.R > 0x10 {
+		low, high := min(pixel.R, pixel.G, pixel.B), max(pixel.R, pixel.G, pixel.B)
+		if low < 0x28 || high > 0x60 || high-low > 0x10 {
 			t.Fatalf("apple-touch-icon tile color %v is not a neutral mid gray", pixel)
 		}
 	}
