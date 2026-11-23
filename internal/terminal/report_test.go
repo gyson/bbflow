@@ -23,7 +23,8 @@ func TestReportsUseTheModesOfTheFrame(t *testing.T) {
 	}
 	check := func(reason, data string, want bool) {
 		t.Helper()
-		out, got := state.View().Reports.Translate([]byte(data))
+		var held Buttons
+		out, got := state.View().Reports.Translate([]byte(data), &held)
 		if got != want {
 			t.Fatalf("%s: Translate(%q) = %q, %v", reason, data, out, got)
 		}
@@ -69,7 +70,8 @@ func TestMouseReportsNameTheTerminalCellOfTheView(t *testing.T) {
 	}
 	check := func(reason string, reports Reports, data, want string) {
 		t.Helper()
-		out, ok := reports.Translate([]byte(data))
+		var held Buttons
+		out, ok := reports.Translate([]byte(data), &held)
 		if !ok || string(out) != want {
 			t.Fatalf("%s: Translate(%q) = %q, %v, want %q", reason, data, out, ok, want)
 		}
@@ -105,4 +107,71 @@ func TestMouseReportsNameTheTerminalCellOfTheView(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("a row that the default encoding cannot hold", tall.ViewFor(protocol.Size{Cols: 80, Rows: 10}, nil).Reports, "\x1b[M\x20\x23\x22", "")
+}
+
+// A press on a terminal cell starts a gesture. The application must get its motion and
+// its release, also outside the terminal. Without such a press, the padding is silent.
+func TestAGestureFromTheTerminalEndsOutsideIt(t *testing.T) {
+	modes := func(sequences string, size protocol.Size) Reports {
+		t.Helper()
+		state := New(protocol.Size{Cols: 80, Rows: 24})
+		if _, err := state.Apply(history.Event{Kind: "output", Data: []byte(sequences)}); err != nil {
+			t.Fatal(err)
+		}
+		return state.ViewFor(size, nil).Reports
+	}
+	large := protocol.Size{Cols: 100, Rows: 30}
+	type step struct{ data, want string }
+	for name, test := range map[string]struct {
+		reports Reports
+		steps   []step
+	}{
+		"a drag to the right in the SGR encoding": {modes("\x1b[?1002h\x1b[?1006h", large), []step{
+			{"\x1b[<0;80;5M", "\x1b[<0;80;5M"},   // Press on the last column.
+			{"\x1b[<32;81;5M", "\x1b[<32;80;5M"}, // Motion in the padding.
+			{"\x1b[<32;95;28M", "\x1b[<32;80;24M"},
+			{"\x1b[<0;95;28m", "\x1b[<0;80;24m"}, // Release in the padding.
+			{"\x1b[<35;96;28M", ""},              // Motion with no button.
+			{"\x1b[<0;96;28m", ""},               // A second release.
+		}},
+		"a click in the padding": {modes("\x1b[?1003h\x1b[?1006h", large), []step{
+			{"\x1b[<0;81;5M", ""}, {"\x1b[<32;82;5M", ""}, {"\x1b[<0;82;5m", ""},
+			// The release is on a terminal cell, so the application gets it.
+			{"\x1b[<0;81;5M", ""}, {"\x1b[<0;80;5m", "\x1b[<0;80;5m"},
+		}},
+		"two buttons": {modes("\x1b[?1002h\x1b[?1006h", large), []step{
+			{"\x1b[<0;80;5M", "\x1b[<0;80;5M"}, {"\x1b[<2;81;5M", ""},
+			{"\x1b[<2;81;5m", ""}, // The press of this button was in the padding.
+			{"\x1b[<32;81;5M", "\x1b[<32;80;5M"},
+			{"\x1b[<0;81;5m", "\x1b[<0;80;5m"},
+		}},
+		"a wheel in the padding during a drag": {modes("\x1b[?1002h\x1b[?1006h", large), []step{
+			{"\x1b[<0;80;5M", "\x1b[<0;80;5M"}, {"\x1b[<64;81;5M", ""}, {"\x1b[<0;81;5m", "\x1b[<0;80;5m"},
+		}},
+		"a drag in the default encoding": {modes("\x1b[?1002h", large), []step{
+			{"\x1b[M\x20\x70\x25", "\x1b[M\x20\x70\x25"}, // Press on column 80, row 5.
+			{"\x1b[M\x40\x71\x25", "\x1b[M\x40\x70\x25"}, // Motion on column 81.
+			{"\x1b[M\x23\x71\x3d", "\x1b[M\x23\x70\x38"}, // Release on column 81, row 29.
+			{"\x1b[M\x23\x71\x3d", ""},
+		}},
+		"a drag above a view with fewer rows and more columns": {modes("\x1b[?1002h\x1b[?1006h", protocol.Size{Cols: 100, Rows: 10}), []step{
+			{"\x1b[<0;80;1M", "\x1b[<0;80;15M"}, {"\x1b[<0;90;1m", "\x1b[<0;80;15m"},
+		}},
+	} {
+		var held Buttons
+		for i, step := range test.steps {
+			out, ok := test.reports.Translate([]byte(step.data), &held)
+			if !ok || string(out) != step.want {
+				t.Errorf("%s, step %d: Translate(%q) = %q, %v, want %q", name, i, step.data, out, ok, step.want)
+			}
+		}
+		if held != 0 {
+			t.Errorf("%s: buttons %b stay down", name, held)
+		}
+	}
+	// Input that is not a report does not change the buttons.
+	reports, held := modes("\x1b[?1002h\x1b[?1006h", large), Buttons(0)
+	if _, ok := reports.Translate([]byte("\x1b[<0;80;5Mx"), &held); ok || held != 0 {
+		t.Fatalf("mixed input: ok %v, buttons %b", ok, held)
+	}
 }

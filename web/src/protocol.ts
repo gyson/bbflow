@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/38';
+export const VERSION = 'bbflow/39';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -216,7 +216,7 @@ export type ServerMessage =
   | { type: 'error'; error: string };
 
 export type Control =
-  | { type: 'input'; data: string; id?: string }
+  | { type: 'input'; data: string; id?: string; report?: true }
   | { type: 'resize'; size: Size }
   | { type: 'signal'; signal: number }
   | { type: 'ping' };

@@ -230,11 +230,11 @@ func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
 			}
 		}
 	}
-	// report fails when the input changed the PTY size before it reached the process,
-	// or when the process got other bytes than want.
+	// report sends input with the report mark. It fails when the input changed the PTY
+	// size before it reached the process, or when the process got other bytes than want.
 	report := func(view *testView, reason, data, want string) {
 		t.Helper()
-		view.send(protocol.Message{Type: "input", Data: []byte(data)})
+		view.send(protocol.Message{Type: "input", Report: true, Data: []byte(data)})
 		if control := next(); control.Type != "input" || string(control.Data) != want {
 			t.Fatalf("%s: %+v", reason, control)
 		}
@@ -267,9 +267,32 @@ func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
 	// A larger view shows padding around the terminal. The process gets no report for it.
 	large := openTestView(t, s, r, protocol.Size{Cols: 100, Rows: 30})
 	shows(large)
-	large.send(protocol.Message{Type: "input", Data: []byte("\x1b[<0;3;25M")})
-	large.send(protocol.Message{Type: "input", Data: []byte("\x1b[<0;81;2M")})
+	large.send(protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[<0;3;25M")})
+	large.send(protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[<0;81;2M")})
+	large.send(protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[<0;81;2m")})
 	report(large, "a click in the padding reached the process", "\x1b[<0;3;24M", "\x1b[<0;3;24M")
+	report(large, "the release of that click", "\x1b[<0;3;24m", "\x1b[<0;3;24m")
+	// A press on a terminal cell with a release in the padding. The process gets the
+	// release, on the nearest terminal cell.
+	report(large, "the press at the edge", "\x1b[<0;80;2M", "\x1b[<0;80;2M")
+	report(large, "the release in the padding did not reach the process", "\x1b[<0;81;2m", "\x1b[<0;80;2m")
+	report(large, "the focus report after the gesture", "\x1b[O", "\x1b[O")
+	// A receipt does not change a report. The process gets the terminal row, and the
+	// view gets its receipt, also for a report that the process does not get.
+	second.send(protocol.Message{Type: "input", Report: true, ID: "receipt-1", Data: []byte("\x1b[<0;3;2M")})
+	receipt := next()
+	if receipt.Type != "input" || string(receipt.Data) != "\x1b[<0;3;16M" {
+		t.Fatalf("a report with a receipt: %+v", receipt)
+	}
+	receipt.Ack(nil)
+	if m := second.read("input-ack"); m.ID != "receipt-1" || m.Error != "" {
+		t.Fatal(m)
+	}
+	report(second, "the release of the report with a receipt", "\x1b[<0;3;2m", "\x1b[<0;3;16m")
+	large.send(protocol.Message{Type: "input", Report: true, ID: "receipt-2", Data: []byte("\x1b[<0;81;2M")})
+	if m := large.read("input-ack"); m.ID != "receipt-2" || m.Error != "" {
+		t.Fatal(m)
+	}
 	// A resize of a view without the size still does not reach the PTY.
 	wider := protocol.Size{Cols: 42, Rows: 10}
 	second.send(protocol.Message{Type: "resize", Size: wider})
@@ -291,13 +314,20 @@ func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
 	shows(second)
 	// Typed input moves the PTY size to its view first.
 	typed(second, "typed input did not move the PTY size first", protocol.Message{Type: "input", Data: []byte("x")}, wider)
-	// The same bytes are user input when the frames of the view have the mode off.
+	// Marked input is user input when the frames of the view have the mode off.
 	shows(first)
-	typed(first, "input without the focus mode did not move the PTY size", protocol.Message{Type: "input", Data: []byte("\x1b[I")}, size)
-	// A message has an ID. It is user input, also when it has the bytes of a report.
+	typed(first, "input without the focus mode did not move the PTY size", protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[I")}, size)
+	// A paste has no report mark. It is user input, also when it has the bytes of a
+	// report. The process and the record get the bytes of the paste: not another row,
+	// and also a position outside the terminal.
 	output("\x1b[?1004h")
+	shows(first)
 	shows(second)
-	typed(second, "a message did not move the PTY size", protocol.Message{Type: "input", ID: "draft-1", Data: []byte("\x1b[I")}, wider)
+	shows(large)
+	typed(second, "a paste did not move the PTY size", protocol.Message{Type: "input", Data: []byte("\x1b[<0;3;2M")}, wider)
+	typed(large, "a paste with a position in the padding", protocol.Message{Type: "input", Data: []byte("\x1b[<0;81;2M")}, protocol.Size{Cols: 100, Rows: 30})
+	typed(second, "a paste with the bytes of a focus report", protocol.Message{Type: "input", Data: []byte("\x1b[I")}, wider)
+	typed(first, "a message with the bytes of a focus report", protocol.Message{Type: "input", ID: "draft-1", Data: []byte("\x1b[I")}, size)
 }
 
 func TestEndedScreenCacheAndArchiveReconstruction(t *testing.T) {

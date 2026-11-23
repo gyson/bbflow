@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/38`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/39`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/38",
+    "protocol": "bbflow/39",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/38",
+    "protocol": "bbflow/39",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -944,11 +944,15 @@ it sends `input` that is not a report, or when it sends `resize` and no view own
 size. Before the server writes input from a new size owner, it resizes the PTY to the
 size of that view. `signal` does not change the size owner.
 
-A report is `input` without an `id` that holds only focus reports or mouse reports,
-while a frame of the view has that mode on. The server writes a report to the PTY, but
-the size owner does not change. The server changes the row of a mouse report to the
-terminal row that the view shows, and it does not write a mouse report outside the
-terminal. See [reports of a view](SPEC.md#reports-of-a-view) for the rules.
+A report is `input` with `report: true` that holds only focus reports or mouse reports,
+while a frame of the view has that mode on. A client sets `report` only for a report
+that its terminal made, not for a paste or a message with the same bytes. The server
+writes a report to the PTY, but the size owner does not change. The server can change
+the position of a mouse report to the terminal cell that the view shows, and it does
+not write each mouse report outside the terminal. The record of a report has the bytes
+that the PTY gets. Input without `report`, and marked input that is not a report, is
+written and recorded with no change. See
+[reports of a view](SPEC.md#reports-of-a-view) for the rules.
 
 An input receipt always goes to the view that sent the input. Closing the socket removes
 that view. The PTY keeps its size until another view becomes the size owner. No process
@@ -959,7 +963,7 @@ everyone.
 
 | Direction | Type | Contents and effect |
 | --- | --- | --- |
-| Client → server | `input` | Base64 `data`, recorded before PTY delivery. An optional `id` requests a receipt. |
+| Client → server | `input` | Base64 `data`, recorded before PTY delivery. An optional `id` requests a receipt. An optional `report: true` marks a focus report or a mouse report of the view. |
 | Client → server | `resize` | This view's `size`. Only the size owner also resizes the PTY. |
 | Client → server | `signal` | Numeric `signal`. The server accepts only SIGINT. |
 | Client → server | `frame-ack` | `revision` of the frame that finished rendering |
@@ -1052,7 +1056,9 @@ process and capture continue.
 
 An input `id` is an opaque correlation value up to 80 bytes. A receipt without an error
 means the input was recorded and written to the PTY. It does not mean the application
-accepted or completed a message.
+accepted or completed a message. The server does not write each mouse
+[report](#size-owner) to the PTY. For such a report, a receipt without an error means
+that the server completed the input.
 
 A failure, missing receipt, or closed connection leaves delivery uncertain. IDs do not
 prevent duplicate input. Never resend input automatically. Reconnect uses
@@ -1198,13 +1204,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/38") {
+    if (message.server.protocol !== "bbflow/39") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/38", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/39", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1311,6 +1317,9 @@ versions.
 - Protocol 38 adds `remoteHost` and `remoteLogin` to settings, and the
   [remote host](#remote-host) checks of browser access. No operation is new. SQLite
   format 16 adds `remoteHost: ""` and `remoteLogin: ""`.
+- Protocol 39 adds the optional `report` field of `input`. A view marks its focus
+  reports and mouse reports with it. See [size owner](#size-owner). The SQLite format
+  does not change.
 
 ## Source files
 

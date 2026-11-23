@@ -50,25 +50,27 @@ type attachment struct {
 	size     protocol.Size  // Stores the viewport. Only the size owner resizes the PTY.
 	history  terminal.Cache // Keeps rendered rows for a narrower viewport. Requires the session lock.
 	// shown describes the reports of the frame that the view acknowledged last. pending
-	// describes the frame that the view did not acknowledge yet. Only the goroutine of
-	// the attachment uses them.
+	// describes the frame that the view did not acknowledge yet. buttons holds the
+	// mouse buttons that the view pressed on a terminal cell. Only the goroutine of the
+	// attachment uses them.
 	shown, pending *terminal.Reports
+	buttons        terminal.Buttons
 }
 
-// report tells whether the input of this view holds only focus reports and mouse
-// reports. It uses the frames of the view, not the current modes of the application,
-// because the view makes its reports from the frame that it shows. It returns the
-// bytes for the PTY, see terminal.Reports.Translate. An input with an ID is a message,
-// not a report.
+// report tells whether the input of this view is a focus report or a mouse report. The
+// view marks its reports, because a paste can have the same bytes. The marked input
+// must also be a report in a frame of the view. report uses these frames, not the
+// current modes of the application, because the view makes its reports from the frame
+// that it shows. It returns the bytes for the PTY, see terminal.Reports.Translate.
 func (a *attachment) report(message protocol.Message) (data []byte, ok bool) {
-	if message.Type != "input" || message.ID != "" {
+	if message.Type != "input" || !message.Report {
 		return nil, false
 	}
 	for _, frame := range []*terminal.Reports{a.shown, a.pending} {
 		if frame == nil {
 			continue
 		}
-		if data, ok := frame.Translate(message.Data); ok {
+		if data, ok := frame.Translate(message.Data, &a.buttons); ok {
 			return data, true
 		}
 	}
@@ -156,8 +158,13 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 			controls = append(controls, agent.Control{Message: protocol.Message{Type: "resize", Size: a.size}})
 		}
 	}
-	// A report can have no bytes for the PTY, such as a click outside the terminal.
-	if (message.Type != "resize" || r.sizeOwner == a) && !(report && len(message.Data) == 0) {
+	// A report can have no bytes for the PTY, such as a click outside the terminal. A
+	// requested receipt still tells the view that the server completed the input.
+	ignored := report && len(message.Data) == 0
+	if ignored && message.ID != "" {
+		a.inputAck(message.ID, nil)
+	}
+	if (message.Type != "resize" || r.sizeOwner == a) && !ignored {
 		control := agent.Control{Message: message}
 		if message.Type == "input" && message.ID != "" {
 			received := r.received

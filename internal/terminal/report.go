@@ -28,6 +28,10 @@ func reports(m xterm.DecPrivateModes, rows, cols int) Reports {
 	return r
 }
 
+// Buttons holds the mouse buttons that a view pressed on a terminal cell and did not
+// release yet. Bit 0 is the first button.
+type Buttons uint8
+
 // Translate tells whether data holds only reports of a view with this frame: focus
 // reports while focus reporting is on, and mouse reports while mouse tracking is on.
 // The same bytes are not a report when the mode is off.
@@ -35,12 +39,17 @@ func reports(m xterm.DecPrivateModes, rows, cols int) Reports {
 // For reports, Translate returns the bytes for the PTY. A view can show other rows than
 // the first rows of the terminal, and it can be larger than the terminal. A mouse report
 // gets the terminal row of the cell that the view shows. A mouse report outside the
-// terminal is absent from the result. So is a pixel report from a view that does not
-// show the first terminal row, because the height of a cell is unknown.
-func (r Reports) Translate(data []byte) (out []byte, ok bool) {
+// terminal is absent from the result, with one exception. While a button from a press
+// on a terminal cell is down, a motion or a release outside the terminal gets the
+// nearest terminal cell, so that the application sees the end of the gesture. held
+// keeps these buttons between calls. A pixel report from a view that does not show the
+// first terminal row is also absent, because the height of a cell is unknown.
+func (r Reports) Translate(data []byte, held *Buttons) (out []byte, ok bool) {
 	if len(data) == 0 {
 		return nil, false
 	}
+	// Change held only when all of data is reports.
+	buttons := *held
 	for len(data) > 0 {
 		n := 0
 		if r.Focus {
@@ -50,7 +59,7 @@ func (r Reports) Translate(data []byte) (out []byte, ok bool) {
 		}
 		if n == 0 && r.Mouse {
 			var report []byte
-			if report, n = r.mouseReport(data); n > 0 {
+			if report, n = r.mouseReport(data, &buttons); n > 0 {
 				out = append(out, report...)
 			}
 		}
@@ -59,6 +68,7 @@ func (r Reports) Translate(data []byte) (out []byte, ok bool) {
 		}
 		data = data[n:]
 	}
+	*held = buttons
 	return out, true
 }
 
@@ -75,17 +85,20 @@ func focusReport(data []byte) int {
 // empty when the PTY must not get it. mouseReport accepts the default encoding, `CSI M`
 // and 3 bytes, and the SGR encodings, `CSI <` with 3 numbers and a final `M` or `m`. A
 // view can use another encoding than the application selected.
-func (r Reports) mouseReport(data []byte) (report []byte, n int) {
+func (r Reports) mouseReport(data []byte, held *Buttons) (report []byte, n int) {
 	if bytes.HasPrefix(data, []byte("\x1b[M")) {
 		if len(data) < 6 {
 			return nil, 0
 		}
-		// Each value is a byte with an offset of 32. Positions count from 1.
-		col, row := int(data[4])-32, int(data[5])-32+r.Top
-		if !r.inside(col, row) || row+32 > 255 {
+		// Each value is a byte with an offset of 32. Positions count from 1. A release
+		// has the button value 3 and does not name its button.
+		code := int(data[3]) - 32
+		release := code&(motionBit|wheelBit) == 0 && code&3 == 3
+		col, row, ok := r.cell(code, release, int(data[4])-32, int(data[5])-32, held, true)
+		if !ok || col+32 > 255 || row+32 > 255 {
 			return nil, 6
 		}
-		return []byte{0x1b, '[', 'M', data[3], data[4], byte(row + 32)}, 6
+		return []byte{0x1b, '[', 'M', data[3], byte(col + 32), byte(row + 32)}, 6
 	}
 	if !bytes.HasPrefix(data, []byte("\x1b[<")) {
 		return nil, 0
@@ -119,8 +132,8 @@ func (r Reports) mouseReport(data []byte) (report []byte, n int) {
 		}
 		return data[:n], n
 	}
-	col, row := fields[1], fields[2]+r.Top
-	if !r.inside(col, row) {
+	col, row, ok := r.cell(fields[0], data[i] == 'm', fields[1], fields[2], held, false)
+	if !ok {
 		return nil, n
 	}
 	report = append(report, "\x1b[<"...)
@@ -132,7 +145,37 @@ func (r Reports) mouseReport(data []byte) (report []byte, n int) {
 	return append(report, data[i]), n
 }
 
-// inside tells whether a position that counts from 1 is in the terminal.
-func (r Reports) inside(col, row int) bool {
-	return col >= 1 && col <= r.Cols && row >= 1 && row <= r.Rows
+// A mouse report has these bits in its button code.
+const (
+	motionBit = 32
+	wheelBit  = 64
+)
+
+// cell returns the terminal cell of a mouse report from the cell of the view. Positions
+// count from 1. It is not ok when the PTY must not get the report. code is the button
+// code of the report. anyButton is true when a release does not name its button.
+func (r Reports) cell(code int, release bool, col, row int, held *Buttons, anyButton bool) (int, int, bool) {
+	row += r.Top
+	inside := col >= 1 && col <= r.Cols && row >= 1 && row <= r.Rows
+	button := Buttons(1) << (code & 3)
+	gesture := false
+	switch {
+	case code&wheelBit != 0:
+	case release:
+		if anyButton {
+			button = *held
+		}
+		gesture = *held&button != 0
+		*held &^= button
+	case code&motionBit != 0:
+		gesture = *held != 0
+	case inside:
+		*held |= button
+	default:
+		*held &^= button
+	}
+	if !inside && !gesture {
+		return 0, 0, false
+	}
+	return min(max(col, 1), r.Cols), min(max(row, 1), r.Rows), true
 }
