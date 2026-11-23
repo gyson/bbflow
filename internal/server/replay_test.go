@@ -193,7 +193,8 @@ func TestSharedViewsSizeOwnerAndIndependentFlow(t *testing.T) {
 }
 
 // A focus report or a mouse report reaches the process, but only user input moves the
-// PTY size to its view.
+// PTY size to its view. The server uses the frames of a view to identify its reports,
+// and a mouse report names the terminal cell that the view shows.
 func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
 	size := protocol.Size{Cols: 80, Rows: 24}
 	small := protocol.Size{Cols: 40, Rows: 10}
@@ -215,45 +216,88 @@ func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// only fails when the input changed the PTY size before it reached the process.
-	only := func(view *testView, reason, data string) {
+	// shows makes the view acknowledge frames until it shows the latest state.
+	shows := func(view *testView) {
+		t.Helper()
+		for {
+			m := view.read("frame")
+			view.ack(m)
+			r.mu.Lock()
+			latest := r.revision
+			r.mu.Unlock()
+			if m.Revision == latest {
+				return
+			}
+		}
+	}
+	// report fails when the input changed the PTY size before it reached the process,
+	// or when the process got other bytes than want.
+	report := func(view *testView, reason, data, want string) {
 		t.Helper()
 		view.send(protocol.Message{Type: "input", Data: []byte(data)})
-		if control := next(); control.Type != "input" || string(control.Data) != data {
+		if control := next(); control.Type != "input" || string(control.Data) != want {
+			t.Fatalf("%s: %+v", reason, control)
+		}
+	}
+	// typed fails when the input did not move the PTY size to want first.
+	typed := func(view *testView, reason string, message protocol.Message, want protocol.Size) {
+		t.Helper()
+		view.send(message)
+		if control := next(); control.Type != "resize" || control.Size != want {
+			t.Fatalf("%s: %+v", reason, control)
+		}
+		if control := next(); control.Type != "input" || string(control.Data) != string(message.Data) {
 			t.Fatalf("%s: %+v", reason, control)
 		}
 	}
 	first := openTestView(t, s, r, size)
-	first.ack(first.read("frame"))
+	shows(first)
 	if control := next(); control.Type != "resize" || control.Size != size {
 		t.Fatalf("first view did not set the PTY size: %+v", control)
 	}
 	second := openTestView(t, s, r, small)
-	second.ack(second.read("frame"))
+	shows(second)
 	output("\x1b[?1004h\x1b[?1000h\x1b[?1006h")
-	only(second, "a focus report moved the PTY size", "\x1b[I")
-	only(second, "a focus report moved the PTY size", "\x1b[O")
-	only(second, "a mouse report moved the PTY size", "\x1b[<0;3;2M")
+	shows(first)
+	shows(second)
+	report(second, "a focus report moved the PTY size", "\x1b[I", "\x1b[I")
+	report(second, "a focus report moved the PTY size", "\x1b[O", "\x1b[O")
+	// The view of 10 rows shows terminal rows 15 to 24.
+	report(second, "a mouse report did not name the terminal row", "\x1b[<0;3;2M", "\x1b[<0;3;16M")
+	// A larger view shows padding around the terminal. The process gets no report for it.
+	large := openTestView(t, s, r, protocol.Size{Cols: 100, Rows: 30})
+	shows(large)
+	large.send(protocol.Message{Type: "input", Data: []byte("\x1b[<0;3;25M")})
+	large.send(protocol.Message{Type: "input", Data: []byte("\x1b[<0;81;2M")})
+	report(large, "a click in the padding reached the process", "\x1b[<0;3;24M", "\x1b[<0;3;24M")
 	// A resize of a view without the size still does not reach the PTY.
-	second.send(protocol.Message{Type: "resize", Size: protocol.Size{Cols: 42, Rows: 10}})
-	only(first, "a report from the size owner changed the PTY size", "\x1b[I")
-	// Typed input moves the PTY size to its view first.
-	second.send(protocol.Message{Type: "input", Data: []byte("x")})
-	if control := next(); control.Type != "resize" || control.Size != (protocol.Size{Cols: 42, Rows: 10}) {
-		t.Fatalf("typed input did not move the PTY size first: %+v", control)
-	}
-	if control := next(); control.Type != "input" || string(control.Data) != "x" {
-		t.Fatal(control)
-	}
-	// The same bytes are user input when the application did not ask for the report.
+	wider := protocol.Size{Cols: 42, Rows: 10}
+	second.send(protocol.Message{Type: "resize", Size: wider})
+	shows(second)
+	report(first, "a report from the size owner changed the PTY size", "\x1b[I", "\x1b[I")
+	// The view makes a report from the frame that it shows. The application turns focus
+	// reporting off, but the view did not acknowledge that frame.
 	output("\x1b[?1004l")
-	first.send(protocol.Message{Type: "input", Data: []byte("\x1b[I")})
-	if control := next(); control.Type != "resize" || control.Size != size {
-		t.Fatalf("input without the focus mode did not move the PTY size: %+v", control)
-	}
-	if control := next(); control.Type != "input" {
-		t.Fatal(control)
-	}
+	held := second.read("frame")
+	report(second, "a report of the shown frame moved the PTY size", "\x1b[O", "\x1b[O")
+	second.ack(held)
+	// The view did not acknowledge the frame that turns focus reporting on, and the
+	// application turns it off again.
+	output("\x1b[?1004h")
+	held = second.read("frame")
+	output("\x1b[?1004l")
+	report(second, "a report of the frame in transit moved the PTY size", "\x1b[I", "\x1b[I")
+	second.ack(held)
+	shows(second)
+	// Typed input moves the PTY size to its view first.
+	typed(second, "typed input did not move the PTY size first", protocol.Message{Type: "input", Data: []byte("x")}, wider)
+	// The same bytes are user input when the frames of the view have the mode off.
+	shows(first)
+	typed(first, "input without the focus mode did not move the PTY size", protocol.Message{Type: "input", Data: []byte("\x1b[I")}, size)
+	// A message has an ID. It is user input, also when it has the bytes of a report.
+	output("\x1b[?1004h")
+	shows(second)
+	typed(second, "a message did not move the PTY size", protocol.Message{Type: "input", ID: "draft-1", Data: []byte("\x1b[I")}, wider)
 }
 
 func TestEndedScreenCacheAndArchiveReconstruction(t *testing.T) {

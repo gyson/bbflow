@@ -49,6 +49,30 @@ type attachment struct {
 	once     sync.Once
 	size     protocol.Size  // Stores the viewport. Only the size owner resizes the PTY.
 	history  terminal.Cache // Keeps rendered rows for a narrower viewport. Requires the session lock.
+	// shown describes the reports of the frame that the view acknowledged last. pending
+	// describes the frame that the view did not acknowledge yet. Only the goroutine of
+	// the attachment uses them.
+	shown, pending *terminal.Reports
+}
+
+// report tells whether the input of this view holds only focus reports and mouse
+// reports. It uses the frames of the view, not the current modes of the application,
+// because the view makes its reports from the frame that it shows. It returns the
+// bytes for the PTY, see terminal.Reports.Translate. An input with an ID is a message,
+// not a report.
+func (a *attachment) report(message protocol.Message) (data []byte, ok bool) {
+	if message.Type != "input" || message.ID != "" {
+		return nil, false
+	}
+	for _, frame := range []*terminal.Reports{a.shown, a.pending} {
+		if frame == nil {
+			continue
+		}
+		if data, ok := frame.Translate(message.Data); ok {
+			return data, true
+		}
+	}
+	return nil, false
 }
 
 func (a *attachment) close() { a.once.Do(func() { close(a.closed); a.conn.Close() }) }
@@ -99,7 +123,9 @@ func (a *attachment) inputAck(id string, err error) {
 // Every view can send input and signals. The PTY uses the size of the view that most
 // recently sent user input: typed keys, a paste, or a message. A focus report or a mouse
 // report is input that the user did not type. It reaches the PTY, but it does not change
-// the size owner. When no view has the size, a view that sends its size takes it.
+// the size owner. Thus a mouse report can come from a view that shows other rows than
+// the PTY has. The PTY gets the report with the terminal row of the cell that the view
+// shows. When no view has the size, a view that sends its size takes it.
 // Signals never change the size owner. Serialize accepted controls so that a size
 // change always reaches the PTY before the input that caused it. Input receipts always
 // go to the view that sent the input.
@@ -118,7 +144,11 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 		a.wake()
 	}
 	var controls []agent.Control
-	userInput := message.Type == "input" && !r.terminal.IsReport(message.Data)
+	translated, report := a.report(message)
+	if report {
+		message.Data = translated
+	}
+	userInput := message.Type == "input" && !report
 	if r.sizeOwner != a && (userInput || (message.Type == "resize" && r.sizeOwner == nil)) {
 		r.sizeOwner = a
 		if userInput {
@@ -126,7 +156,8 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 			controls = append(controls, agent.Control{Message: protocol.Message{Type: "resize", Size: a.size}})
 		}
 	}
-	if message.Type != "resize" || r.sizeOwner == a {
+	// A report can have no bytes for the PTY, such as a click outside the terminal.
+	if (message.Type != "resize" || r.sizeOwner == a) && !(report && len(message.Data) == 0) {
 		control := agent.Control{Message: message}
 		if message.Type == "input" && message.ID != "" {
 			received := r.received
@@ -410,6 +441,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 					return
 				}
 				previous, sent, sentAt = next, revision, time.Now()
+				a.pending = &next.Reports
 			} else if ended {
 				conn.Send(exit)
 				return
@@ -444,6 +476,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 					return
 				}
 				acked = sent
+				a.shown, a.pending = a.pending, nil
 				dirty = true
 			case "ping":
 				if conn.Send(protocol.Message{Type: "pong"}) != nil {

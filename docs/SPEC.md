@@ -2900,17 +2900,8 @@ message from the message editor. Signals do not change the size owner.
 A report does not change the size owner. A report is a focus report or a mouse report
 that the application turned on. The server writes the report to the PTY, as it writes
 other input. Thus a click, a tap, a pointer move, or a focus change in a view does not
-resize the PTY. A frame causes no input, see [Frames](#frames).
-
-The server uses the modes of the application to identify a report:
-
-| Mode of the application | Input that is a report |
-| --- | --- |
-| Focus reporting is on. | `ESC [ I` and `ESC [ O`. |
-| Mouse tracking is on. | A mouse report in the default encoding or in an SGR encoding. |
-
-Input that has other bytes with a report is user input. The same bytes are user input
-when the mode is off.
+resize the PTY. A frame causes no input, see [Frames](#frames). See
+[Reports of a view](#reports-of-a-view) for the exact rules.
 
 A socket closing only removes that view. When the size owner leaves, the PTY keeps its
 size. The next view that sends user input or a new viewport size becomes the size owner.
@@ -2925,6 +2916,46 @@ A web view asks for at least 20 columns and 5 rows, for the session terminal and
 side terminal. When the terminal area of the view is smaller, the terminal scrolls in
 the view. Thus a narrow view does not make an agent redraw and hard-wrap its output at
 a few columns.
+
+### Reports of a view
+
+A view makes a focus report or a mouse report from the frame that it shows. Thus the
+server uses the frames of the view to identify a report, not the current modes of the
+application. It uses the frame that the view acknowledged last. If that frame does not
+make the input a report, it uses the frame that the view did not acknowledge yet.
+
+| Mode of the application in the frame | Input that is a report |
+| --- | --- |
+| Focus reporting is on. | `ESC [ I` and `ESC [ O`. |
+| Mouse tracking is on. | A mouse report in the default encoding or in an SGR encoding. |
+
+Input that has other bytes with a report is user input. The same bytes are user input
+when the mode is off. An input with an `id`, such as a message from the message editor,
+is always user input.
+
+A view can show other cells than the PTY has, because only the size owner has the size
+of the PTY. See [Viewport of each view](#viewport-of-each-view). The server changes each
+mouse report of a view, so that the application gets the terminal cell under the
+pointer:
+
+- A view with fewer rows shows the last rows of the terminal. The server adds the number
+  of the rows above the view to the row of the report.
+- A larger view shows padding at the right of the terminal and below it. The server
+  does not write a report for the padding to the PTY.
+- The server records the input with the bytes that the PTY gets.
+
+#### Limits
+
+- In the SGR pixel encoding (mode 1016), a report gives pixels, and the server does not
+  know the height of a cell. The server does not write a pixel report to the PTY when
+  the view does not show the first terminal row. It does not change other pixel
+  reports, also for the padding of a larger view.
+- A paste without bracketed paste can have exactly the bytes of a report. When the
+  frame has that mode on, the server cannot tell this paste from a report. The paste
+  reaches the PTY, but it does not make its view the size owner. A mouse report in such
+  a paste gets a changed row, as other mouse reports do.
+- The default mouse encoding has no byte for a row after 223. The server does not write
+  such a report to the PTY.
 
 ### Input and output order
 
@@ -4032,8 +4063,19 @@ repository, and a folder outside Git, each with a shell session.
   after a frame that the view parsed while its input was off.
 - A server test checks the size owner with reports. A focus report and a mouse report
   from another view reach the process, and the PTY keeps its size. A typed key from
-  that view resizes the PTY first. The same bytes resize the PTY when the application
-  has the mode off. A terminal test checks the report formats for each mode.
+  that view resizes the PTY first. The same bytes resize the PTY when the frames of the
+  view have the mode off, and when the input has an `id`. A report also keeps the PTY
+  size when the application changed the mode but the view did not acknowledge that
+  frame.
+- The server test and a terminal test check the position of a mouse report. A click on
+  row 2 of a view with 10 rows reaches a PTY with 24 rows as row 16. A click in the
+  padding of a larger view does not reach the PTY. The terminal test also checks the
+  report formats for each mode, the pixel encoding, and the row limit of the default
+  encoding.
+- A browser check used a PTY of 39 columns and 21 rows, and a second view of 82 columns
+  and 16 rows. A click on row 5 of the second view reached a program in the terminal as
+  row 10. A click on column 74 of that view did not reach the program. The PTY kept its
+  size.
 - A browser check showed one session with focus reporting and mouse tracking on in two
   views, of 82 and 39 columns. No view sent input in 4 seconds without a user action,
   and the PTY kept its size. A program in the terminal got one report for each focus

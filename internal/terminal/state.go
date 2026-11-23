@@ -215,6 +215,9 @@ type View struct {
 	CursorX int           `json:"cursorX"`
 	CursorY int           `json:"cursorY"`
 	Modes   string        `json:"modes"`
+	// Reports describes the reports of a live view that shows this frame. A saved view
+	// does not need it.
+	Reports Reports `json:"-"`
 }
 
 func (s *State) View() *View {
@@ -228,7 +231,8 @@ func (s *State) screen() *View {
 	t := s.term
 	s.syncHistory()
 	v := &View{Size: protocol.Size{Cols: uint16(t.Cols()), Rows: uint16(t.Rows())}, Offset: s.history.first, Epoch: s.epoch,
-		CursorX: min(t.CursorX(), t.Cols()-1), CursorY: t.CursorY(), Modes: inputModes(t)}
+		CursorX: min(t.CursorX(), t.Cols()-1), CursorY: t.CursorY(), Modes: inputModes(t),
+		Reports: reports(t.DecPrivateModes(), t.Rows(), t.Cols())}
 	active := t.Buffer()
 	for y := 0; y < t.Rows(); y++ {
 		v.Lines = append(v.Lines, renderLine(active.Lines.Get(active.YBase+y), t.Cols()))
@@ -318,6 +322,7 @@ func (s *State) ViewFor(size protocol.Size, cache *Cache) *View {
 	}
 	v.CursorX = min(v.CursorX, int(size.Cols)-1)
 	v.CursorY = max(0, v.CursorY-top)
+	v.Reports.Top = top
 	v.Size = size
 	v.TrimHistory()
 	return v
