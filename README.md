@@ -73,8 +73,9 @@ bbflow is at an early version. Commands and APIs can still change.
 - bbflow keeps its archive on your computer. It has no telemetry and no cloud storage.
 - The data that leaves your computer depends on the tools that you select. An agent CLI
   can send your messages to its provider. Automatic titles are off by default. If you
-  select a title tool, it gets the first message of each session. See
-  [Data that leaves bbflow](docs/SPEC.md#data-that-leaves-bbflow).
+  turn them on, the title tool can receive one message of a session. It is the first
+  message that you send from the message editor, and only when you gave the session no
+  name. See [Data that leaves bbflow](docs/SPEC.md#data-that-leaves-bbflow).
 - The recording includes all terminal input and output, including secrets that you
   type. bbflow does not redact or encrypt it.
 - The server asks GitHub for the latest release when it starts and then once a day. The
