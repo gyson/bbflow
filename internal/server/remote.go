@@ -13,7 +13,8 @@ import (
 // loginHeader is the header in which Tailscale Serve names the Tailscale user of a
 // request. Serve removes each copy that the client sent. It sets the header only for a
 // user device of the tailnet. A request of Tailscale Funnel, which comes from the
-// internet, never has it.
+// internet, never has it. These rules are for the HTTP reverse proxy of Tailscale. A TCP
+// forwarder adds no header, so its requests are the same as local requests.
 const loginHeader = "Tailscale-User-Login"
 
 // proxyHeaders are the headers that a reverse proxy adds to a request. Tailscale Serve
@@ -49,7 +50,9 @@ type remoteAccess struct {
 	conns map[*protocol.Conn]struct{}
 }
 
-// check returns nil for a request that remote access admits.
+// check returns nil for a request that remote access admits. The Host of such a request
+// is the saved host. The caller takes the origin of the page from that Host, not from
+// a second read of the settings.
 func (a *remoteAccess) check(r *http.Request) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -88,13 +91,13 @@ func (a *remoteAccess) remove(conn *protocol.Conn) {
 	delete(a.conns, conn)
 }
 
-// origin tells if the Origin of a remote WebSocket upgrade is the HTTPS origin of the
-// remote host. A comparison of the host alone also admits an HTTP page of that host.
-func (a *remoteAccess) origin(r *http.Request) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+// remoteOrigin tells if the Origin of a remote WebSocket upgrade is the HTTPS origin of
+// the Host of the same request. A comparison of the host alone also admits an HTTP page
+// of that host. The function reads no settings. check and add admit the Host, so a
+// change of the settings during the upgrade cannot admit an Origin of another host.
+func remoteOrigin(r *http.Request) bool {
 	origins := r.Header.Values("Origin")
-	return a.host != "" && len(origins) == 1 && origins[0] == "https://"+a.host
+	return len(origins) == 1 && origins[0] == "https://"+r.Host
 }
 
 // saved applies saved settings. Settings with an earlier revision than the applied one
@@ -119,12 +122,4 @@ func (a *remoteAccess) saved(settings history.Settings, keep *protocol.Conn) {
 			delete(a.conns, conn)
 		}
 	}
-}
-
-// socketOrigin returns the secure WebSocket origin of the remote host for the content
-// security policy of a remote page.
-func (a *remoteAccess) socketOrigin() string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return "wss://" + a.host
 }

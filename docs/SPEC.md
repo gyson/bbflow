@@ -530,8 +530,10 @@ remote, and the server answers it only when all of these conditions are true:
   `remoteLogin`. The comparison ignores letter case.
 
 The server answers each other remote request with status 403. A remote WebSocket
-upgrade also needs the Origin `https://` with the saved `remoteHost`. Thus an HTTP page
-of the same host cannot connect.
+upgrade also needs the Origin `https://` with the Host of the same request. Thus an HTTP
+page of the same host cannot connect. The content security policy of a remote page
+also takes its WebSocket origin from the Host of its request. A change of the settings
+during a request thus cannot admit the origin of another host.
 
 Tailscale Serve selects its backend by the TLS server name, and it keeps the Host that
 the client sent. A client in the tailnet can thus send a loopback Host through the
@@ -540,8 +542,9 @@ server does not handle such a request as local. This applies also while remote a
 is off.
 
 Tailscale Serve removes each `Tailscale-User-Login` header that the client sent, and it
-sets its own header for a user device of the tailnet. A request that comes through
-Tailscale Funnel from the internet has no login, so the server rejects it.
+sets its own header for a user device of the tailnet. A request that comes through the
+HTTP proxy of Tailscale Funnel from the internet has no login, so the server rejects
+it.
 
 A remote page uses the same UI and the same operations as a local page. On an HTTPS
 page, the UI connects with `wss://`. The content security policy of a remote page names
@@ -578,7 +581,11 @@ procedure, the Tailscale commands, and the solutions to problems.
   [selects another port](#port-selection), the address reaches the program that holds
   the earlier port.
 - A reverse proxy that sets none of the proxy headers makes its requests with a loopback
-  Host local. Tailscale Serve sets them.
+  Host local. The HTTP proxy of Tailscale Serve sets them.
+- A TCP forwarder, such as `tailscale serve --tcp` or `tailscale funnel` with
+  `--tls-terminated-tcp`, adds no headers. The server cannot tell its requests from
+  local requests, also while remote access is off. The remote access settings give no
+  protection for a port that such a forwarder exposes.
 - The checks with a real Tailscale Serve proxy used one Mac with Tailscale 1.104.7 and
   one iPhone. No check used a real Funnel request, a device with a tag, or another
   reverse proxy. See
@@ -3296,7 +3303,8 @@ Each check sends the requests of such a proxy to the loopback port:
   without the port.
 - Server tests apply settings of revisions 3 and 2 in that order and verify that the
   removed login of revision 3 stays removed. They also cover the proxy headers and the
-  remote Origin rule.
+  remote Origin rule. One test changes the remote host between the check and the
+  upgrade of a request, and verifies that the Origin of the new host fails.
 - Store fixtures cover the rules of the two values, a save of one value alone, and a
   title tool change that keeps them.
 - Migration fixtures upgrade a frozen format 15 archive with a saved custom title

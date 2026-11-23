@@ -63,20 +63,39 @@ func TestForwardedRequest(t *testing.T) {
 }
 
 func TestRemoteOrigin(t *testing.T) {
-	const host = "my-mac.example.ts.net"
-	var access remoteAccess
-	request := remoteRequest(host, "user@example.com")
-	if access.origin(request) {
-		t.Fatal("an origin passed while remote access has no host")
-	}
-	access.saved(history.Settings{Revision: 1, RemoteHost: host, RemoteLogin: "user@example.com"}, nil)
-	if !access.origin(request) {
-		t.Fatal("the HTTPS origin of the remote host failed")
+	const host, login = "my-mac.example.ts.net", "user@example.com"
+	request := remoteRequest(host, login)
+	if !remoteOrigin(request) {
+		t.Fatal("the HTTPS origin of the Host failed")
 	}
 	for _, origins := range [][]string{nil, {"http://" + host}, {"https://" + host + ":443"}, {"https://other.example.ts.net"}, {"null"}, {"https://" + host, "https://" + host}} {
 		request.Header["Origin"] = origins
-		if access.origin(request) {
+		if remoteOrigin(request) {
 			t.Fatalf("the origins %q passed", origins)
 		}
+	}
+}
+
+// A save can change the remote host between the check of a request and its upgrade.
+// The Origin must then still agree with the Host of the same request.
+func TestRemoteOriginDuringAHostChange(t *testing.T) {
+	const host, next, login = "my-mac.example.ts.net", "other.example.ts.net", "user@example.com"
+	var access remoteAccess
+	access.saved(history.Settings{Revision: 1, RemoteHost: host, RemoteLogin: login}, nil)
+	// The page of the first host sends an upgrade with the Origin of the second host.
+	request := remoteRequest(host, login)
+	request.Header.Set("Origin", "https://"+next)
+	if err := access.check(request); err != nil {
+		t.Fatal(err)
+	}
+	access.saved(history.Settings{Revision: 2, RemoteHost: next, RemoteLogin: login}, nil)
+	if remoteOrigin(request) {
+		t.Fatal("an Origin of the new host passed for a request with the earlier Host")
+	}
+	// A request that agrees with itself passes the origin check. The registration then
+	// rejects it, because its Host is no longer the saved host.
+	request.Header.Set("Origin", "https://"+host)
+	if !remoteOrigin(request) || access.add(nil, request) {
+		t.Fatal("a request for the earlier host registered after the change")
 	}
 }

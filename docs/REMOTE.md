@@ -124,8 +124,16 @@ addresses of other bbflow instances and of other applications.
 | `tailscale serve reset` | Removes all addresses, also those of other instances and other applications. |
 | `tailscale status` | Lists the devices of the tailnet and tells which ones are connected. |
 
-Each address is available only inside the tailnet. Do not use `tailscale funnel`.
-Funnel makes an address public, and bbflow rejects its requests.
+Each address is available only inside the tailnet. These commands use the HTTP proxy
+of Tailscale Serve, which is the only supported mode.
+
+- Do not use `tailscale funnel`. Funnel makes an address public. bbflow rejects the
+  requests of its HTTP proxy, so the address is of no use.
+- Never use a TCP forwarder for the port of bbflow. The options are `--tcp` and
+  `--tls-terminated-tcp`, for `tailscale serve` and for `tailscale funnel`. A TCP
+  forwarder adds no headers, so bbflow cannot tell its requests from local requests.
+  Each device that reaches the address then gets full access without a login, also
+  while remote access is off. With Funnel, that is each device on the internet.
 
 ## More than one instance
 

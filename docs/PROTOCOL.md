@@ -1160,13 +1160,15 @@ of these conditions are true:
   compared without letter case.
 
 Each other request gets status 403. A remote WebSocket upgrade also needs exactly one
-Origin header with the value `https://` and `remoteHost`. An HTTP origin of the same
+Origin header with the value `https://` and the Host of the same request. An HTTP origin of the same
 host, another port, and a missing Origin get status 403.
 
 - The proxy must keep the Host of the browser request, as Tailscale Serve does.
 - The proxy must set `X-Forwarded-Host` or another header of the local request rule on
   each request, after it removes these headers of the client. Tailscale Serve does. A
-  proxy without this rule lets each client send a loopback Host and pass as local.
+  proxy without this rule lets each client send a loopback Host and pass as local. A
+  TCP forwarder, such as `tailscale serve --tcp`, is such a proxy. It must never forward
+  to the port of the server.
 - The proxy must remove each `Tailscale-User-Login` header of the client and set its
   own, as Tailscale Serve does. A proxy without this rule lets each client name a login.
 - A browser client on an HTTPS page connects to `wss://HOST/ws`. On an HTTP page, it

@@ -88,9 +88,9 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 	}
 	upgrader := websocket.Upgrader{HandshakeTimeout: 5 * time.Second}
 	// The default origin check compares only the host of the Origin. A remote upgrade
-	// needs the complete HTTPS origin of the remote host.
+	// needs the complete HTTPS origin of its Host, which remote access admitted.
 	remoteUpgrader := upgrader
-	remoteUpgrader.CheckOrigin = s.remote.origin
+	remoteUpgrader.CheckOrigin = remoteOrigin
 	// local tells if a request is for the loopback host of the server and came without a
 	// reverse proxy. Each other request needs remote access.
 	local := func(r *http.Request) bool {
@@ -144,7 +144,8 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 				http.Error(w, err.Error(), http.StatusForbidden)
 				return
 			}
-			connect = s.remote.socketOrigin()
+			// The admitted Host is the remote host of this page.
+			connect = "wss://" + r.Host
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
