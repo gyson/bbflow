@@ -83,7 +83,6 @@ const elements = {
   'menu-continue': element('menu-continue', HTMLButtonElement),
   'menu-continue-problem': element('menu-continue-problem', HTMLElement),
   'reconnect': element('reconnect', HTMLButtonElement),
-  'reload-output': element('reload-output', HTMLButtonElement),
   'continue-action': element('continue-action', HTMLElement),
   'continue-session': element('continue-session', HTMLButtonElement),
   'continue-unavailable': element('continue-unavailable', HTMLElement),
@@ -389,12 +388,11 @@ function controls() {
   $('stop').hidden = !stoppable || mobile;
   $('menu-stop').hidden = !stoppable || !mobile;
   $('stop').disabled = $('menu-stop').disabled = busy;
-  // A view of an earlier terminal uses Back to live terminal instead. A live terminal
-  // gets Reconnect in the toolbar. An ended terminal gets Reload output in the More menu.
+  // A view of an earlier terminal uses Back to live terminal instead. Only a live terminal
+  // gets Reconnect. An ended terminal has no process to connect to.
   const connected = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active || !!shownRun;
   $('reconnect').hidden = connected || !terminalLive;
-  $('reload-output').hidden = connected || terminalLive;
-  $('reconnect').disabled = $('reload-output').disabled = busy;
+  $('reconnect').disabled = busy;
   const continuation = continueAction(selected, !!connection?.peer?.active, shownRun);
   const continueControl = $('continue-action');
   const continuable = !showingSettings && continuation.visible;
@@ -1403,7 +1401,6 @@ async function initialize() {
     searchTimer = setTimeout(() => { void refreshSessions(); }, 200);
   };
   $('reconnect').onclick = () => action(async () => { if (selected) await openSession(selected); }, failed('reconnect to', selected));
-  $('reload-output').onclick = () => action(async () => { if (selected) await openSession(selected); }, failed('reload the output of', selected));
   $('continue-session').onclick = () => action(showContinue, failed('continue', selected));
   mobileLayout.addEventListener('change', controls);
   $('menu-stop').onclick = () => $('stop').click();

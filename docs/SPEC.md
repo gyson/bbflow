@@ -1403,7 +1403,6 @@ also shows the reason, and **Reconnect** shows next to the hint.
   See [session families](#session-families).
 - **Archive** shows for `draft` and `ended` sessions. It changes to **Restore** for an
   archived session.
-- **Reload output** shows for an ended session, in a view of its latest terminal.
 - **Remove worktree** shows for a session that is not live and has a managed worktree.
 - In the [mobile layout](#mobile-layout), **Stop session** and **Continue in new
   terminal** show at the top of the menu, with the rules of the toolbar buttons.
