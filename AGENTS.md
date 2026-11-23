@@ -129,10 +129,10 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 - Never commit generated files or copied vendor assets. Commit the npm lockfile. See
   `docs/DEVELOPMENT.md` for direct Go commands.
 - Keep the main logo and menu bar icon in sync through `web/src/bbflow.svg`. Keep its
-  16-unit pixel grid, so that the 16 px favicon and the 2x menu bar icon stay sharp. When
-  you change its shape or colors, update the README copies in `docs/images/` too. The
-  frontend build uses `@resvg/resvg-js` to render the embedded template PNG. Commit the
-  SVG source, not the generated image.
+  16-unit pixel grid, so that the 16 px favicon, the 2x menu bar icon, and the 180 px
+  home screen icon stay sharp. When you change its shape or colors, update the README
+  copies in `docs/images/` too. The frontend build uses `@resvg/resvg-js` to render the
+  embedded PNG images. Commit the SVG source, not the generated images.
 - Build with `make build`. Start the server with `./bin/bbflow server start`. Open
   `./bin/bbflow ui`.
 - Local builds use `~/.bbflow-dev`. `make release` produces `bin/release/bbflow`, which
