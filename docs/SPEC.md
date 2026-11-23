@@ -4089,7 +4089,9 @@ repository, and a folder outside Git, each with a shell session.
   with the changed modes. Both views get the modes of the application, and a second
   frame keeps them.
 - A browser check with mouse tracking mode 1000 and the SGR encoding on showed that a
-  click in the terminal sent one SGR report for the press and one for the release.
+  click in the terminal sent one SGR report for the press and one for the release. The
+  view that showed the terminal when the modes changed sent them, and so did a view
+  that joined after the change.
 - Cross-engine fixtures compare Go-generated frames with xterm.js for cells, styles,
   cursor, scrollback, resize, split escapes, Unicode, and alternate screens.
 - Fixtures with xterm.js check the focus reports of a view. A frame that sets the focus
