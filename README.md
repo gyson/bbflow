@@ -5,12 +5,26 @@
   <img src="docs/images/bbflow-light.svg" width="64" alt="bbflow logo: the letters bb on a 16-pixel grid in rainbow bands">
 </picture>
 
-bbflow is a local web workspace for agent command-line interface (CLI) tools. The server
-owns interactive shells, terminal screens, and history. The browser handles sessions and
-terminal input. The server saves original input, output, and run metadata.
+bbflow runs the agent command-line interface (CLI) tools that you already use, such as
+Codex and Claude Code, in one browser workspace. Sessions continue after you close the
+tab. bbflow records each session, so you can search it or continue it with a different
+agent.
 
-bbflow is in daily use. Upgrades preserve existing history and settings. Commands and
-APIs can still change.
+<img src="docs/images/session.png" alt="The bbflow web UI. The sidebar lists three projects and their sessions. The main area shows the terminal of one session, with the message editor below it.">
+
+## What you can do
+
+- **Use the agents that you have.** A tool is a normal CLI command. It keeps its own
+  sign-in, options, and permissions.
+- **Keep sessions in operation.** Close the tab or the browser. The session continues
+  in a background server.
+- **Find earlier work.** bbflow records the input and output of each session. Search
+  one session, one project, or all sessions.
+- **Change agents during a task.** After a session ends, continue it in a new terminal
+  with a different tool. A handoff prompt points the new agent to the earlier work.
+- **Keep tasks apart.** Start a session in its own Git worktree.
+- **Work from your phone.** Open the web UI on another device through
+  [Tailscale Serve](docs/REMOTE.md).
 
 ## Install on macOS
 
@@ -18,26 +32,26 @@ APIs can still change.
 curl -fsSL https://github.com/gyson/bbflow/releases/latest/download/install.sh | sh
 ```
 
-The installer selects the latest build for Apple Silicon or Intel and installs it in
-`~/.local/bin`. The installer does not need Go, Node.js, or GitHub CLI. If that
-directory is not on your PATH, add `export PATH="$HOME/.local/bin:$PATH"` to your shell
-configuration.
+The installer puts `bbflow` in `~/.local/bin`. It supports Apple Silicon and Intel, and
+it needs no other tools. If that directory is not on your PATH, add
+`export PATH="$HOME/.local/bin:$PATH"` to your shell configuration.
 
-## Start bbflow
+## Get started
 
-```sh
-bbflow server start
-bbflow ui
-```
+1. Start the server and open the web UI.
 
-`bbflow server start` starts a background server. The server continues after the
-terminal closes. On macOS, it also adds a menu bar icon with **Open UI** and
-**Quit bbflow**. Quit bbflow stops the server and its sessions. `bbflow ui` opens the
-home page in the default browser.
+   ```sh
+   bbflow server start
+   bbflow ui
+   ```
 
-To use an agent, install its CLI on PATH and sign in normally. Each session uses the
-environment of the server. After you change PATH or the environment, restart the server
-from a shell that has the new values.
+2. Click **Settings**. Add a tool with a name and a startup command, for example
+   **Codex** with `codex`. The agent CLI must be on PATH and signed in.
+3. Click **＋ Project** to add a folder.
+4. Click **＋** beside the project. Select the tool. Then click **Start session**.
+
+See the [user guide](docs/GUIDE.md) for each step in detail, for the handoff between
+agents, and for tips.
 
 ## Update
 
@@ -45,80 +59,37 @@ from a shell that has the new values.
 bbflow update
 ```
 
-When a server runs, `bbflow update` asks for confirmation first. It then replaces the
-executable and restarts the server with the new version. The restart ends active
-sessions. See [Update bbflow](docs/COMMANDS.md#update-bbflow).
+An update keeps your history and settings. It restarts the server, and that ends active
+sessions. bbflow asks for confirmation first. The web UI also shows a newer release
+above **Settings** in the sidebar. See [Update bbflow](docs/COMMANDS.md#update-bbflow).
 
-The web UI also shows a newer release above **Settings** in the sidebar. Click it to
-see which sessions the restart ends. The update starts only after you confirm.
+bbflow is at an early version. Commands and APIs can still change.
 
-## Use the web UI
+## Privacy
 
-1. Click **＋ Project** at the bottom of the sidebar to save an existing folder.
-   **General** is always available for work across projects.
-2. In **Settings**, give each tool a name and a startup command, for example **Codex**
-   with `codex`. **Shell** is always available.
-3. Click **＋** beside a project to create a draft. Select a tool. To get independent
-   files, select **Use worktree**. Then click **Start session**.
-4. Type in the terminal. As an alternative, write a message in the editor below the
-   terminal and click **Send**.
-5. Close the tab when you want. The session and its recording continue in the server.
-   Click **Stop session** to end the session.
-6. After a session ends, click **Continue in new terminal**. bbflow writes a read-only
-   handoff folder with the earlier terminals and messages. When the new agent is ready,
-   send the **Handoff prompt** from the message editor.
-7. Click the search icon to search the recorded output of a session, a project, or all
-   sessions.
-
-Two tips:
-
-- **Keep the full output.** Run agents in the normal screen to keep their full output
-  in the handoff transcript. For Codex, use `codex --no-alt-screen`. For Claude Code,
-  keep the fullscreen renderer off.
-- **Share a tool set.** To share a tool set with a team, write a setup script with
-  `bbflow tool add` and `bbflow settings set`. See
-  [Manage tools](docs/COMMANDS.md#manage-tools).
-
-## Your data
-
-- The installed release keeps all durable bbflow data in `~/.bbflow/history.sqlite`.
-  Workspace files and agent credentials stay outside this database.
+- bbflow keeps its data on your computer. It has no telemetry and no cloud storage.
+  Each agent CLI still sends data to its own provider.
 - The recording includes all terminal input and output, including secrets that you
   type. bbflow does not redact or encrypt it.
-- The server listens only on loopback, `127.0.0.1` and `::1`, and uses no
-  authentication token. It does not protect the data from other processes that run as
-  you.
-- Remote access from another device, such as a phone, is off by default. It works
-  through Tailscale Serve. See
-  [Remote access with Tailscale Serve](docs/REMOTE.md) for the setup.
 - The server asks GitHub for the latest release when it starts and then once a day. The
   request sends no history or settings. Turn it off with **Check for a new version
   every day** in Settings.
-- Backup and restore are not available. A copy of `history.sqlite` alone can miss
-  committed data while the server runs.
-- `bbflow query` reads the history with read-only SQL. An agent can run `bbflow skill`
-  to learn these queries.
 
-## Database upgrades
-
-The server upgrades the database automatically when it starts. You do not need a fresh
-database or a separate tool. Databases from v0.0.1 and later are supported. bbflow does
-not support downgrades. See [database upgrades](docs/SPEC.md#database-upgrades) for the
-supported formats and the upgrade behavior.
+See [Your data](docs/GUIDE.md#your-data) for the storage location and the limits.
 
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
-| [docs/COMMANDS.md](docs/COMMANDS.md) | Each `bbflow` command, its options, and its effects. |
-| [docs/REMOTE.md](docs/REMOTE.md) | Setup of remote access from another device, such as a phone, with Tailscale Serve. |
-| [docs/SPEC.md](docs/SPEC.md) | Implemented behavior of the server and the web UI, with limits. |
-| [docs/PROTOCOL.md](docs/PROTOCOL.md) | WebSocket messages between the clients and the server. |
-| [docs/GOAL.md](docs/GOAL.md) | The intended product. |
-| [docs/PLAN.md](docs/PLAN.md) | Planned work. |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Build, check, and release procedures. |
-| [docs/releases/](docs/releases/) | Release notes. |
-| [AGENTS.md](AGENTS.md) | Rules for contributors and agents. |
+| [User guide](docs/GUIDE.md) | How to use the web UI, step by step. |
+| [Commands](docs/COMMANDS.md) | Each `bbflow` command, its options, and its effects. |
+| [Remote access](docs/REMOTE.md) | Setup of access from another device, such as a phone. |
+| [Release notes](docs/releases/) | The changes in each release. |
+
+For contributors: [DEVELOPMENT.md](docs/DEVELOPMENT.md) has the build and check
+procedures, and [AGENTS.md](AGENTS.md) has the rules. [SPEC.md](docs/SPEC.md) and
+[PROTOCOL.md](docs/PROTOCOL.md) describe the implementation. [GOAL.md](docs/GOAL.md)
+and [PLAN.md](docs/PLAN.md) describe the direction.
 
 ## License
 
