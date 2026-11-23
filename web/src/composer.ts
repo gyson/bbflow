@@ -345,7 +345,9 @@ export class Composer {
     if (!this.loaded || !this.active || !peer?.active || this.state.draft.pending) return;
     const generation = this.generation;
     this.sending = true;
-    let wrote = false;
+    // The archive has the pending revision of this send. The list of the sent messages
+    // then has the message, also when its receipt is lost.
+    let recorded = false;
     try {
       await this.flush();
       if (generation !== this.generation) return;
@@ -355,10 +357,10 @@ export class Composer {
       this.changed();
       await this.flush();
       if (generation !== this.generation) return;
+      recorded = true;
       this.message('Submitting to terminal…');
       // The input ID names the pending revision. Its receipt can start the title job.
       await peer.writeInput(encodeBytes(encoder.encode(input)), `draft-${this.state.draft.revision}`);
-      wrote = true;
       if (generation !== this.generation) {
         this.message('Submitted to terminal. Another view changed the draft, so this view did not clear it.', true);
         return;
@@ -377,7 +379,8 @@ export class Composer {
       this.sending = false;
       this.reconcile();
       // Report the send after the draft is clear, so that the list shows its receipt.
-      if (wrote) this.host.sent();
+      // After a lost receipt, the list shows the message as not confirmed.
+      if (recorded) this.host.sent();
     }
   }
 }

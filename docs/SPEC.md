@@ -1976,7 +1976,8 @@ messages** at the top loads 20 more and keeps the visible messages in place.
 The `composer-sent` operation derives this list from the existing pending draft
 revisions, so the list also includes sends from before this feature. Direct terminal
 input is not listed. After a send from any view, the list reads the newest messages
-again.
+again. It also does so after a send with a lost receipt, because the archive then has
+the pending revision. The list shows that message as **Not confirmed**.
 
 Each message shows its time, text, and attached file names. **Sent** means that the
 editor got an input receipt and then cleared the draft. **Not confirmed** means that
@@ -2062,8 +2063,17 @@ The view searches again after new output, at most each 300 milliseconds. A searc
 takes longer waits 10 times its own duration. A jump or a step searches first. Thus the
 positions follow an application that draws its output again.
 
-The view reads the newest 20 sent messages. While the terminal shows the oldest message
-that the view read, the view reads 20 older messages, up to 200 messages.
+The view reads the sent messages in pages of 20, from the newest message. It keeps only
+the messages of the terminal that it shows, at most 200. After the limit, a new message
+replaces the oldest one.
+
+- While the terminal shows the oldest message that the view keeps, the view reads the
+  next older page.
+- Messages of a later terminal can fill the newest pages. The view of an earlier
+  terminal then reads older pages until it reaches the messages of its terminal. It
+  reads at most 1,000 messages of the session for this.
+- A message from before the start of the terminal ends the read.
+- A send from any view, and a change of the shown terminal, read the newest page again.
 
 #### Message bar
 
@@ -2114,13 +2124,17 @@ to terminal programs.
   messages from Send.
 - A message whose rows are no longer in the scrollback of the view has no position. See
   [Terminal scrollback](#terminal-scrollback).
-- An alternate screen has no scrollback. No message has a position while an application
-  uses it.
+- The frames draw an alternate screen on the screen rows of the view, below the normal
+  scrollback. The search reads these rows as it reads the other rows. An application
+  that uses the alternate screen keeps its earlier output itself. Thus one of its
+  messages has a position only while that screen shows the message.
 - The message numbers count only the found messages. They change when the oldest
   message leaves the scrollback.
 - A full frame scrolls the view to the latest output, for example after a change of the
   terminal width. The view does not keep its message.
-- The view reads at most 200 sent messages of a session.
+- The view keeps at most 200 sent messages of the terminal that it shows. For an
+  earlier terminal, it reads at most 1,000 messages of the session. A message beyond
+  these limits has no position.
 
 ### Continue in a new terminal
 
@@ -3880,6 +3894,16 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
   attached file paths.
 - The same fixtures cover the message that the view reads, the steps to the earlier and
   the later message, the step keys, the terminal of a message, and the time label.
+- The same fixtures cover the pages of the sent messages: the read past the messages
+  of a later terminal, the end of the read before the start of the terminal, the limit
+  of 200 messages after a reload, and the limit of 1,000 read messages.
+- `web/message-nav.test.mjs` uses a real xterm.js terminal without a page. A step uses
+  the new row of a message after the scrollback drops rows. **Earlier message** turns
+  on when the view moves from the first message into its response. An earlier terminal
+  gets its message when a later terminal fills the newest page.
+- `web/composer.test.mjs` covers the report of a send to the list: one report after a
+  send with a receipt, one report after a lost receipt with the draft still pending,
+  and no report for a message that the editor rejects.
 - `web/workspace-pane.test.mjs` covers the **Messages** view: its panel, its switch
   button, and the close of the pane for a jump.
 - A second browser check verified the order of the view switch and the toolbar icons,

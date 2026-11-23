@@ -2,10 +2,8 @@ import type { IDecoration, IDisposable, IMarker, Terminal } from '@xterm/xterm';
 import { element } from './dom.js';
 import { call } from './protocol.js';
 import type { SentMessage, ServerInfo, TerminalInfo } from './protocol.js';
-import { currentMark, inTerminal, locate, messageTime, sentText, stepMark } from './message-marks.js';
+import { addPage, barState, emptyCache, locate, messageTime, sentText, stepMark, wantsOlder } from './message-marks.js';
 
-// The most sent messages that the view reads for one session.
-const messageLimit = 200;
 // The shortest time between two searches of the terminal rows, in milliseconds. A
 // search of many rows waits longer, so that it takes a small part of the time.
 const searchDelay = 300, searchShare = 10;
@@ -34,8 +32,7 @@ export class MessageNav {
   private listeners: IDisposable[] = [];
   private session = '';
   private terminal: TerminalInfo | undefined;
-  private messages: SentMessage[] = []; // From the oldest to the newest.
-  private more = false;
+  private cache = emptyCache(); // The sent messages of the shown terminal.
   private loading = false;
   private request = 0; // Changes on each session and each reload. A late reply is ignored.
   private marks: Mark[] = [];
@@ -91,7 +88,10 @@ export class MessageNav {
   window(terminal: TerminalInfo | undefined): void {
     if (terminal?.run === this.terminal?.run && terminal?.started === this.terminal?.started && terminal?.ended === this.terminal?.ended) return;
     this.terminal = terminal;
-    this.schedule(0);
+    // The cache keeps only the messages of one terminal. Read them again. The marks stay
+    // until the next search.
+    this.cache = emptyCache();
+    if (this.session) void this.load(false);
   }
 
   // The terminal drew a frame.
@@ -111,7 +111,7 @@ export class MessageNav {
 
   state(revision: number): MarkState {
     const index = this.marks.findIndex(mark => mark.message.revision === revision);
-    return index < 0 ? 'missing' : index === this.current() ? 'current' : 'found';
+    return index < 0 ? 'missing' : index === this.position().current ? 'current' : 'found';
   }
 
   // Scroll the terminal to a message. Return false when the terminal does not show it.
@@ -144,8 +144,8 @@ export class MessageNav {
 
   private reset(): void {
     this.request++;
-    this.messages = [];
-    this.more = this.loading = false;
+    this.cache = emptyCache();
+    this.loading = false;
     this.pinned = null;
     this.clear();
     this.marks = [];
@@ -161,14 +161,9 @@ export class MessageNav {
     const request = older ? this.request : ++this.request;
     this.loading = true;
     try {
-      const oldest = older ? this.messages[0]?.revision : undefined;
-      const page = await call(server, { operation: 'composer-sent', session, ...(oldest ? { revision: oldest } : {}) });
+      const page = await call(server, { operation: 'composer-sent', session, ...(older ? { revision: this.cache.cursor } : {}) });
       if (request !== this.request) return;
-      const loaded = [...page.messages].reverse();
-      // A reload keeps the older messages that it read before.
-      const first = loaded[0]?.revision ?? Infinity;
-      this.messages = older ? [...loaded, ...this.messages] : [...this.messages.filter(message => message.revision < first), ...loaded];
-      if (older || !this.messages.some(message => message.revision < first)) this.more = page.more;
+      this.cache = addPage(this.cache, page, older, this.terminal);
       this.schedule(0);
     } catch {
       // Without the messages, the bar shows no position. The list reports the failure.
@@ -190,10 +185,11 @@ export class MessageNav {
     const view = this.view;
     const started = performance.now();
     const buffer = view?.buffer.active;
-    const candidates = this.messages.filter(message => inTerminal(message.created, this.terminal));
+    const candidates = this.cache.messages;
     let rows: number[] = [];
-    // An alternate screen has no earlier rows.
-    if (buffer && buffer.type === 'normal' && candidates.length) {
+    // The frames of the server draw an alternate screen on the screen rows of the normal
+    // buffer, below its scrollback. Thus the view always reads the normal buffer.
+    if (buffer && candidates.length) {
       const lines: string[] = [];
       for (let y = 0; y < buffer.length; y++) lines.push(buffer.getLine(y)?.translateToString(true) ?? '');
       rows = locate(lines, candidates.map(sentText));
@@ -201,12 +197,15 @@ export class MessageNav {
     const found = candidates.flatMap((message, index) => (rows[index] ?? -1) >= 0 ? [{ message, row: rows[index] ?? 0 }] : []);
     this.mark(found);
     this.cost = performance.now() - started;
-    // Read older messages while the terminal still shows the oldest one that was read.
-    const oldest = this.messages[0];
-    if (this.more && this.messages.length < messageLimit && oldest && found[0]?.message === oldest) void this.load(true);
+    const oldest = candidates[0];
+    if (!this.loading && wantsOlder(this.cache, !!oldest && found[0]?.message === oldest, this.terminal)) void this.load(true);
   }
 
-  private rows(): number[] { return this.marks.map(mark => mark.row); }
+  // The row of each mark. A marker moves when the scrollback drops its oldest rows, so
+  // its line is newer than the row of the last search.
+  private rows(): number[] {
+    return this.marks.map(mark => mark.marker && !mark.marker.isDisposed && mark.marker.line >= 0 ? mark.marker.line : mark.row);
+  }
 
   // Keep the marks when each message is still on its row. Otherwise, draw them again.
   private mark(found: Mark[]): void {
@@ -216,7 +215,12 @@ export class MessageNav {
       return !!old && old.message.revision === mark.message.revision && old.marker?.isDisposed === false &&
         old.decoration?.isDisposed === false && old.marker.line === mark.row;
     });
-    if (same) { this.render(); return; }
+    if (same) {
+      // A marker moves when the scrollback drops its oldest rows. Keep its new row.
+      found.forEach((mark, index) => { const old = this.marks[index]; if (old) old.row = mark.row; });
+      this.render();
+      return;
+    }
     this.clear();
     this.marks = found;
     const view = this.view;
@@ -250,20 +254,22 @@ export class MessageNav {
     return this.marks.findIndex(mark => mark.message.revision === this.pinned?.revision);
   }
 
-  private current(): number {
-    const view = this.view;
-    return view ? currentMark(this.rows(), view.buffer.active.viewportY, this.pin()) : -1;
+  // The message that the view reads and the available buttons, for the view position.
+  private position() {
+    const buffer = this.view?.buffer.active;
+    const top = buffer?.viewportY ?? 0;
+    return barState(this.rows(), top, this.pin(), !buffer || top >= buffer.baseY);
   }
 
   private jump(index: number): void {
-    const view = this.view, mark = this.marks[index];
-    if (!view || !mark) return;
+    const view = this.view, mark = this.marks[index], row = this.rows()[index];
+    if (!view || !mark || row === undefined) return;
     this.host.reveal();
-    view.scrollToLine(mark.row);
+    view.scrollToLine(row);
     this.pinned = { revision: mark.message.revision, top: view.buffer.active.viewportY };
     // Show the row for a moment, because a row near the end is not at the top.
     const buffer = view.buffer.active;
-    const marker = view.registerMarker(mark.row - buffer.baseY - buffer.cursorY);
+    const marker = view.registerMarker(row - buffer.baseY - buffer.cursorY);
     const flash = view.registerDecoration({ marker, width: view.cols });
     flash?.onRender(node => node.classList.add('message-flash'));
     setTimeout(() => { flash?.dispose(); marker.dispose(); }, flashTime);
@@ -279,27 +285,24 @@ export class MessageNav {
 
   // Show the bar for the message that the view reads.
   private render(): void {
-    const view = this.view;
     const count = this.marks.length;
-    const current = this.current();
-    const mark = this.marks[current];
-    const top = view?.buffer.active.viewportY ?? 0;
-    const bottom = !view || top >= view.buffer.active.baseY;
-    const state = `${this.session}|${count}|${current}|${mark?.message.revision ?? 0}`;
-    const controls = `${state}|${bottom}|${this.pin()}`;
-    if (controls === this.shown) return;
-    this.shown = controls;
+    const bar = this.position();
+    const mark = this.marks[bar.current];
+    let label: string;
+    if (mark) label = `Message ${bar.current + 1} of ${count} · ${messageTime(mark.message.created)}`;
+    // The view is above the first message, or the terminal shows no sent message.
+    else label = count ? `${count} sent ${count === 1 ? 'message' : 'messages'} below` : 'No sent message in this terminal';
+    const state = `${this.session}|${count}|${bar.current}|${mark?.message.revision ?? 0}`;
+    // Each value that the bar shows is part of this text. An equal text needs no change.
+    const shown = `${state}|${label}|${bar.previous}|${bar.next}|${bar.latest}`;
+    if (shown === this.shown) return;
+    this.shown = shown;
     this.bar.hidden = !this.session;
-    if (mark) {
-      this.open.textContent = `Message ${current + 1} of ${count} · ${messageTime(mark.message.created)}`;
-    } else {
-      // The view is above the first message, or the terminal shows no sent message.
-      this.open.textContent = count ? `${count} sent ${count === 1 ? 'message' : 'messages'} below` : 'No sent message in this terminal';
-    }
+    this.open.textContent = label;
     this.open.title = mark ? `${sentText(mark.message)}\n\nShow the sent messages.` : 'Show the sent messages.';
-    this.previous.disabled = !view || stepMark(this.rows(), top, this.pin(), -1) === null;
-    this.next.disabled = !count || (bottom && stepMark(this.rows(), top, this.pin(), 1) === 'end');
-    this.latest.disabled = bottom;
+    this.previous.disabled = !bar.previous;
+    this.next.disabled = !bar.next;
+    this.latest.disabled = !bar.latest;
     if (state !== this.reported) {
       this.reported = state;
       this.host.changed();

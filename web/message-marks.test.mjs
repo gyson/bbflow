@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { currentMark, inTerminal, locate, messageTime, sentText, stepMark, stepShortcut } from './dist/message-marks.js';
+import { addPage, barState, currentMark, emptyCache, inTerminal, locate, messageLimit, messageTime, readLimit, sentText, stepMark, stepShortcut, wantsOlder } from './dist/message-marks.js';
 
 test('a message is found on the row that shows it after a prompt', () => {
   const rows = [
@@ -141,4 +141,61 @@ test('the time of a message shows the date when it is not today', () => {
   assert.equal(messageTime('2026-11-23T14:02:00Z', now, 'en-US', 'UTC'), '14:02');
   assert.equal(messageTime('2026-11-21T09:05:00Z', now, 'en-US', 'UTC'), 'Nov 21 09:05');
   assert.equal(messageTime('not a date', now, 'en-US', 'UTC'), '');
+});
+
+test('the buttons of the bar follow the view position inside one message', () => {
+  const rows = [10, 40];
+  // At the start of the first message, no earlier step has a target.
+  assert.deepEqual(barState(rows, 10, -1, false), { current: 0, previous: false, next: true, latest: true });
+  // One row below, the step goes back to the start of the same message.
+  assert.deepEqual(barState(rows, 11, -1, false), { current: 0, previous: true, next: true, latest: true });
+  assert.deepEqual(barState(rows, 5, -1, false), { current: -1, previous: false, next: true, latest: true });
+  assert.deepEqual(barState(rows, 60, -1, true), { current: 1, previous: true, next: false, latest: false });
+  assert.deepEqual(barState(rows, 60, 0, true), { current: 0, previous: false, next: true, latest: false }, 'a jump target near the end');
+  assert.deepEqual(barState([], 0, -1, true), { current: -1, previous: false, next: false, latest: false });
+});
+
+// A page of sent messages, newest first, as the server returns it.
+const sent = (revision, created) => ({ revision, created, text: `message ${revision}`, attachments: [], confirmed: true });
+const page = (from, to, created, more) => ({ messages: Array.from({ length: from - to + 1 }, (_, index) => sent(from - index, created)), more });
+
+test('the cache reads past the messages of a later terminal to the terminal of the view', () => {
+  const first = { started: '2026-11-23T10:00:00Z', ended: '2026-11-23T10:30:00Z' };
+  // Revisions 6 to 25 are from the second terminal. Revisions 2 to 5 are from the first.
+  let cache = addPage(emptyCache(), page(25, 6, '2026-11-23T11:00:00Z', true), false, first);
+  assert.deepEqual([cache.messages.length, cache.cursor, cache.more, cache.read], [0, 6, true, 20]);
+  assert.equal(wantsOlder(cache, false, first), true, 'no message of the terminal was read yet');
+  cache = addPage(cache, page(5, 2, '2026-11-23T10:10:00Z', true), true, first);
+  assert.deepEqual([cache.messages.map(message => message.revision), cache.cursor, cache.read], [[2, 3, 4, 5], 2, 24]);
+  assert.equal(wantsOlder(cache, false, first), false, 'the terminal no longer shows the oldest read message');
+  assert.equal(wantsOlder(cache, true, first), true);
+  // Revision 1 is from before the first terminal. It ends the read.
+  cache = addPage(cache, page(1, 1, '2026-11-23T09:00:00Z', true), true, first);
+  assert.deepEqual(cache.messages.map(message => message.revision), [2, 3, 4, 5]);
+  assert.equal(wantsOlder(cache, true, first), false);
+  // The latest terminal has no end. It keeps its own messages only.
+  const second = { started: '2026-11-23T10:45:00Z', ended: '' };
+  cache = addPage(emptyCache(), page(25, 6, '2026-11-23T11:00:00Z', true), false, second);
+  assert.equal(cache.messages.length, 20);
+  assert.equal(wantsOlder(cache, false, second), false);
+  assert.equal(wantsOlder(cache, true, second), true);
+});
+
+test('the cache keeps at most the limit of messages, also after a reload', () => {
+  let cache = emptyCache();
+  let revision = messageLimit;
+  cache = addPage(cache, page(revision, revision - 19, '2026-11-23T10:00:00Z', true), false);
+  while (cache.cursor > 1) cache = addPage(cache, page(cache.cursor - 1, cache.cursor - 20, '2026-11-23T10:00:00Z', cache.cursor > 21), true);
+  assert.equal(cache.messages.length, messageLimit);
+  assert.equal(wantsOlder({ ...cache, more: true }, true), false, 'a full cache reads no older page');
+  // A send adds revision 201. The reload has the newest 20 messages.
+  revision = messageLimit + 1;
+  const reloaded = addPage(cache, page(revision, revision - 19, '2026-11-23T10:00:00Z', true), false);
+  assert.equal(reloaded.messages.length, messageLimit);
+  assert.deepEqual([reloaded.messages[0].revision, reloaded.messages.at(-1).revision], [2, 201]);
+  assert.deepEqual([reloaded.cursor, reloaded.more, reloaded.read], [cache.cursor, cache.more, cache.read], 'a reload keeps the place of the read');
+  // The read stops at the read limit when no message of the terminal shows up.
+  const later = { started: '2026-11-22T10:00:00Z', ended: '2026-11-22T11:00:00Z' };
+  assert.equal(wantsOlder({ ...emptyCache(), cursor: 5, reached: '2026-11-23T10:00:00Z', more: true, read: readLimit - 20 }, false, later), true);
+  assert.equal(wantsOlder({ ...emptyCache(), cursor: 5, reached: '2026-11-23T10:00:00Z', more: true, read: readLimit }, false, later), false);
 });

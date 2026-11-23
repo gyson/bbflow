@@ -1,4 +1,4 @@
-import type { SentMessage } from './protocol.js';
+import type { SentMessage, SentPage } from './protocol.js';
 
 // The view finds each sent message in the text rows of the terminal. A row position is
 // derived: it is the row where the terminal shows the text of the message. The
@@ -145,6 +145,22 @@ export function stepMark(rows: readonly number[], top: number, pinned: number, d
   return current > 0 ? current - 1 : null;
 }
 
+// The state of the message bar for a view position. current is the index of the message
+// that the view reads, or -1. bottom tells that the view shows the latest output.
+export interface BarState { current: number; previous: boolean; next: boolean; latest: boolean }
+
+// barState returns the message of the bar and which of its buttons are available.
+// Earlier message is available when a step has a target. Later message is available
+// until the view shows the latest output after the last message.
+export function barState(rows: readonly number[], top: number, pinned: number, bottom: boolean): BarState {
+  return {
+    current: currentMark(rows, top, pinned),
+    previous: stepMark(rows, top, pinned, -1) !== null,
+    next: rows.length > 0 && !(bottom && stepMark(rows, top, pinned, 1) === 'end'),
+    latest: !bottom,
+  };
+}
+
 // stepShortcut returns the step of a key: Command+Up and Command+Down on macOS, or
 // Ctrl+Shift+Up and Ctrl+Shift+Down. It returns 0 for each other key. Ctrl+Up and
 // Ctrl+Down stay available to terminal programs.
@@ -172,4 +188,52 @@ export function messageTime(created: string, now = new Date(), locale?: string, 
   const day = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone });
   const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(date);
   return day.format(date) === day.format(now) ? time : `${day.format(date)} ${time}`;
+}
+
+// The most sent messages of one terminal that the view keeps, and the most sent messages
+// of a session that the view reads to find them.
+export const messageLimit = 200, readLimit = 1000;
+
+// The sent messages that a view read for the terminal that it shows. The server gives
+// pages from the newest message. messages are the read messages of the terminal, from
+// the oldest. cursor is the revision of the oldest read message, or 0 before the first
+// page. reached is the send time of that message. read counts all read messages.
+export interface MessageCache { messages: SentMessage[]; cursor: number; reached: string; more: boolean; read: number }
+
+export function emptyCache(): MessageCache {
+  return { messages: [], cursor: 0, reached: '', more: false, read: 0 };
+}
+
+// addPage adds a page to the cache. A page of older messages starts below the cursor.
+// Without older, the page has the newest messages: the first page, or a reload after a
+// send. The cache keeps only the messages of the terminal, and at most messageLimit of
+// them. It drops the oldest first.
+export function addPage(cache: MessageCache, page: SentPage, older: boolean, terminal?: { started: string; ended: string }): MessageCache {
+  const loaded = [...page.messages].reverse();
+  const oldest = loaded[0];
+  const kept = loaded.filter(message => inTerminal(message.created, terminal));
+  const first = oldest?.revision ?? Infinity;
+  // A page that reaches the cursor continues the read. A reload of the newest messages
+  // above the cursor only replaces the newest part.
+  const deeper = older || cache.cursor === 0 || first <= cache.cursor;
+  const messages = [...(older ? kept : []), ...cache.messages.filter(message => older || message.revision < first), ...(older ? [] : kept)];
+  return {
+    messages: messages.slice(-messageLimit),
+    cursor: deeper && oldest ? oldest.revision : cache.cursor,
+    reached: deeper && oldest ? oldest.created : cache.reached,
+    more: deeper ? page.more : cache.more,
+    read: cache.read + (older || cache.cursor === 0 ? loaded.length : 0),
+  };
+}
+
+// wantsOlder tells whether the view reads one more page of older messages. found tells
+// that the terminal shows the oldest message of the cache.
+// - Messages of a later terminal can fill the newest pages. The view then reads on until
+//   it reaches the terminal that it shows, within readLimit.
+// - A message from before the start of the terminal ends the read.
+// - Otherwise the view reads on while the terminal still shows the oldest read message.
+export function wantsOlder(cache: MessageCache, found: boolean, terminal?: { started: string; ended: string }): boolean {
+  if (!cache.more || cache.read >= readLimit || cache.messages.length >= messageLimit) return false;
+  if (terminal && Date.parse(cache.reached) < Date.parse(terminal.started)) return false;
+  return cache.messages.length === 0 || found;
 }
