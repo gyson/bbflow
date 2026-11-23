@@ -779,6 +779,9 @@ opaque background. A Home Screen web app on iOS blurs the page content below the
 bar. It does not blur a bar that stays at the top and has an opaque background. Thus
 the session title stays sharp.
 
+A control that gets the focus scrolls to a position below the toolbar. A More actions
+menu that is higher than the space below the toolbar scrolls.
+
 #### Limits
 
 - The session keeps the minimum heights of its terminal and its message editor, 440
@@ -4003,6 +4006,11 @@ repository, and a folder outside Git, each with a shell session.
   by 300 pixels. The toolbar stayed at the top, and its More actions menu opened above
   the form. These two checks did not use a real iPhone, light Appearance, a toast, or a
   visible page bar.
+- A browser check at a width of 390 pixels and a height of 500 pixels moved the focus
+  through the controls of a draft with Shift+Tab. Each control with the focus was below
+  the toolbar. At a height of 188 pixels, the More actions menu of an ended session
+  scrolled. Down Arrow moved the focus to **Archive** and showed it. The mouse wheel
+  scrolled the menu and not the main area.
 - A browser check of the view switch used window widths of 885, 1280, 1500, and 1700 pixels.
   At 885 and 1280 pixels, the sidebar stayed and the switch showed each view in the
   full main area. At 1280 pixels with a hidden sidebar and at 1500 pixels, the session

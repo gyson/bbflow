@@ -748,6 +748,13 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
      has an opaque background. The toolbar is above the menus of the views and below the
      toasts. */
   .toolbar { position: sticky; top: 0; z-index: 25; min-height: 0; flex-wrap: nowrap; gap: 8px; padding: 10px 12px; background: var(--workspace); }
+  /* A control that gets the focus scrolls to a position below the sticky toolbar. Keep
+     this value larger than the height of the toolbar, which is 56 pixels. */
+  main { scroll-padding-top: 64px; }
+  /* A menu of the toolbar scrolls when it is higher than the space below the toolbar.
+     The menu starts 50 pixels below the top of the toolbar. */
+  .toolbar .action-menu { max-height: calc(100dvh - 64px); overflow-y: auto; }
+  .toolbar .action-menu > * { flex-shrink: 0; }
   .toolbar-title { min-width: 0; gap: 8px; }
   h1 { font-size: 16px; }
   #workspace { margin-top: 3px; font-size: 11px; }
