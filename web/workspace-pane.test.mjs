@@ -15,8 +15,8 @@ class Node {
   getBoundingClientRect() { return { width: this.width }; }
 }
 
-const views = ['changes', 'files', 'terminal'];
-const ids = ['session-view', 'workspace-pane', 'workspace-divider', 'diff-pane', 'side-terminal', 'side-close',
+const views = ['messages', 'changes', 'files', 'terminal'];
+const ids = ['session-view', 'workspace-pane', 'workspace-divider', 'diff-pane', 'side-terminal', 'side-close', 'messages-pane', 'sent-close',
   'view-switch', 'view-session', ...views.flatMap(view => [`pane-${view}`, `view-${view}`])];
 
 function setup() {
@@ -38,14 +38,19 @@ function setup() {
     select(session) { if (this.shown) this.selectedWhileShown.push(session); this.session = session; },
     setShown(shown, click) { this.shown = shown; this.click = shown && click; },
   };
-  const pane = new WorkspacePane(changes, terminal);
+  const messages = {
+    session: '', shown: false, selectedWhileShown: [],
+    select(session) { if (this.shown) this.selectedWhileShown.push(session); this.session = session; },
+    setShown(shown) { this.shown = shown; },
+  };
+  const pane = new WorkspacePane(changes, terminal, messages);
   // Return the pressed view, or closed when the pane is hidden.
   const shown = () => {
     if (nodes['workspace-pane'].hidden) return 'closed';
     return views.find(view => nodes[`pane-${view}`].attributes.get('aria-pressed') === 'true');
   };
   const click = view => nodes[`pane-${view}`].onclick();
-  return { nodes, pane, changes, terminal, shown, click };
+  return { nodes, pane, changes, terminal, messages, shown, click };
 }
 
 test('each session shows its own view, and a session not shown yet starts with a closed pane', () => {
@@ -171,6 +176,36 @@ test('the views hide before they select the next session, then show the view of 
 
   assert.deepEqual(changes.selectedWhileShown, [], 'the Changes and Files view was shown when it selected a session');
   assert.deepEqual(terminal.selectedWhileShown, [], 'the Terminal view was shown when it selected a session');
+});
+
+test('the Messages view shows only its own panel, and show and close work without a click on an icon', () => {
+  const { nodes, pane, changes, terminal, messages, shown } = setup();
+  pane.select('a');
+  // The label of the message bar shows the view.
+  pane.show('messages');
+  assert.equal(shown(), 'messages');
+  assert.deepEqual([changes.shown, terminal.shown, messages.shown], [false, false, true]);
+  assert.deepEqual([nodes['diff-pane'].hidden, nodes['side-terminal'].hidden, nodes['messages-pane'].hidden], [true, true, false]);
+  assert.equal(nodes['view-messages'].attributes.get('aria-pressed'), 'true');
+
+  nodes['pane-changes'].onclick();
+  assert.deepEqual([changes.shown, messages.shown], [true, false]);
+  assert.deepEqual([nodes['diff-pane'].hidden, nodes['messages-pane'].hidden], [false, true]);
+
+  // Session b has a closed pane. The view selects the session while it is hidden.
+  pane.show('messages');
+  pane.select('b');
+  assert.deepEqual([messages.session, messages.shown], ['b', false]);
+  pane.select('a');
+  assert.deepEqual([messages.session, messages.shown], ['a', true]);
+  assert.deepEqual(messages.selectedWhileShown, [], 'the Messages view was shown when it selected a session');
+
+  // A jump to a message closes the pane when the pane hides the session.
+  pane.close();
+  assert.equal(shown(), 'closed');
+  assert.equal(messages.shown, false);
+  nodes['sent-close'].onclick();
+  assert.equal(shown(), 'closed');
 });
 
 test('the arrow keys change the preferred width inside the widths that the row can show', () => {

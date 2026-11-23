@@ -167,12 +167,12 @@ func TestDemo(t *testing.T) {
 		t.Fatalf("docs/large.png must be above 1 MiB and at most 5 MiB: %v, %v", info, err)
 	}
 	expect("SELECT name FROM projects ORDER BY name", "[[General] [Orbit API] [Tide Web]]")
-	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 7] [1 1]]")
+	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 8] [1 1]]")
 	// The reviewer draft is a sub-session of the worktree session. Its base is the branch
 	// of its parent.
 	expect("SELECT s.title, p.title, CAST(r.data AS TEXT)->>'base' FROM sessions s JOIN sessions p ON p.id=s.parent_id JOIN preparations r ON r.session_id=s.id",
 		"[[Review the refactor Refactor orbit in a worktree demo/refactor-orbit]]")
-	expect("SELECT status, count(*) FROM runs GROUP BY status ORDER BY status", "[[exited 3] [running 3] [stopped 1]]")
+	expect("SELECT status, count(*) FROM runs GROUP BY status ORDER BY status", "[[exited 3] [running 4] [stopped 1]]")
 	expect("SELECT branch, state FROM worktrees", "[[demo/refactor-orbit ready]]")
 	// The worktree has three commits after its base and an uncommitted file, for each
 	// kind of row in the scope menu.
@@ -186,10 +186,10 @@ func TestDemo(t *testing.T) {
 	if status := git(worktrees[0], "status", "--porcelain"); status != "?? demo-agent-notes.md" {
 		t.Fatalf("worktree status: %q", status)
 	}
-	expect("SELECT count(*) FROM events WHERE kind='draft' AND CAST(data AS TEXT)->>'pending'=1", "[[4]]")
+	expect("SELECT count(*) FROM events WHERE kind='draft' AND CAST(data AS TEXT)->>'pending'=1", "[[12]]")
 	expect("SELECT count(*) FROM events WHERE kind='draft' AND CAST(data AS TEXT)->>'text'='List the changes since the last release.'", "[[1]]")
 	expect("SELECT group_concat(value->>'name', ','), data->>'$.defaultTool'=data->>'$.tools[0].id', data->>'$.worktree' FROM settings, json_each(data, '$.tools')",
-		"[[Demo agent,Busy agent,Claude,Codex 1 1]]")
+		"[[Demo agent,Detail agent,Busy agent,Claude,Codex 1 1]]")
 	// The seed calls no model, so it selects no title tool.
 	expect("SELECT data->>'$.titleTool' FROM settings", "[[none]]")
 	expect(`SELECT count(*) FROM events AS input
@@ -200,7 +200,7 @@ func TestDemo(t *testing.T) {
 
 	// A second seed adds nothing and prints each session.
 	output := pass("bbflow-demo", demo, "seed")
-	expect("SELECT count(*) FROM sessions", "[[8]]")
+	expect("SELECT count(*) FROM sessions", "[[9]]")
 	for _, state := range []string{"running", "ended", "draft", "archived"} {
 		if !strings.Contains(output, "\n  "+state+" ") {
 			t.Errorf("seed output has no %s session:\n%s", state, output)
@@ -209,7 +209,7 @@ func TestDemo(t *testing.T) {
 
 	// The regular restart keeps the demo data.
 	pass("bbflow", demo, "server", "restart")
-	expect("SELECT count(*) FROM sessions", "[[8]]")
+	expect("SELECT count(*) FROM sessions", "[[9]]")
 	expect("SELECT count(*) FROM runs WHERE status='running'", "[[0]]")
 
 	// seed refuses an instance with other files or data, and writes no marker. clean

@@ -82,6 +82,7 @@ The simulated data has these parts:
 | Project **Orbit API** | A repository with three commits. Its working files have two modified, one deleted, one renamed, and two untracked files for the Changes pane. One modified file is six folders deep and has a long name, for the width of the file list. Image samples in `docs/` are for the image view: a modified PNG file, a modified SVG file with only a `viewBox`, an added PNG file of about 1.8 MiB, and an added SVG file `unsafe.svg` with a script, an `onload` attribute, and an external image. The image view must not run that script or load that image. Two more untracked files are `reports/test-report.html` and its style sheet, for **Open in browser**. The script of the report shows that it ran, and it shows the page origin. |
 | Project **Tide Web** | A repository with clean working files and a second branch, `feature/tide-chart`. |
 | Tool **Demo agent** | The default tool. It prints a fixed reply to each message. |
+| Tool **Detail agent** | The Demo agent with a reply of 38 lines to each message, so that a reply is longer than one screen. |
 | Tool **Busy agent** | It prints one line each second until it stops. |
 | Tool **Claude** | The real `claude` CLI of the user. |
 | Tool **Codex** | The real `codex --no-alt-screen` CLI of the user. |
@@ -103,6 +104,7 @@ error of the shell.
 | Refactor orbit in a worktree | Orbit API | Live. It has a managed worktree with three commits after its base and one uncommitted new file. Thus the scope menu offers **All changes**, **Uncommitted changes**, and three commits. It has two terminals. The first terminal is stopped. The second terminal started from Continue in new terminal. |
 | Review the refactor | Orbit API | A sub-session draft of **Refactor orbit in a worktree**. It has **New worktree**, the base `demo/refactor-orbit`, and a saved message. |
 | Review test failures | Orbit API | Live, with no new output. It has one sent message and one saved message that is not sent. |
+| Tune the orbit solver | Orbit API | Live, with the Detail agent. It has eight sent messages for the message bar and the Messages view. One message is longer than a terminal row. Two messages have the same text. |
 | Build tide chart | Tide Web | Live, with continuous output. |
 | Plan release notes | Tide Web | A draft that did not start. It has a saved message, **Use worktree**, and the base `feature/tide-chart`. |
 | Old layout spike | Tide Web | Ended and archived. A Shell session. |

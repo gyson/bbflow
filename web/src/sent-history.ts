@@ -1,40 +1,76 @@
 import { element } from './dom.js';
 import { call, errorMessage } from './protocol.js';
 import type { SentMessage, ServerInfo } from './protocol.js';
+import type { MarkState } from './message-nav.js';
 
 // A long message first shows foldLines lines. The first Show more adds foldStep lines.
 // A message is not folded when fewer than foldMinimum lines would stay hidden.
 const foldLines = 8, foldStep = 16, foldMinimum = 4;
 
-// The dialog lists the messages that Send sent in one session. The newest message is at
-// the bottom, next to the editor. The dialog only reads history. Copy puts the message
-// text on the clipboard, for use in any session.
+// The Messages view of the workspace pane lists the messages that Send sent in one
+// session. The newest message is at the bottom. The view only reads history. Show in
+// terminal scrolls the session terminal to the message. Copy puts the message text on
+// the clipboard, for use in any session.
 export class SentHistory {
-  private readonly dialog = element('sent-dialog', HTMLDialogElement);
   private readonly list = element('sent-list', HTMLOListElement);
   private readonly status = element('sent-status', HTMLElement);
   private readonly more = element('sent-more', HTMLButtonElement);
   private session = '';
+  private shown = false;
+  private loaded = false; // The list shows the newest messages of the session.
   private oldest = 0;
-  private request = 0; // Changes on each load and close. A late reply is ignored.
+  private request = 0; // Changes on each load and each session. A late reply is ignored.
+  private readonly items = new Map<number, { item: HTMLLIElement; go: HTMLButtonElement }>();
 
-  constructor(private readonly server: () => ServerInfo | null) {
-    element('sent-close', HTMLButtonElement).onclick = () => this.close();
-    this.dialog.onclose = () => { this.request++; };
+  constructor(private readonly server: () => ServerInfo | null, private readonly marks: {
+    // Whether the session terminal shows the message, and whether the view reads it.
+    state(revision: number): MarkState;
+    // Scroll the session terminal to the message.
+    go(revision: number): boolean;
+  }) {
     this.more.onclick = () => { void this.load(); };
   }
 
-  open(session: string): void {
+  // Select the session of the view. The list loads when the view shows.
+  select(session: string): void {
     this.session = session;
-    this.oldest = 0;
-    this.list.replaceChildren();
-    this.more.hidden = true;
-    this.dialog.showModal();
-    void this.load();
+    this.clear();
+    if (this.shown) void this.load();
   }
 
-  close(): void {
-    if (this.dialog.open) this.dialog.close();
+  setShown(shown: boolean): void {
+    this.shown = shown;
+    if (shown && !this.loaded) void this.load();
+  }
+
+  // A message was sent. Read the newest messages again.
+  refresh(): void {
+    this.clear();
+    if (this.shown) void this.load();
+  }
+
+  // Show which messages the session terminal shows, and the message that the view reads.
+  mark(): void {
+    for (const [revision, { item, go }] of this.items) {
+      const state = this.marks.state(revision);
+      const current = state === 'current';
+      if (current && !item.classList.contains('current') && this.shown) item.scrollIntoView({ block: 'nearest' });
+      item.classList.toggle('current', current);
+      go.disabled = state === 'missing';
+      go.title = go.disabled
+        ? 'The terminal that this view shows does not show this message.'
+        : 'Scroll the session terminal to this message. The position comes from the terminal text.';
+    }
+  }
+
+  private clear(): void {
+    this.request++;
+    this.loaded = false;
+    this.oldest = 0;
+    this.items.clear();
+    this.list.replaceChildren();
+    this.more.hidden = true;
+    this.message('');
   }
 
   private message(text: string, error = false): void {
@@ -56,6 +92,7 @@ export class SentHistory {
     try {
       const page = await call(server, { operation: 'composer-sent', session: this.session, ...(older ? { revision: this.oldest } : {}) });
       if (request !== this.request) return;
+      this.loaded = true;
       const below = this.list.scrollHeight - this.list.scrollTop;
       const items = page.messages.map(message => this.item(message)).reverse();
       this.list.prepend(...items);
@@ -64,6 +101,7 @@ export class SentHistory {
       this.more.hidden = !page.more;
       this.list.scrollTop = this.list.scrollHeight - (older ? below : 0);
       this.message(this.list.childElementCount ? '' : 'Send has not sent a message in this session.');
+      this.mark();
     } catch (error) {
       if (request === this.request) this.message(`Cannot load sent messages: ${errorMessage(error)}`, true);
     } finally {
@@ -147,7 +185,13 @@ export class SentHistory {
         reset = setTimeout(() => { copy.textContent = 'Copy'; }, 1500);
       } catch (error) { this.message(`Cannot copy the message: ${errorMessage(error)}`, true); }
     };
-    meta.append(state, time, copy);
+    const go = document.createElement('button');
+    go.textContent = 'Show in terminal';
+    go.onclick = () => {
+      if (!this.marks.go(message.revision)) this.mark();
+    };
+    this.items.set(message.revision, { item, go });
+    meta.append(state, time, go, copy);
     const text = document.createElement('div');
     text.className = 'sent-text';
     text.textContent = message.text || 'No text';

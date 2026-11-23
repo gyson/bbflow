@@ -33,7 +33,7 @@ const prompt = "demo> "
 func (d *demo) addData() {
 	orbit := call[history.Project](d.target, protocol.Request{Operation: "project-add", Workspace: d.orbitProject(), Name: "Orbit API"}).ID
 	tide := call[history.Project](d.target, protocol.Request{Operation: "project-add", Workspace: d.tideProject(), Name: "Tide Web"}).ID
-	demoAgent, busyAgent := d.addTools()
+	demoAgent, detailAgent, busyAgent := d.addTools()
 
 	// An ended session with sent messages and a file change from the agent.
 	t := d.launch(d.draft(orbit, "Add orbit period endpoint", demoAgent, nil))
@@ -102,11 +102,34 @@ func (d *demo) addData() {
 	// An ended shell session in the built-in General project.
 	d.runShell(d.launch(d.draft("general", "Scratch shell", "", nil)))
 
+	// A live session with many sent messages and long replies, for the steps between
+	// the messages in the terminal.
+	t = d.launch(d.draft(orbit, "Tune the orbit solver", detailAgent, nil))
+	d.output(t, prompt, 1)
+	for turn, message := range solverMessages {
+		d.send(t, message)
+		d.output(t, prompt, turn+2)
+	}
+	t.close()
+
 	// A live session that prints output continuously. It starts last, so that the
 	// sidebar shows it first.
 	t = d.launch(d.draft(tide, "Build tide chart", busyAgent, nil))
 	d.output(t, "step 1:", 1)
 	t.close()
+}
+
+// The sent messages of the session Tune the orbit solver. One message is longer than a
+// terminal row, and two messages have the same text.
+var solverMessages = []string{
+	"Read the solver in internal/orbit and explain how it picks the next step.",
+	"Why does the step get smaller near the periapsis?",
+	"Add a tolerance setting. Keep the default at the current value, validate that it is positive, and return an error that names the setting when it is not.",
+	"Run the tests.",
+	"The test for a circular orbit fails. Find the cause, but do not change the fixture.",
+	"Run the tests.",
+	"Update the design note with the new setting.",
+	"Summarize the changes for the pull request.",
 }
 
 func (d *demo) output(t *terminal, text string, count int) {
@@ -115,22 +138,23 @@ func (d *demo) output(t *terminal, text string, count int) {
 
 // addTools saves the tools in Settings and returns the IDs of the simulated tools. The
 // Claude and Codex tools run the real CLIs of the user. The seed never starts them.
-func (d *demo) addTools() (demoAgent, busyAgent string) {
+func (d *demo) addTools() (demoAgent, detailAgent, busyAgent string) {
 	check(os.MkdirAll(filepath.Dir(d.agent), 0o755))
 	// The copy keeps the tools usable after a checkout of a different commit.
 	check(os.WriteFile(d.agent, demoAgentScript, 0o644))
 	command := "sh " + shellQuote(d.agent)
 	agent := history.Tool{ID: history.ID(), Name: "Demo agent", Command: command}
+	detail := history.Tool{ID: history.ID(), Name: "Detail agent", Command: command + " --detail"}
 	busy := history.Tool{ID: history.ID(), Name: "Busy agent", Command: command + " --busy"}
 	settings := call[history.Settings](d.target, protocol.Request{Operation: "settings-get"})
 	claude := history.Tool{ID: history.ID(), Name: "Claude", Command: "claude"}
 	codex := history.Tool{ID: history.ID(), Name: "Codex", Command: "codex --no-alt-screen"}
-	settings.Tools = append(settings.Tools, agent, busy, claude, codex)
+	settings.Tools = append(settings.Tools, agent, detail, busy, claude, codex)
 	settings.DefaultTool = agent.ID
 	// New drafts in Git folders select Use worktree.
 	settings.Worktree = true
 	call[json.RawMessage](d.target, protocol.Request{Operation: "settings-save", Settings: &settings})
-	return agent.ID, busy.ID
+	return agent.ID, detail.ID, busy.ID
 }
 
 // draft creates a draft session and saves its launch choices. tool is a tool ID, or

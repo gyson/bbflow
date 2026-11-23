@@ -4,6 +4,7 @@
 #
 # Usage:
 #   sh demo-agent.sh                    Chat mode.
+#   sh demo-agent.sh --detail           Chat mode. Each reply has many lines.
 #   sh demo-agent.sh --busy             Print one progress line each second.
 set -u
 
@@ -23,6 +24,25 @@ if [ "${1:-}" = --busy ]; then
         sleep 1
     done
 fi
+
+detail=
+if [ "${1:-}" = --detail ]; then
+    detail=1
+fi
+
+# detail_reply prints a reply that is longer than one screen.
+detail_reply() {
+    step=0
+    while [ "$step" -lt 36 ]; do
+        step=$((step + 1))
+        case $((step % 4)) in
+        1) say "- Read internal/orbit/part$step.go" ;;
+        2) say "    $((step * 7 + 20)) lines" ;;
+        3) say "- Search \"period\" in internal/orbit" ;;
+        0) say "    $((step / 4)) matches" ;;
+        esac
+    done
+}
 
 say 'Commands: /work, /edit, /exit. Other text gets a fixed reply.'
 turn=0
@@ -50,6 +70,9 @@ while :; do
     *)
         sleep 0.2
         say "Turn $turn. Simulated reply to: $line"
+        if [ -n "$detail" ]; then
+            detail_reply
+        fi
         say 'A real agent would read the workspace and answer here.'
         ;;
     esac

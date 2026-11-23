@@ -65,6 +65,24 @@ saves the message as a draft. Click **Send** after the agent is ready.
 - Close the tab when you want. The session and its recording continue in the server.
 - Click **Stop session** to end the session.
 
+### Go to a sent message
+
+bbflow finds the messages that **Send** sent in the terminal output. The bar above the
+terminal names the message that you read.
+
+- Click **Earlier message** or **Later message** in the bar to go from message to
+  message. In the terminal, press Command+Up or Command+Down. On other systems, press
+  Ctrl+Shift+Up or Ctrl+Shift+Down.
+- Click **Show messages** in the toolbar, or **Messages** in a narrow window, to see
+  the list of the messages. Click **Show in terminal** on a message to scroll the
+  terminal to it. The response follows the message.
+- The marks in the scroll bar of the terminal show where each message is.
+- Click **Latest output** in the bar to go back to the end of the terminal.
+
+Text that you type directly in the terminal is not in the list. See
+[Sent messages in the terminal](SPEC.md#sent-messages-in-the-terminal) for the rules
+and limits.
+
 ## Continue with a different agent
 
 Use this procedure after a session ends, for example when an agent reaches a quota

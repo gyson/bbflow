@@ -2,7 +2,6 @@ import { element } from './dom.js';
 import { DraftWatch } from './draft-watch.js';
 import { call, encodeBytes, errorMessage } from './protocol.js';
 import type { Attachment, ComposerState, Draft, Peer, ServerInfo } from './protocol.js';
-import { SentHistory } from './sent-history.js';
 
 const encoder = new TextEncoder();
 const empty = (): ComposerState => ({ draft: { revision: 0, text: '', attachments: [], pending: false }, attachments: [] });
@@ -52,6 +51,8 @@ interface Host {
   peer(): Peer | null;
   bracketed(): boolean;
   action(work: () => Promise<void>): Promise<void>;
+  // A view sent a message to the terminal.
+  sent(): void;
 }
 
 export class Composer {
@@ -63,8 +64,6 @@ export class Composer {
   private readonly attach = element('composer-attach', HTMLButtonElement);
   private readonly submit = element('composer-submit', HTMLButtonElement);
   private readonly review = element('composer-review', HTMLButtonElement);
-  private readonly history = element('composer-history', HTMLButtonElement);
-  private readonly sent = new SentHistory(() => this.host.server());
   private session = '';
   private state = empty();
   private edits = 0;
@@ -114,7 +113,6 @@ export class Composer {
       this.addFiles(Array.from(event.dataTransfer?.files || []));
     };
     this.submit.onclick = () => this.host.action(() => this.send());
-    this.history.onclick = () => this.sent.open(this.session);
     this.review.onclick = () => {
       this.state.draft.pending = false;
       this.changed();
@@ -136,7 +134,6 @@ export class Composer {
     this.submit.disabled = unavailable || !active || this.state.draft.pending || (!this.text.value.trim() && !this.state.attachments.length);
     this.review.hidden = !this.state.draft.pending;
     this.review.disabled = unavailable;
-    this.history.disabled = unavailable || !this.session;
     for (const button of this.files.querySelectorAll('button')) button.disabled = unavailable || this.state.draft.pending;
   }
 
@@ -210,7 +207,6 @@ export class Composer {
   // Each selected session has one draft watch. The first pushed draft loads the editor.
   async select(session: string): Promise<void> {
     await this.flush();
-    this.sent.close();
     this.finishLoading();
     this.watch?.close();
     this.watch = null;
@@ -280,9 +276,13 @@ export class Composer {
     this.remote = undefined;
     const focused = document.activeElement === this.text;
     const { selectionStart, selectionEnd } = this.text;
+    // A draft that becomes pending is a send from another view. A pending draft that
+    // another view replaces has its receipt. Both change the list of the sent messages.
+    const sent = this.loaded && (next.draft.pending || this.state.draft.pending);
     this.state = { draft: next.draft, attachments: next.attachments };
     this.saved = this.edits;
     this.loaded = true;
+    if (sent) this.host.sent();
     if (this.text.value !== next.draft.text) {
       this.text.value = next.draft.text;
       const length = next.draft.text.length;
@@ -345,6 +345,7 @@ export class Composer {
     if (!this.loaded || !this.active || !peer?.active || this.state.draft.pending) return;
     const generation = this.generation;
     this.sending = true;
+    let wrote = false;
     try {
       await this.flush();
       if (generation !== this.generation) return;
@@ -357,6 +358,7 @@ export class Composer {
       this.message('Submitting to terminal…');
       // The input ID names the pending revision. Its receipt can start the title job.
       await peer.writeInput(encodeBytes(encoder.encode(input)), `draft-${this.state.draft.revision}`);
+      wrote = true;
       if (generation !== this.generation) {
         this.message('Submitted to terminal. Another view changed the draft, so this view did not clear it.', true);
         return;
@@ -374,6 +376,8 @@ export class Composer {
     finally {
       this.sending = false;
       this.reconcile();
+      // Report the send after the draft is clear, so that the list shows its receipt.
+      if (wrote) this.host.sent();
     }
   }
 }
