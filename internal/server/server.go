@@ -43,6 +43,8 @@ type Server struct {
 	// releases is nil for a build that cannot update, such as a development build.
 	releases Releases
 	updates  updates
+	// remote admits the requests for the remote host of Settings.
+	remote remoteAccess
 	// open opens a file in the default browser of the user. Tests replace it. A nil
 	// open rejects workspace-open.
 	open func(ctx context.Context, path string) error
@@ -67,6 +69,10 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		Executable: executable,
 	}, releases: releases, open: desktop.OpenInBrowser, reveal: desktop.Reveal}
 	s.updates.load(store)
+	// Remote access stays off when the settings cannot be read.
+	if settings, err := store.Settings(); err == nil {
+		s.remote.saved(settings, nil)
+	}
 	if err := s.ensureGeneral(); err != nil {
 		return protocol.ServerInfo{}, err
 	}
@@ -81,6 +87,15 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		}()
 	}
 	upgrader := websocket.Upgrader{HandshakeTimeout: 5 * time.Second}
+	// The default origin check compares only the host of the Origin. A remote upgrade
+	// needs the complete HTTPS origin of its Host, which remote access admitted.
+	remoteUpgrader := upgrader
+	remoteUpgrader.CheckOrigin = remoteOrigin
+	// local tells if a request is for the loopback host of the server and came without a
+	// reverse proxy. Each other request needs remote access.
+	local := func(r *http.Request) bool {
+		return !forwarded(r) && (r.Host == listener.Addr().String() || r.Host == fmt.Sprintf("localhost:%d", s.info.Port))
+	}
 	mux := http.NewServeMux()
 	webui.Register(mux, func() (string, error) {
 		settings, err := s.store.Settings()
@@ -102,25 +117,40 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		s.wg.Add(1)
 		s.mu.Unlock()
 		defer s.wg.Done()
-		conn, err := upgrader.Upgrade(w, r, nil)
+		upgrade := &upgrader
+		if !local(r) {
+			upgrade = &remoteUpgrader
+		}
+		conn, err := upgrade.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
 		wire := protocol.Wrap(conn)
 		defer wire.Close()
+		if !local(r) {
+			if !s.remote.add(wire, r) {
+				return
+			}
+			defer s.remote.remove(wire)
+		}
 		s.handle(ctx, wire)
 	})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Apply the loopback Host restriction to both assets and WebSockets.
-		// The upgrader also rejects foreign browser origins.
-		if r.Host != listener.Addr().String() && r.Host != fmt.Sprintf("localhost:%d", s.info.Port) {
-			http.Error(w, "invalid local host", http.StatusForbidden)
-			return
+		// Apply the Host restriction to both assets and WebSockets. A request that is not
+		// local needs remote access. The upgrader also rejects foreign browser origins.
+		connect := fmt.Sprintf("ws://127.0.0.1:%d ws://localhost:%d", s.info.Port, s.info.Port)
+		if !local(r) {
+			if err := s.remote.check(r); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+			// The admitted Host is the remote host of this page.
+			connect = "wss://" + r.Host
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", fmt.Sprintf("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:%d ws://localhost:%d; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'", s.info.Port, s.info.Port))
+		w.Header().Set("Content-Security-Policy", fmt.Sprintf("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' %s; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'", connect))
 		mux.ServeHTTP(w, r)
 	})
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
@@ -185,6 +215,10 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		}
 		if err == nil {
 			s.updates.saved(result)
+			// Apply remote access before the reply, so that a change is in effect when
+			// the client learns of the save. A change closes the remote connections. This
+			// connection stays open for its reply, and closes after it.
+			s.remote.saved(result, conn)
 		}
 		s.reply(conn, result, err)
 	case "workspace-inspect":

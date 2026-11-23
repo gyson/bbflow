@@ -21,7 +21,7 @@ each operation, and each stream. See [COMMANDS.md](COMMANDS.md) for user command
 | [Session status](#session-status) | The derived status, `status-watch`, and release offers. |
 | [Terminal streams](#terminal-streams) | The messages of a live terminal, frames, and receipts. |
 | [Drafts and file references](#drafts-and-file-references) | The message editor operations. |
-| [Browser access](#browser-access) | The Host and Origin rules, and the HTTP routes. |
+| [Browser access](#browser-access) | The Host and Origin rules, the remote host, and the HTTP routes. |
 | [Protocol versions](#protocol-versions) | The changes of each protocol version from 15. |
 | [Source files](#source-files) | The code that defines the protocol. |
 
@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/37`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/38`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/37",
+    "protocol": "bbflow/38",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/37",
+    "protocol": "bbflow/38",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -710,6 +710,12 @@ current revision.
   selects the automatic port. A save of a new port fails when another program holds it
   at `127.0.0.1` or `::1`. A save also fails for a bad port of the Fetch Standard, such
   as 6000. A saved port does not move the running server.
+- remoteHost and remoteLogin are the two values of
+  [remote access](SPEC.md#remote-access). Remote access is on only while both are set.
+  remoteHost is a DNS name with at least two labels and an optional port, and the
+  server saves it in lower case. remoteLogin has at most 254 printable ASCII characters,
+  without spaces. A save with another value fails. A save that changes either value
+  closes the open connections of remote requests, after its reply.
 - Saving requires the current revision. Removing a default tool requires selecting
   another default in the same save.
 - These operations do not install or authenticate tools.
@@ -1111,25 +1117,71 @@ input.
 
 ## Browser access
 
-The server has two checks. Each HTTP request, including a WebSocket upgrade, must name
-the loopback host of the server. A WebSocket upgrade that has an Origin header must
-also have the same host and port in that header. An upgrade without an Origin header
-passes, and the other HTTP routes have no origin check. These checks stop other web
-sites. They do not authenticate local programs.
+The server has two checks. Each HTTP request, including a WebSocket upgrade, must be a
+local request, or it must pass the checks of the [remote host](#remote-host) while
+remote access is on. A local WebSocket upgrade that has an Origin header must also have
+the same host and port in that header. A local upgrade without an Origin header passes,
+and the other HTTP routes have no origin check. These checks stop other web sites. They
+do not authenticate local programs.
 
 ### Host and Origin
 
-The HTTP Host must be `127.0.0.1:PORT` or `localhost:PORT`. This check applies to each
-HTTP route and to the WebSocket upgrade.
+A request is local only when both of these conditions are true:
 
-Only the WebSocket upgrade checks the Origin header. An Origin header, if present, must
-have the same host and port as the Host. CLI clients omit Origin. Browser clients send
-it automatically. Thus the server rejects WebSocket connections from other sites,
-different ports, and opaque origins such as `file:` pages.
+- Its HTTP Host is `127.0.0.1:PORT` or `localhost:PORT`.
+- It has none of the headers of a reverse proxy: `Forwarded`, `X-Forwarded-For`,
+  `X-Forwarded-Host`, `X-Forwarded-Proto`, `Tailscale-User-Login`, and
+  `Tailscale-Funnel-Request`.
+
+Each other request must pass the checks of the [remote host](#remote-host). This rule
+applies to each HTTP route and to the WebSocket upgrade. A reverse proxy keeps the Host
+that its client sent, and a client can send a loopback Host. Thus the Host alone does
+not make a request local.
+
+Only the WebSocket upgrade checks the Origin header. For a local upgrade, an Origin
+header, if present, must have the same host and port as the Host. CLI clients omit
+Origin. Browser clients send it automatically. Thus the server rejects WebSocket
+connections from other sites, different ports, and opaque origins such as `file:` pages.
 
 The embedded UI is served from the same local origin at `/`. Separate UI development
 servers would need an explicit origin policy change or a same-origin proxy. There is no
 authentication token or TLS. Host and origin checks do not authenticate local programs.
+
+### Remote host
+
+[Remote access](SPEC.md#remote-access) admits the requests that a reverse proxy on the
+computer of the server forwards to the loopback port. The supported proxy is Tailscale
+Serve. The server answers a request that is not [local](#host-and-origin) only when all
+of these conditions are true:
+
+- The settings have a `remoteHost` and a `remoteLogin`.
+- The Host is exactly `remoteHost`, with the same port or no port.
+- The request has exactly one `Tailscale-User-Login` header. Its value is `remoteLogin`,
+  compared without letter case.
+
+Each other request gets status 403. A remote WebSocket upgrade also needs exactly one
+Origin header with the value `https://` and the Host of the same request. An HTTP origin of the same
+host, another port, and a missing Origin get status 403.
+
+- The proxy must keep the Host of the browser request, as Tailscale Serve does.
+- The proxy must set `X-Forwarded-Host` or another header of the local request rule on
+  each request, after it removes these headers of the client. Tailscale Serve does. A
+  proxy without this rule lets each client send a loopback Host and pass as local. A
+  TCP forwarder, such as `tailscale serve --tcp`, is such a proxy. It must never forward
+  to the port of the server.
+- The proxy must remove each `Tailscale-User-Login` header of the client and set its
+  own, as Tailscale Serve does. A proxy without this rule lets each client name a login.
+- A browser client on an HTTPS page connects to `wss://HOST/ws`. On an HTTP page, it
+  connects to `ws://HOST/ws`. A remote page must be an HTTPS page.
+- The `connect-src` of the content security policy names only `wss://HOST` for a remote
+  page. For a local page, it names the two loopback addresses.
+- The greeting and `GET /client-config` are the same as for a local request. They name
+  the loopback port of the server, not the remote host.
+- A change of `remoteHost` or `remoteLogin` is in effect before the reply of its
+  `settings-save`. It closes each open connection of a remote request. The connection
+  of the save itself closes after its reply.
+- The server applies the saved values in the order of the settings revisions. A save
+  with an earlier revision does not replace the values of a later one.
 
 ### Example client
 
@@ -1140,13 +1192,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/37") {
+    if (message.server.protocol !== "bbflow/38") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/37", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/38", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1167,7 +1219,7 @@ uses the shared WebSocket protocol. Static assets are under `/assets/`.
 
 ### HTTP responses
 
-All HTTP routes enforce the loopback Host check. Responses disable caching, MIME
+All HTTP routes enforce the Host check. Responses disable caching, MIME
 sniffing, embedding in frames, and external script loading. The UI uses text nodes for
 metadata and notices.
 
@@ -1250,6 +1302,9 @@ versions.
   `titleCommand: ""`.
 - Protocol 37 adds `workspace-reveal` to the [workspace operations](#workspace-changes).
   The SQLite format does not change.
+- Protocol 38 adds `remoteHost` and `remoteLogin` to settings, and the
+  [remote host](#remote-host) checks of browser access. No operation is new. SQLite
+  format 16 adds `remoteHost: ""` and `remoteLogin: ""`.
 
 ## Source files
 

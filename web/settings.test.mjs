@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
+import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, RemoteChanged, remoteStatus, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -235,6 +235,52 @@ test('a port change needs a save', () => {
   const automatic = { ...settings, port: 0 };
   assert.ok(sameSettings(automatic, { ...automatic }));
   assert.ok(!sameSettings(automatic, { ...automatic, port: 50001 }));
+});
+
+test('a remote access change needs a save, and its status needs both values', () => {
+  const off = { ...settings, remoteHost: '', remoteLogin: '' };
+  assert.ok(sameSettings(off, { ...off }));
+  assert.ok(!sameSettings(off, { ...off, remoteHost: 'my-mac.example.ts.net' }));
+  assert.ok(!sameSettings(off, { ...off, remoteLogin: 'user@example.com' }));
+  assert.equal(remoteStatus('', ''), 'Remote access is off.');
+  assert.match(remoteStatus('my-mac.example.ts.net', ''), /^Remote access is off\. It needs both/);
+  assert.match(remoteStatus('', 'user@example.com'), /^Remote access is off\. It needs both/);
+  assert.equal(remoteStatus('my-mac.example.ts.net', 'user@example.com'), 'Remote access is on for my-mac.example.ts.net and the Tailscale user user@example.com.');
+});
+
+test('a view with earlier values does not restore a login that another view removed', async () => {
+  const host = 'my-mac.example.ts.net', login = 'user@example.com';
+  // The server keeps one copy of the settings and rejects a save with an earlier revision.
+  let stored = { ...settings, revision: 1, port: 0, remoteHost: host, remoteLogin: login };
+  const server = {
+    async save(next) {
+      if (next.revision !== stored.revision) throw new Error('settings changed');
+      return stored = { ...next, revision: next.revision + 1 };
+    },
+    async get() { return stored; },
+    conflict: () => true,
+  };
+  const first = new SettingsSaves(server, () => {}, () => {});
+  const second = new SettingsSaves(server, () => {}, () => {});
+  first.saved = second.saved = stored;
+  // The first view removes the login. The second view still shows revision 1.
+  await first.saveRemote({ host, login }, host, '');
+  assert.deepEqual([stored.revision, stored.remoteLogin], [2, '']);
+  // The second view saves an edit of the host only, with the login that it shows.
+  const base = { host, login };
+  const failure = await second.saveRemote(base, 'other.example.ts.net', login).then(() => null, error => error);
+  assert.ok(failure instanceof RemoteChanged);
+  assert.match(failure.message, /^Another view changed remote access\. The saved host name is my-mac\.example\.ts\.net, and the saved login is none\./);
+  assert.deepEqual(failure.saved, { host, login: '' });
+  assert.deepEqual([stored.revision, stored.remoteHost, stored.remoteLogin], [2, host, '']);
+  assert.equal(second.saved.revision, 2);
+  // A second save from the values of the other view replaces them.
+  await second.saveRemote(failure.saved, 'other.example.ts.net', login);
+  assert.deepEqual([stored.revision, stored.remoteHost, stored.remoteLogin], [3, 'other.example.ts.net', login]);
+  // A change of another setting meanwhile is no conflict of remote access.
+  await first.savePort(50001);
+  await second.saveRemote({ host: 'other.example.ts.net', login }, host, login);
+  assert.deepEqual([stored.revision, stored.port, stored.remoteHost], [5, 50001, host]);
 });
 
 test('the Port field reads a whole number or an empty field', () => {

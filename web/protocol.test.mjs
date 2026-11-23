@@ -246,3 +246,19 @@ test('running statuses keep a slow session start open until its session message'
   assert.equal(errors.length, 1);
   assert.match(errors[0].message, /timed out/);
 });
+
+test('an HTTPS page connects with wss, and an HTTP page with ws', () => {
+  const original = globalThis.location;
+  const urls = [];
+  class Recording extends Socket { constructor(url) { super(); urls.push(url); } }
+  try {
+    // Remote access through an HTTPS proxy. A browser blocks ws:// on such a page.
+    globalThis.location = { host: 'my-mac.example.ts.net', protocol: 'https:' };
+    new Peer(server, request, {}, Recording).close();
+    globalThis.location = { host: 'localhost:1234', protocol: 'http:' };
+    new Peer(server, request, {}, Recording).close();
+  } finally {
+    globalThis.location = original;
+  }
+  assert.deepEqual(urls, ['wss://my-mac.example.ts.net/ws', 'ws://localhost:1234/ws']);
+});

@@ -74,6 +74,26 @@ export function toolRemoval(id: string, warned: boolean): { change: SettingsChan
   };
 }
 
+// The saved values of remote access that a Settings view shows.
+export interface RemoteValues {
+  host: string;
+  login: string;
+}
+
+// RemoteChanged is the failure of a remote access save after another client changed
+// remote access. saved holds the values of that change. A second save from them is a
+// decision of the user to replace them.
+export class RemoteChanged extends Error {
+  readonly saved: RemoteValues;
+
+  constructor(settings: Settings) {
+    const host = settings.remoteHost || 'none';
+    const login = settings.remoteLogin || 'none';
+    super(`Another view changed remote access. The saved host name is ${host}, and the saved login is ${login}. Click Save again to replace them.`);
+    this.saved = { host: settings.remoteHost, login: settings.remoteLogin };
+  }
+}
+
 // The server calls of the Settings saves. conflict tells a rejected save that another
 // save can cause, such as a revision change.
 export interface SettingsService {
@@ -84,8 +104,8 @@ export interface SettingsService {
 
 // SettingsSaves runs the saves of one Settings view one at a time. Each save applies its
 // change to the latest saved settings. After a conflict, it applies the change again to
-// the latest settings. Pending defaults save together. The port saves alone, so a
-// rejected port never joins a save of another setting.
+// the latest settings. Pending defaults save together. The port and remote access each
+// save alone, so a rejected value never joins a save of another setting.
 export class SettingsSaves {
   saved: Settings | null = null;
   // A default stays pending until a save with its value succeeds.
@@ -171,6 +191,17 @@ export class SettingsSaves {
     return this.enqueue(() => this.save(settings => ({ ...settings, port })));
   }
 
+  // The two values of remote access save together and alone, as the port does. base
+  // holds the saved values that the user edited from. When another client changed
+  // remote access since then, the save fails with RemoteChanged and keeps that change.
+  // Thus a view with earlier values cannot restore a login that another view removed.
+  saveRemote(base: RemoteValues, remoteHost: string, remoteLogin: string): Promise<void> {
+    return this.enqueue(() => this.save(settings => {
+      if (settings.remoteHost !== base.host || settings.remoteLogin !== base.login) throw new RemoteChanged(settings);
+      return { ...settings, remoteHost, remoteLogin };
+    }));
+  }
+
   // update takes the settings that a request outside the queue saved, such as a title
   // tool change. Only a newer revision applies, so a late reply cannot undo a later save.
   update(settings: Settings): void {
@@ -206,7 +237,8 @@ export function failedTitleChange(tool: string, before: TitleChoice, after: Titl
 export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&
     a.worktree === b.worktree && a.base === b.base &&
-    a.updateCheck === b.updateCheck && a.port === b.port && sameTools(a.tools, b.tools);
+    a.updateCheck === b.updateCheck && a.port === b.port &&
+    a.remoteHost === b.remoteHost && a.remoteLogin === b.remoteLogin && sameTools(a.tools, b.tools);
 }
 
 // parsePort reads the Port field. An empty field selects the automatic port, 0. Text
@@ -275,6 +307,13 @@ export function portStatus(saved: number, current: number): string {
   if (!saved) return `Automatic. The server uses port ${current} now. Later starts use it again when it is free.`;
   if (saved === current) return `The server uses port ${current}.`;
   return `The server uses port ${current} now. It uses port ${saved} after the next server start, when no other program uses that port.`;
+}
+
+// remoteStatus tells if the saved values turn remote access on.
+export function remoteStatus(host: string, login: string): string {
+  if (host && login) return `Remote access is on for ${host} and the Tailscale user ${login}.`;
+  if (host || login) return 'Remote access is off. It needs both the host name and the login.';
+  return 'Remote access is off.';
 }
 
 export function sameTools(a: Tool[], b: Tool[]): boolean {

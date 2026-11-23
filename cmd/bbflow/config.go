@@ -37,8 +37,12 @@ Keys:
   base          the default Git branch or commit, such as HEAD
   update-check  true or false: read the latest release from GitHub once a day
   port          1024 to 65535, or 0 for an automatic port; applies at the next server start
+  remote-host   the host name of this computer in Tailscale Serve, or "" for none
+  remote-login  the Tailscale login that can use remote access, or "" for none
 
-In the JSON, default-tool is defaultTool and update-check is updateCheck.
+Remote access is on only while remote-host and remote-login are both set.
+In the JSON, default-tool is defaultTool, update-check is updateCheck, remote-host is
+remoteHost, and remote-login is remoteLogin.
 Use bbflow title-tool to select the title tool.`
 
 func toolCommand(target client.Target, args []string) error {
@@ -208,6 +212,10 @@ func settingsCommand(target client.Target, args []string) error {
 					return fmt.Errorf("port must be from %d to 65535, or 0 for an automatic port", history.MinPort)
 				}
 				settings.Port = number
+			case "remote-host":
+				settings.RemoteHost = value
+			case "remote-login":
+				settings.RemoteLogin = value
 			default:
 				_, err := settingValue(*settings, key, "set TOOL")
 				return err
@@ -227,8 +235,17 @@ func settingsCommand(target client.Target, args []string) error {
 			shown = "the built-in Shell"
 		case key == "port" && shown == "0":
 			shown = "0, the automatic port"
+		case (key == "remote-host" || key == "remote-login") && shown == "":
+			shown = "none"
 		}
 		fmt.Printf("Saved %s: %s.\n", key, shown)
+		if key == "remote-host" || key == "remote-login" {
+			if saved.RemoteAccess() {
+				fmt.Println("Remote access is on.")
+			} else {
+				fmt.Println("Remote access is off. It needs both remote-host and remote-login.")
+			}
+		}
 		if key == "port" && saved.Port != port {
 			fmt.Println("The port applies at the next server start. A server restart stops all sessions.")
 		}
@@ -265,10 +282,14 @@ func settingValue(settings history.Settings, key, titleTool string) (string, err
 		return strconv.FormatBool(settings.UpdateCheck), nil
 	case "port":
 		return strconv.Itoa(settings.Port), nil
+	case "remote-host":
+		return settings.RemoteHost, nil
+	case "remote-login":
+		return settings.RemoteLogin, nil
 	case "title-tool":
 		return "", fmt.Errorf("title-tool is not a settings key; use bbflow title-tool %s", titleTool)
 	}
-	return "", fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, update-check, or port", key)
+	return "", fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, update-check, port, remote-host, or remote-login", key)
 }
 
 // parseSwitch reads the value of a setting that is on or off. Only true and false are

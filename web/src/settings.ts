@@ -1,11 +1,12 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, parsePort, PortField, portStatus, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './settings-model.js';
+import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, parsePort, PortField, portStatus, RemoteChanged, remoteStatus, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './settings-model.js';
 import type { Defaults, SettingsChange } from './settings-model.js';
 
 const portRange = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
 const portNotSaved = 'The port did not save.';
+const remoteNotSaved = 'Remote access did not save.';
 const defaultNotSaved = 'A setting did not save.';
 const titleToolNotSaved = 'The title tool did not save.';
 
@@ -34,6 +35,12 @@ export class SettingsView {
   private readonly port = element('settings-port', HTMLInputElement);
   private readonly portError = element('settings-port-error', HTMLElement);
   private readonly portStatus = element('settings-port-status', HTMLElement);
+  private readonly remoteForm = element('settings-remote-form', HTMLFormElement);
+  private readonly remoteHost = element('settings-remote-host', HTMLInputElement);
+  private readonly remoteLogin = element('settings-remote-login', HTMLInputElement);
+  private readonly remoteSave = element('settings-remote-save', HTMLButtonElement);
+  private readonly remoteError = element('settings-remote-error', HTMLElement);
+  private readonly remoteStatus = element('settings-remote-status', HTMLElement);
   private readonly error = element('settings-error', HTMLElement);
   private readonly status = element('settings-status', HTMLElement);
   private readonly tools = element('settings-tools', HTMLElement);
@@ -62,6 +69,10 @@ export class SettingsView {
   private readonly saves: SettingsSaves;
   private renderedBase = '';
   private readonly portField = new PortField();
+  // The saved remote access values that the fields showed last. Other text is an edit.
+  private renderedRemote = { host: '', login: '' };
+  // remoteBusy reports a running save of remote access. Its fields then take no edit.
+  private remoteBusy = false;
   // The title tools, their commands, and the sample message of a test come from the
   // server.
   private titleTools: TitleTool[] = [];
@@ -130,6 +141,12 @@ export class SettingsView {
       this.showStatus();
     };
     this.portForm.onsubmit = event => { event.preventDefault(); this.savePort(); };
+    this.remoteForm.onsubmit = event => { event.preventDefault(); this.saveRemote(); };
+    this.remoteForm.oninput = () => {
+      // The error is about the earlier text.
+      this.remoteError.hidden = true;
+      this.showStatus();
+    };
     this.addTool.cancel.onclick = () => this.resetAddTool();
     this.editTool.cancel.onclick = () => this.closeEditor();
     this.addTool.form.oninput = this.editTool.form.oninput = () => this.showStatus();
@@ -199,6 +216,10 @@ export class SettingsView {
       if (reason) this.report(portNotSaved, reason);
     }
     this.restorePort();
+    // An edit of remote access does not save without a click on Save.
+    this.remoteHost.value = this.renderedRemote.host;
+    this.remoteLogin.value = this.renderedRemote.login;
+    this.remoteError.hidden = true;
     // A running title tool change continues. Its end discards the custom entry.
     if (!this.busy) this.discardCustom();
     this.newToolId = '';
@@ -218,6 +239,7 @@ export class SettingsView {
     for (const key of Object.keys(this.saves.defaults) as (keyof Defaults)[]) names.add(defaultLabels[key]);
     if (this.base.value !== this.renderedBase) names.add(defaultLabels.base);
     if (this.portField.edited) names.add('Port');
+    if (this.remoteEdited()) names.add('Remote access');
     if (this.customOpen || this.customCommand.value !== this.renderedCustom) names.add('Custom title command');
     if (this.addTool.name.value || this.addTool.command.value) names.add('New tool');
     if (this.editing && (this.editTool.name.value !== this.editing.name || this.editTool.command.value !== this.editing.command)) {
@@ -260,6 +282,10 @@ export class SettingsView {
     this.render();
   }
 
+  private remoteEdited(): boolean {
+    return this.remoteHost.value !== this.renderedRemote.host || this.remoteLogin.value !== this.renderedRemote.login;
+  }
+
   private applyAppearance(appearance: string): void {
     this.appearance.value = appearance;
     document.documentElement.dataset.appearance = appearance;
@@ -282,6 +308,14 @@ export class SettingsView {
     if (this.port.value !== port) this.port.value = port;
     const server = this.server();
     this.portStatus.textContent = server ? portStatus(saved.port, server.port) : '';
+    // Keep any text entered in the remote access fields since the last render.
+    if (!this.remoteEdited()) {
+      this.renderedRemote = { host: saved.remoteHost, login: saved.remoteLogin };
+      this.remoteHost.value = saved.remoteHost;
+      this.remoteLogin.value = saved.remoteLogin;
+    }
+    this.remoteStatus.textContent = remoteStatus(saved.remoteHost, saved.remoteLogin);
+    this.remoteHost.disabled = this.remoteLogin.disabled = this.remoteSave.disabled = this.remoteBusy;
     this.titleTool.value = this.settingTool ?? (this.customOpen ? 'custom' : saved.titleTool ?? 'none');
     // Keep any text entered in the custom command field since the last render.
     if (this.customCommand.value === this.renderedCustom) {
@@ -683,6 +717,35 @@ export class SettingsView {
       this.portError.textContent = errorMessage(error);
       this.portError.hidden = false;
     });
+  }
+
+  // Save the two fields of remote access together. The server checks them and saves the
+  // host name in lower case. The fields take no edit during the save, so the reply can
+  // show the saved values. A failed save keeps the text, with the error below the fields.
+  // After a change of remote access in another view, the save fails and the error shows
+  // the saved values. A second Save then replaces them.
+  private saveRemote(): void {
+    if (!this.saved || this.remoteBusy) return;
+    const visit = this.visits;
+    this.remoteBusy = true;
+    this.remoteError.hidden = true;
+    this.render();
+    const done = (error?: unknown) => {
+      this.remoteBusy = false;
+      if (error === undefined) {
+        // The text is saved, so it is not an edit. The render then shows the saved values.
+        this.renderedRemote = { host: this.remoteHost.value, login: this.remoteLogin.value };
+      } else if (visit !== this.visits) {
+        this.report(remoteNotSaved, errorMessage(error));
+      } else {
+        // The text stays an edit of the values that the other view saved.
+        if (error instanceof RemoteChanged) this.renderedRemote = error.saved;
+        this.remoteError.textContent = errorMessage(error);
+        this.remoteError.hidden = false;
+      }
+      this.render();
+    };
+    void this.saves.saveRemote(this.renderedRemote, this.remoteHost.value.trim(), this.remoteLogin.value.trim()).then(() => done(), (error: unknown) => done(error ?? new Error('Unknown error')));
   }
 
   private saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K]): void {

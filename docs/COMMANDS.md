@@ -29,7 +29,7 @@ local builds, and [SPEC.md](SPEC.md) for implementation details and current limi
 | [`bbflow query SQL`](#query-sqlite) | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
 | [`bbflow storage [--redact]`](#storage-report) | See which projects, sessions, and event kinds use the most space. | Reads the archive. Prints a Markdown report. |
 | [`bbflow tool list\|add\|remove`](#manage-tools) | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
-| [`bbflow settings get\|set`](#manage-settings) | Show or change appearance, session defaults, the update check, and the server port. | Changes saved settings. Starts no session. |
+| [`bbflow settings get\|set`](#manage-settings) | Show or change appearance, session defaults, the update check, the server port, and remote access. | Changes saved settings. Starts no session. |
 | [`bbflow title-tool list\|show\|set\|test`](#title-tool) | Show, select, or test the tool for automatic session titles. | `set` and `test` run the tool once with a sample message. `set` saves the tool only after the test passes. Starts no session. |
 | [`bbflow skill`](#agent-guide) | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
 
@@ -421,7 +421,7 @@ The tables are:
 | `projects` | `id`, `name`, `workspace`, `created` |
 | `sessions` | `id`, `title` (user title, or empty), `auto_title` (derived title), `workspace`, `created`, `project_id` (NULL for standalone), `archived` (0 or 1) |
 | `runs` | `id`, `session_id`, `status`, `started`, `ended`, `pid`, `detail` |
-| `settings` | `id`, `revision`, `data` (JSON appearance, defaults, tool presets, and port) |
+| `settings` | `id`, `revision`, `data` (JSON appearance, defaults, tool presets, port, and remote access) |
 | `preparations` | `session_id`, `revision`, `state`, `data` (JSON launch choices) |
 | `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
@@ -594,11 +594,14 @@ bbflow settings set worktree true
 bbflow settings set base main
 bbflow settings set update-check false
 bbflow settings set port 50000
+bbflow settings set remote-host my-mac.example.ts.net
+bbflow settings set remote-login user@example.com
 ```
 
 `settings get` prints the saved settings as JSON, including the revision and the tools.
-The JSON uses the field names of the protocol, so `default-tool` is `defaultTool` and
-`update-check` is `updateCheck`.
+The JSON uses the field names of the protocol. Thus `default-tool` is `defaultTool`,
+`update-check` is `updateCheck`, `remote-host` is `remoteHost`, and `remote-login` is
+`remoteLogin`.
 
 `settings get KEY` prints one value as text, in the form that `settings set` accepts.
 For `default-tool`, it prints the tool name, or an empty line for the built-in Shell.
@@ -617,10 +620,19 @@ the command prints the result.
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
 | `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
 | `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port, or when browsers refuse the port, such as 6000 and 10080. See [Instance directory](#instance-directory). |
+| `remote-host` | The host name of this computer in Tailscale Serve, such as `my-mac.example.ts.net`, with an optional port. An empty value, `""`, removes it. The server saves the name in lower case. See [remote access](SPEC.md#remote-access). |
+| `remote-login` | The Tailscale login that can use remote access, such as `user@example.com`. An empty value, `""`, removes it. |
 
 **Impact:** the same as `tool add`. A rejected value changes nothing. A `port` change
 does not move the running server. After a changed port, the command tells you that the
 port applies at the next server start. A restart stops all sessions.
+
+Remote access is on only while `remote-host` and `remote-login` are both set. A new
+installation and an upgrade start with neither. After a save of one of these keys, the
+command prints `Remote access is on.` or tells that remote access needs both keys. An
+empty saved value prints as `none`. A change applies at once and closes the open remote
+connections. While remote access is on, each device where that Tailscale user is signed
+in can run commands on this computer as you.
 
 Use [`title-tool`](#title-tool) to select the title tool. `title-tool` is not a settings
 key. `settings get title-tool` and `settings set title-tool` fail and name that command.

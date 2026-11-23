@@ -15,7 +15,7 @@ rules. A "Limits" sub-section gives the limits of one feature.
 | [Architecture and build](#architecture-and-build) | The server, its clients, the dependencies, and the build. |
 | [Commands](#commands) | The scope of the CLI. COMMANDS.md has the reference. |
 | [Release installation](#release-installation) | The installer, `bbflow update`, the release check, and the update from the web UI. |
-| [Server lifecycle](#server-lifecycle) | Start, stop, and restart, the loopback address and port, and the macOS menu bar. |
+| [Server lifecycle](#server-lifecycle) | Start, stop, and restart, the loopback address and port, remote access, and the macOS menu bar. |
 | [Web client](#web-client) | Each feature of the web UI. See the second table. |
 | [Terminal runtime](#terminal-runtime) | Launch, recording, signals, exit, and scrollback of a terminal. |
 | [Session views](#session-views) | Shared views, the size owner, frames, and the order of the session list. |
@@ -461,8 +461,9 @@ until its five-second request timeout.
 
 ### Loopback address
 
-The server listens only on the loopback addresses `127.0.0.1` and `::1`. It does not
-support remote access. The UI URL uses `localhost`, and a browser can resolve
+The server listens only on the loopback addresses `127.0.0.1` and `::1`. Another device
+reaches it only through [remote access](#remote-access), which is off by default. The
+UI URL uses `localhost`, and a browser can resolve
 `localhost` to either address. Thus the server holds its port at both addresses, and no
 other program can take the requests for `localhost` while bbflow runs. A system without
 IPv6 loopback uses `127.0.0.1` only. The CLI connects to `127.0.0.1`.
@@ -484,6 +485,111 @@ A local program that takes the port while bbflow is stopped gets the requests of
 open tabs. The greeting check cannot authenticate that program. The directory in a
 greeting is only what the program claims. A program that gives another directory, or
 an incomplete greeting, fails the check, and the tab does not reload.
+
+### Remote access
+
+Remote access lets a browser on another device, such as a phone, use the web UI. A
+reverse proxy on the computer of the server forwards the requests to the loopback port.
+The supported proxy is [Tailscale Serve](https://tailscale.com/kb/1312/serve). Remote
+access is off by default, and the server still listens only on loopback.
+
+See [Remote host](PROTOCOL.md#remote-host) for the exact request checks. See
+[Remote access in Settings](#remote-access-in-settings) for the page, and
+[COMMANDS.md](COMMANDS.md#manage-settings) for the `remote-host` and `remote-login`
+keys.
+
+#### Remote access settings
+
+Settings hold two values, `remoteHost` and `remoteLogin`. Remote access is on only while
+both are set. A new database and an upgraded database have neither.
+
+| Value | Rules |
+| --- | --- |
+| `remoteHost` | The Host of the remote requests, such as `my-mac.example.ts.net`. It is a DNS name with at least two labels and an optional port. The server saves it in lower case. The server rejects an IP address and a name that ends in `localhost`. |
+| `remoteLogin` | The Tailscale login that can use remote access, such as `user@example.com`. It has at most 254 printable ASCII characters, without spaces. |
+
+- A save of one value alone succeeds and keeps remote access off.
+- A change applies without a server restart. It is in effect before the server
+  replies to the save. Thus a request after a successful save gets the new rules.
+- A change of either value closes each open WebSocket connection of a remote request.
+  The connections of local views stay open.
+- The server applies the saved values in the order of the settings revisions. When two
+  saves complete in the other order, the values of the later revision stay.
+- A save of another setting keeps the remote connections.
+
+#### Remote requests
+
+A request is local only when its Host is a loopback host name of the server and it has
+no header of a reverse proxy, such as `X-Forwarded-Host`. See
+[Host and Origin](PROTOCOL.md#host-and-origin) for the headers. Each other request is
+remote, and the server answers it only when all of these conditions are true:
+
+- Remote access is on.
+- The Host is exactly the saved `remoteHost`.
+- The request has exactly one `Tailscale-User-Login` header, and its value is the saved
+  `remoteLogin`. The comparison ignores letter case.
+
+The server answers each other remote request with status 403. A remote WebSocket
+upgrade also needs the Origin `https://` with the Host of the same request. Thus an HTTP
+page of the same host cannot connect. The content security policy of a remote page
+also takes its WebSocket origin from the Host of its request. A change of the settings
+during a request thus cannot admit the origin of another host.
+
+Tailscale Serve selects its backend by the TLS server name, and it keeps the Host that
+the client sent. A client in the tailnet can thus send a loopback Host through the
+proxy. Tailscale Serve sets `X-Forwarded-Host` on each request that it forwards, so the
+server does not handle such a request as local. This applies also while remote access
+is off.
+
+Tailscale Serve removes each `Tailscale-User-Login` header that the client sent, and it
+sets its own header for a user device of the tailnet. A request that comes through the
+HTTP proxy of Tailscale Funnel from the internet has no login, so the server rejects
+it.
+
+A remote page uses the same UI and the same operations as a local page. On an HTTPS
+page, the UI connects with `wss://`. The content security policy of a remote page names
+the secure WebSocket origin of the remote host instead of the loopback addresses.
+
+#### Setup with Tailscale Serve
+
+bbflow does not start, change, or stop Tailscale Serve. The user runs
+`tailscale serve` for the port of the server. See [REMOTE.md](REMOTE.md) for the setup
+procedure, the Tailscale commands, and the solutions to problems.
+
+#### Limits
+
+- Remote access admits one host name and one Tailscale login.
+- The server has no password and no TLS of its own. Tailscale supplies the encryption
+  and the user identity.
+- Each device where that Tailscale user is signed in can run commands as the user of
+  the server. A lost device needs removal from the tailnet.
+- The checks do not authenticate local programs. A local program can send the same Host
+  and header to the loopback port. Such a program can already use the loopback host.
+- A device with a Tailscale tag has no login, so the server rejects its requests.
+- A login with characters outside printable ASCII cannot be saved.
+- **Open in browser** and **Show in Finder** act on the computer of the server, not on
+  the remote device.
+- A remote view can become the [size owner](#size-owner), as each view can. Input from
+  a phone gives the PTY the size of the phone view.
+- `bbflow ui`, the menu bar, and the server start message use the `localhost` URL only.
+- The web UI loads its files and its WebSocket connection from the root of the host.
+  Thus it does not work below a path of the proxy.
+- Another application at a path of the same HTTPS host and port has the browser origin
+  of bbflow. Its scripts can use bbflow as the signed-in user. The remote host needs an
+  HTTPS port that serves only bbflow.
+- Tailscale Serve forwards to a port number. When the server
+  [selects another port](#port-selection), the address reaches the program that holds
+  the earlier port.
+- A reverse proxy that sets none of the proxy headers makes its requests with a loopback
+  Host local. The HTTP proxy of Tailscale Serve sets them.
+- A TCP forwarder, such as `tailscale serve --tcp` or `tailscale funnel` with
+  `--tls-terminated-tcp`, adds no headers. The server cannot tell its requests from
+  local requests, also while remote access is off. The remote access settings give no
+  protection for a port that such a forwarder exposes.
+- The checks with a real Tailscale Serve proxy used one Mac with Tailscale 1.104.7 and
+  one iPhone. No check used a real Funnel request, a device with a tag, or another
+  reverse proxy. See
+  [Checks of the server and the menu bar](#checks-of-the-server-and-the-menu-bar).
 
 ### macOS menu bar
 
@@ -576,7 +682,7 @@ verified server at the same URL. See
 
 The UI checks every WebSocket greeting against `/client-config`. A changed server
 requires a reload using its current URL. A content security policy restricts scripts
-and network access to the local origin and blocks framing. Terminal libraries are
+and network access to the origin of the page and blocks framing. Terminal libraries are
 served locally. See [browser access](PROTOCOL.md#browser-access) for the Host, Origin,
 and caching rules.
 
@@ -672,8 +778,8 @@ terminal cannot start, the menu shows the reason below the disabled item.
   keyboard input. The page does not follow the on-screen keyboard of a phone.
 - A phone in landscape orientation is usually wider than 700 pixels and uses the
   regular layout.
-- The server does not support remote access. See
-  [loopback address](#loopback-address).
+- A phone reaches the server only through [remote access](#remote-access), which is
+  off by default.
 
 ### Sidebar
 
@@ -1034,7 +1140,7 @@ is no semantic chat transcript.
 This section has three related parts:
 
 - **Settings** is one page for the instance. It has the appearance, the server port,
-  the tools with their startup commands, and the session defaults.
+  remote access, the tools with their startup commands, and the session defaults.
 - A **preparation** holds the launch choices of a session that did not start: the
   project, the tool, and the worktree choices. The message draft saves separately.
   Start does not send it. It stays in the editor for the user to send.
@@ -1045,8 +1151,8 @@ This section has three related parts:
 
 Settings is an instance-wide page at `/settings`. Its URL has no session ID. The cards
 are **Appearance**, **Tools**, **Session defaults**, **Automatic titles**, **Updates**,
-and **Server**. Tools come before the session defaults, because the default tool is one
-of them.
+**Server**, and **Remote access**. Tools come before the session defaults, because the
+default tool is one of them.
 
 **Appearance** offers **System**, **Light**, and **Dark**. System is the default and
 follows the device appearance. A selection applies to the current view at once. Other
@@ -1069,12 +1175,13 @@ way:
 | Starting branch or commit, Port | On Enter, or when the field loses focus. Escape restores the saved value. |
 | Tools | **Add tool** and **Save** in the row. **Remove** asks first. The move buttons save at once. |
 | Title tool | After a passed test. See [Title controls in Settings](#title-controls-in-settings). |
+| Remote access | **Save** in the card saves both fields together. See [Remote access in Settings](#remote-access-in-settings). |
 
 The status shows **Saving…** during a save. It shows **All settings saved** when each
 entry is saved. Otherwise it names each entry that is not saved, for example
 **Not saved: Port, New tool**. The names are **Starting branch or commit**, **Port**,
-**Custom title command**, **New tool**, **Edit of** with the tool name, and the name of
-a default that failed to save.
+**Remote access**, **Custom title command**, **New tool**, **Edit of** with the tool
+name, and the name of a default that failed to save.
 
 - When the user leaves Settings, the page discards the entries that are not saved. The
   fields then show the saved values. A default that the server rejected is such an
@@ -1085,8 +1192,8 @@ a default that failed to save.
   - The Port text was not a valid port, or the page showed the error of a rejected port
     or default. The click on **Done** first saves a text field, so the server can
     reject the value before the page closes.
-  - The server rejected a port, a default, or a title tool after the user left. The
-    page then also discards that entry.
+  - The server rejected a port, a default, a title tool, or remote access after the user
+    left. The page then also discards that entry.
   - A save of a new tool, an edit, a move, or a removal failed after the user left. The
     toast names the action and the tool, for example **The new tool “Codex” did not
     save.**
@@ -1114,6 +1221,29 @@ a default that failed to save.
 - An edit made during a port save stays in the field after the reply, with its own
   error.
 - Open tabs do not move to a new port.
+
+#### Remote access in Settings
+
+- In **Remote access**, **Tailscale host name** and **Tailscale login** hold the two
+  values of [remote access](#remote-access). The card tells that a person who can use
+  remote access can run commands on the computer.
+- **Save** saves both fields together. Enter in a field does the same. The fields do
+  not save when they lose focus, so that remote access never turns on from a partial
+  entry.
+- The fields and **Save** take no input during the save. After the save, the fields show
+  the saved values, with the host name in lower case.
+- The status below the fields tells if remote access is on, and for which host name and
+  login. With one value only, it tells that remote access needs both.
+- To turn remote access off, the user empties a field and clicks **Save**.
+- A value that the server rejects stays in its field, with the server error below the
+  fields. New text in a field hides the error.
+- When another view changed remote access after the fields showed their values, **Save**
+  does not save. The error names the saved host name and login of that change, and the
+  text stays in the fields. A second **Save** replaces those values. Thus a view with
+  earlier values cannot restore a login that another view removed.
+- A text that is not saved shows as **Remote access** in the save status. The page
+  discards it when the user leaves Settings.
+- A save of remote access does not join a save of another setting.
 
 #### Tools
 
@@ -2896,7 +3026,7 @@ fork ancestry, or inherited history yet.
 ### Database upgrades
 
 The server upgrades the database by itself at start, in one transaction. A failed
-upgrade changes nothing and stops the start. The current format is 15. Formats from 3,
+upgrade changes nothing and stops the start. The current format is 16. Formats from 3,
 shipped in v0.0.1, are supported.
 
 #### Upgrade transaction
@@ -2913,7 +3043,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 15. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 16. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -2949,7 +3079,10 @@ WAL is enabled after the schema transaction commits.
 - Format 14 gains `titleCommand: ""` in the settings JSON through migration 15. The
   custom title tool runs this command. The upgrade saves no command and keeps the
   selected title tool, the settings revision, and the other values.
-- Format 15 opens without running scripts or rewriting history, settings, or metadata.
+- Format 15 gains `remoteHost: ""` and `remoteLogin: ""` in the settings JSON through
+  migration 16. Thus remote access starts off, also after an upgrade. The settings
+  revision and the other values stay.
+- Format 16 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -3145,6 +3278,77 @@ checked in light and dark browser themes. The generated menu bar PNG was checked
 contain only fully transparent or fully opaque pixels. A manual check confirmed the icon
 in the dark macOS menu bar. The updated native companion also launched and exited with
 its server.
+
+The automated checks of [remote access](#remote-access) use no Tailscale Serve proxy.
+Each check sends the requests of such a proxy to the loopback port:
+
+- A test of a real temporary server sets `remote-host` and `remote-login` with the CLI.
+  It verifies status 403 for a page request and a WebSocket upgrade while remote access
+  is off, and with one value only.
+- With both values, it verifies the page, the policy with the remote WebSocket origin,
+  and the unchanged policy of a local page.
+- It verifies status 403 for no login, another login, two login headers, a request with
+  only the Funnel header, another host, a longer host, and the remote host with a port.
+- It verifies status 403 for a remote upgrade with a foreign Origin, the HTTP origin of
+  the remote host, another port, and no Origin.
+- It verifies status 403 for a page request and an upgrade with a loopback Host and the
+  headers of a proxy. The cases are remote access off, the saved login, another login,
+  no login, and the Funnel header. It verifies that each proxy header alone has this
+  effect, and that a direct local request still gets the page.
+- It verifies that a change of remote access closes a remote status watch and keeps a
+  local one, and that a save of another setting keeps the remote one.
+- It verifies that the saved values apply again after a server restart.
+- It verifies that a saved host with a port admits that Host and rejects the host
+  without the port.
+- Server tests apply settings of revisions 3 and 2 in that order and verify that the
+  removed login of revision 3 stays removed. They also cover the proxy headers and the
+  remote Origin rule. One test changes the remote host between the check and the
+  upgrade of a request, and verifies that the Origin of the new host fails.
+- Store fixtures cover the rules of the two values, a save of one value alone, and a
+  title tool change that keeps them.
+- Migration fixtures upgrade a frozen format 15 archive with a saved custom title
+  command. The upgrade keeps it and adds the two empty values. A blocked settings update
+  rolls back migration 16.
+- Web fixtures cover the **Remote access** card: a save of both fields, the saved lower
+  case host name, the status texts, a rejected value, and a failure after **Done**. A
+  protocol fixture verifies `wss://` on an HTTPS page and `ws://` on an HTTP page.
+- Web fixtures cover two views: one view removes the login, and a save of the other
+  view with its earlier values fails, shows the saved values, and sends no second save.
+  A second **Save** then replaces them.
+- A browser check of a demo instance saved a sample host name and login in the card. The
+  status changed from **Not saved: Remote access** to **All settings saved**, and the
+  card showed that remote access is on.
+- `curl` requests to that demo server, with the Host and the login header of a proxy,
+  gave status 200 for the page and 101 for the WebSocket upgrade. They gave 403 without
+  the login, with another login, and after remote access went off.
+
+A manual check used a real Tailscale Serve proxy of Tailscale 1.104.7 on macOS, with
+`tailscale serve --bg PORT` for a demo instance:
+
+- While remote access was off, the HTTPS address gave status 403 with `invalid host`,
+  from the Mac and from an iPhone in the tailnet.
+- After a save of the host name and the login in the **Remote access** card, `curl` on
+  the Mac got status 200 and the policy with the remote WebSocket origin.
+- A WebSocket upgrade through the proxy got status 101. An upgrade with a foreign Origin
+  got status 403.
+- A request with a `Tailscale-User-Login` header of another user got status 200. Thus
+  the proxy replaced the header of the client with the login of the device.
+- The iPhone then loaded the web UI in its browser. The check did not record the
+  operations that the user tried there.
+- Before the local request rule had the proxy headers, a request with the Host
+  `localhost:PORT` through the proxy got status 200. With the rule, a page request,
+  `GET /client-config`, and a WebSocket upgrade with a loopback Host got status 403. A
+  request that named the forwarding headers in its `Connection` header also got 403.
+- With the remote Origin rule, an upgrade through the proxy got status 101 for the
+  HTTPS origin, and 403 for the HTTP origin of the same host and for no Origin. The
+  policy of the remote page named only the `wss://` origin.
+- A direct request to `localhost:PORT` still got the page and the upgrade.
+- After a rebase onto the mobile layout and a server restart, the same address gave
+  status 200 and 101 again, with the saved values.
+- `tailscale serve --bg --https=8443 PORT` for a local test server gave the Host
+  `my-mac.example.ts.net:8443`, with the real host name, and a login header. Remote
+  access of bbflow was not used on that address.
+- The same address for a port with no server gave status 502.
 
 ### Checks of the sidebar and archive
 
@@ -3830,7 +4034,7 @@ The final display kept its recorded layout. This check did not run a real agent 
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–14 to format 15
+- Frozen schemas from repository history test upgrades from formats 3–15 to format 16
   and verify that reopen preserves the upgraded data.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.

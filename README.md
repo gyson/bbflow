@@ -88,6 +88,9 @@ Two tips:
 - The server listens only on loopback, `127.0.0.1` and `::1`, and uses no
   authentication token. It does not protect the data from other processes that run as
   you.
+- Remote access from another device, such as a phone, is off by default. It works
+  through Tailscale Serve. See
+  [Remote access with Tailscale Serve](docs/REMOTE.md) for the setup.
 - The server asks GitHub for the latest release when it starts and then once a day. The
   request sends no history or settings. Turn it off with **Check for a new version
   every day** in Settings.
@@ -108,6 +111,7 @@ supported formats and the upgrade behavior.
 | Document | Contents |
 | --- | --- |
 | [docs/COMMANDS.md](docs/COMMANDS.md) | Each `bbflow` command, its options, and its effects. |
+| [docs/REMOTE.md](docs/REMOTE.md) | Setup of remote access from another device, such as a phone, with Tailscale Serve. |
 | [docs/SPEC.md](docs/SPEC.md) | Implemented behavior of the server and the web UI, with limits. |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | WebSocket messages between the clients and the server. |
 | [docs/GOAL.md](docs/GOAL.md) | The intended product. |

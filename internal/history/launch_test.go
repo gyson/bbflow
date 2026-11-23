@@ -78,6 +78,47 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 	}
 }
 
+func TestRemoteAccessSettings(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings, err := store.Settings()
+	if err != nil || settings.RemoteHost != "" || settings.RemoteLogin != "" || settings.RemoteAccess() {
+		t.Fatal("a new database turned remote access on", settings, err)
+	}
+	for _, host := range []string{"localhost", "my-mac", "127.0.0.1", "100.64.0.1:443", "my-mac.localhost", "my-mac.example.ts.net:0", "my-mac.example.ts.net:65536", "my-mac.example.ts.net:08", "my-mac.example.ts.net:", "https://my-mac.example.ts.net", "my-mac.example.ts.net/", "my mac.example.ts.net", "-mac.example.ts.net", "my-mac..ts.net", "*.ts.net", strings.Repeat("a", 64) + ".ts.net", strings.Repeat("a.", 127) + "net"} {
+		settings.RemoteHost = host
+		if _, err := store.SaveSettings(settings); err == nil || !strings.Contains(err.Error(), "remote host must be a DNS name") {
+			t.Fatal("accepted invalid remote host", host, err)
+		}
+	}
+	settings.RemoteHost = ""
+	for _, login := range []string{"two words@example.com", "café@example.com", "line\nbreak", strings.Repeat("a", 255)} {
+		settings.RemoteLogin = login
+		if _, err := store.SaveSettings(settings); err == nil || !strings.Contains(err.Error(), "Tailscale login must be") {
+			t.Fatal("accepted invalid Tailscale login", login, err)
+		}
+	}
+	// One value alone saves, and remote access stays off.
+	settings.RemoteHost, settings.RemoteLogin = "  My-Mac.Example.ts.net ", ""
+	if settings, err = store.SaveSettings(settings); err != nil || settings.RemoteHost != "my-mac.example.ts.net" || settings.RemoteAccess() {
+		t.Fatal(settings, err)
+	}
+	settings.RemoteHost, settings.RemoteLogin = "my-mac.example.ts.net:8443", " User@Example.com "
+	if settings, err = store.SaveSettings(settings); err != nil || settings.RemoteHost != "my-mac.example.ts.net:8443" || settings.RemoteLogin != "User@Example.com" || !settings.RemoteAccess() {
+		t.Fatal(settings, err)
+	}
+	if saved, err := store.Settings(); err != nil || saved.RemoteHost != settings.RemoteHost || saved.RemoteLogin != settings.RemoteLogin {
+		t.Fatal(saved, err)
+	}
+	// A title tool change keeps remote access.
+	if settings, err = store.SetTitleTool(TitleChoice{Tool: "codex"}, settings.Choice()); err != nil || !settings.RemoteAccess() {
+		t.Fatal(settings, err)
+	}
+}
+
 func TestRunsListEachTerminalOfASessionInOrder(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
 	if err != nil {

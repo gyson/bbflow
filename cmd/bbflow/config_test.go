@@ -113,6 +113,8 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	fails("update-check must be true or false", "settings", "set", "update-check", "daily")
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "80")
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "auto")
+	fails("remote host must be a DNS name", "settings", "set", "remote-host", "localhost")
+	fails("Tailscale login must be", "settings", "set", "remote-login", "two words")
 	fails("unknown settings key", "settings", "set", "theme", "dark")
 	fails("unknown settings key", "settings", "get", "theme")
 	fails("settings get takes at most one key", "settings", "get", "base", "port")
