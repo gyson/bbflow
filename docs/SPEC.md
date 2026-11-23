@@ -30,6 +30,7 @@ The Web client section has these features:
 | --- | --- |
 | [Page and connection](#page-and-connection) | The page URL, the server check, and the favicon. |
 | [Page messages](#page-messages) | The place of each warning and error. |
+| [Mobile layout](#mobile-layout) | The layout of a very narrow window: the sidebar drawer, the short toolbar, and the file list. |
 | [Sidebar](#sidebar) | Projects, session groups, width, search, and refresh. |
 | [Session families](#session-families) | Sub-sessions and their parent. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
@@ -555,7 +556,7 @@ sessions.
 The web UI is one page in a browser tab. A sidebar lists the projects and their
 sessions. The main area shows one session: its terminal, its message editor, and an
 optional workspace pane. Each tab has its own selected session, and tabs can share a
-session.
+session. A window of 700 pixels or less uses the [mobile layout](#mobile-layout).
 
 ### Page and connection
 
@@ -618,6 +619,62 @@ it. The page keeps the three newest toasts.
 Archive, restore, stop, project removal, and worktree removal show no confirmation. The
 list, the status, and the workspace line show the result.
 
+### Mobile layout
+
+A window width of 700 pixels or less selects the mobile layout. The width selects it,
+not the device. Thus a narrow window on a desktop computer uses it too. The page keeps
+the height of the window and shows one part at a time:
+
+- The sidebar is a drawer above the main area.
+- The [view switch](#view-switch) below the toolbar shows the session or one view of
+  the workspace pane. A wider window that cannot hold the session and the pane has the
+  same switch.
+- The toolbar has one row.
+- In Changes and Files, the rows of the file list are higher. A view narrower than 560
+  pixels shows the list and the file view one at a time. See
+  [file list in a narrow pane](#file-list-in-a-narrow-pane).
+
+A wider window uses the regular layout. A change of the width changes the layout at
+once and keeps the selected session and the shown view.
+
+#### Sidebar drawer
+
+- The toolbar button at the left of the session title opens the drawer. The open
+  drawer covers this button.
+- A click outside the drawer or Escape closes the drawer. An open row menu or dialog
+  takes Escape first.
+- Command-B opens and closes the drawer on macOS.
+- The open drawer takes the keyboard focus. The row of the selected session gets it, or
+  else the drawer. The main area under the drawer takes no focus and no input.
+- When the drawer closes, the focus goes back to the control that had it before. If that
+  control is gone, the toolbar button gets the focus.
+- The drawer closes when a session or Settings opens.
+- The drawer is open on the welcome view, and closed in each other view, after a page
+  load and after a change to the mobile layout.
+- The drawer has a width of 86% of the window, at most 330 pixels. The sidebar divider
+  is not available.
+- The state of the drawer is separate from the visibility of the sidebar in the regular
+  layout.
+
+#### Toolbar in the mobile layout
+
+The toolbar has one row: the sidebar button, the title with its status and workspace
+line, the search icon, and **More actions**. **Stop session** and **Continue in new
+terminal** move to the top of the [More actions menu](#more-actions-menu). When a new
+terminal cannot start, the menu shows the reason below the disabled item.
+
+#### Limits
+
+- The session keeps the minimum heights of its terminal and its message editor, 440
+  pixels together. In a lower window, the main area scrolls.
+- A draft has the height of its form, and the main area scrolls.
+- The mobile layout does not change the message editor, the sizes of the controls, or
+  keyboard input. The page does not follow the on-screen keyboard of a phone.
+- A phone in landscape orientation is usually wider than 700 pixels and uses the
+  regular layout.
+- The server does not support remote access. See
+  [loopback address](#loopback-address).
+
 ### Sidebar
 
 The sidebar lists the saved projects. Under each project, it shows the most recent
@@ -656,7 +713,8 @@ and the main area keeps at least 400 pixels.
 The toolbar button at the left of the session title hides or shows the sidebar.
 Command-B does the same on macOS. Ctrl+B stays available to terminal programs. Width
 and visibility stay with the browser view across session switches and reset on reload.
-Below 620 pixels, the sidebar is above the main area and the divider is not available.
+In the [mobile layout](#mobile-layout), the sidebar is a drawer and the divider is not
+available.
 
 #### Sidebar search
 
@@ -687,9 +745,8 @@ the home page shows `bbflow`.
 #### Bottom row
 
 Below the list, a row holds **＋ Project**, **Archived**, and **Settings**. A newer
-release shows above this row. The instance directory shows below the row, except below
-a window width of 620 pixels. The sidebar shows the server connection only while the
-server is unavailable.
+release shows above this row. The instance directory shows below the row. The sidebar
+shows the server connection only while the server is unavailable.
 
 ### Session families
 
@@ -1325,6 +1382,7 @@ later terminal, each view shows the stored status of the later run.
   tooltip of an icon gives its name and its keyboard shortcut. Each icon also has an
   accessible name.
 - A long title or workspace path shortens before the actions wrap.
+- The [mobile layout](#mobile-layout) has a shorter toolbar.
 
 #### Hint below the terminal
 
@@ -1347,6 +1405,8 @@ also shows the reason, and **Reconnect** shows next to the hint.
   archived session.
 - **Reload output** shows for an ended session, in a view of its latest terminal.
 - **Remove worktree** shows for a session that is not live and has a managed worktree.
+- In the [mobile layout](#mobile-layout), **Stop session** and **Continue in new
+  terminal** show at the top of the menu, with the rules of the toolbar buttons.
 
 The menu button does not show when no action applies. A choice, Escape, or a click
 outside the menu closes it. The Up and Down arrow keys move between the items. Tab or
@@ -2078,20 +2138,43 @@ Each view has an icon in the session toolbar, after the search icon. The tooltip
 **Show changes**, **Show files**, and **Show terminal**. A click on an icon opens the
 pane with its view, or changes to its view. The icon of the shown view is pressed. A
 click on it closes the pane. **×** in the header of each view also closes the pane.
-Each view has a header with its name and only its own controls.
+Each view has a header with its name and only its own controls. In a narrow main
+area, the [view switch](#view-switch) replaces the icons and **×**.
 
 Drafts have no workspace pane. Ended sessions keep it while their workspace exists. A
 drag on the divider or the Left and Right arrow keys change the pane width.
 
 #### Pane width
 
-The session keeps a width of at least 360 pixels, so that its terminal keeps a usable
-size. The pane keeps at least 320 pixels. When the window becomes narrower, the pane
+The session keeps a width of at least 740 pixels, so that its terminal keeps about 80
+columns. The pane keeps at least 420 pixels. That gives a file view about 50 characters
+and the side terminal about 50 columns. When the window becomes narrower, the pane
 becomes narrower first. When the window becomes wider again, the pane goes back to the
 width that the user set. A drag cannot make the pane wider than the session allows.
-When the main area is narrower than 707 pixels, it cannot hold both minimum widths.
-Then the pane is below the session, the divider is not available, and the main area
-scrolls.
+When the main area is narrower than 1187 pixels, it cannot hold both minimum widths.
+Then the open pane takes the place of the session, and the divider is not available.
+See [view switch](#view-switch). With the sidebar at its default width, this applies
+below a window width of 1465 pixels. A hidden sidebar gives its width to the main area.
+
+#### View switch
+
+When the main area cannot hold the session and the pane, a view switch shows below the
+toolbar. It has four buttons: **Session**, **Changes**, **Files**, and **Terminal**. The
+button of the shown view is pressed. The switch is in the center of the main area. In
+the [mobile layout](#mobile-layout), it uses the full width.
+
+- **Session** shows the terminal and the message editor of the session.
+- The other buttons show a view of the pane in the full main area. A hidden session
+  terminal stays connected and keeps its PTY size.
+- A session can open while a view of its pane shows. Its hidden terminal then joins with
+  its last shown size in the browser tab. Without that size, it uses the last shown size
+  of another session terminal. Without any such size, it joins with 80 columns and 24
+  rows.
+- The switch replaces the three pane icons of the toolbar and **×** in the header of
+  each view. The switch and the icons use the same [pane state](#pane-state). Thus a
+  change of the window width keeps the shown view.
+- The sidebar stays, except in the [mobile layout](#mobile-layout).
+- Drafts, Settings, and the welcome view have no switch.
 
 #### Pane state
 
@@ -2253,8 +2336,8 @@ at that commit. Files always shows the current files.
   go to a second row of the file header. The path and **Preview** keep at least 200
   pixels.
 - The ⋯ button stays at the right end of the second row, so its tooltip opens to the
-  left. The tooltip is at most 280 pixels wide, so it stays in the pane at the minimum
-  pane width of 320 pixels.
+  left. The tooltip is at most 280 pixels wide, so it stays in a pane of 320 pixels,
+  the width of a small phone.
 
 #### Images
 
@@ -2374,13 +2457,30 @@ The tooltip of the ⋯ button shows the result of a choice:
 - Drag the divider with a mouse or touch. Or focus it and use Left/Right to resize. Use
   Home/End to reach the limits.
 - A double-click restores the default width, 24% of the pane but at least 140 pixels.
-- The list stays at least 140 pixels wide. When the list and the file view have at
-  least 420 pixels together, the file view keeps at least 280 pixels. In less space,
-  the list stays at 140 pixels and the file view gets the remaining space.
+- The list stays at least 140 pixels wide, and the file view keeps at least 280 pixels.
 - In a narrower pane, the list gets narrower and keeps the selected width for a wider
   pane.
-- Below a window width of 620 pixels, the list is above the file view and the divider
-  is not available.
+
+#### File list in a narrow pane
+
+A view of Changes or Files that is narrower than 560 pixels cannot hold the list and a
+file view of a usable width. It shows them one at a time, and the divider is not
+available. The file view then has the full width of the pane.
+
+- The view starts with the file list.
+- A click on a file shows the file view in place of the list.
+- **← Back** in the file header shows the list again and gives the focus to the row of
+  the file.
+- **View diff** from Files shows the diff of the file in Changes.
+- A change between Changes and Files, or a change of the session, shows the list again.
+  The two views have different lists.
+- Session and Terminal keep the state of the view. A return to Changes or Files shows
+  the same file view or list as before.
+- A wider pane shows the list and the file view side by side again, with the same file.
+
+This applies to a narrow pane next to the session and to the
+[mobile layout](#mobile-layout). A pane that the [view switch](#view-switch) shows in a
+main area of 560 pixels or more keeps the list and the file view side by side.
 
 #### Refresh
 
@@ -3664,6 +3764,32 @@ repository, and a folder outside Git, each with a shell session.
   in each view, **View diff** from Files, the Changes header only in Changes, a folder
   outside Git, and an empty browser console. It also checked that a hidden terminal
   stays connected and keeps its size.
+- Web fixtures check the view switch: one pressed button, the same state as the icons,
+  a shell start from **Terminal**, and no switch without a session. They also check
+  that a click on a file shows the file view, that **← Back**, a change between Changes
+  and Files, and another session show the list, and that a return from Session or
+  Terminal keeps the file view.
+- Web fixtures check the focus of the sidebar drawer. The open drawer gives the focus to
+  the selected row or to itself, and the main area is inert. Escape and a click outside
+  the drawer give the focus back to the terminal, or to the toolbar button when the
+  terminal is gone. The sidebar of the regular layout does not make the main area inert.
+- A browser check of the mobile layout used a demo instance at a width of 390 pixels.
+  It checked that the page does not scroll, the drawer with its three ways to close, the
+  four views of the switch, the file list and **← Back**, **Stop session** and
+  **Continue in new terminal** in the More actions menu, a draft, Settings, and the
+  welcome view. The browser console was empty. The check used a desktop browser with a
+  mouse. It did not use a phone, touch input, or an on-screen keyboard.
+- A browser check of the view switch used window widths of 885, 1280, 1500, and 1700 pixels.
+  At 885 and 1280 pixels, the sidebar stayed and the switch showed each view in the
+  full main area. At 1280 pixels with a hidden sidebar and at 1500 pixels, the session
+  and the pane showed side by side, with 82 terminal columns in the session. In the
+  pane of 455 pixels at 1500 pixels, the file list and the file view showed one at a
+  time. At 1700 pixels, the pane showed them side by side.
+- A browser check at 390 pixels opened the drawer with Command-B from a focused live
+  terminal, then typed `x` and pressed Escape. The drawer closed, the terminal got the
+  focus again, and the archive recorded no input. A second check showed Changes,
+  selected another session, and returned. The archive recorded no resize, and the PTY
+  kept 40 columns and 18 rows.
 
 ### Checks of terminal views
 

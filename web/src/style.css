@@ -119,6 +119,8 @@ button.text-button { padding: 4px 8px; border-color: transparent; background: tr
 input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1; }
 input, textarea, select { width: 100%; border: 1px solid var(--border); background: var(--surface); border-radius: 7px; padding: 10px 11px; color: inherit; }
 .sidebar { width: var(--sidebar-width, 278px); flex-shrink: 0; padding: 26px 16px 16px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 19px; }
+/* The open drawer takes the focus when no row can take it. It is not a control. */
+.sidebar:focus { outline: none; }
 .brand { padding: 0 6px 10px; color: inherit; text-decoration: none; font-size: 23px; font-weight: 650; letter-spacing: -.7px; }
 .search-label input { background: var(--inset); font-size: 12px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; color: var(--text-muted); font-size: 10px; font-weight: 600; letter-spacing: 1.2px; margin-bottom: -12px; padding-left: 8px; }
@@ -215,6 +217,8 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 .action-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; display: flex; flex-direction: column; min-width: 180px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px var(--shadow-overlay); }
 .action-menu button { margin: 1px 0; padding: 7px 10px; border-color: transparent; background: transparent; text-align: left; }
 .action-menu button:hover:not(:disabled), .action-menu button:focus-visible { background: var(--selected); border-color: var(--selected-border); }
+/* A note below an item tells why the item is not available. */
+.action-menu .menu-note { max-width: 240px; margin: 0 10px 6px; color: var(--text-muted); font-size: 11px; line-height: 1.5; white-space: normal; }
 .action-menu [role="separator"] { height: 1px; margin: 4px 6px; background: var(--border); }
 .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: var(--accent-text); background: var(--selected); border-radius: 5px; padding: 6px 9px; }
 .welcome { margin: auto; padding: 60px 40px; text-align: center; color: var(--text-muted); line-height: 1.7; }
@@ -307,7 +311,7 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 @media (max-width: 950px) { .sidebar { width: var(--sidebar-width, 240px); } .toolbar { padding: 18px; flex-wrap: wrap; } #page-bar { padding: 10px 18px; } #session-view { padding: 16px; } .actions { flex-wrap: wrap; } }
-@media (max-width: 620px) { body { flex-direction: column; overflow: auto; height: auto; min-height: 100dvh; } .sidebar { width: 100%; border-right: 0; padding: 14px; gap: 10px; } #sidebar-divider { display: none; } .brand { padding-bottom: 2px; } .instance { display: none; } #sessions { max-height: 145px; } main { overflow: visible; } #session-view { height: 650px; flex: none; } .welcome { padding: 36px 24px; } .toolbar { min-height: 90px; } }
+@media (max-width: 620px) { .welcome { padding: 36px 24px; } }
 
 .project-group { margin-bottom: 16px; }
 .project-heading { display: flex; align-items: center; gap: 2px; }
@@ -425,7 +429,7 @@ form.tool-row .tool-actions button { grid-column: span 2; }
   .tool-columns { display: none; }
   .tool-row > :is(label, span, code) { grid-column: 1 / -1; margin-inline-end: 0; }
 }
-@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid, .place-group { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 0 16px 16px; } #session-view:has(#preparation:not([hidden])) { height: auto; } }
+@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid, .place-group { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 0 16px 16px; } }
 .continue-dialog { width: 620px; }
 .continue-dialog .form-help { margin: 0 0 14px; }
 .continue-path { margin: 0 0 18px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent-text); overflow-wrap: anywhere; }
@@ -479,24 +483,27 @@ form.tool-row .tool-actions button { grid-column: span 2; }
   .history-help { padding: 12px 16px; }
 }
 /* The session row holds the session and the workspace pane with its Changes and Terminal tabs.
-   The session keeps its minimum width, so that the PTY keeps a usable size. The pane
-   becomes narrower first. --pane-width is the preferred width from a drag. */
+   The session keeps its minimum width, so that the terminal keeps about 80 columns. The
+   pane becomes narrower first. --pane-width is the preferred width from a drag. */
 #session-row { flex: 1; min-height: 480px; display: flex; min-width: 0; }
 #session-row:not(:has(> #session-view:not([hidden]))) { display: none; }
-#session-row > #session-view { min-width: 360px; }
+#session-row > #session-view { min-width: 740px; }
 #pane-changes[aria-pressed="true"], #pane-files[aria-pressed="true"], #pane-terminal[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); }
 #workspace-divider { flex: 0 0 9px; margin: 20px -4px 18px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; user-select: none; }
 #workspace-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; transition: background-color .1s; }
 #workspace-divider:hover::after, #workspace-divider:focus-visible::after, .resizing-diff #workspace-divider::after { background: var(--accent); }
 #workspace-divider:focus-visible { outline: none; }
 body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-select: none !important; }
-#workspace-pane { flex: 0 1 var(--pane-width, 46%); min-width: 320px; display: flex; flex-direction: column; margin: 20px 26px 18px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+#workspace-pane { flex: 0 1 var(--pane-width, 46%); min-width: 420px; display: flex; flex-direction: column; margin: 20px 26px 18px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
 #workspace-pane[hidden], #workspace-divider[hidden], #diff-pane[hidden], #side-terminal[hidden] { display: none; }
 .pane-title { flex: none; color: var(--text-muted); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
 #diff-controls { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #diff-controls[hidden] { display: none; }
 #diff-refresh { margin-left: auto; }
 #diff-pane, #side-terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* A container query on the width of Changes and Files shows the file list and the file
+   view one at a time. */
+#diff-pane { container: diff-pane / inline-size; }
 .diff-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid var(--divider); font-size: 12px; }
 /* The scope button gets its width from the pane, not from its label. Thus the layout
    buttons stay in place when the selected changes change. */
@@ -635,23 +642,21 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .hl-url { color: var(--code-meta); text-decoration: underline; }
 .hl-monospace { color: var(--code-string); }
 .hl-marker { color: var(--code-meta); }
-@media (max-width: 950px) { #workspace-pane { margin: 16px 16px 16px 0; } #workspace-divider { margin: 16px -4px; } }
 /* The main area cannot hold the session and the pane at their minimum widths:
-   360 px + 1 px of divider + 320 px + 26 px of pane margin = 707 px. The pane goes below
-   the session, and the main area scrolls. */
-@container main (width < 707px) {
-  #session-row { flex-direction: column; }
+   740 px + 1 px of divider + 420 px + 26 px of pane margin = 1187 px. The open pane then
+   takes the place of the session. The view switch below the toolbar replaces the pane
+   icons and the close buttons. It shows the session or one view of the pane. */
+#view-switch { display: none; flex: none; justify-content: center; padding: 10px 26px; border-bottom: 1px solid var(--divider); }
+#view-switch button { flex: 0 1 130px; min-width: 0; padding: 6px 4px; overflow: hidden; text-overflow: ellipsis; }
+@container main (width < 1187px) {
+  #view-switch { display: flex; }
+  #pane-changes, #pane-files, #pane-terminal, #diff-close, #side-close { display: none; }
   #session-row > #session-view { min-width: 0; }
-  #session-row:has(> #workspace-pane:not([hidden])) { flex: none; }
-  #session-row:has(> #workspace-pane:not([hidden])) > #session-view { flex: none; height: 650px; }
+  #session-row:has(> #workspace-pane:not([hidden])) > #session-view { display: none; }
   #workspace-divider { display: none; }
-  #workspace-pane { flex: none; height: 600px; min-width: 0; margin: 0 16px 16px; }
+  #workspace-pane { flex: 1; min-width: 0; margin: 20px 26px 18px; }
 }
-@media (max-width: 620px) {
-  .diff-body { grid-template-columns: 1fr; grid-template-rows: 180px minmax(0, 1fr); }
-  .diff-files { border-right: 0; border-bottom: 1px solid var(--divider); }
-  #diff-files-divider { display: none; }
-}
+@media (max-width: 950px) { #view-switch { padding: 10px 16px; } #workspace-pane { margin: 16px; } }
 
 /* The Terminal tab of the workspace pane. */
 .side-toolbar { display: flex; align-items: center; gap: 10px; min-height: 45px; padding: 6px 10px; border-bottom: 1px solid var(--divider); color: var(--text-muted); font-size: 11px; }
@@ -717,3 +722,45 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 .toast-close { padding: 0 6px; border-color: transparent; background: transparent; color: var(--text-muted); font-size: 16px; line-height: 1.2; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: no-preference) { .toast { animation: toast-in .18s ease-out; } }
+
+/* A narrow Changes or Files view cannot hold the file list and a file view of a usable
+   width. It shows the list, or the file view after a click on a file. Back in the file
+   header shows the list again. */
+#diff-back { display: none; }
+@container diff-pane (width < 560px) {
+  .diff-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .diff-files { border-right: 0; }
+  #diff-files-divider, .diff-view, #diff-pane.reading .diff-files { display: none; }
+  #diff-pane.reading .diff-view { display: flex; }
+  #diff-back { display: block; }
+}
+
+/* The mobile layout, for a phone or a very narrow window. Keep this width the same as
+   mobileQuery in sidebar.ts. The sidebar is a drawer above the main area. The toolbar
+   has one row. The workspace pane has no frame. */
+#sidebar-scrim { display: none; }
+@media (max-width: 700px) {
+  .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 50; width: min(86vw, 330px); padding: 18px 14px 14px; box-shadow: 8px 0 30px var(--shadow-overlay); }
+  #sidebar-scrim { display: block; position: fixed; inset: 0; z-index: 49; background: var(--backdrop); }
+  #sidebar-divider { display: none; }
+  .toolbar { min-height: 0; flex-wrap: nowrap; gap: 8px; padding: 10px 12px; }
+  .toolbar-title { min-width: 0; gap: 8px; }
+  h1 { font-size: 16px; }
+  #workspace { margin-top: 3px; font-size: 11px; }
+  .actions { flex: none; flex-wrap: nowrap; gap: 4px; }
+  #view-switch { padding: 8px 12px; }
+  #view-switch button { flex: 1 1 0; padding: 7px 4px; }
+  /* The session keeps the minimum heights of its terminal and its message editor. In a
+     lower window, the main area scrolls. A draft has the height of its form. */
+  #session-row { min-height: 440px; }
+  #session-row > #session-view { min-height: 0; padding: 10px 12px 12px; }
+  #session-row:has(#preparation:not([hidden])) { flex: none; }
+  #preparation { flex: none; }
+  #workspace-pane { margin: 0; border: 0; border-radius: 0; }
+  .diff-file { padding: 10px 12px; font-size: 13px; }
+}
+@media (max-width: 700px) and (prefers-reduced-motion: no-preference) {
+  .sidebar { transition: translate .2s ease-out; }
+  #sidebar-scrim { transition: opacity .2s ease-out; }
+  @starting-style { .sidebar { translate: -100% 0; } #sidebar-scrim { opacity: 0; } }
+}

@@ -16,8 +16,11 @@ const views: PaneView[] = ['changes', 'files', 'terminal'];
 // keeps the state. Other browser tabs keep their own state.
 //
 // The CSS keeps the minimum widths of the session and the pane. A narrower window makes
-// the pane narrower first, and a wider window gives back the preferred width. When the
-// main area cannot hold both minimum widths, the pane goes below the session.
+// the pane narrower first, and a wider window gives back the preferred width.
+//
+// When the main area cannot hold both minimum widths, the CSS shows the view switch
+// below the toolbar and hides the icons. The switch has one button for the session and
+// one for each view. The open pane then takes the place of the session.
 export class WorkspacePane {
   private readonly sessionView = element('session-view', HTMLElement);
   private readonly pane = element('workspace-pane', HTMLElement);
@@ -30,6 +33,14 @@ export class WorkspacePane {
     terminal: element('pane-terminal', HTMLButtonElement),
   };
 
+  private readonly viewSwitch = element('view-switch', HTMLElement);
+  private readonly sessionButton = element('view-session', HTMLButtonElement);
+  private readonly switchButtons: Record<PaneView, HTMLButtonElement> = {
+    changes: element('view-changes', HTMLButtonElement),
+    files: element('view-files', HTMLButtonElement),
+    terminal: element('view-terminal', HTMLButtonElement),
+  };
+
   private session = '';
   // The shown view of each session with an open pane. A closed pane has no entry.
   private readonly views = new Map<string, PaneView>();
@@ -37,7 +48,9 @@ export class WorkspacePane {
   constructor(private readonly changes: DiffPane, private readonly terminal: SideTerminal) {
     for (const view of views) {
       this.icons[view].onclick = () => this.open(this.views.get(this.session) === view ? null : view);
+      this.switchButtons[view].onclick = () => this.open(view);
     }
+    this.sessionButton.onclick = () => this.open(null);
     changes.close = () => this.open(null);
     changes.openChanges = () => this.open('changes');
     element('side-close', HTMLButtonElement).onclick = () => this.open(null);
@@ -90,7 +103,10 @@ export class WorkspacePane {
       icon.setAttribute('aria-pressed', String(current));
       icon.setAttribute('aria-label', label);
       icon.dataset.tip = label;
+      this.switchButtons[name].setAttribute('aria-pressed', String(current));
     }
+    this.viewSwitch.hidden = !this.session;
+    this.sessionButton.setAttribute('aria-pressed', String(!view));
     // A closed pane keeps its panel and its scope until it shows a view again.
     if (view) {
       this.diffPanel.hidden = view === 'terminal';

@@ -17,7 +17,7 @@ class Node {
 
 const views = ['changes', 'files', 'terminal'];
 const ids = ['session-view', 'workspace-pane', 'workspace-divider', 'diff-pane', 'side-terminal', 'side-close',
-  ...views.map(view => `pane-${view}`)];
+  'view-switch', 'view-session', ...views.flatMap(view => [`pane-${view}`, `view-${view}`])];
 
 function setup() {
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
@@ -97,6 +97,36 @@ test('a click on the pressed icon or on the close button closes the pane of that
   assert.equal(shown(), 'closed');
   pane.select('b');
   assert.equal(shown(), 'closed');
+});
+
+test('the view switch shows the session or one view, and does not show without a session', () => {
+  const { nodes, pane, terminal, shown } = setup();
+  // The pressed button of the switch.
+  const pressed = () => ['session', ...views].filter(name => nodes[`view-${name}`].attributes.get('aria-pressed') === 'true');
+  pane.select('a');
+  assert.equal(nodes['view-switch'].hidden, false);
+  assert.deepEqual(pressed(), ['session']);
+
+  nodes['view-changes'].onclick();
+  assert.equal(shown(), 'changes');
+  assert.deepEqual(pressed(), ['changes']);
+  nodes['view-changes'].onclick();
+  assert.equal(shown(), 'changes', 'a second click keeps the view');
+  nodes['view-terminal'].onclick();
+  assert.equal(shown(), 'terminal');
+  assert.equal(terminal.click, true, 'a click on Terminal can start a shell');
+  assert.deepEqual(pressed(), ['terminal']);
+  nodes['view-session'].onclick();
+  assert.equal(shown(), 'closed');
+  assert.deepEqual(pressed(), ['session']);
+
+  // The icons and the switch show the same state.
+  nodes['pane-files'].onclick();
+  assert.deepEqual(pressed(), ['files']);
+  pane.select('');
+  assert.equal(nodes['view-switch'].hidden, true);
+  pane.select('a');
+  assert.deepEqual(pressed(), ['files']);
 });
 
 test('a draft, Settings, or the home page hides the pane and its icons and keeps the state of each session', () => {

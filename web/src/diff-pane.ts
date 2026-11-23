@@ -104,6 +104,13 @@ export class DiffPane {
   ) {
     element('diff-refresh', HTMLButtonElement).onclick = () => void this.refresh();
     element('diff-close', HTMLButtonElement).onclick = () => this.close();
+    element('diff-back', HTMLButtonElement).onclick = () => {
+      this.setReading(false);
+      // Give the focus to the row of the file, so that the keyboard continues there.
+      for (const button of this.list.querySelectorAll('button')) {
+        if (button.dataset.file === this.selected) button.focus();
+      }
+    };
     this.splitButton.onclick = () => this.setLayout('split');
     this.unifiedButton.onclick = () => this.setLayout('unified');
     this.filter.oninput = () => {
@@ -130,6 +137,8 @@ export class DiffPane {
         this.picks.changed = { path: this.selected, preview: false };
         this.filters.changed = '';
         this.openChanges();
+        // The change of the view showed the list. Show the diff of the file.
+        this.setReading(true);
         return;
       }
       this.pick.preview = !this.pick.preview;
@@ -185,6 +194,7 @@ export class DiffPane {
     this.picks = { changed: { path: '', preview: false }, files: { path: '', preview: true } };
     this.filters = { changed: '', files: '' };
     this.filter.value = '';
+    this.setReading(false);
     this.clearFile();
     this.list.replaceChildren();
     this.summary.textContent = '';
@@ -208,6 +218,7 @@ export class DiffPane {
       this.filters[this.scope] = this.filter.value;
       this.scope = scope;
       this.filter.value = this.filters[scope];
+      this.setReading(false);
       this.paths = null;
       this.renderList();
       this.renderStatus();
@@ -215,6 +226,13 @@ export class DiffPane {
     this.show();
     // A refresh also loads the selected file of the shown view.
     if (open) void this.refresh();
+  }
+
+  // A narrow pane shows the file list or the file view, not both. A click on a file
+  // shows the file view, and Back shows the list. The CSS of a wider pane ignores this
+  // state.
+  private setReading(reading: boolean): void {
+    this.pane.classList.toggle('reading', reading);
   }
 
   private get pick(): Pick { return this.picks[this.scope]; }
@@ -673,6 +691,7 @@ export class DiffPane {
   // as a diff.
   private open(path: string, preview: boolean): void {
     this.picks[this.scope] = { path, preview };
+    this.setReading(true);
     for (const button of this.list.querySelectorAll('button')) {
       if (button.dataset.file !== undefined) button.setAttribute('aria-current', String(button.dataset.file === path));
     }
