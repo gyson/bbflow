@@ -404,9 +404,13 @@ func cellStyle(c *xterm.CellData) string {
 	return "\x1b[" + strings.Join(codes, ";") + "m"
 }
 
+// inputModes returns the sequences that give a view the input modes of the application.
+// The modes that are off come first. xterm.js turns mouse tracking off for the reset of
+// each tracking mode, and it selects the default encoding for the reset of each mouse
+// encoding. A reset after the mode that is on would thus turn that mode off.
 func inputModes(t *xterm.Terminal) string {
 	m := t.DecPrivateModes()
-	var out strings.Builder
+	var off, on strings.Builder
 	for _, mode := range []struct {
 		code int
 		on   bool
@@ -416,13 +420,13 @@ func inputModes(t *xterm.Terminal) string {
 		{1002, m.MouseTrackingMode == "DRAG"}, {1003, m.MouseTrackingMode == "ANY"},
 		{1006, m.MouseEncoding == "SGR"}, {1016, m.MouseEncoding == "SGR_PIXELS"}, {25, !t.IsCursorHidden()},
 	} {
-		end := "l"
 		if mode.on {
-			end = "h"
+			fmt.Fprintf(&on, "\x1b[?%dh", mode.code)
+		} else {
+			fmt.Fprintf(&off, "\x1b[?%dl", mode.code)
 		}
-		fmt.Fprintf(&out, "\x1b[?%d%s", mode.code, end)
 	}
-	return out.String()
+	return off.String() + on.String()
 }
 
 // PlainText returns the history rows and screen lines without styles or escape

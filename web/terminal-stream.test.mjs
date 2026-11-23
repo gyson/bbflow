@@ -13,6 +13,21 @@ const cells = view => Array.from({ length: view.rows }, (_, y) => {
   });
 });
 
+// A frame sets the input modes of the application. It sets the display modes, such as
+// wraparound, for its own drawing.
+const inputModes = ({ modes }) => [modes.applicationCursorKeysMode, modes.applicationKeypadMode,
+  modes.bracketedPasteMode, modes.sendFocusMode, modes.mouseTrackingMode];
+
+// The public API of xterm.js does not show the mouse encoding. encoding returns the
+// replies of the terminal to a mode query (DECRQM) for each mouse encoding.
+const encoding = async view => {
+  const replies = [];
+  const listener = view.onData(data => replies.push(data));
+  await write(view, '\x1b[?1006$p\x1b[?1016$p');
+  listener.dispose();
+  return replies;
+};
+
 test('server frames match raw PTY rendering in real xterm.js', async () => {
   const steps = JSON.parse(await readFile(new URL('./testdata/server-frames.json', import.meta.url), 'utf8'));
   const reference = new xterm.Terminal({ cols: 28, rows: 8, scrollback: 10000, allowProposedApi: true });
@@ -31,7 +46,11 @@ test('server frames match raw PTY rendering in real xterm.js', async () => {
       assert.deepEqual(cells(rendered), cells(reference), `step ${index}: ${step.input}`);
       assert.deepEqual([rendered.buffer.active.cursorX, rendered.buffer.active.cursorY],
         [Math.min(reference.cols - 1, reference.buffer.active.cursorX), reference.buffer.active.cursorY], `cursor step ${index}`);
-      assert.equal(rendered.modes.bracketedPasteMode, reference.modes.bracketedPasteMode);
+      assert.deepEqual(inputModes(rendered), inputModes(reference), `input modes step ${index}: ${step.input}`);
+      // A query must not go into a split escape sequence of the reference terminal.
+      if (!/\x1b[[0-9;?]*$/.test(step.input ?? '')) {
+        assert.deepEqual(await encoding(rendered), await encoding(reference), `mouse encoding step ${index}: ${step.input}`);
+      }
       // Rendering never forwards historical terminal queries to a process.
       const history = terminal => Array.from({ length: terminal.buffer.normal.baseY }, (_, i) => terminal.buffer.normal.getLine(i).translateToString(true).trimEnd());
       assert.deepEqual(history(rendered), history(reference), `scrollback step ${index}`);

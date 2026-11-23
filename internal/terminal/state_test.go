@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -240,6 +241,11 @@ func TestBrowserFrames(t *testing.T) {
 		{Input: "shell> \x1b[?2004h\x1b[?1h\x1b[?1006h\x1b[?1000h\x1b[?25l"},
 		{Size: &protocol.Size{Cols: 20, Rows: 6}},
 		{Input: "\x1b[3J\x1b[2J\x1b[Hfinal screen\r\n"},
+		// Each mouse tracking mode and each mouse encoding.
+		{Input: "\x1b[?1002h"},
+		{Input: "\x1b[?1003h\x1b[?1016h"},
+		{Input: "\x1b[?1003l\x1b[?1016l\x1b[?9h\x1b[?1004h"},
+		{Input: "\x1b[?9l\x1b[?1004l\x1b[?66h"},
 	}
 	state := New(protocol.Size{Cols: 28, Rows: 8})
 	var previous *View
@@ -273,6 +279,37 @@ func TestBrowserFrames(t *testing.T) {
 	}
 	if !bytes.Equal(data, saved) {
 		t.Fatal("browser frame fixture is stale; run BBFLOW_UPDATE_FIXTURES=1 go test ./internal/terminal -run TestBrowserFrames")
+	}
+}
+
+// A view must end each frame with the mouse tracking mode and the mouse encoding of the
+// application. The reset of one tracking mode turns all tracking off, and the reset of
+// one encoding selects the default encoding.
+func TestFramesKeepTheMouseModesOfTheApplication(t *testing.T) {
+	for _, modes := range []string{
+		"\x1b[?9h", "\x1b[?1000h", "\x1b[?1002h", "\x1b[?1003h",
+		"\x1b[?1000h\x1b[?1006h", "\x1b[?1002h\x1b[?1016h", "\x1b[?1000h\x1b[?1002h\x1b[?1006h",
+		"\x1b[?1003h\x1b[?1006h\x1b[?1003l\x1b[?1006l", "\x1b[?1004h\x1b[?2004h\x1b[?1h\x1b[?66h",
+	} {
+		state := New(protocol.Size{Cols: 20, Rows: 4})
+		if _, err := state.Apply(history.Event{Kind: "output", Data: []byte(modes)}); err != nil {
+			t.Fatal(err)
+		}
+		display := xterm.New(xterm.WithCols(20), xterm.WithRows(4))
+		// A view parses each frame after the last one. A second frame must not change the modes.
+		for range 2 {
+			data, _ := state.View().Render(nil)
+			display.Write(data)
+		}
+		want, got := state.term.DecPrivateModes(), display.DecPrivateModes()
+		// A new emulator has no value for a mode that no sequence set.
+		tracking := func(mode string) string { return cmp.Or(mode, "NONE") }
+		encoding := func(mode string) string { return cmp.Or(mode, "DEFAULT") }
+		if tracking(got.MouseTrackingMode) != tracking(want.MouseTrackingMode) || encoding(got.MouseEncoding) != encoding(want.MouseEncoding) ||
+			got.SendFocus != want.SendFocus || got.BracketedPasteMode != want.BracketedPasteMode ||
+			got.ApplicationCursorKeys != want.ApplicationCursorKeys || got.ApplicationKeypad != want.ApplicationKeypad {
+			t.Errorf("%q: the view has %+v, the application has %+v", modes, got, want)
+		}
 	}
 }
 
