@@ -185,7 +185,7 @@ const composer = new Composer({
   peer: () => connection?.peer ?? null,
   bracketed: () => !!terminal?.modes.bracketedPasteMode,
   action,
-  sent: () => { messageNav.reload(); sentHistory.refresh(); },
+  sent: () => messageNav.reload(),
 });
 const sessionSplit = new SessionSplit();
 const sessionMenu = new ActionMenu('session-menu');
@@ -210,6 +210,7 @@ const messageNav: MessageNav = new MessageNav({
   reveal: () => { if (!terminalShown()) workspacePane.close(); },
   list: () => workspacePane.show('messages'),
   changed: () => sentHistory.mark(),
+  sent: () => sentHistory.refresh(),
 });
 const sentHistory: SentHistory = new SentHistory(() => server, messageNav);
 const workspacePane = new WorkspacePane(diffPane, sideTerminal, sentHistory);

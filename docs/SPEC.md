@@ -1975,9 +1975,10 @@ messages** at the top loads 20 more and keeps the visible messages in place.
 
 The `composer-sent` operation derives this list from the existing pending draft
 revisions, so the list also includes sends from before this feature. Direct terminal
-input is not listed. After a send from any view, the list reads the newest messages
-again. It also does so after a send with a lost receipt, because the archive then has
-the pending revision. The list shows that message as **Not confirmed**.
+input is not listed. When the newest sent messages change, the list reads them again.
+This applies to a send from any view and to the receipt of a send. It also applies to
+a send with a lost receipt, because the archive then has the pending revision. The
+list shows that message as **Not confirmed**.
 
 Each message shows its time, text, and attached file names. **Sent** means that the
 editor got an input receipt and then cleared the draft. **Not confirmed** means that
@@ -2076,9 +2077,14 @@ replaces the oldest one.
   terminal then reads older pages until it reaches the messages of its terminal. It
   reads at most 1,000 messages of the session for this.
 - A message from before the start of the terminal ends the read.
-- A send from any view, and a change of the shown terminal, read the newest page again.
-  The draft watch of the editor also causes this read when it connects again, because
-  another view can send a message while the watch is offline.
+- A send from this view, and a change of the shown terminal, read the newest page
+  again.
+- Each newer draft that the editor gets from another view also causes this read. A
+  send saves a pending draft and then a clear draft, and the server gives a view only
+  the latest draft. Thus a newer draft of any kind can follow a send. This also covers
+  a draft watch that connects again.
+- A read that gives a different newest page tells the Messages view to read its list
+  again. A read that arrives during another read causes one more read after it.
 - The newest page continues the kept messages only when it reaches a message that the
   view read before. Otherwise the view starts again from that page and reads the older
   pages again. Thus more than 20 new messages leave no gap.
@@ -3909,16 +3915,19 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
   of a later terminal, the end of the read before the start of the terminal, the limit
   of 200 messages after a reload, and the limit of 1,000 read messages.
 - The fixtures also cover an earlier copy of a message after the application draws its
-  output again, and a newest page that does not reach the read messages.
+  output again, a message that starts at the first character of the terminal text, and
+  a newest page that does not reach the read messages.
 - `web/message-nav.test.mjs` uses a real xterm.js terminal without a page. A step uses
   the new row of a message after the scrollback drops rows. **Earlier message** turns
   on when the view moves from the first message into its response. An earlier terminal
   gets its message when a later terminal fills the newest page. A jump target near the
-  end does not return after the view scrolls away and back.
+  end does not return after the view scrolls away and back. A reload reports a change
+  only when the newest sent messages differ.
 - `web/composer.test.mjs` covers the report of a send to the list: one report after a
   send with a receipt, one report after a lost receipt with the draft still pending,
-  no report for a message that the editor rejects, and one report after the draft watch
-  connects again.
+  and no report for a message that the editor rejects. A newer draft from another view
+  gives one report, from a connected watch and from a watch that connects again, also
+  while this view has an edit that is not saved.
 - `web/workspace-pane.test.mjs` covers the **Messages** view: its panel, its switch
   button, and the close of the pane for a jump.
 - A second browser check verified the order of the view switch and the toolbar icons,

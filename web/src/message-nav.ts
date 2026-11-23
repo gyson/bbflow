@@ -34,6 +34,11 @@ export class MessageNav {
   private terminal: TerminalInfo | undefined;
   private cache = emptyCache(); // The sent messages of the shown terminal.
   private loading = false;
+  // The newest page of sent messages that the view read last, as text. A reload with a
+  // different page tells the host that the sent messages changed.
+  private newest: string | null = null;
+  private reading = false; // A read of the newest page is active.
+  private again = false; // A reload came during that read.
   private request = 0; // Changes on each session and each reload. A late reply is ignored.
   private marks: Mark[] = [];
   // The last jump target while the view did not scroll. See currentMark.
@@ -53,6 +58,8 @@ export class MessageNav {
     list(): void;
     // The state of a message changed.
     changed(): void;
+    // The newest sent messages of the session changed.
+    sent(): void;
   }) {
     this.previous.onclick = () => this.step(-1);
     this.next.onclick = () => this.step(1);
@@ -79,6 +86,7 @@ export class MessageNav {
   select(session: string): void {
     this.session = session;
     this.terminal = undefined;
+    this.newest = null;
     this.reset();
     if (session) void this.load(false);
   }
@@ -97,9 +105,12 @@ export class MessageNav {
   // The terminal drew a frame.
   rendered(): void { this.schedule(); }
 
-  // A message was sent. Read the sent messages again.
+  // The sent messages can have changed. Read the newest page again. Calls during a read
+  // cause one more read after it.
   reload(): void {
-    if (this.session) void this.load(false);
+    if (!this.session) return;
+    if (this.reading) this.again = true;
+    else void this.load(false);
   }
 
   // Draw the marks again in the color of the changed color scheme.
@@ -145,7 +156,7 @@ export class MessageNav {
   private reset(): void {
     this.request++;
     this.cache = emptyCache();
-    this.loading = false;
+    this.loading = this.reading = this.again = false;
     this.pinned = null;
     this.clear();
     this.marks = [];
@@ -160,15 +171,27 @@ export class MessageNav {
     if (!server || !session || (older && this.loading)) return;
     const request = older ? this.request : ++this.request;
     this.loading = true;
+    if (!older) this.reading = true;
     try {
       const page = await call(server, { operation: 'composer-sent', session, ...(older ? { revision: this.cache.cursor } : {}) });
       if (request !== this.request) return;
       this.cache = addPage(this.cache, page, older, this.terminal);
       this.schedule(0);
+      if (older) return;
+      const newest = page.messages.map(message => `${message.revision}:${message.confirmed}`).join(' ');
+      const changed = this.newest !== null && this.newest !== newest;
+      this.newest = newest;
+      if (changed) this.host.sent();
     } catch {
       // Without the messages, the bar shows no position. The list reports the failure.
     } finally {
-      if (request === this.request) this.loading = false;
+      if (request === this.request) {
+        this.loading = false;
+        if (!older) {
+          this.reading = false;
+          if (this.again) { this.again = false; void this.load(false); }
+        }
+      }
     }
   }
 

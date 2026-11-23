@@ -51,7 +51,8 @@ interface Host {
   peer(): Peer | null;
   bracketed(): boolean;
   action(work: () => Promise<void>): Promise<void>;
-  // A view sent a message to the terminal.
+  // The sent messages of the session can have changed: this view sent a message, or
+  // another view saved a draft.
   sent(): void;
 }
 
@@ -250,13 +251,14 @@ export class Composer {
   private receive(next: ComposerState): void {
     if (this.syncLost) {
       this.syncLost = false;
-      // The watch gives only the latest draft after a connection loss. A send from
-      // another view in that time shows in no draft, so read the sent messages again.
-      if (this.loaded) this.host.sent();
       if (this.loaded && !this.saving && this.edits === this.saved) this.message(this.savedMessage());
     }
     if (!this.loaded) { this.apply(next); return; }
     if (next.draft.revision <= this.state.draft.revision) return;
+    // A send from another view saves a pending draft and then a clear draft. The watch
+    // keeps only the latest draft, also for a connected view, so a newer draft of any
+    // kind can follow a send. The host reads the sent messages to find out.
+    this.host.sent();
     if (!this.remote || next.draft.revision > this.remote.draft.revision) this.remote = next;
     this.reconcile();
   }
@@ -279,13 +281,9 @@ export class Composer {
     this.remote = undefined;
     const focused = document.activeElement === this.text;
     const { selectionStart, selectionEnd } = this.text;
-    // A draft that becomes pending is a send from another view. A pending draft that
-    // another view replaces has its receipt. Both change the list of the sent messages.
-    const sent = this.loaded && (next.draft.pending || this.state.draft.pending);
     this.state = { draft: next.draft, attachments: next.attachments };
     this.saved = this.edits;
     this.loaded = true;
-    if (sent) this.host.sent();
     if (this.text.value !== next.draft.text) {
       this.text.value = next.draft.text;
       const length = next.draft.text.length;

@@ -79,7 +79,8 @@ function endsRow(joined: Rows, end: number): boolean {
 // findLast returns the offset of the last place where needle passes the checks and ends
 // at or before limit, or -1.
 function findLast(joined: Rows, needle: string, limit: number, start: boolean, end: boolean): number {
-  if (!needle) return -1;
+  // lastIndexOf takes a negative position as 0. The text then ends after the limit.
+  if (!needle || limit < needle.length) return -1;
   for (let offset = joined.text.lastIndexOf(needle, limit - needle.length); offset >= 0; offset = offset > 0 ? joined.text.lastIndexOf(needle, offset - 1) : -1) {
     if ((!start || startsRow(joined, offset)) && (!end || endsRow(joined, offset + needle.length))) return offset;
   }

@@ -72,6 +72,10 @@ test('the last copy of a message is taken after the application draws its output
   // A newer message with the same text keeps the last row. The older one gets the row before it.
   assert.deepEqual(locate(['> Run the tests.', 'ok', '> Run the tests.', 'ok'], ['Run the tests.', 'Run the tests.']), [0, 2]);
   assert.deepEqual(locate(['> Run the tests.', 'ok'], ['Run the tests.', 'Run the tests.']), [-1, 0], 'the newest message takes the one row that is left');
+  // The row has no prompt, so the message starts at the first character of the text.
+  assert.deepEqual(locate(['Run the tests.', 'ok'], ['Run the tests.', 'Run the tests.']), [-1, 0]);
+  assert.deepEqual(locate(['   Run the tests.', 'ok'], ['Run the tests.', 'Run the tests.', 'Run the tests.']), [-1, -1, 0]);
+  assert.deepEqual(locate(['first question', '> second question'], ['first question', 'second question']), [0, 1]);
 });
 
 test('a message that the rows do not show has no position, and later messages keep theirs', () => {

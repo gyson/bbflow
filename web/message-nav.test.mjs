@@ -40,9 +40,10 @@ function fixture(t, pages) {
   }
   const view = new xterm.Terminal({ cols: 40, rows: 5, scrollback: 20, allowProposedApi: true });
   t.after(() => view.dispose());
-  const nav = new MessageNav({ server: () => server, color: () => '#8bbcff', reveal() {}, list() {}, changed() {} });
+  let changes = 0;
+  const nav = new MessageNav({ server: () => server, color: () => '#8bbcff', reveal() {}, list() {}, changed() {}, sent() { changes++; } });
   nav.attach(view);
-  return { nav, view, nodes, requests };
+  return { nav, view, nodes, requests, changes: () => changes };
 }
 
 const lines = (count, name = 'output') => Array.from({ length: count }, (_, index) => `${name} ${index}\r\n`).join('');
@@ -121,4 +122,36 @@ test('a jump target near the end does not return after the view scrolls away and
   // The next step goes to the message below the top row.
   nav.step(1);
   assert.match(nodes['message-open'].textContent, /^Message 2 of 2 · /);
+});
+
+test('a reload reports a change only when the newest sent messages differ', async t => {
+  let page = { messages: [sent(1, 'first question')], more: false };
+  const { nav, view, nodes, requests, changes } = fixture(t, () => page);
+  await write(view, '> first question\r\n' + lines(2) + '> second question\r\n' + lines(1).trimEnd());
+  nav.select('one');
+  await settle();
+  assert.equal(changes(), 0, 'the first read reports nothing');
+  // Another view saved a draft, but no message was sent.
+  nav.reload();
+  await settle();
+  assert.equal(changes(), 0);
+  // Another view sent a message. Its receipt is not saved yet.
+  page = { messages: [{ ...sent(3, 'second question'), confirmed: false }, sent(1, 'first question')], more: false };
+  nav.reload();
+  nav.reload();
+  nav.reload();
+  await settle();
+  assert.equal(changes(), 1);
+  assert.equal(requests.length, 4, 'reloads during a read cause one more read');
+  assert.equal(nav.state(3), 'found');
+  // The receipt changes the status of the message in the list.
+  page = { messages: [sent(3, 'second question'), sent(1, 'first question')], more: false };
+  nav.reload();
+  await settle();
+  assert.equal(changes(), 2);
+  // A change of the shown terminal reads the same page and reports nothing.
+  nav.window({ number: 1, run: 'a', tool: 'Demo agent', status: 'running', started: '2026-11-23T10:00:00Z', ended: '' });
+  await settle();
+  assert.equal(changes(), 2);
+  assert.match(nodes['message-open'].textContent, /^(Message \d of 2|2 sent messages below)/);
 });

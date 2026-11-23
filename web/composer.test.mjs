@@ -68,7 +68,8 @@ async function fixture(t, writeInput) {
     await settle();
   };
   const watch = () => sockets.findLast(socket => socket.operation === 'composer-watch');
-  return { nodes, saved, writes, send, watch, reports: () => reports };
+  // advance adds draft revisions that another view saved.
+  return { nodes, saved, writes, send, watch, reports: () => reports, advance: count => { revision += count; } };
 }
 
 test('a send with a receipt reports one sent message after the draft is clear', async t => {
@@ -100,14 +101,46 @@ test('a message that the editor rejects before the pending save reports nothing'
   assert.equal(reports(), 0);
 });
 
-test('a draft watch that connects again reports a possible send from another view', async t => {
-  const { watch, reports } = await fixture(t, () => Promise.resolve());
+// The draft of a send from another view: a clear draft with a newer revision.
+const pushed = (revision, text = '') => ({ type: 'draft', session: 'one', composer: { draft: { revision, text, attachments: [], pending: false }, attachments: [] } });
+
+test('a newer draft from a connected watch reports a possible send from another view', async t => {
+  const { nodes, watch, reports } = await fixture(t, () => Promise.resolve());
+  // The server keeps only the latest draft for a slow view. After a send from another
+  // view, this view can get only the clear draft, without the pending draft before it.
+  watch().reply(pushed(7));
+  await settle();
+  assert.equal(reports(), 1);
+  // A draft that this view already has reports nothing.
+  watch().reply(pushed(7));
+  await settle();
+  assert.equal(reports(), 1);
+  // This view has an edit that is not saved yet. It keeps the edit and still reports.
+  nodes['composer-text'].value = 'my edit';
+  nodes['composer-text'].oninput();
+  watch().reply(pushed(9, 'their next draft'));
+  await settle();
+  assert.equal(reports(), 2);
+  assert.equal(nodes['composer-text'].value, 'my edit');
+  // Wait for the save of the edit, so that the test ends with no open request.
+  await new Promise(resolve => setTimeout(resolve, 450));
+  await settle();
+});
+
+test('a draft watch that connects again reports a newer draft, and no report without one', async t => {
+  const { watch, reports, advance } = await fixture(t, () => Promise.resolve());
   const first = watch();
-  // Another view sent a message while this watch was offline. The server then gives
-  // only the latest draft, which is clear as before.
   first.drop();
   await new Promise(resolve => setTimeout(resolve, 650));
   await settle();
   assert.notEqual(watch(), first, 'the watch connected again');
+  assert.equal(reports(), 0, 'the draft has the same revision, so no view sent a message');
+  // Another view sent a message while this watch was offline.
+  const second = watch();
+  second.drop();
+  advance(2);
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  await settle();
+  assert.notEqual(watch(), second);
   assert.equal(reports(), 1);
 });
