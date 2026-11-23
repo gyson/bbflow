@@ -1110,11 +1110,18 @@ than the terminal keeps its own cache of cropped rows. Each of its frames render
 new rows.
 
 Frames preserve visible cells, colors, cursor position, bracketed paste, application
-cursor/keypad and mouse modes. Advanced terminal graphics and extended keyboard
-protocols are not forwarded. Rendered rows visually preserve recorded wrapping. Client
-rows do not preserve soft wraps during copy or reflow. Normal scrollback remains
+cursor/keypad, mouse, and focus reporting modes. Advanced terminal graphics and extended
+keyboard protocols are not forwarded. Rendered rows visually preserve recorded wrapping.
+Client rows do not preserve soft wraps during copy or reflow. Normal scrollback remains
 available while an alternate screen is visible. Erased output and exited alternate
 screens remain in the original recording.
+
+Each frame sets these modes again. xterm.js reports the focus state each time it parses
+the sequence that turns focus reporting on. A view does not send that report as input.
+A view sends a focus report only when the focus of its terminal changes. Thus a frame
+never causes input, and it cannot change the [size owner](#size-owner). An application
+gets no focus report at the time that it turns focus reporting on. The same rule applies
+to the side terminal.
 
 #### Display of an ended session
 
@@ -2886,8 +2893,9 @@ button.
 
 The PTY uses the viewport size of one view, the size owner. A view becomes the size
 owner when it joins and no view owns the size. A view that sends input becomes the size
-owner before the server writes that input. Terminal focus and mouse reports are input
-too. Signals do not change the size owner.
+owner before the server writes that input. A mouse report is input too. So is the focus
+report that a view sends when the focus of its terminal changes. A frame causes no
+input, see [Frames](#frames). Signals do not change the size owner.
 
 A socket closing only removes that view. When the size owner leaves, the PTY keeps its
 size. The next view that sends input or a new viewport size becomes the size owner. Stop
@@ -4004,6 +4012,14 @@ repository, and a folder outside Git, each with a shell session.
   narrower-view row cache.
 - Cross-engine fixtures compare Go-generated frames with xterm.js for cells, styles,
   cursor, scrollback, resize, split escapes, Unicode, and alternate screens.
+- Fixtures with xterm.js check the focus reports of a view. A frame that sets the focus
+  reporting mode sends no input. A later focus report and typed data are sent, also
+  after a frame that the view parsed while its input was off.
+- A browser check showed one session with focus reporting on in two views, of 82 and
+  39 columns. No view sent input in 4 seconds without a user action, and the PTY kept
+  its size. A click on the terminal of a view sent one focus report, and the PTY changed
+  to the size of that view one time. A program in the terminal got one report for each
+  focus change.
 
 - TypeScript fixtures cover reconnect delays, canceled retries, uncertain session
   starts, identity checks, binary input, and input guards for inactive views. They also

@@ -6,6 +6,7 @@ import type { ServerInfo } from './protocol.js';
 import { SessionConnection } from './session-connection.js';
 import { element } from './dom.js';
 import { terminalSize } from './terminal-size.js';
+import { onUserData } from './terminal-input.js';
 
 // SideTerminal is the Terminal view of the workspace pane. It shows an interactive
 // shell in the workspace of the selected session, for ad hoc commands. The server owns
@@ -176,7 +177,7 @@ export class SideTerminal {
     fit.fit();
     this.dimensions.textContent = `${view.cols} × ${view.rows}`;
     view.onResize(({ rows, cols }) => { this.dimensions.textContent = `${cols} × ${rows}`; });
-    view.onData(data => {
+    onUserData(view, data => {
       const peer = this.connection?.ready ? this.connection.peer : null;
       if (!peer?.active) return;
       const bytes = new TextEncoder().encode(data);

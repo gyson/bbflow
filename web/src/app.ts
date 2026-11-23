@@ -20,6 +20,7 @@ import { RowMenus } from './row-menu.js';
 import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
 import { terminalSize } from './terminal-size.js';
+import { onUserData } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
 import { mergeSessions, placeText, sessionGroups, sessionWindow, shownChildren } from './projects.js';
@@ -883,7 +884,7 @@ function makeTerminal(): Terminal {
     view.resize(hidden.cols, hidden.rows);
   }
   hint();
-  terminal.onData(data => {
+  onUserData(terminal, data => {
     if (!connection?.ready || !connection.peer?.active) return;
     const bytes = new TextEncoder().encode(data);
     for (let start = 0; start < bytes.length; start += 16384) {
