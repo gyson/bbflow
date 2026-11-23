@@ -250,6 +250,9 @@ export class Composer {
   private receive(next: ComposerState): void {
     if (this.syncLost) {
       this.syncLost = false;
+      // The watch gives only the latest draft after a connection loss. A send from
+      // another view in that time shows in no draft, so read the sent messages again.
+      if (this.loaded) this.host.sent();
       if (this.loaded && !this.saving && this.edits === this.saved) this.message(this.savedMessage());
     }
     if (!this.loaded) { this.apply(next); return; }

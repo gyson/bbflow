@@ -21,15 +21,16 @@ async function fixture(t, writeInput) {
     'composer-submit', 'composer-review'];
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
   let revision = 0;
-  const saved = [];
+  const saved = [], sockets = [];
   class Socket {
     readyState = 1;
     bufferedAmount = 0;
-    constructor() { queueMicrotask(() => this.onmessage({ data: JSON.stringify({ type: 'server', server }) })); }
+    constructor() { sockets.push(this); queueMicrotask(() => this.onmessage({ data: JSON.stringify({ type: 'server', server }) })); }
     reply(message) { queueMicrotask(() => { if (this.readyState === 1) this.onmessage({ data: JSON.stringify(message) }); }); }
     send(text) {
       const { request } = JSON.parse(text);
       if (!request) return;
+      this.operation = request.operation;
       const empty = { revision, text: '', attachments: [], pending: false };
       if (request.operation === 'composer-watch') this.reply({ type: 'draft', session: request.session, composer: { draft: empty, attachments: [] } });
       if (request.operation !== 'composer-draft') return;
@@ -38,6 +39,8 @@ async function fixture(t, writeInput) {
       this.reply({ type: 'result', result: { draft, attachments: [] } });
     }
     close() { this.readyState = 3; }
+    // The connection ends without a close from this page.
+    drop() { this.readyState = 3; this.onclose(); }
   }
   const globals = { WebSocket: Socket, location: { host: 'localhost:1234' }, HTMLElement: Node, HTMLButtonElement: Node,
     HTMLTextAreaElement: Node, HTMLInputElement: Node, window: { addEventListener() {} },
@@ -64,7 +67,8 @@ async function fixture(t, writeInput) {
     await nodes['composer-submit'].onclick();
     await settle();
   };
-  return { nodes, saved, writes, send, reports: () => reports };
+  const watch = () => sockets.findLast(socket => socket.operation === 'composer-watch');
+  return { nodes, saved, writes, send, watch, reports: () => reports };
 }
 
 test('a send with a receipt reports one sent message after the draft is clear', async t => {
@@ -94,4 +98,16 @@ test('a message that the editor rejects before the pending save reports nothing'
   assert.deepEqual(saved.map(draft => draft.pending), [false]);
   assert.deepEqual(writes, []);
   assert.equal(reports(), 0);
+});
+
+test('a draft watch that connects again reports a possible send from another view', async t => {
+  const { watch, reports } = await fixture(t, () => Promise.resolve());
+  const first = watch();
+  // Another view sent a message while this watch was offline. The server then gives
+  // only the latest draft, which is clear as before.
+  first.drop();
+  await new Promise(resolve => setTimeout(resolve, 650));
+  await settle();
+  assert.notEqual(watch(), first, 'the watch connected again');
+  assert.equal(reports(), 1);
 });

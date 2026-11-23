@@ -103,3 +103,22 @@ test('an earlier terminal gets its message when a later terminal fills the newes
   assert.equal(nav.go(1), true);
   assert.match(nodes['message-open'].textContent, /^Message 1 of 1 · /);
 });
+
+test('a jump target near the end does not return after the view scrolls away and back', async t => {
+  const { nav, view, nodes } = fixture(t, () => ({ messages: [sent(2, 'second question'), sent(1, 'first question')], more: false }));
+  // The buffer has 14 rows and the view has 5. The lowest view position is row 9.
+  await write(view, lines(3) + '> first question\r\n' + lines(8) + '> second question\r\n' + lines(1).trimEnd());
+  nav.select('one');
+  await settle();
+  assert.equal(nav.go(2), true);
+  assert.equal(top(view), 9, 'the row of the message cannot reach the top');
+  assert.match(nodes['message-open'].textContent, /^Message 2 of 2 · /);
+  view.scrollToLine(8);
+  assert.match(nodes['message-open'].textContent, /^Message 1 of 2 · /);
+  view.scrollToLine(9);
+  assert.match(nodes['message-open'].textContent, /^Message 1 of 2 · /, 'the row of message 2 is below the top');
+  assert.equal(nav.state(2), 'found');
+  // The next step goes to the message below the top row.
+  nav.step(1);
+  assert.match(nodes['message-open'].textContent, /^Message 2 of 2 · /);
+});

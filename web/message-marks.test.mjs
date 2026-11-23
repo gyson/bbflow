@@ -51,6 +51,29 @@ test('a later quote of a message is not taken for the message', () => {
   assert.deepEqual(locate(rows, ['Why does TestPeriod fail?', 'Why does TestPeriod fail?']), [0, 3]);
 });
 
+test('the last copy of a message is taken after the application draws its output again', () => {
+  // Claude Code drew its output again after a change of the terminal width. The first
+  // rows are an earlier copy, and the complete output follows.
+  const rows = [
+    '❯ Explain how Period computes the orbit period.',
+    '',
+    '  Read 1 file',
+    '● 1. Period applies the third law of Kepler.',
+    '❯ Explain how Period computes the orbit period.',
+    '',
+    '  Read 1 file',
+    '● 1. Period applies the third law of Kepler.',
+    '  2. The result is in seconds.',
+  ];
+  assert.deepEqual(locate(rows, ['Explain how Period computes the orbit period.']), [4]);
+  // Two messages, and both have an earlier copy.
+  const twice = ['> first question', 'answer one', '> second question', '> first question', 'answer one', '> second question', 'answer two'];
+  assert.deepEqual(locate(twice, ['first question', 'second question']), [3, 5]);
+  // A newer message with the same text keeps the last row. The older one gets the row before it.
+  assert.deepEqual(locate(['> Run the tests.', 'ok', '> Run the tests.', 'ok'], ['Run the tests.', 'Run the tests.']), [0, 2]);
+  assert.deepEqual(locate(['> Run the tests.', 'ok'], ['Run the tests.', 'Run the tests.']), [-1, 0], 'the newest message takes the one row that is left');
+});
+
 test('a message that the rows do not show has no position, and later messages keep theirs', () => {
   const rows = ['> second message here', 'reply that quotes the first message text', '> third message here'];
   assert.deepEqual(locate(rows, ['the first message text', 'second message here', 'third message here']), [-1, 0, 2]);
@@ -198,4 +221,22 @@ test('the cache keeps at most the limit of messages, also after a reload', () =>
   const later = { started: '2026-11-22T10:00:00Z', ended: '2026-11-22T11:00:00Z' };
   assert.equal(wantsOlder({ ...emptyCache(), cursor: 5, reached: '2026-11-23T10:00:00Z', more: true, read: readLimit - 20 }, false, later), true);
   assert.equal(wantsOlder({ ...emptyCache(), cursor: 5, reached: '2026-11-23T10:00:00Z', more: true, read: readLimit }, false, later), false);
+});
+
+test('a reload that does not reach the read messages starts the cache again', () => {
+  // The view read revisions 1 to 20. Then 22 messages were sent while the tab was offline.
+  let cache = addPage(emptyCache(), page(20, 1, '2026-11-23T10:00:00Z', false), false);
+  assert.deepEqual([cache.messages.length, cache.cursor, cache.more, cache.top], [20, 1, false, 20]);
+  cache = addPage(cache, page(42, 23, '2026-11-23T10:00:00Z', true), false);
+  assert.deepEqual([cache.messages[0].revision, cache.messages.at(-1).revision, cache.cursor, cache.more, cache.read, cache.top], [23, 42, 23, true, 20, 42]);
+  // The terminal still shows revision 23, so the view reads the page below it.
+  assert.equal(wantsOlder(cache, true), true);
+  cache = addPage(cache, page(22, 3, '2026-11-23T10:00:00Z', true), true);
+  assert.deepEqual([cache.messages[0].revision, cache.messages.length, cache.cursor], [3, 40, 3]);
+  // A reload that reaches a read message continues the cache.
+  const next = addPage(cache, page(45, 26, '2026-11-23T10:00:00Z', true), false);
+  assert.deepEqual([next.messages[0].revision, next.messages.at(-1).revision, next.messages.length, next.cursor, next.top], [3, 45, 43, 3, 45]);
+  // A page that starts just above the newest read message has no proof of continuity.
+  const apart = addPage(cache, page(62, 43, '2026-11-23T10:00:00Z', true), false);
+  assert.deepEqual([apart.messages[0].revision, apart.cursor, apart.read], [43, 43, 20]);
 });

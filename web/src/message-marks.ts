@@ -76,11 +76,11 @@ function endsRow(joined: Rows, end: number): boolean {
   return rest.length <= tailLimit && !word.test(rest);
 }
 
-// find returns the offset of the first place at or after from where needle passes the
-// checks, or -1.
-function find(joined: Rows, needle: string, from: number, start: boolean, end: boolean): number {
+// findLast returns the offset of the last place where needle passes the checks and ends
+// at or before limit, or -1.
+function findLast(joined: Rows, needle: string, limit: number, start: boolean, end: boolean): number {
   if (!needle) return -1;
-  for (let offset = joined.text.indexOf(needle, from); offset >= 0; offset = joined.text.indexOf(needle, offset + 1)) {
+  for (let offset = joined.text.lastIndexOf(needle, limit - needle.length); offset >= 0; offset = offset > 0 ? joined.text.lastIndexOf(needle, offset - 1) : -1) {
     if ((!start || startsRow(joined, offset)) && (!end || endsRow(joined, offset + needle.length))) return offset;
   }
   return -1;
@@ -88,18 +88,27 @@ function find(joined: Rows, needle: string, from: number, start: boolean, end: b
 
 // locate returns the row of each message in rows, or -1 for a message that the rows do
 // not show. messages are the sent texts in send order, and rows are the text rows of the
-// terminal from the oldest row. A message is searched after the message before it, so
-// that a later quote of an earlier message is not taken for a message.
+// terminal from the oldest row.
+//
+// The search takes the messages from the newest to the oldest. It takes the last place
+// of each message, above the place of the message after it. An application that draws
+// its output again, for example after a change of the terminal width, can leave earlier
+// copies of a message in the scrollback. The last copy has the current output below it.
+// Two messages with the same text thus also get their own rows.
 //
 // The search tries these forms of a message in order, and takes the first that it finds:
 // 1. All of the text, at the start of a row and to the end of a row.
 // 2. The first line, at the start of a row and to the end of a row. An application can
 //    show a long message in a shorter form.
 // 3. The start of the first line, at the start of a row.
+// The rules for the row start and the row end keep a quote of a message in running text
+// from the search.
 export function locate(rows: readonly string[], messages: readonly string[]): number[] {
   const joined = join(rows);
-  let from = 0;
-  return messages.map(message => {
+  let limit = joined.text.length;
+  const found = new Array<number>(messages.length).fill(-1);
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index] ?? '';
     const all = message.replace(spaces, '');
     const first = (message.trim().split('\n')[0] ?? '').replace(spaces, '');
     const prefix = first.slice(0, prefixLength);
@@ -109,13 +118,14 @@ export function locate(rows: readonly string[], messages: readonly string[]): nu
       [prefix.length >= prefixMinimum ? prefix : '', true, false],
     ];
     for (const [needle, start, end] of forms) {
-      const offset = find(joined, needle, from, start, end);
+      const offset = findLast(joined, needle, limit, start, end);
       if (offset < 0) continue;
-      from = offset + needle.length;
-      return rowAt(joined.starts, offset);
+      limit = offset;
+      found[index] = rowAt(joined.starts, offset);
+      break;
     }
-    return -1;
-  });
+  }
+  return found;
 }
 
 // currentMark returns the index of the message that the view reads: the last message at
@@ -197,32 +207,51 @@ export const messageLimit = 200, readLimit = 1000;
 // The sent messages that a view read for the terminal that it shows. The server gives
 // pages from the newest message. messages are the read messages of the terminal, from
 // the oldest. cursor is the revision of the oldest read message, or 0 before the first
-// page. reached is the send time of that message. read counts all read messages.
-export interface MessageCache { messages: SentMessage[]; cursor: number; reached: string; more: boolean; read: number }
+// page. reached is the send time of that message. read counts all read messages. top is
+// the revision of the newest read message.
+export interface MessageCache { messages: SentMessage[]; cursor: number; reached: string; more: boolean; read: number; top: number }
 
 export function emptyCache(): MessageCache {
-  return { messages: [], cursor: 0, reached: '', more: false, read: 0 };
+  return { messages: [], cursor: 0, reached: '', more: false, read: 0, top: 0 };
 }
 
 // addPage adds a page to the cache. A page of older messages starts below the cursor.
 // Without older, the page has the newest messages: the first page, or a reload after a
 // send. The cache keeps only the messages of the terminal, and at most messageLimit of
 // them. It drops the oldest first.
+//
+// A reload continues the cache only when its page reaches a message that the cache
+// read before. Otherwise more messages than one page can lie between them, for example
+// after a tab was offline. The cache then starts again from this page, and the view
+// reads the older pages again.
 export function addPage(cache: MessageCache, page: SentPage, older: boolean, terminal?: { started: string; ended: string }): MessageCache {
   const loaded = [...page.messages].reverse();
-  const oldest = loaded[0];
+  const oldest = loaded[0], newest = loaded.at(-1);
   const kept = loaded.filter(message => inTerminal(message.created, terminal));
-  const first = oldest?.revision ?? Infinity;
-  // A page that reaches the cursor continues the read. A reload of the newest messages
-  // above the cursor only replaces the newest part.
-  const deeper = older || cache.cursor === 0 || first <= cache.cursor;
-  const messages = [...(older ? kept : []), ...cache.messages.filter(message => older || message.revision < first), ...(older ? [] : kept)];
+  if (older) {
+    return {
+      ...cache,
+      messages: [...kept, ...cache.messages].slice(-messageLimit),
+      cursor: oldest?.revision ?? cache.cursor,
+      reached: oldest?.created ?? cache.reached,
+      more: page.more,
+      read: cache.read + loaded.length,
+    };
+  }
+  const joins = cache.cursor !== 0 && !!oldest && oldest.revision <= cache.top;
+  if (!joins) {
+    return { messages: kept.slice(-messageLimit), cursor: oldest?.revision ?? 0, reached: oldest?.created ?? '', more: page.more, read: loaded.length, top: newest?.revision ?? 0 };
+  }
+  // The page reaches the read messages. Replace the part of the cache that it covers.
+  const below = cache.messages.filter(message => message.revision < oldest.revision);
+  const deeper = oldest.revision <= cache.cursor;
   return {
-    messages: messages.slice(-messageLimit),
-    cursor: deeper && oldest ? oldest.revision : cache.cursor,
-    reached: deeper && oldest ? oldest.created : cache.reached,
+    messages: [...below, ...kept].slice(-messageLimit),
+    cursor: deeper ? oldest.revision : cache.cursor,
+    reached: deeper ? oldest.created : cache.reached,
     more: deeper ? page.more : cache.more,
-    read: cache.read + (older || cache.cursor === 0 ? loaded.length : 0),
+    read: cache.read,
+    top: Math.max(cache.top, newest?.revision ?? 0),
   };
 }
 

@@ -285,6 +285,9 @@ export class MessageNav {
 
   // Show the bar for the message that the view reads.
   private render(): void {
+    // A jump target applies only until the view scrolls. A later return to the same
+    // position by hand must not make it the current message again.
+    if (this.pinned && this.pinned.top !== this.view?.buffer.active.viewportY) this.pinned = null;
     const count = this.marks.length;
     const bar = this.position();
     const mark = this.marks[bar.current];

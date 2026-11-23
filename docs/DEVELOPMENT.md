@@ -116,19 +116,24 @@ To capture the screenshots again, do these steps:
 
    The UI shows the instance path, so the path must not contain a user name. Each
    session inherits the environment of the server.
-2. In **Orbit API**, create a draft with the tool **Claude** and without **Use
-   worktree**. Start the session.
-3. Accept the trust question of Claude Code. Claude Code saves this answer in
+2. Open the UI in the browser view that captures the pages, with the viewport of
+   `session.png`. Do steps 3 to 7 in this view. A second view with a different
+   terminal width makes Claude Code draw its output again. An earlier copy of the
+   message then stays in the terminal.
+3. In **Orbit API**, create a draft with the tool **Claude** and without **Use
+   worktree**. Name it **Explain the period formula**. Start the session.
+4. Accept the trust question of Claude Code. Claude Code saves this answer in
    `~/.claude.json`.
-4. Send one short question about `internal/orbit/period.go` from the message editor.
-   Ask for no file changes.
-5. Write a second message in the message editor. Do not send it.
-6. Open the draft **Plan release notes**. Select the tool **Claude**. The seed selects
+5. Send one short question about `internal/orbit/period.go` from the message editor.
+   Ask for no file changes. Wait for the answer and the status **Idle**.
+6. Write a second message in the message editor. Do not send it.
+7. Click **Earlier message** above the terminal. The question is then at the top of
+   the terminal. Wait two seconds, until the highlight of the row is gone.
+8. Open the draft **Plan release notes**. Select the tool **Claude**. The seed selects
    **Demo agent** for this draft.
-7. Open each view in a browser with the viewport of the table. Use the dark color
-   scheme and a device scale factor of 2.
-8. Capture each page.
-9. Remove the demo instance.
+9. Capture each view with the viewport of the table. Use the dark color scheme and a
+   device scale factor of 2.
+10. Remove the demo instance.
 
    ```sh
    ./bin/bbflow-demo --dir /Users/Shared/bbflow-demo clean

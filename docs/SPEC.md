@@ -2053,9 +2053,12 @@ That text is the message, then each attached file path in single quotes.
   because an application can show a long message in a shorter form. Last, it looks for
   the first 32 characters of the first line, without the rule for the row end. This
   last form needs at least 12 characters. Each count is without spaces.
-- The search takes the messages in send order. It looks for each message after the
-  position of the message before it. Thus a later quote of a message is not taken for
-  the message.
+- The search takes the messages from the newest to the oldest. It takes the last place
+  of each message, above the place of the message after it. An application that draws
+  its output again can leave earlier copies of a message in the scrollback, for example
+  after a change of the terminal width. The last copy has the current output below it.
+- The rules for the row start and the row end keep a quote of a message in running
+  text from the search.
 - A view of an [earlier terminal](#earlier-terminals) searches only the messages that
   were sent while that terminal ran.
 
@@ -2074,6 +2077,11 @@ replaces the oldest one.
   reads at most 1,000 messages of the session for this.
 - A message from before the start of the terminal ends the read.
 - A send from any view, and a change of the shown terminal, read the newest page again.
+  The draft watch of the editor also causes this read when it connects again, because
+  another view can send a message while the watch is offline.
+- The newest page continues the kept messages only when it reaches a message that the
+  view read before. Otherwise the view starts again from that page and reads the older
+  pages again. Thus more than 20 new messages leave no gap.
 
 #### Message bar
 
@@ -2097,7 +2105,8 @@ terminal keeps its height when the first message is sent.
 
 A jump puts the row of the message at the top of the view. The row has a highlight for
 1.2 seconds. Near the end of the output, the row cannot reach the top. The bar then
-names the jump target until the view scrolls.
+names the jump target until the view scrolls. After a scroll, the bar again names the
+last found message at or above the top row.
 
 In a narrow main area, the workspace pane can take the place of the session. A jump
 from the **Messages** view then closes the pane and shows the session. A jump gives the
@@ -2120,6 +2129,8 @@ to terminal programs.
 
 - A position is derived from the terminal text. An application that shows a message in
   a different form can give no position, or a position on a row with the same text.
+- A response can repeat a message on a row of its own after a prompt character, for
+  example as a quote with `>`. That row is below the message, so it takes the position.
 - Text typed directly in the terminal has no position, because the list has only the
   messages from Send.
 - A message whose rows are no longer in the scrollback of the view has no position. See
@@ -3897,13 +3908,17 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
 - The same fixtures cover the pages of the sent messages: the read past the messages
   of a later terminal, the end of the read before the start of the terminal, the limit
   of 200 messages after a reload, and the limit of 1,000 read messages.
+- The fixtures also cover an earlier copy of a message after the application draws its
+  output again, and a newest page that does not reach the read messages.
 - `web/message-nav.test.mjs` uses a real xterm.js terminal without a page. A step uses
   the new row of a message after the scrollback drops rows. **Earlier message** turns
   on when the view moves from the first message into its response. An earlier terminal
-  gets its message when a later terminal fills the newest page.
+  gets its message when a later terminal fills the newest page. A jump target near the
+  end does not return after the view scrolls away and back.
 - `web/composer.test.mjs` covers the report of a send to the list: one report after a
   send with a receipt, one report after a lost receipt with the draft still pending,
-  and no report for a message that the editor rejects.
+  no report for a message that the editor rejects, and one report after the draft watch
+  connects again.
 - `web/workspace-pane.test.mjs` covers the **Messages** view: its panel, its switch
   button, and the close of the pane for a jump.
 - A second browser check verified the order of the view switch and the toolbar icons,
@@ -3929,8 +3944,14 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
 - A timing run in Node.js searched 10,000 rows of 100 columns for 20 messages in about
   21 milliseconds: 12 milliseconds to read the rows and 10 milliseconds to search.
 - Recordings of Claude Code 2.1.330 and Codex CLI 0.171.0 showed the characters `❯ `
-  and `› ` before a sent message. A session with a real agent CLI was not used for
-  these checks, so the positions in real agent output are not verified in a browser.
+  and `› ` before a sent message.
+- A browser check with a real Claude Code 2.1.330 session in a demo instance sent one
+  message from the editor. The bar showed `Message 1 of 1`, and **Earlier message** put
+  the row of the message at the top. A second view with a different terminal width made
+  Claude Code draw its output again and leave an earlier copy of the message. The
+  search then took the earlier copy. The search now takes the last copy.
+- A session with Codex CLI was not used for these checks, so the positions in its
+  output are not verified in a browser.
 
 ### Checks of continuation and earlier terminals
 
