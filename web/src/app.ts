@@ -1,4 +1,4 @@
-import { call, encodeBytes, errorMessage, sessionTitle, VERSION } from './protocol.js';
+import { call, errorMessage, sessionTitle, VERSION } from './protocol.js';
 import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Worktree, ServerInfo, SessionInfo, Size, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
 import { HistorySearch } from './history-search.js';
@@ -20,6 +20,7 @@ import { RowMenus } from './row-menu.js';
 import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
 import { terminalSize } from './terminal-size.js';
+import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
 import { mergeSessions, placeText, sessionGroups, sessionWindow, shownChildren } from './projects.js';
@@ -883,16 +884,7 @@ function makeTerminal(): Terminal {
     view.resize(hidden.cols, hidden.rows);
   }
   hint();
-  terminal.onData(data => {
-    if (!connection?.ready || !connection.peer?.active) return;
-    const bytes = new TextEncoder().encode(data);
-    for (let start = 0; start < bytes.length; start += 16384) {
-      if (!connection?.peer?.send({ type: 'input', data: encodeBytes(bytes.subarray(start, start + 16384)) })) break;
-    }
-  });
-  terminal.onBinary(data => {
-    if (connection?.ready && connection.peer?.active) connection.peer.send({ type: 'input', data: btoa(data) });
-  });
+  onTerminalInput(terminal, input => !!connection?.ready && !!connection.peer?.active && connection.peer.send(input));
   return view;
 }
 

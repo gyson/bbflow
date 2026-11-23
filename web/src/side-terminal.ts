@@ -1,11 +1,12 @@
 import { Terminal } from '@xterm/xterm';
 import type { ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { call, encodeBytes, errorMessage } from './protocol.js';
+import { call, errorMessage } from './protocol.js';
 import type { ServerInfo } from './protocol.js';
 import { SessionConnection } from './session-connection.js';
 import { element } from './dom.js';
 import { terminalSize } from './terminal-size.js';
+import { onTerminalInput } from './terminal-input.js';
 
 // SideTerminal is the Terminal view of the workspace pane. It shows an interactive
 // shell in the workspace of the selected session, for ad hoc commands. The server owns
@@ -176,17 +177,9 @@ export class SideTerminal {
     fit.fit();
     this.dimensions.textContent = `${view.cols} × ${view.rows}`;
     view.onResize(({ rows, cols }) => { this.dimensions.textContent = `${cols} × ${rows}`; });
-    view.onData(data => {
+    onTerminalInput(view, input => {
       const peer = this.connection?.ready ? this.connection.peer : null;
-      if (!peer?.active) return;
-      const bytes = new TextEncoder().encode(data);
-      for (let start = 0; start < bytes.length; start += 16384) {
-        if (!peer.send({ type: 'input', data: encodeBytes(bytes.subarray(start, start + 16384)) })) break;
-      }
-    });
-    view.onBinary(data => {
-      const peer = this.connection?.ready ? this.connection.peer : null;
-      if (peer?.active) peer.send({ type: 'input', data: btoa(data) });
+      return !!peer?.active && peer.send(input);
     });
     return view;
   }

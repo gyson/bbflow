@@ -8,6 +8,7 @@ import (
 	"log"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -215,6 +216,9 @@ type View struct {
 	CursorX int           `json:"cursorX"`
 	CursorY int           `json:"cursorY"`
 	Modes   string        `json:"modes"`
+	// Reports describes the reports of a live view that shows this frame. A saved view
+	// does not need it.
+	Reports Reports `json:"-"`
 }
 
 func (s *State) View() *View {
@@ -228,7 +232,8 @@ func (s *State) screen() *View {
 	t := s.term
 	s.syncHistory()
 	v := &View{Size: protocol.Size{Cols: uint16(t.Cols()), Rows: uint16(t.Rows())}, Offset: s.history.first, Epoch: s.epoch,
-		CursorX: min(t.CursorX(), t.Cols()-1), CursorY: t.CursorY(), Modes: inputModes(t)}
+		CursorX: min(t.CursorX(), t.Cols()-1), CursorY: t.CursorY(), Modes: inputModes(t),
+		Reports: reports(t.DecPrivateModes(), t.Rows(), t.Cols())}
 	active := t.Buffer()
 	for y := 0; y < t.Rows(); y++ {
 		v.Lines = append(v.Lines, renderLine(active.Lines.Get(active.YBase+y), t.Cols()))
@@ -318,6 +323,7 @@ func (s *State) ViewFor(size protocol.Size, cache *Cache) *View {
 	}
 	v.CursorX = min(v.CursorX, int(size.Cols)-1)
 	v.CursorY = max(0, v.CursorY-top)
+	v.Reports.Top = top
 	v.Size = size
 	v.TrimHistory()
 	return v
@@ -404,9 +410,13 @@ func cellStyle(c *xterm.CellData) string {
 	return "\x1b[" + strings.Join(codes, ";") + "m"
 }
 
+// inputModes returns the sequences that give a view the input modes of the application.
+// The modes that are off come first. xterm.js turns mouse tracking off for the reset of
+// each tracking mode, and it selects the default encoding for the reset of each mouse
+// encoding. A reset after the mode that is on would thus turn that mode off.
 func inputModes(t *xterm.Terminal) string {
 	m := t.DecPrivateModes()
-	var out strings.Builder
+	var off, on strings.Builder
 	for _, mode := range []struct {
 		code int
 		on   bool
@@ -416,13 +426,13 @@ func inputModes(t *xterm.Terminal) string {
 		{1002, m.MouseTrackingMode == "DRAG"}, {1003, m.MouseTrackingMode == "ANY"},
 		{1006, m.MouseEncoding == "SGR"}, {1016, m.MouseEncoding == "SGR_PIXELS"}, {25, !t.IsCursorHidden()},
 	} {
-		end := "l"
 		if mode.on {
-			end = "h"
+			fmt.Fprintf(&on, "\x1b[?%dh", mode.code)
+		} else {
+			fmt.Fprintf(&off, "\x1b[?%dl", mode.code)
 		}
-		fmt.Fprintf(&out, "\x1b[?%d%s", mode.code, end)
 	}
-	return out.String()
+	return off.String() + on.String()
 }
 
 // PlainText returns the history rows and screen lines without styles or escape
@@ -504,9 +514,57 @@ func (v *View) Render(previous *View) (data []byte, full bool) {
 			out.WriteString(line)
 		}
 	}
-	out.WriteString(v.Modes)
+	// The view reset its modes for a full frame. After another frame, it has the modes
+	// of the previous frame.
+	if full {
+		out.WriteString(v.Modes)
+	} else {
+		out.WriteString(modeChanges(previous.Modes, v.Modes))
+	}
 	fmt.Fprintf(&out, "\x1b[%d;%dH", v.CursorY+1, v.CursorX+1)
 	return []byte(out.String()), full
+}
+
+// modeChanges returns the sequences of next for the modes that differ from previous. A
+// frame must not write a mode that did not change. xterm.js stops the reports of a mouse
+// gesture when it parses the reset of a mouse tracking mode, also when the next sequence
+// sets the mode again. The modes that turn off come first, because that reset turns all
+// mouse tracking off.
+func modeChanges(previous, next string) string {
+	before, _ := modeValues(previous)
+	after, codes := modeValues(next)
+	var off, on strings.Builder
+	for _, code := range codes {
+		if value, known := before[code]; known && value == after[code] {
+			continue
+		}
+		if after[code] {
+			fmt.Fprintf(&on, "\x1b[?%dh", code)
+		} else {
+			fmt.Fprintf(&off, "\x1b[?%dl", code)
+		}
+	}
+	return off.String() + on.String()
+}
+
+// modeValues reads the private mode sequences of a view. It returns the last value of
+// each mode and the mode codes in their first order.
+func modeValues(modes string) (values map[int]bool, codes []int) {
+	values = map[int]bool{}
+	for _, sequence := range strings.Split(modes, "\x1b[?") {
+		if len(sequence) < 2 {
+			continue
+		}
+		code, err := strconv.Atoi(sequence[:len(sequence)-1])
+		if err != nil {
+			continue
+		}
+		if _, known := values[code]; !known {
+			codes = append(codes, code)
+		}
+		values[code] = sequence[len(sequence)-1] == 'h'
+	}
+	return values, codes
 }
 
 // fullFrameStart returns the first history row that a full frame sends. A full frame

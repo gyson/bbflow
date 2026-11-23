@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/38"
+const Version = "bbflow/39"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -374,6 +374,7 @@ type Message struct {
 	Status   string            `json:"status,omitempty"`
 	Statuses map[string]string `json:"statuses,omitempty"`
 	Data     []byte            `json:"data,omitempty"`
+	Report   bool              `json:"report,omitempty"` // The input is a focus report or a mouse report of the view.
 	Size     Size              `json:"size,omitempty"`
 	Signal   int               `json:"signal,omitempty"`
 	Code     int               `json:"code,omitempty"`

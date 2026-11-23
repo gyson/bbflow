@@ -49,6 +49,35 @@ type attachment struct {
 	once     sync.Once
 	size     protocol.Size  // Stores the viewport. Only the size owner resizes the PTY.
 	history  terminal.Cache // Keeps rendered rows for a narrower viewport. Requires the session lock.
+	// shown describes the reports of the frame that the view acknowledged last. pending
+	// describes the frame that the view did not acknowledge yet. buttons holds the
+	// mouse buttons that the view pressed on a terminal cell. Only the goroutine of the
+	// attachment uses them.
+	shown, pending *terminal.Reports
+	buttons        terminal.Buttons
+	// endsGesture is true when the pending frame makes xterm.js stop the reports of a
+	// mouse gesture: a full frame, or a frame with another mouse tracking mode.
+	endsGesture bool
+}
+
+// report tells whether the input of this view is a focus report or a mouse report. The
+// view marks its reports, because a paste can have the same bytes. The marked input
+// must also be a report in a frame of the view. report uses these frames, not the
+// current modes of the application, because the view makes its reports from the frame
+// that it shows. It returns the bytes for the PTY, see terminal.Reports.Translate.
+func (a *attachment) report(message protocol.Message) (data []byte, ok bool) {
+	if message.Type != "input" || !message.Report {
+		return nil, false
+	}
+	for _, frame := range []*terminal.Reports{a.shown, a.pending} {
+		if frame == nil {
+			continue
+		}
+		if data, ok := frame.Translate(message.Data, &a.buttons); ok {
+			return data, true
+		}
+	}
+	return nil, false
 }
 
 func (a *attachment) close() { a.once.Do(func() { close(a.closed); a.conn.Close() }) }
@@ -97,7 +126,11 @@ func (a *attachment) inputAck(id string, err error) {
 }
 
 // Every view can send input and signals. The PTY uses the size of the view that most
-// recently sent input. When no view has the size, a view that sends its size takes it.
+// recently sent user input: typed keys, a paste, or a message. A focus report or a mouse
+// report is input that the user did not type. It reaches the PTY, but it does not change
+// the size owner. Thus a mouse report can come from a view that shows other rows than
+// the PTY has. The PTY gets the report with the terminal row of the cell that the view
+// shows. When no view has the size, a view that sends its size takes it.
 // Signals never change the size owner. Serialize accepted controls so that a size
 // change always reaches the PTY before the input that caused it. Input receipts always
 // go to the view that sent the input.
@@ -116,14 +149,25 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 		a.wake()
 	}
 	var controls []agent.Control
-	if r.sizeOwner != a && (message.Type == "input" || (message.Type == "resize" && r.sizeOwner == nil)) {
+	translated, report := a.report(message)
+	if report {
+		message.Data = translated
+	}
+	userInput := message.Type == "input" && !report
+	if r.sizeOwner != a && (userInput || (message.Type == "resize" && r.sizeOwner == nil)) {
 		r.sizeOwner = a
-		if message.Type == "input" {
+		if userInput {
 			// The runtime ignores a resize to the current PTY size.
 			controls = append(controls, agent.Control{Message: protocol.Message{Type: "resize", Size: a.size}})
 		}
 	}
-	if message.Type != "resize" || r.sizeOwner == a {
+	// A report can have no bytes for the PTY, such as a click outside the terminal. A
+	// requested receipt still tells the view that the server completed the input.
+	ignored := report && len(message.Data) == 0
+	if ignored && message.ID != "" {
+		a.inputAck(message.ID, nil)
+	}
+	if (message.Type != "resize" || r.sizeOwner == a) && !ignored {
 		control := agent.Control{Message: message}
 		if message.Type == "input" && message.ID != "" {
 			received := r.received
@@ -406,7 +450,9 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 				if err := conn.Send(protocol.Message{Type: "frame", Data: data, Size: next.Size, Revision: revision, Full: full}); err != nil {
 					return
 				}
+				a.endsGesture = full || previous.Reports.Tracking != next.Reports.Tracking
 				previous, sent, sentAt = next, revision, time.Now()
+				a.pending = &next.Reports
 			} else if ended {
 				conn.Send(exit)
 				return
@@ -441,6 +487,11 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 					return
 				}
 				acked = sent
+				a.shown, a.pending = a.pending, nil
+				// The view sent the reports of its gesture before this acknowledgment.
+				if a.endsGesture {
+					a.buttons = 0
+				}
 				dirty = true
 			case "ping":
 				if conn.Send(protocol.Message{Type: "pong"}) != nil {

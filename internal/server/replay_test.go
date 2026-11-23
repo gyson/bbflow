@@ -192,6 +192,163 @@ func TestSharedViewsSizeOwnerAndIndependentFlow(t *testing.T) {
 	}
 }
 
+// A focus report or a mouse report reaches the process, but only user input moves the
+// PTY size to its view. The server uses the frames of a view to identify its reports,
+// and a mouse report names the terminal cell that the view shows.
+func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
+	size := protocol.Size{Cols: 80, Rows: 24}
+	small := protocol.Size{Cols: 40, Rows: 10}
+	r := &runningSession{id: "fixture", controls: make(chan agent.Control, 16), done: make(chan struct{}), terminal: terminal.New(size), revision: 1}
+	s := &Server{}
+	next := func() agent.Control {
+		t.Helper()
+		select {
+		case control := <-r.controls:
+			return control
+		case <-time.After(5 * time.Second):
+			t.Fatal("control missing")
+			return agent.Control{}
+		}
+	}
+	output := func(data string) {
+		t.Helper()
+		if _, err := r.publish(history.Event{RunID: "run-fixture", Kind: "output", Data: []byte(data)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// shows makes the view acknowledge frames until it shows the latest state.
+	shows := func(view *testView) {
+		t.Helper()
+		for {
+			m := view.read("frame")
+			view.ack(m)
+			r.mu.Lock()
+			latest := r.revision
+			r.mu.Unlock()
+			if m.Revision == latest {
+				return
+			}
+		}
+	}
+	// report sends input with the report mark. It fails when the input changed the PTY
+	// size before it reached the process, or when the process got other bytes than want.
+	report := func(view *testView, reason, data, want string) {
+		t.Helper()
+		view.send(protocol.Message{Type: "input", Report: true, Data: []byte(data)})
+		if control := next(); control.Type != "input" || string(control.Data) != want {
+			t.Fatalf("%s: %+v", reason, control)
+		}
+	}
+	// typed fails when the input did not move the PTY size to want first.
+	typed := func(view *testView, reason string, message protocol.Message, want protocol.Size) {
+		t.Helper()
+		view.send(message)
+		if control := next(); control.Type != "resize" || control.Size != want {
+			t.Fatalf("%s: %+v", reason, control)
+		}
+		if control := next(); control.Type != "input" || string(control.Data) != string(message.Data) {
+			t.Fatalf("%s: %+v", reason, control)
+		}
+	}
+	first := openTestView(t, s, r, size)
+	shows(first)
+	if control := next(); control.Type != "resize" || control.Size != size {
+		t.Fatalf("first view did not set the PTY size: %+v", control)
+	}
+	second := openTestView(t, s, r, small)
+	shows(second)
+	output("\x1b[?1004h\x1b[?1000h\x1b[?1006h")
+	shows(first)
+	shows(second)
+	report(second, "a focus report moved the PTY size", "\x1b[I", "\x1b[I")
+	report(second, "a focus report moved the PTY size", "\x1b[O", "\x1b[O")
+	// The view of 10 rows shows terminal rows 15 to 24.
+	report(second, "a mouse report did not name the terminal row", "\x1b[<0;3;2M", "\x1b[<0;3;16M")
+	// A larger view shows padding around the terminal. The process gets no report for it.
+	large := openTestView(t, s, r, protocol.Size{Cols: 100, Rows: 30})
+	shows(large)
+	large.send(protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[<0;3;25M")})
+	large.send(protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[<0;81;2M")})
+	large.send(protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[<0;81;2m")})
+	report(large, "a click in the padding reached the process", "\x1b[<0;3;24M", "\x1b[<0;3;24M")
+	report(large, "the release of that click", "\x1b[<0;3;24m", "\x1b[<0;3;24m")
+	// A press on a terminal cell with a release in the padding. The process gets the
+	// release, on the nearest terminal cell.
+	report(large, "the press at the edge", "\x1b[<0;80;2M", "\x1b[<0;80;2M")
+	report(large, "the release in the padding did not reach the process", "\x1b[<0;81;2m", "\x1b[<0;80;2m")
+	report(large, "the focus report after the gesture", "\x1b[O", "\x1b[O")
+	// A frame between a press and its release keeps the gesture, because the frame
+	// writes no mode that did not change.
+	report(large, "the press at the edge", "\x1b[<0;80;2M", "\x1b[<0;80;2M")
+	output("redraw")
+	if redraw := large.read("frame"); redraw.Full || strings.Contains(string(redraw.Data), "\x1b[?1000") {
+		t.Fatalf("the frame of a redraw resets the mouse tracking of the view: %q", redraw.Data)
+	} else {
+		large.ack(redraw)
+	}
+	report(large, "the release after a frame did not reach the process", "\x1b[<0;81;2m", "\x1b[<0;80;2m")
+	// A full frame makes xterm.js stop the reports of a gesture. After the view shows
+	// that frame, a motion in the padding is not a part of the earlier gesture.
+	report(large, "the press at the edge", "\x1b[<0;80;2M", "\x1b[<0;80;2M")
+	large.send(protocol.Message{Type: "resize", Size: protocol.Size{Cols: 100, Rows: 31}})
+	shows(large)
+	large.send(protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[<32;81;2M")})
+	report(large, "a motion in the padding after a full frame reached the process", "\x1b[O", "\x1b[O")
+	shows(first)
+	shows(second)
+	// A receipt does not change a report. The process gets the terminal row, and the
+	// view gets its receipt, also for a report that the process does not get.
+	second.send(protocol.Message{Type: "input", Report: true, ID: "receipt-1", Data: []byte("\x1b[<0;3;2M")})
+	receipt := next()
+	if receipt.Type != "input" || string(receipt.Data) != "\x1b[<0;3;16M" {
+		t.Fatalf("a report with a receipt: %+v", receipt)
+	}
+	receipt.Ack(nil)
+	if m := second.read("input-ack"); m.ID != "receipt-1" || m.Error != "" {
+		t.Fatal(m)
+	}
+	report(second, "the release of the report with a receipt", "\x1b[<0;3;2m", "\x1b[<0;3;16m")
+	large.send(protocol.Message{Type: "input", Report: true, ID: "receipt-2", Data: []byte("\x1b[<0;81;2M")})
+	if m := large.read("input-ack"); m.ID != "receipt-2" || m.Error != "" {
+		t.Fatal(m)
+	}
+	// A resize of a view without the size still does not reach the PTY.
+	wider := protocol.Size{Cols: 42, Rows: 10}
+	second.send(protocol.Message{Type: "resize", Size: wider})
+	shows(second)
+	report(first, "a report from the size owner changed the PTY size", "\x1b[I", "\x1b[I")
+	// The view makes a report from the frame that it shows. The application turns focus
+	// reporting off, but the view did not acknowledge that frame.
+	output("\x1b[?1004l")
+	held := second.read("frame")
+	report(second, "a report of the shown frame moved the PTY size", "\x1b[O", "\x1b[O")
+	second.ack(held)
+	// The view did not acknowledge the frame that turns focus reporting on, and the
+	// application turns it off again.
+	output("\x1b[?1004h")
+	held = second.read("frame")
+	output("\x1b[?1004l")
+	report(second, "a report of the frame in transit moved the PTY size", "\x1b[I", "\x1b[I")
+	second.ack(held)
+	shows(second)
+	// Typed input moves the PTY size to its view first.
+	typed(second, "typed input did not move the PTY size first", protocol.Message{Type: "input", Data: []byte("x")}, wider)
+	// Marked input is user input when the frames of the view have the mode off.
+	shows(first)
+	typed(first, "input without the focus mode did not move the PTY size", protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[I")}, size)
+	// A paste has no report mark. It is user input, also when it has the bytes of a
+	// report. The process and the record get the bytes of the paste: not another row,
+	// and also a position outside the terminal.
+	output("\x1b[?1004h")
+	shows(first)
+	shows(second)
+	shows(large)
+	typed(second, "a paste did not move the PTY size", protocol.Message{Type: "input", Data: []byte("\x1b[<0;3;2M")}, wider)
+	typed(large, "a paste with a position in the padding", protocol.Message{Type: "input", Data: []byte("\x1b[<0;81;2M")}, protocol.Size{Cols: 100, Rows: 31})
+	typed(second, "a paste with the bytes of a focus report", protocol.Message{Type: "input", Data: []byte("\x1b[I")}, wider)
+	typed(first, "a message with the bytes of a focus report", protocol.Message{Type: "input", ID: "draft-1", Data: []byte("\x1b[I")}, size)
+}
+
 func TestEndedScreenCacheAndArchiveReconstruction(t *testing.T) {
 	store, err := history.Open(filepath.Join(t.TempDir(), "history.sqlite"))
 	if err != nil {
