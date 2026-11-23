@@ -30,7 +30,8 @@ class Node {
   dataset = {};
   style = {};
   className = '';
-  classList = { toggle() {}, add() {}, remove() {} };
+  classes = new Set();
+  classList = { toggle: (name, on) => { if (on) this.classes.add(name); else this.classes.delete(name); }, add() {}, remove() {} };
   hidden = false;
   disabled = false;
   value = '';
@@ -54,7 +55,7 @@ class Node {
 const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-scope-id', 'diff-scope-label', 'diff-scope-menu',
   'diff-split', 'diff-unified', 'diff-summary', 'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts',
   'diff-toggle', 'diff-source', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
-  'diff-refresh', 'diff-close', 'preview-close', 'diff-menu-box', 'diff-menu-open', 'diff-menu', 'diff-menu-status'];
+  'diff-refresh', 'diff-close', 'diff-back', 'preview-close', 'diff-menu-box', 'diff-menu-open', 'diff-menu', 'diff-menu-status'];
 // The items of the file menu, in menu order.
 const menuItems = ['diff-copy-path', 'diff-copy-relative', 'diff-reveal-line', 'diff-reveal', 'diff-open'];
 const server = { protocol: 'test', instance: 'test', port: 1234, dataDir: '/fixture' };
@@ -479,6 +480,30 @@ test('a result goes away when the view selects another session', async () => {
   pending[3].reject(new Error('late failure'));
   await settle();
   assert.equal(nodes['diff-menu-status'].textContent, '');
+});
+
+test('a click on a file shows the file view, and Back, another view, or another session shows the list', async () => {
+  const { nodes, pending, pane } = setup();
+  const reading = () => nodes['diff-pane'].classes.has('reading');
+  const list = node => [node, ...node.children.flatMap(list)];
+  const click = () => list(nodes['diff-list']).find(node => node.dataset.file === 'a.txt').onclick();
+  pending[0].resolve(changes(baselines.head));
+  await settle();
+  // The pane selects the first changed file itself. The mobile layout still shows the list.
+  assert.equal(reading(), false);
+  click();
+  assert.equal(reading(), true);
+  nodes['diff-back'].onclick();
+  assert.equal(reading(), false);
+  assert.equal(document.activeElement.dataset.file, 'a.txt', 'the focus goes back to the row of the file');
+
+  click();
+  pane.setShown(true, 'files');
+  assert.equal(reading(), false, 'another view starts with its list');
+  pane.setShown(true, 'changed');
+  click();
+  pane.select('other');
+  assert.equal(reading(), false, 'another session starts with its list');
 });
 
 // The IDs of the shown items of the file menu.

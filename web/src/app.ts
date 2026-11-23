@@ -20,7 +20,7 @@ import { RowMenus } from './row-menu.js';
 import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
 import { terminalSize } from './terminal-size.js';
-import { Sidebar, nearestRow } from './sidebar.js';
+import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
 import { mergeSessions, placeText, sessionGroups, sessionWindow, shownChildren } from './projects.js';
 import type { Family } from './projects.js';
@@ -79,6 +79,9 @@ const elements = {
   'page-bar-reload': element('page-bar-reload', HTMLButtonElement),
   'list-problem': element('list-problem', HTMLElement),
   'stop': element('stop', HTMLButtonElement),
+  'menu-stop': element('menu-stop', HTMLButtonElement),
+  'menu-continue': element('menu-continue', HTMLButtonElement),
+  'menu-continue-problem': element('menu-continue-problem', HTMLElement),
   'reconnect': element('reconnect', HTMLButtonElement),
   'reload-output': element('reload-output', HTMLButtonElement),
   'continue-action': element('continue-action', HTMLElement),
@@ -196,7 +199,9 @@ const diffPane = new DiffPane(() => server);
 diffPane.workspace = session => selected?.id === session ? selected.workspace : '';
 const sideTerminal = new SideTerminal(() => server, terminalTheme);
 const workspacePane = new WorkspacePane(diffPane, sideTerminal);
-new Sidebar();
+// The address tells the view before a session of the address is open.
+const sidebar = new Sidebar(() => parseRoute(location.pathname).page === 'home');
+const mobileLayout = matchMedia(mobileQuery);
 new FileListWidth();
 
 let showingSettings = false;
@@ -377,8 +382,13 @@ function controls() {
   // Worktree creation shows as running, but only a terminal can stop or reconnect.
   const terminalLive = !!connection?.peer?.active || hasTerminal(selected);
   const shownRun = terminalPicker.shownRun;
-  $('stop').hidden = showingSettings || !terminalLive || !!shownRun;
-  $('stop').disabled = busy;
+  // In the mobile layout, the More menu has Stop session and Continue in new terminal.
+  // The toolbar then keeps its room for the title.
+  const mobile = mobileLayout.matches;
+  const stoppable = !showingSettings && terminalLive && !shownRun;
+  $('stop').hidden = !stoppable || mobile;
+  $('menu-stop').hidden = !stoppable || !mobile;
+  $('stop').disabled = $('menu-stop').disabled = busy;
   // A view of an earlier terminal uses Back to live terminal instead. A live terminal
   // gets Reconnect in the toolbar. An ended terminal gets Reload output in the More menu.
   const connected = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active || !!shownRun;
@@ -387,9 +397,12 @@ function controls() {
   $('reconnect').disabled = $('reload-output').disabled = busy;
   const continuation = continueAction(selected, !!connection?.peer?.active, shownRun);
   const continueControl = $('continue-action');
-  continueControl.hidden = showingSettings || !continuation.visible;
-  $('continue-session').disabled = $('continue-submit').disabled = busy || !!continuation.problem;
-  $('continue-unavailable').textContent = continuation.problem;
+  const continuable = !showingSettings && continuation.visible;
+  continueControl.hidden = !continuable || mobile;
+  $('menu-continue').hidden = !continuable || !mobile;
+  $('continue-session').disabled = $('menu-continue').disabled = $('continue-submit').disabled = busy || !!continuation.problem;
+  $('continue-unavailable').textContent = $('menu-continue-problem').textContent = continuation.problem;
+  $('menu-continue-problem').hidden = $('menu-continue').hidden || !continuation.problem;
   if (continuation.problem) {
     continueControl.dataset.tip = continuation.problem;
     continueControl.tabIndex = 0;
@@ -800,8 +813,11 @@ function size(view: Terminal) { return terminalSize(view); }
 
 function requestFit() {
   if (!terminal || !connection?.ready || !connection?.peer?.active || connection?.resizing) return;
+  // A hidden terminal has no size. A narrow main area hides the session while it shows
+  // the workspace pane. Keep the PTY size until the terminal shows again.
+  if (!$('terminal').clientWidth || !$('terminal').clientHeight) return;
   const proposed = fit?.proposeDimensions();
-  const dimensions = proposed ? terminalSize(proposed) : undefined;
+  const dimensions = proposed && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows) ? terminalSize(proposed) : undefined;
   if (dimensions && (dimensions.cols !== terminal.cols || dimensions.rows !== terminal.rows)) {
     // Apply the server's size event in stream order, after output at the old size.
     connection.peer.send({ type: 'resize', size: dimensions });
@@ -870,6 +886,7 @@ async function leaveView() {
 async function openSession(session: SessionView, launch?: Launch, run = ''): Promise<void> {
   if (!server) throw new Error('The server is unavailable. Reload this page.');
   const start = !!launch;
+  sidebar.setDrawer(false);
   if (!start && !run && !showingSettings && selected?.id === session.id && connection?.peer?.active) {
     terminal?.focus();
     return;
@@ -1094,11 +1111,13 @@ async function showWelcome(): Promise<void> {
   $('status').hidden = true;
   history.replaceState(null, '', homePath);
   renderSessions();
+  sidebar.setDrawer(true);
 }
 
 async function showSettings(): Promise<void> {
   await leaveView();
   await settingsView.open();
+  sidebar.setDrawer(false);
   showingSettings = true;
   workspacePane.select('');
   $('session-view').hidden = $('welcome').hidden = true;
@@ -1361,6 +1380,9 @@ async function initialize() {
   $('reconnect').onclick = () => action(async () => { if (selected) await openSession(selected); }, failed('reconnect to', selected));
   $('reload-output').onclick = () => action(async () => { if (selected) await openSession(selected); }, failed('reload the output of', selected));
   $('continue-session').onclick = () => action(showContinue, failed('continue', selected));
+  mobileLayout.addEventListener('change', controls);
+  $('menu-stop').onclick = () => $('stop').click();
+  $('menu-continue').onclick = () => $('continue-session').click();
   $('handoff-open').onclick = () => action(async () => {
     if (!selected?.id) return;
     await loadHandoff(selected.id);
