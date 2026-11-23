@@ -28,7 +28,7 @@ The Web client section has these features:
 
 | Feature | Contents |
 | --- | --- |
-| [Page and connection](#page-and-connection) | The page URL, the server check, and the favicon. |
+| [Page and connection](#page-and-connection) | The page URL, the server check, the favicon, and the home screen icon. |
 | [Page messages](#page-messages) | The place of each warning and error. |
 | [Mobile layout](#mobile-layout) | The layout of a very narrow window: the sidebar drawer, the short toolbar, and the file list. |
 | [Sidebar](#sidebar) | Projects, session groups, width, search, and refresh. |
@@ -672,8 +672,13 @@ type and send messages. The PTY uses the size of the tab that most recently sent
 
 The browser favicon uses the same pixel logo as the macOS menu bar, in six rainbow
 bands from violet to red. The logo selects brighter band colors when the browser uses
-dark appearance. The visible product name is bbflow. The sidebar shows it as text at the
-top left, without the logo.
+dark appearance. iOS ignores SVG icons for a web app on the home screen. For it, the
+page links `/assets/apple-touch-icon.png`. The build renders this 180-pixel PNG from the
+same logo with a 2-unit margin. It has an opaque mid-gray tile, so that it stays visible
+on light and dark wallpapers. It uses the brighter band colors of dark appearance. iOS
+saves the icon when the user adds the page, so an earlier home screen icon stays until
+the user adds the page again. The visible product name is bbflow. The sidebar shows it
+as text at the top left, without the logo.
 
 Server start and repeated start print a clickable `http://localhost:PORT/` URL without
 opening a browser. `bbflow ui` and the **Open UI** menu item open the home page of the
@@ -3276,8 +3281,10 @@ session, and protection against stopping a replacement instance. A manual macOS 
 confirmed Open UI and Quit bbflow from the standalone executable. The shared logo was
 checked in light and dark browser themes. The generated menu bar PNG was checked to
 contain only fully transparent or fully opaque pixels. A manual check confirmed the icon
-in the dark macOS menu bar. The updated native companion also launched and exited with
-its server.
+in the dark macOS menu bar. A unit test verifies that the page links the
+apple-touch-icon, and that the icon is a 180-pixel PNG with only opaque pixels. It also
+verifies the mid-gray tile and the dark band colors of the logo. The updated native
+companion also launched and exited with its server.
 
 The automated checks of [remote access](#remote-access) use no Tailscale Serve proxy.
 Each check sends the requests of such a proxy to the loopback port:

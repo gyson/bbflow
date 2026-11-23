@@ -24,6 +24,19 @@ if (!logo.includes('viewBox="0 0 16 16"')) throw new Error('src/bbflow.svg must 
 const menuLogo = logo.replace('<svg ', '<svg width="44" height="44" ').replace('viewBox="0 0 16 16"', 'viewBox="-3 -3 22 22"');
 await writeFile(new URL('assets/menubar.png', output),
   new Resvg(menuLogo, { font: { loadSystemFonts: false } }).render().asPng());
+// iOS ignores SVG icons for a home screen web app and shows transparent pixels as black.
+// Render a 180-pixel PNG with a 2-unit margin, so each unit of the pixel grid is 9 pixels.
+// A mid-gray tile stays visible on light and dark wallpapers. The bright dark-appearance
+// band colors apply without their media query, because the icon has one fixed appearance.
+const darkRules = logo.match(/@media \(prefers-color-scheme: dark\) \{([\s\S]*)\}\s*<\/style>/)?.[1];
+if (!darkRules) throw new Error('src/bbflow.svg must define its dark colors in one media query');
+const touchLogo = logo
+  .replace(/<style>[\s\S]*<\/style>/, `<style>${darkRules}</style>`)
+  .replace(/<svg [^>]*>/, (tag) => `${tag.replace('<svg ', '<svg width="180" height="180" ').replace('viewBox="0 0 16 16"', 'viewBox="-2 -2 20 20"')}
+  <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a4d55"/><stop offset="1" stop-color="#33353b"/></linearGradient>
+  <rect x="-2" y="-2" width="20" height="20" fill="url(#tile)"/>`);
+await writeFile(new URL('assets/apple-touch-icon.png', output),
+  new Resvg(touchLogo, { font: { loadSystemFonts: false } }).render().asPng());
 // The logo selects its own light or dark colors.
 await writeFile(new URL('assets/favicon.svg', output), logo.replace('<svg ', '<svg width="32" height="32" '));
 await writeFile(new URL('assets/licenses.txt', output), await licenseNotices(bundledPackages(result.metafile)));
