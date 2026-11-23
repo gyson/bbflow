@@ -154,14 +154,14 @@ One row for each session that has launch choices.
 
 ### `settings`
 
-One row with the appearance, tool list, launch defaults, update check, and port of the
-instance.
+One row with the appearance, tool list, launch defaults, update check, port, and remote
+access of the instance.
 
 | Column | Meaning |
 | --- | --- |
 | `id` | Always `1`. |
 | `revision` | Revision of the settings. |
-| `data` | JSON with the appearance, launch defaults, tools, `titleTool`, `titleCommand`, `updateCheck`, and `port`. Each tool has an ID, name, and startup command. `titleTool` is `none`, a built-in title tool ID, or `custom`. `titleCommand` is the command of the custom title tool, or empty. `port` is the port of the next server start, or `0` for the automatic port. |
+| `data` | JSON with the appearance, launch defaults, tools, `titleTool`, `titleCommand`, `updateCheck`, `port`, `remoteHost`, and `remoteLogin`. Each tool has an ID, name, and startup command. `titleTool` is `none`, a built-in title tool ID, or `custom`. `titleCommand` is the command of the custom title tool, or empty. `port` is the port of the next server start, or `0` for the automatic port. `remoteHost` and `remoteLogin` turn remote access on while both are set. |
 
 ### `server`
 

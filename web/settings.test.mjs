@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
+import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, remoteStatus, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
@@ -235,6 +235,17 @@ test('a port change needs a save', () => {
   const automatic = { ...settings, port: 0 };
   assert.ok(sameSettings(automatic, { ...automatic }));
   assert.ok(!sameSettings(automatic, { ...automatic, port: 50001 }));
+});
+
+test('a remote access change needs a save, and its status needs both values', () => {
+  const off = { ...settings, remoteHost: '', remoteLogin: '' };
+  assert.ok(sameSettings(off, { ...off }));
+  assert.ok(!sameSettings(off, { ...off, remoteHost: 'my-mac.example.ts.net' }));
+  assert.ok(!sameSettings(off, { ...off, remoteLogin: 'user@example.com' }));
+  assert.equal(remoteStatus('', ''), 'Remote access is off.');
+  assert.match(remoteStatus('my-mac.example.ts.net', ''), /^Remote access is off\. It needs both/);
+  assert.match(remoteStatus('', 'user@example.com'), /^Remote access is off\. It needs both/);
+  assert.equal(remoteStatus('my-mac.example.ts.net', 'user@example.com'), 'Remote access is on for my-mac.example.ts.net and the Tailscale user user@example.com.');
 });
 
 test('the Port field reads a whole number or an empty field', () => {

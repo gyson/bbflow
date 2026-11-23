@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -36,7 +37,15 @@ type Settings struct {
 	// Port is the loopback port that the server uses at its next start. 0 selects the
 	// automatic port. A change applies only after a server restart.
 	Port int `json:"port"`
+	// RemoteHost is the Host of the requests that a reverse proxy on this computer, such
+	// as Tailscale Serve, forwards to the server. RemoteLogin is the Tailscale login that
+	// each of these requests must carry. Remote access is on only while both are set.
+	RemoteHost  string `json:"remoteHost"`
+	RemoteLogin string `json:"remoteLogin"`
 }
+
+// RemoteAccess tells if the settings turn remote access on.
+func (s Settings) RemoteAccess() bool { return s.RemoteHost != "" && s.RemoteLogin != "" }
 
 // The lowest port that Settings accepts. Lower ports are for system services.
 const MinPort = 1024
@@ -142,6 +151,13 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	if slices.Contains(blockedPorts, settings.Port) {
 		return settings, fmt.Errorf("web browsers do not open port %d; choose another port", settings.Port)
 	}
+	var err error
+	if settings.RemoteHost, err = validRemoteHost(settings.RemoteHost); err != nil {
+		return settings, err
+	}
+	if settings.RemoteLogin, err = validRemoteLogin(settings.RemoteLogin); err != nil {
+		return settings, err
+	}
 	if len(settings.Base) > 250 || strings.ContainsAny(settings.Base, "\x00\r\n") {
 		return settings, errors.New("invalid default Git base")
 	}
@@ -166,6 +182,55 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	}
 	settings.Revision++
 	return settings, nil
+}
+
+// validRemoteHost returns the saved form of Settings.RemoteHost: lower case, without
+// surrounding spaces. The host is a DNS name with at least two labels and an optional
+// port, in the form that a browser sends in the Host header. An IP address is not a host
+// name, and the loopback names are always local.
+func validRemoteHost(host string) (string, error) {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return "", nil
+	}
+	invalid := errors.New("remote host must be a DNS name such as my-mac.example.ts.net, with an optional port")
+	name, port, hasPort := strings.Cut(host, ":")
+	if hasPort {
+		if number, err := strconv.Atoi(port); err != nil || number < 1 || number > 65535 || strconv.Itoa(number) != port {
+			return "", invalid
+		}
+	}
+	labels := strings.Split(name, ".")
+	if len(name) > 253 || len(labels) < 2 {
+		return "", invalid
+	}
+	numeric := true
+	for _, label := range labels {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return "", invalid
+		}
+		for _, c := range []byte(label) {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+				return "", invalid
+			}
+			numeric = numeric && c >= '0' && c <= '9'
+		}
+	}
+	if numeric || labels[len(labels)-1] == "localhost" {
+		return "", invalid
+	}
+	return host, nil
+}
+
+// validRemoteLogin returns Settings.RemoteLogin without surrounding spaces. Tailscale
+// Serve sends a login of printable ASCII characters as it is, so only such a login can
+// match.
+func validRemoteLogin(login string) (string, error) {
+	login = strings.TrimSpace(login)
+	if len(login) > 254 || strings.IndexFunc(login, func(r rune) bool { return r <= ' ' || r > '~' }) >= 0 {
+		return "", errors.New("Tailscale login must be at most 254 printable ASCII characters, without spaces")
+	}
+	return login, nil
 }
 
 // TitleChoice is a selected title tool and the saved custom command. Command is empty

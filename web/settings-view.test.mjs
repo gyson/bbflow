@@ -64,6 +64,8 @@ class Node {
 const editors = ['add-tool', 'edit-tool'];
 const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-tool', 'settings-worktree', 'settings-base',
   'settings-update-check', 'settings-port-form', 'settings-port', 'settings-port-error', 'settings-port-status',
+  'settings-remote-form', 'settings-remote-host', 'settings-remote-login', 'settings-remote-save', 'settings-remote-error',
+  'settings-remote-status',
   'settings-error', 'settings-status', 'settings-tools', 'tool-error', 'tool-remove-dialog', 'tool-remove-form',
   'cancel-tool-remove', 'tool-remove-summary', 'tool-remove-default', 'title-settings', 'title-tool', 'title-spinner',
   'title-builtin', 'title-tool-command', 'title-custom', 'title-custom-command', 'title-custom-save', 'title-test',
@@ -71,7 +73,7 @@ const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-
 const agent = { id: 'a', name: 'Agent', command: 'agent' };
 const other = { id: 'b', name: 'Other', command: 'other' };
 const saved = { revision: 4, appearance: 'system', defaultTool: '', worktree: false, base: 'HEAD', tools: [agent, other],
-  titleTool: 'none', titleCommand: '', updateCheck: true, port: 0 };
+  titleTool: 'none', titleCommand: '', updateCheck: true, port: 0, remoteHost: '', remoteLogin: '' };
 const server = { protocol: 'test', instance: 'test', port: 50000, dataDir: '/fixture' };
 const event = { preventDefault() {} };
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -89,7 +91,8 @@ async function setup() {
     nodes[`${prefix}-error`].hidden = true;
     nodes['settings-tools'].append(form);
   }
-  for (const id of ['settings-port-error', 'settings-error', 'tool-error', 'title-test-result']) nodes[id].hidden = true;
+  for (const id of ['settings-port-error', 'settings-remote-error', 'settings-error', 'tool-error', 'title-test-result']) nodes[id].hidden = true;
+  nodes['settings-remote-form'].append(nodes['settings-remote-host'], nodes['settings-remote-login'], nodes['settings-remote-save']);
   nodes['settings-view'].hidden = true;
   for (const [id, node] of Object.entries(nodes)) node.id = id;
   for (const name of ['HTMLElement', 'HTMLFormElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLButtonElement', 'HTMLDialogElement']) globalThis[name] = Node;
@@ -334,4 +337,67 @@ test('a removal asks again when the tool became the default tool in another clie
   assert.equal(request.settings.defaultTool, '');
   assert.deepEqual(request.settings.tools, [agent]);
   assert.deepEqual(toasts, []);
+});
+
+test('remote access saves both fields with Save and shows the saved values', async () => {
+  const { nodes, pending, view, toasts, reply, type } = await setup();
+  assert.equal(nodes['settings-remote-status'].textContent, 'Remote access is off.');
+  type('settings-remote-host', ' My-Mac.Example.ts.net ');
+  type('settings-remote-login', 'user@example.com');
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Remote access');
+  assert.equal(pending.length, 0);
+  nodes['settings-remote-form'].onsubmit(event);
+  await tick();
+  // The fields take no edit during the save.
+  assert.ok(nodes['settings-remote-host'].disabled && nodes['settings-remote-login'].disabled && nodes['settings-remote-save'].disabled);
+  const sent = pending[0].request.settings;
+  assert.deepEqual([sent.remoteHost, sent.remoteLogin], ['My-Mac.Example.ts.net', 'user@example.com']);
+  // The server saves the host name in lower case.
+  await reply('settings-save', { ...sent, remoteHost: 'my-mac.example.ts.net', revision: sent.revision + 1 });
+  assert.equal(nodes['settings-remote-host'].value, 'my-mac.example.ts.net');
+  assert.equal(nodes['settings-remote-status'].textContent, 'Remote access is on for my-mac.example.ts.net and the Tailscale user user@example.com.');
+  assert.ok(!nodes['settings-remote-host'].disabled && !nodes['settings-remote-save'].disabled);
+  assert.ok(!view.unsaved);
+
+  // One empty field turns remote access off.
+  type('settings-remote-login', '');
+  nodes['settings-remote-form'].onsubmit(event);
+  await tick();
+  await reply('settings-save');
+  assert.equal(nodes['settings-remote-status'].textContent, 'Remote access is off. It needs both the host name and the login.');
+  assert.deepEqual(toasts, []);
+});
+
+test('rejected remote access keeps its text, and Done discards it', async () => {
+  const { nodes, view, toasts, fail, type, reopen } = await setup();
+  const rejection = 'remote host must be a DNS name such as my-mac.example.ts.net, with an optional port';
+  type('settings-remote-host', 'localhost');
+  nodes['settings-remote-form'].onsubmit(event);
+  await tick();
+  await fail('settings-save', rejection);
+  assert.ok(!nodes['settings-remote-error'].hidden);
+  assert.equal(nodes['settings-remote-error'].textContent, rejection);
+  assert.equal(nodes['settings-remote-host'].value, 'localhost');
+  assert.ok(!nodes['settings-remote-host'].disabled);
+  assert.ok(view.unsaved);
+  // The new text hides the error of the earlier text.
+  type('settings-remote-host', 'localhos');
+  assert.ok(nodes['settings-remote-error'].hidden);
+  // An edit does not save without Save.
+  view.close();
+  assert.equal(nodes['settings-remote-host'].value, '');
+  assert.ok(!view.unsaved);
+  assert.deepEqual(toasts, []);
+
+  // The reply comes after the click on Done.
+  await reopen();
+  type('settings-remote-host', 'localhost');
+  nodes['settings-remote-form'].onsubmit(event);
+  await tick();
+  view.close();
+  await fail('settings-save', rejection);
+  assert.deepEqual(toasts, [['Remote access did not save.', rejection]]);
+  assert.equal(nodes['settings-remote-host'].value, '');
+  assert.ok(!nodes['settings-remote-host'].disabled);
+  assert.ok(!view.unsaved);
 });

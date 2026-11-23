@@ -43,6 +43,8 @@ type Server struct {
 	// releases is nil for a build that cannot update, such as a development build.
 	releases Releases
 	updates  updates
+	// remote admits the requests for the remote host of Settings.
+	remote remoteAccess
 	// open opens a file in the default browser of the user. Tests replace it. A nil
 	// open rejects workspace-open.
 	open func(ctx context.Context, path string) error
@@ -67,6 +69,10 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		Executable: executable,
 	}, releases: releases, open: desktop.OpenInBrowser, reveal: desktop.Reveal}
 	s.updates.load(store)
+	// Remote access stays off when the settings cannot be read.
+	if settings, err := store.Settings(); err == nil {
+		s.remote.saved(settings)
+	}
 	if err := s.ensureGeneral(); err != nil {
 		return protocol.ServerInfo{}, err
 	}
@@ -81,6 +87,10 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		}()
 	}
 	upgrader := websocket.Upgrader{HandshakeTimeout: 5 * time.Second}
+	// local tells if a Host header names the loopback host of the server.
+	local := func(host string) bool {
+		return host == listener.Addr().String() || host == fmt.Sprintf("localhost:%d", s.info.Port)
+	}
 	mux := http.NewServeMux()
 	webui.Register(mux, func() (string, error) {
 		settings, err := s.store.Settings()
@@ -108,19 +118,30 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		}
 		wire := protocol.Wrap(conn)
 		defer wire.Close()
+		if !local(r.Host) {
+			if !s.remote.add(wire, r) {
+				return
+			}
+			defer s.remote.remove(wire)
+		}
 		s.handle(ctx, wire)
 	})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Apply the loopback Host restriction to both assets and WebSockets.
-		// The upgrader also rejects foreign browser origins.
-		if r.Host != listener.Addr().String() && r.Host != fmt.Sprintf("localhost:%d", s.info.Port) {
-			http.Error(w, "invalid local host", http.StatusForbidden)
-			return
+		// Apply the Host restriction to both assets and WebSockets. A Host that is not
+		// the loopback host needs remote access. The upgrader also rejects foreign browser
+		// origins.
+		connect := fmt.Sprintf("ws://127.0.0.1:%d ws://localhost:%d", s.info.Port, s.info.Port)
+		if !local(r.Host) {
+			if err := s.remote.check(r); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+			connect = s.remote.origins()
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", fmt.Sprintf("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:%d ws://localhost:%d; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'", s.info.Port, s.info.Port))
+		w.Header().Set("Content-Security-Policy", fmt.Sprintf("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' %s; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'", connect))
 		mux.ServeHTTP(w, r)
 	})
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
@@ -187,6 +208,11 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 			s.updates.saved(result)
 		}
 		s.reply(conn, result, err)
+		// A change of remote access closes the remote connections. Reply first, because
+		// this connection can be one of them.
+		if err == nil {
+			s.remote.saved(result)
+		}
 	case "workspace-inspect":
 		s.reply(conn, inspectRepository(ctx, request.Workspace), nil)
 	case "project-draft":

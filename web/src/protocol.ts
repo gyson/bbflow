@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/37';
+export const VERSION = 'bbflow/38';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -29,9 +29,10 @@ export interface Project { id: string; name: string; workspace: string; created:
 
 export interface Tool { id: string; name: string; command: string }
 // port 0 selects the automatic port. A saved port applies at the next server start.
+// remoteHost and remoteLogin turn remote access on while both are set.
 // titleCommand is the command of the custom title tool. It stays saved when another title
 // tool is selected.
-export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[]; titleTool: string; titleCommand: string; updateCheck: boolean; port: number }
+export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[]; titleTool: string; titleCommand: string; updateCheck: boolean; port: number; remoteHost: string; remoteLogin: string }
 // The server owns the command of each built-in title tool. Settings.titleTool is none, a
 // built-in tool ID, or custom.
 export interface TitleTool { id: string; name: string; command: string }
@@ -283,7 +284,9 @@ export class Peer {
     Socket: SocketConstructor = WebSocket,
     host = location.host,
   ) {
-    this.socket = new Socket(`ws://${host}/ws`);
+    // An HTTPS page cannot open ws://. Remote access through an HTTPS proxy uses wss://.
+    const scheme = globalThis.location?.protocol === 'https:' ? 'wss' : 'ws';
+    this.socket = new Socket(`${scheme}://${host}/ws`);
     const limit = responseLimit(request);
     this.timer = setTimeout(() => this.fail('Server response timed out.', true), limit);
     this.heartbeat = setInterval(() => {
