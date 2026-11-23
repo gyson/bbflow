@@ -24,9 +24,9 @@ Follow these rules in all text:
   frozen fixtures unchanged during style edits.
 
 Reference text states rules, procedures, and behavior. It includes `README.md`, this
-file, `SPEC.md`, `PROTOCOL.md`, `COMMANDS.md`, `REMOTE.md`, `DEVELOPMENT.md`,
-`cmd/bbflow/skill.md`, the project skills, UI text, and code comments. Follow these
-additional rules in reference text:
+file, `GUIDE.md`, `SPEC.md`, `PROTOCOL.md`, `COMMANDS.md`, `REMOTE.md`,
+`DEVELOPMENT.md`, `cmd/bbflow/skill.md`, the project skills, UI text, and code comments.
+Follow these additional rules in reference text:
 
 - Use short, clear sentences. Prefer sentences of fewer than 25 words.
 - Give one instruction in each sentence.
@@ -82,7 +82,8 @@ reference details, such as limits, format numbers, or UI behavior, into the READ
 
 | Document | Contents | Update it when |
 | --- | --- | --- |
-| [README.md](README.md) | Keep the README short and for users. It covers the purpose, installation, first use, data handling, and links to the other documents. | These user facts change. |
+| [README.md](README.md) | Keep the README short and for new users. It covers the purpose, a screenshot, installation, the first session, a privacy summary, and links to the other documents. | These user facts change. |
+| [docs/GUIDE.md](docs/GUIDE.md) | The user guide for the web UI: tools, projects, sessions, the handoff between agents, search, tips, and where the data is. `SPEC.md` owns the rules and limits. | The steps or the UI labels of these tasks change. |
 | [docs/GOAL.md](docs/GOAL.md) | Product intent: what the project is intended to become. | The intent changes. |
 | [docs/PLAN.md](docs/PLAN.md) | Planned implementation work, at a high level. | A plan starts, changes, or is completed. |
 | [docs/SPEC.md](docs/SPEC.md) | What is currently implemented: behavior, architecture, interfaces, and verified limitations. Do not put proposals or plans there. | The implementation changes. Update it alongside the change. Until code exists, a minimal statement of the current state is sufficient. |
@@ -133,6 +134,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   home screen icon stay sharp. When you change its shape or colors, update the README
   copies in `docs/images/` too. The frontend build uses `@resvg/resvg-js` to render the
   embedded PNG images. Commit the SVG source, not the generated images.
+- The README and `docs/GUIDE.md` show screenshots of the web UI from `docs/images/`.
+  They are the only committed PNG files. When a change makes a screenshot incorrect,
+  capture it again. See [Screenshots](docs/DEVELOPMENT.md#screenshots).
 - Build with `make build`. Start the server with `./bin/bbflow server start`. Open
   `./bin/bbflow ui`.
 - Local builds use `~/.bbflow-dev`. `make release` produces `bin/release/bbflow`, which

@@ -93,6 +93,51 @@ GitHub selects README images from its own theme, so the README uses fixed-color 
 and dark copies in `docs/images/`. `web/logo.test.mjs` checks that the copies keep the
 shape and colors of the source.
 
+## Screenshots
+
+The README and `GUIDE.md` show screenshots of the web UI from `docs/images/`. The
+screenshots use only the dark appearance.
+
+| File | View | Viewport |
+| --- | --- | --- |
+| `session.png` | A Claude Code session in the demo project **Orbit API** | 1200 x 836 |
+| `draft.png` | The demo draft **Plan release notes**, with the tool **Claude** | 1200 x 820 |
+
+To capture the screenshots again, do these steps:
+
+1. Start a [demo instance](#demo-instance) in `/Users/Shared/bbflow-demo`, then add the
+   demo data. Use a shell that is not inside an agent session.
+
+   ```sh
+   make build
+   DISABLE_AUTO_UPDATE=true ./bin/bbflow --dir /Users/Shared/bbflow-demo server start
+   ./bin/bbflow-demo --dir /Users/Shared/bbflow-demo seed
+   ```
+
+   The UI shows the instance path, so the path must not contain a user name. Each
+   session inherits the environment of the server.
+2. In **Orbit API**, create a draft with the tool **Claude** and without **Use
+   worktree**. Start the session.
+3. Accept the trust question of Claude Code. Claude Code saves this answer in
+   `~/.claude.json`.
+4. Send one short question about `internal/orbit/period.go` from the message editor.
+   Ask for no file changes.
+5. Write a second message in the message editor. Do not send it.
+6. Open the draft **Plan release notes**. Select the tool **Claude**. The seed selects
+   **Demo agent** for this draft.
+7. Open each view in a browser with the viewport of the table. Use the dark color
+   scheme and a device scale factor of 2.
+8. Capture each page.
+9. Remove the demo instance.
+
+   ```sh
+   ./bin/bbflow-demo --dir /Users/Shared/bbflow-demo clean
+   ```
+
+Before you commit a screenshot, make sure that it shows no account name, no home
+folder, and no real session. The agent session uses the account of the person who
+captures it, and it calls the model one time.
+
 ## Database migrations
 
 When you change the schema or a durable data format, including stored JSON, do these
