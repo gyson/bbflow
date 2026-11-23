@@ -29,17 +29,20 @@ Claude Code.
 1. Install the CLI of the agent on PATH.
 2. Sign in to the agent in a terminal, as you do without bbflow.
 3. In bbflow, click **Settings** at the bottom of the sidebar.
-4. Give the tool a name and a startup command, for example **Codex** with `codex`.
+4. Enter a name and a startup command for the tool, for example **Codex** with `codex`.
+5. Click **Add tool**. bbflow does not save the tool before this step.
 
 **Shell** is always available. It starts the shell without a command.
 
 ## Add a project
 
 A project is a folder that you save in the sidebar. A new session of a project starts
-in that folder.
+in that folder. If you select **Use worktree**, the session starts in a new worktree of
+that folder.
 
 1. Click **＋ Project** at the bottom of the sidebar.
-2. Select an existing folder.
+2. Enter the path of an existing folder in **Folder**. The project name is optional.
+3. Click **Add project**.
 
 **General** is always available for work across projects.
 
@@ -68,10 +71,17 @@ Use this procedure after a session ends, for example when an agent reaches a quo
 limit.
 
 1. Click **Continue in new terminal**.
-2. Select the tool for the new terminal. bbflow writes a read-only handoff folder with
-   the earlier terminals and messages.
-3. Wait until the new agent is ready.
-4. Click **Handoff prompt** in the message editor, and send the prompt.
+2. Select the tool for the new terminal.
+3. Click **Start new terminal**. bbflow writes a read-only handoff folder with the
+   earlier terminals and messages. Then it starts the tool.
+4. Wait until the new agent is ready.
+5. Click **Handoff prompt** in the message editor.
+6. Click **Put in message editor**.
+7. Click **Send**.
+
+**Put in message editor** works only while the message editor is empty. If the editor
+has a draft, click **Copy prompt** in the same dialog. Then paste the prompt where you
+want it.
 
 The prompt gives the new agent a record of the earlier work. It does not restore the
 internal state of the earlier agent.
@@ -91,9 +101,12 @@ Tailscale Serve. See [Remote access with Tailscale Serve](REMOTE.md) for the set
 
 ## Tips
 
-- **Keep the full output.** Run agents in the normal screen to keep their full output
-  in the handoff transcript. For Codex, use `codex --no-alt-screen`. For Claude Code,
-  keep the fullscreen renderer off.
+- **Keep more output for the handoff.** Run agents in the normal screen. A program that
+  uses the alternate screen leaves only its last screen in the handoff transcript. For
+  Codex, use `codex --no-alt-screen`. For Claude Code, keep the fullscreen renderer off.
+  A long session can still exceed the scrollback of its terminal. The handoff transcript
+  then omits the oldest rows. The original recording keeps them. See the limits of
+  [Continue in a new terminal](SPEC.md#continue-in-a-new-terminal).
 - **Share a tool set.** To share a tool set with a team, write a setup script with
   `bbflow tool add` and `bbflow settings set`. See
   [Manage tools](COMMANDS.md#manage-tools).

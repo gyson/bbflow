@@ -45,9 +45,10 @@ it needs no other tools. If that directory is not on your PATH, add
    bbflow ui
    ```
 
-2. Click **Settings**. Add a tool with a name and a startup command, for example
-   **Codex** with `codex`. The agent CLI must be on PATH and signed in.
-3. Click **＋ Project** to add a folder.
+2. Click **Settings**. Enter a name and a startup command for a tool, for example
+   **Codex** with `codex`. Then click **Add tool**. The agent CLI must be on PATH and
+   signed in.
+3. Click **＋ Project**. Enter the path of a folder. Then click **Add project**.
 4. Click **＋** beside the project. Select the tool. Then click **Start session**.
 
 See the [user guide](docs/GUIDE.md) for each step in detail, for the handoff between
@@ -59,16 +60,21 @@ agents, and for tips.
 bbflow update
 ```
 
-An update keeps your history and settings. It restarts the server, and that ends active
-sessions. bbflow asks for confirmation first. The web UI also shows a newer release
-above **Settings** in the sidebar. See [Update bbflow](docs/COMMANDS.md#update-bbflow).
+An update keeps your history and settings. When a server runs, `bbflow update` asks for
+confirmation first. It then replaces the executable and restarts the server. The restart
+ends active sessions. When no server runs, the command replaces the executable without
+a question. The web UI also shows a newer release above **Settings** in the sidebar. See
+[Update bbflow](docs/COMMANDS.md#update-bbflow).
 
 bbflow is at an early version. Commands and APIs can still change.
 
 ## Privacy
 
-- bbflow keeps its data on your computer. It has no telemetry and no cloud storage.
-  Each agent CLI still sends data to its own provider.
+- bbflow keeps its archive on your computer. It has no telemetry and no cloud storage.
+- The data that leaves your computer depends on the tools that you select. An agent CLI
+  can send your messages to its provider. Automatic titles are off by default. If you
+  select a title tool, it gets the first message of each session. See
+  [Data that leaves bbflow](docs/SPEC.md#data-that-leaves-bbflow).
 - The recording includes all terminal input and output, including secrets that you
   type. bbflow does not redact or encrypt it.
 - The server asks GitHub for the latest release when it starts and then once a day. The

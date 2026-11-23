@@ -105,21 +105,34 @@ screenshots use only the dark appearance.
 
 To capture the screenshots again, do these steps:
 
-1. Create a [demo instance](#demo-instance) with `--dir /Users/Shared/bbflow-demo`. The
-   UI shows the instance path, so the path must not contain a user name.
-2. Start the demo server from a shell that is not inside an agent session. The session
-   inherits the environment of the server.
-3. In **Orbit API**, create a draft with the tool **Claude** and without **Use
+1. Start a [demo instance](#demo-instance) in `/Users/Shared/bbflow-demo`, then add the
+   demo data. Use a shell that is not inside an agent session.
+
+   ```sh
+   make build
+   DISABLE_AUTO_UPDATE=true ./bin/bbflow --dir /Users/Shared/bbflow-demo server start
+   ./bin/bbflow-demo --dir /Users/Shared/bbflow-demo seed
+   ```
+
+   The UI shows the instance path, so the path must not contain a user name. Each
+   session inherits the environment of the server.
+2. In **Orbit API**, create a draft with the tool **Claude** and without **Use
    worktree**. Start the session.
-4. Accept the trust question of Claude Code. Claude Code saves this answer in
+3. Accept the trust question of Claude Code. Claude Code saves this answer in
    `~/.claude.json`.
-5. Send one short question about `internal/orbit/period.go` from the message editor.
+4. Send one short question about `internal/orbit/period.go` from the message editor.
    Ask for no file changes.
-6. Write a second message in the message editor. Do not send it.
+5. Write a second message in the message editor. Do not send it.
+6. Open the draft **Plan release notes**. Select the tool **Claude**. The seed selects
+   **Demo agent** for this draft.
 7. Open each view in a browser with the viewport of the table. Use the dark color
    scheme and a device scale factor of 2.
 8. Capture each page.
 9. Remove the demo instance.
+
+   ```sh
+   ./bin/bbflow-demo --dir /Users/Shared/bbflow-demo clean
+   ```
 
 Before you commit a screenshot, make sure that it shows no account name, no home
 folder, and no real session. The agent session uses the account of the person who
