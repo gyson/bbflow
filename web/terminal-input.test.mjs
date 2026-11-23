@@ -16,8 +16,15 @@ const open = options => {
   onTerminalInput(view, input => { sent.push((input.report ? 'report ' : '') + atob(input.data)); return true; });
   return { view, sent };
 };
+// during runs action while a browser event of this type is in dispatch, as a handler of
+// xterm.js runs.
+const during = (type, action) => {
+  const target = new EventTarget();
+  target.addEventListener(type, event => { noteEvent(event); action(); });
+  target.dispatchEvent(new Event(type));
+};
 // emit makes xterm.js send data in a browser event of this type.
-const emit = (view, type, data) => { noteEvent(type); view.input(data, type !== 'focus' && type !== 'blur'); };
+const emit = (view, type, data) => during(type, () => view.input(data, type !== 'focus' && type !== 'blur'));
 
 test('real xterm.js reports the focus state each time it parses the focus mode', async () => {
   // This is the behavior of xterm.js that onTerminalInput corrects.
@@ -34,7 +41,6 @@ test('real xterm.js reports the focus state each time it parses the focus mode',
 test('a frame that sets the focus mode sends no input', async () => {
   const { view, sent } = open();
   try {
-    noteEvent('focus');
     await write(view, frame);
     await write(view, frame);
     await write(view, '\x1b[?2004;1004h');
@@ -92,6 +98,38 @@ test('a paste or a key with the bytes of a report is not a report', async () => 
   } finally { view.dispose(); }
 });
 
+test('data after a report event is not a report', async () => {
+  const { view, sent } = open();
+  try {
+    await write(view, FOCUS_ON + MOUSE_ON);
+    // xterm.js sends composed text from a timer. A pointer move can come first.
+    during('compositionend', () => {});
+    during('mousemove', () => {});
+    view.input('\x1b[<0;81;2M');
+    during('focus', () => {});
+    view.input('\x1b[I', false);
+    assert.deepEqual(sent, ['\x1b[<0;81;2M', '\x1b[I']);
+  } finally { view.dispose(); }
+});
+
+test('a report after an inner event is a report of the outer event', async () => {
+  const { view, sent } = open();
+  try {
+    await write(view, FOCUS_ON + MOUSE_ON);
+    // The mouse handler of xterm.js gives the focus to the terminal, then reports.
+    during('mousedown', () => {
+      emit(view, 'focus', '\x1b[I');
+      view.input('\x1b[<0;3;2M', false);
+    });
+    // A key handler that moves the focus does not make its data a report.
+    during('keydown', () => {
+      during('blur', () => {});
+      view.input('\x1b[<0;3;2M');
+    });
+    assert.deepEqual(sent, ['report \x1b[I', 'report \x1b[<0;3;2M', '\x1b[<0;3;2M']);
+  } finally { view.dispose(); }
+});
+
 test('a mouse report is a report in each encoding, and only while its mode is on', async () => {
   const { view, sent } = open();
   try {
@@ -108,11 +146,12 @@ test('a mouse report is a report in each encoding, and only while its mode is on
     emit(view, 'mousedown', '\x1b[<0;3;2Mx');
     // xterm.js sends a mouse report in the default encoding as binary data. Its public
     // API cannot emit binary data without a browser.
+    during('mousedown', () => view._core.coreService.triggerBinaryEvent('\x1b[M\x20\x23\xa2'));
     view._core.coreService.triggerBinaryEvent('\x1b[M\x20\x23\xa2');
     assert.deepEqual(sent, [
       '\x1b[<0;3;2M', '\x1b[I',
       'report \x1b[<0;3;2M', 'report \x1b[<0;3;2m', 'report \x1b[<35;4;2M', 'report \x1b[<64;4;2M',
-      '\x1b[A', '\x1b[<0;3;2Mx', 'report \x1b[M\x20\x23\xa2',
+      '\x1b[A', '\x1b[<0;3;2Mx', 'report \x1b[M\x20\x23\xa2', '\x1b[M\x20\x23\xa2',
     ]);
   } finally { view.dispose(); }
 });

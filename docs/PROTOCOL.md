@@ -999,7 +999,8 @@ limit depends on the frame width. See [terminal
 scrollback](SPEC.md#terminal-scrollback). A full frame has rendered cell styles, cursor
 position and supported input modes. Before parsing a full frame, clients reset their
 view, set the row limit of the frame width, and apply the frame's dimensions. Later
-frames contain only changed rows, scrollback additions and input-mode/cursor updates.
+frames contain only changed rows, scrollback additions, the input modes that changed,
+and the cursor position.
 
 A resize, history clear, incompatible baseline, or update larger than the frame limit
 produces another full frame. The display uses positioned rows. It does not reproduce

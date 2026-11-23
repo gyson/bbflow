@@ -145,6 +145,16 @@ func TestAGestureFromTheTerminalEndsOutsideIt(t *testing.T) {
 			{"\x1b[<32;81;5M", "\x1b[<32;80;5M"},
 			{"\x1b[<0;81;5m", "\x1b[<0;80;5m"},
 		}},
+		"a hover in the padding after a release that the view did not report": {modes("\x1b[?1003h\x1b[?1006h", large), []step{
+			{"\x1b[<0;80;5M", "\x1b[<0;80;5M"},
+			{"\x1b[<35;81;5M", ""}, // Motion with no button ends the gesture.
+			{"\x1b[<35;82;5M", ""},
+			{"\x1b[<35;80;5M", "\x1b[<35;80;5M"},
+		}},
+		"a hover in the default encoding after such a release": {modes("\x1b[?1003h", large), []step{
+			{"\x1b[M\x20\x70\x25", "\x1b[M\x20\x70\x25"},
+			{"\x1b[M\x43\x71\x25", ""},
+		}},
 		"a wheel in the padding during a drag": {modes("\x1b[?1002h\x1b[?1006h", large), []step{
 			{"\x1b[<0;80;5M", "\x1b[<0;80;5M"}, {"\x1b[<64;81;5M", ""}, {"\x1b[<0;81;5m", "\x1b[<0;80;5m"},
 		}},

@@ -5,23 +5,40 @@ import type { Control } from './protocol.js';
 type View = Pick<Terminal, 'parser' | 'onData' | 'onBinary' | 'modes'>;
 type Input = Extract<Control, { type: 'input' }>;
 
-// xterm.js makes a focus report in a focus or blur event of its text area. It makes a
-// mouse report in a mouse or wheel event. It sends typed keys, composed text, and a
-// paste in other events. reportEvent tells whether the most recent of these events can
-// make a report. Thus a paste that has the bytes of a report is not a report.
+// xterm.js makes a focus report while the browser dispatches a focus or blur event of
+// its text area. It makes a mouse report while the browser dispatches a mouse or wheel
+// event. It sends typed keys and a paste in other events, and composed text from a
+// timer. Thus data is a report only while a report event is in dispatch. A paste or
+// composed text that has the bytes of a report is not a report.
 const reportEvents = ['focus', 'blur', 'mousedown', 'mouseup', 'mousemove', 'wheel'];
 const userEvents = ['keydown', 'keypress', 'input', 'compositionend', 'paste', 'drop'];
-let reportEvent = false;
 
-// noteEvent records the type of a browser event before xterm.js handles the event.
-export function noteEvent(type: string): void {
-  reportEvent = reportEvents.includes(type);
+// The events in dispatch, with the innermost event last. A handler can start another
+// event: the mouse handler of xterm.js gives the focus to the terminal.
+let dispatched: Event[] = [];
+
+// noteEvent records a browser event before xterm.js handles the event.
+export function noteEvent(event: Event): void {
+  dispatched = dispatched.filter(inDispatch);
+  dispatched.push(event);
+}
+
+// The browser sets the phase of an event to NONE when its dispatch ends.
+function inDispatch(event: Event): boolean {
+  return event.eventPhase !== Event.NONE;
+}
+
+// inReportEvent tells whether the innermost event in dispatch can make a report.
+function inReportEvent(): boolean {
+  dispatched = dispatched.filter(inDispatch);
+  const event = dispatched.at(-1);
+  return !!event && reportEvents.includes(event.type);
 }
 
 if (typeof document !== 'undefined') {
   for (const type of [...reportEvents, ...userEvents]) {
     // A capture listener of the document runs before the listeners of xterm.js.
-    document.addEventListener(type, () => noteEvent(type), true);
+    document.addEventListener(type, noteEvent, true);
   }
 }
 
@@ -60,7 +77,7 @@ export function onTerminalInput(view: View, send: (input: Input) => boolean): vo
   view.onData(data => {
     const focus = data === '\x1b[I' || data === '\x1b[O';
     if (modeParsed && focus) return;
-    const report = reportEvent && isReport(data, view.modes);
+    const report = inReportEvent() && isReport(data, view.modes);
     const bytes = new TextEncoder().encode(data);
     for (let start = 0; start < bytes.length; start += 16384) {
       const input: Input = { type: 'input', data: encodeBytes(bytes.subarray(start, start + 16384)) };
@@ -69,5 +86,9 @@ export function onTerminalInput(view: View, send: (input: Input) => boolean): vo
     }
   });
   // xterm.js uses binary data only for a mouse report in the default encoding.
-  view.onBinary(data => { send({ type: 'input', data: btoa(data), report: true }); });
+  view.onBinary(data => {
+    const input: Input = { type: 'input', data: btoa(data) };
+    if (inReportEvent()) input.report = true;
+    send(input);
+  });
 }

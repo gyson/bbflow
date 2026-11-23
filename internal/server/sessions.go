@@ -55,6 +55,9 @@ type attachment struct {
 	// attachment uses them.
 	shown, pending *terminal.Reports
 	buttons        terminal.Buttons
+	// endsGesture is true when the pending frame makes xterm.js stop the reports of a
+	// mouse gesture: a full frame, or a frame with another mouse tracking mode.
+	endsGesture bool
 }
 
 // report tells whether the input of this view is a focus report or a mouse report. The
@@ -447,6 +450,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 				if err := conn.Send(protocol.Message{Type: "frame", Data: data, Size: next.Size, Revision: revision, Full: full}); err != nil {
 					return
 				}
+				a.endsGesture = full || previous.Reports.Tracking != next.Reports.Tracking
 				previous, sent, sentAt = next, revision, time.Now()
 				a.pending = &next.Reports
 			} else if ended {
@@ -484,6 +488,10 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 				}
 				acked = sent
 				a.shown, a.pending = a.pending, nil
+				// The view sent the reports of its gesture before this acknowledgment.
+				if a.endsGesture {
+					a.buttons = 0
+				}
 				dirty = true
 			case "ping":
 				if conn.Send(protocol.Message{Type: "pong"}) != nil {

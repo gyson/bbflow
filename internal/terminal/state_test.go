@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"unsafe"
@@ -273,6 +274,75 @@ func TestBrowserFrames(t *testing.T) {
 	}
 	if !bytes.Equal(data, saved) {
 		t.Fatal("browser frame fixture is stale; run BBFLOW_UPDATE_FIXTURES=1 go test ./internal/terminal -run TestBrowserFrames")
+	}
+}
+
+// A view keeps its modes between frames. A frame after the first one writes only the
+// modes that changed, because xterm.js stops the reports of a mouse gesture when it
+// parses the reset of a mouse tracking mode.
+func TestFramesWriteOnlyChangedModes(t *testing.T) {
+	state := New(protocol.Size{Cols: 20, Rows: 4})
+	display := xterm.New(xterm.WithCols(20), xterm.WithRows(4))
+	var previous *View
+	// frame applies output and returns the mode sequences of the next frame.
+	frame := func(output string) []string {
+		t.Helper()
+		if _, err := state.Apply(history.Event{Kind: "output", Data: []byte(output)}); err != nil {
+			t.Fatal(err)
+		}
+		next := state.View()
+		data, _ := next.Render(previous)
+		previous = next
+		display.Write(data)
+		var modes []string
+		for _, sequence := range strings.Split(string(data), "\x1b[")[1:] {
+			// The frame also sets autowrap and origin mode for its own drawing.
+			if strings.HasPrefix(sequence, "?") && !strings.HasPrefix(sequence, "?7l") && !strings.HasPrefix(sequence, "?6l") {
+				modes = append(modes, sequence[:strings.IndexAny(sequence, "hl")+1])
+			}
+		}
+		return modes
+	}
+	tracking := func(want string) {
+		t.Helper()
+		if got := display.DecPrivateModes().MouseTrackingMode; got != want {
+			t.Fatalf("the view has mouse tracking mode %s, want %s", got, want)
+		}
+	}
+	if modes := frame("\x1b[?1003h\x1b[?1004h"); !slices.Contains(modes, "?1003h") || !slices.Contains(modes, "?1004h") || len(modes) != 11 {
+		t.Fatalf("a full frame sets each mode: %q", modes)
+	}
+	tracking("ANY")
+	if modes := frame("redraw"); len(modes) != 0 {
+		t.Fatalf("a redraw wrote modes: %q", modes)
+	}
+	if modes := frame("\x1b[?25l"); !slices.Equal(modes, []string{"?25l"}) {
+		t.Fatalf("a hidden cursor wrote %q", modes)
+	}
+	if modes := frame("\x1b[?25h\x1b[?2004h"); !slices.Equal(modes, []string{"?2004h", "?25h"}) {
+		t.Fatalf("two changed modes wrote %q", modes)
+	}
+	// The mode that turns off comes first. Its reset turns all mouse tracking off.
+	if modes := frame("\x1b[?1000h"); !slices.Equal(modes, []string{"?1003l", "?1000h"}) {
+		t.Fatalf("another tracking mode wrote %q", modes)
+	}
+	tracking("VT200")
+	if modes := frame("\x1b[?1003h"); !slices.Equal(modes, []string{"?1000l", "?1003h"}) {
+		t.Fatalf("another tracking mode wrote %q", modes)
+	}
+	tracking("ANY")
+
+	// A view that crops the cursor hides it with a second sequence for the same mode.
+	wide := New(protocol.Size{Cols: 20, Rows: 4})
+	if _, err := wide.Apply(history.Event{Kind: "output", Data: []byte("0123456789abcdef")}); err != nil {
+		t.Fatal(err)
+	}
+	cropped := wide.ViewFor(protocol.Size{Cols: 10, Rows: 4}, nil)
+	if _, err := wide.Apply(history.Event{Kind: "output", Data: []byte("\r")}); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := wide.ViewFor(protocol.Size{Cols: 10, Rows: 4}, nil).Render(cropped); !strings.Contains(string(data), "\x1b[?25h") {
+		t.Fatalf("the frame does not show the cursor again: %q", data)
 	}
 }
 

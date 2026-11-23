@@ -11,19 +11,19 @@ import (
 // holds the modes of the application in that frame and the place of the view in the
 // terminal. A view makes a report without a typed key, a paste, or a message.
 type Reports struct {
-	Focus  bool // Focus reporting is on.
-	Mouse  bool // Mouse tracking is on.
-	Pixels bool // A mouse report gives a position in pixels, not in cells.
-	Top    int  // The first terminal row that the view shows. Rows count from 0.
-	Rows   int  // The rows of the terminal.
-	Cols   int  // The columns of the terminal.
+	Focus    bool   // Focus reporting is on.
+	Tracking string // The mouse tracking mode. It is empty while mouse tracking is off.
+	Pixels   bool   // A mouse report gives a position in pixels, not in cells.
+	Top      int    // The first terminal row that the view shows. Rows count from 0.
+	Rows     int    // The rows of the terminal.
+	Cols     int    // The columns of the terminal.
 }
 
 func reports(m xterm.DecPrivateModes, rows, cols int) Reports {
 	r := Reports{Focus: m.SendFocus, Pixels: m.MouseEncoding == "SGR_PIXELS", Rows: rows, Cols: cols}
 	switch m.MouseTrackingMode {
 	case "X10", "VT200", "DRAG", "ANY":
-		r.Mouse = true
+		r.Tracking = m.MouseTrackingMode
 	}
 	return r
 }
@@ -57,7 +57,7 @@ func (r Reports) Translate(data []byte, held *Buttons) (out []byte, ok bool) {
 				out = append(out, data[:n]...)
 			}
 		}
-		if n == 0 && r.Mouse {
+		if n == 0 && r.Tracking != "" {
 			var report []byte
 			if report, n = r.mouseReport(data, &buttons); n > 0 {
 				out = append(out, report...)
@@ -168,6 +168,11 @@ func (r Reports) cell(code int, release bool, col, row int, held *Buttons, anyBu
 		gesture = *held&button != 0
 		*held &^= button
 	case code&motionBit != 0:
+		// A motion with the button value 3 has no button down. The view did not report
+		// the release of an earlier press.
+		if code&3 == 3 {
+			*held = 0
+		}
 		gesture = *held != 0
 	case inside:
 		*held |= button

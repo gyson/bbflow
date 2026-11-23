@@ -277,6 +277,25 @@ func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
 	report(large, "the press at the edge", "\x1b[<0;80;2M", "\x1b[<0;80;2M")
 	report(large, "the release in the padding did not reach the process", "\x1b[<0;81;2m", "\x1b[<0;80;2m")
 	report(large, "the focus report after the gesture", "\x1b[O", "\x1b[O")
+	// A frame between a press and its release keeps the gesture, because the frame
+	// writes no mode that did not change.
+	report(large, "the press at the edge", "\x1b[<0;80;2M", "\x1b[<0;80;2M")
+	output("redraw")
+	if redraw := large.read("frame"); redraw.Full || strings.Contains(string(redraw.Data), "\x1b[?1000") {
+		t.Fatalf("the frame of a redraw resets the mouse tracking of the view: %q", redraw.Data)
+	} else {
+		large.ack(redraw)
+	}
+	report(large, "the release after a frame did not reach the process", "\x1b[<0;81;2m", "\x1b[<0;80;2m")
+	// A full frame makes xterm.js stop the reports of a gesture. After the view shows
+	// that frame, a motion in the padding is not a part of the earlier gesture.
+	report(large, "the press at the edge", "\x1b[<0;80;2M", "\x1b[<0;80;2M")
+	large.send(protocol.Message{Type: "resize", Size: protocol.Size{Cols: 100, Rows: 31}})
+	shows(large)
+	large.send(protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[<32;81;2M")})
+	report(large, "a motion in the padding after a full frame reached the process", "\x1b[O", "\x1b[O")
+	shows(first)
+	shows(second)
 	// A receipt does not change a report. The process gets the terminal row, and the
 	// view gets its receipt, also for a report that the process does not get.
 	second.send(protocol.Message{Type: "input", Report: true, ID: "receipt-1", Data: []byte("\x1b[<0;3;2M")})
@@ -325,7 +344,7 @@ func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
 	shows(second)
 	shows(large)
 	typed(second, "a paste did not move the PTY size", protocol.Message{Type: "input", Data: []byte("\x1b[<0;3;2M")}, wider)
-	typed(large, "a paste with a position in the padding", protocol.Message{Type: "input", Data: []byte("\x1b[<0;81;2M")}, protocol.Size{Cols: 100, Rows: 30})
+	typed(large, "a paste with a position in the padding", protocol.Message{Type: "input", Data: []byte("\x1b[<0;81;2M")}, protocol.Size{Cols: 100, Rows: 31})
 	typed(second, "a paste with the bytes of a focus report", protocol.Message{Type: "input", Data: []byte("\x1b[I")}, wider)
 	typed(first, "a message with the bytes of a focus report", protocol.Message{Type: "input", ID: "draft-1", Data: []byte("\x1b[I")}, size)
 }

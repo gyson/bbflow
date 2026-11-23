@@ -8,6 +8,7 @@ import (
 	"log"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -509,9 +510,57 @@ func (v *View) Render(previous *View) (data []byte, full bool) {
 			out.WriteString(line)
 		}
 	}
-	out.WriteString(v.Modes)
+	// The view reset its modes for a full frame. After another frame, it has the modes
+	// of the previous frame.
+	if full {
+		out.WriteString(v.Modes)
+	} else {
+		out.WriteString(modeChanges(previous.Modes, v.Modes))
+	}
 	fmt.Fprintf(&out, "\x1b[%d;%dH", v.CursorY+1, v.CursorX+1)
 	return []byte(out.String()), full
+}
+
+// modeChanges returns the sequences of next for the modes that differ from previous. A
+// frame must not write a mode that did not change. xterm.js stops the reports of a mouse
+// gesture when it parses the reset of a mouse tracking mode, also when the next sequence
+// sets the mode again. The modes that turn off come first, because that reset turns all
+// mouse tracking off.
+func modeChanges(previous, next string) string {
+	before, _ := modeValues(previous)
+	after, codes := modeValues(next)
+	var off, on strings.Builder
+	for _, code := range codes {
+		if value, known := before[code]; known && value == after[code] {
+			continue
+		}
+		if after[code] {
+			fmt.Fprintf(&on, "\x1b[?%dh", code)
+		} else {
+			fmt.Fprintf(&off, "\x1b[?%dl", code)
+		}
+	}
+	return off.String() + on.String()
+}
+
+// modeValues reads the private mode sequences of a view. It returns the last value of
+// each mode and the mode codes in their first order.
+func modeValues(modes string) (values map[int]bool, codes []int) {
+	values = map[int]bool{}
+	for _, sequence := range strings.Split(modes, "\x1b[?") {
+		if len(sequence) < 2 {
+			continue
+		}
+		code, err := strconv.Atoi(sequence[:len(sequence)-1])
+		if err != nil {
+			continue
+		}
+		if _, known := values[code]; !known {
+			codes = append(codes, code)
+		}
+		values[code] = sequence[len(sequence)-1] == 'h'
+	}
+	return values, codes
 }
 
 // fullFrameStart returns the first history row that a full frame sends. A full frame

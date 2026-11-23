@@ -1117,12 +1117,16 @@ Client rows do not preserve soft wraps during copy or reflow. Normal scrollback 
 available while an alternate screen is visible. Erased output and exited alternate
 screens remain in the original recording.
 
-Each frame sets these modes again. xterm.js reports the focus state each time it parses
-the sequence that turns focus reporting on. A view does not send that report as input.
-A view sends a focus report only when the focus of its terminal changes. Thus a frame
-never causes input, and it cannot change the [size owner](#size-owner). An application
-gets no focus report at the time that it turns focus reporting on. The same rule applies
-to the side terminal.
+A full frame sets each of these modes. A later frame sets only the modes that changed,
+and it turns a mode off before it turns another mode on. xterm.js stops the reports of a
+mouse gesture when it parses the reset of a mouse tracking mode, also when the next
+sequence sets the mode again. Thus a redraw during a drag keeps the gesture of the view.
+
+xterm.js reports the focus state each time it parses the sequence that turns focus
+reporting on. A view does not send that report as input. A view sends a focus report
+only when the focus of its terminal changes. Thus a frame never causes input, and it
+cannot change the [size owner](#size-owner). An application gets no focus report at the
+time that it turns focus reporting on. The same rule applies to the side terminal.
 
 #### Display of an ended session
 
@@ -2923,8 +2927,10 @@ The page marks each focus report and each mouse report that it sends, with the `
 field of the input. A paste can have the same bytes as a report, so the bytes do not
 identify a report. The page marks input only when both conditions are true:
 
-- xterm.js emits the data in a focus, blur, mouse, or wheel event. Typed keys, composed
-  text, and a paste come in other events.
+- xterm.js emits the data while the browser dispatches a focus, blur, mouse, or wheel
+  event. Typed keys and a paste come in other events. Composed text comes from a timer,
+  after its event. When a handler starts another event, the page uses the innermost
+  event that is still in dispatch.
 - The data is one focus report or one mouse report, and the view has that mode on.
 
 The server accepts marked input as a report only when a frame of the view makes it a
@@ -2954,6 +2960,9 @@ pointer:
 - A press on a terminal cell starts a gesture. While that button is down, the server
   writes a motion or a release in the padding with the nearest terminal cell. Thus the
   application gets the end of the gesture.
+- A motion with no button down ends each gesture of the view. So does a frame that
+  makes xterm.js stop the reports of a gesture, after the view acknowledged it. See
+  the limits.
 - The server records a report with the bytes that the PTY gets.
 - A report with an `id` gets its receipt, also when the server does not write it.
 
@@ -2967,6 +2976,10 @@ pointer:
   does not write such a report to the PTY.
 - A release in the default encoding does not name its button. It ends the gestures of
   all buttons of the view.
+- A full frame and a frame with another mouse tracking mode make xterm.js stop the
+  reports of a gesture. The application then gets no release for that gesture. A resize
+  of the view or the PTY gives a full frame. A view with fewer rows than the PTY also
+  gets a full frame when a row above the view changes.
 - A client that does not mark its reports gets the earlier behavior: each input is user
   input and makes its view the size owner.
 
@@ -4074,9 +4087,14 @@ repository, and a folder outside Git, each with a shell session.
 - Fixtures with xterm.js check the focus reports of a view. A frame that sets the focus
   reporting mode sends no input. A later focus report and typed data are sent, also
   after a frame that the view parsed while its input was off.
-- The same fixtures check the report mark. A focus report and a mouse report in each
-  encoding have the mark while the mode is on. A paste, a key, and composed text with
-  the bytes of a report do not have it.
+- The same fixtures check the report mark with events in dispatch. A focus report and a
+  mouse report in each encoding have the mark while the mode is on. A paste and a key
+  with the bytes of a report do not have it. Data after the end of a mouse event does
+  not have it, as composed text from a timer. A mouse report after an inner focus event
+  has it.
+- A terminal test checks the modes of frames. A full frame sets each mode. A redraw
+  writes no mode. A changed mode writes only that mode, and a mouse tracking mode
+  turns off before another one turns on. A view that crops the cursor shows it again.
 - A server test checks the size owner with reports. A focus report and a mouse report
   from another view reach the process, and the PTY keeps its size. A typed key from
   that view resizes the PTY first. Marked input resizes the PTY when the frames of the
@@ -4089,13 +4107,22 @@ repository, and a folder outside Git, each with a shell session.
 - The server test and a terminal test check the position of a mouse report. A click on
   row 2 of a view with 10 rows reaches a PTY with 24 rows as row 16. A click in the
   padding of a larger view does not reach the PTY. A press on a terminal cell with a
-  release in the padding reaches the PTY with the release on the nearest cell. The
-  terminal test also checks drags in each encoding, two buttons, the report formats for
-  each mode, the pixel encoding, and the limit of the default encoding.
+  release in the padding reaches the PTY with the release on the nearest cell, also
+  with a frame between the press and the release. After a full frame, a motion in the
+  padding does not reach the PTY. The terminal test also checks drags in each encoding,
+  two buttons, a motion with no button after a press, the report formats for each mode,
+  the pixel encoding, and the limit of the default encoding.
 - A browser check used a PTY of 39 columns and 21 rows, and a second view of 82 columns
   and 16 rows. A click on row 5 of the second view reached a program in the terminal as
   row 10. A click on column 74 of that view did not reach the program. The PTY kept its
   size.
+- A browser check dragged from a terminal cell to the padding of a view of 82 columns
+  and 16 rows, with a PTY of 39 columns and 7 rows and mouse tracking on. A frame came
+  between the press and the release. It was not a full frame, and it had no mode
+  sequence. The view sent the release, and a program in the terminal got the motion and
+  the release on column 39. A pointer move in the padding after the release did not
+  reach the program. With a PTY of 21 rows, the frame was a full frame, and the view
+  sent no release.
 - A browser check read the input messages of a view with focus reporting and mouse
   tracking on. A focus change, a click, and a pointer move sent input with the report
   mark. A typed key and a paste of `ESC [ I` sent input without the mark. The paste
