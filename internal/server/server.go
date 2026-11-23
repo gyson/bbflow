@@ -71,7 +71,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 	s.updates.load(store)
 	// Remote access stays off when the settings cannot be read.
 	if settings, err := store.Settings(); err == nil {
-		s.remote.saved(settings)
+		s.remote.saved(settings, nil)
 	}
 	if err := s.ensureGeneral(); err != nil {
 		return protocol.ServerInfo{}, err
@@ -87,9 +87,14 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		}()
 	}
 	upgrader := websocket.Upgrader{HandshakeTimeout: 5 * time.Second}
-	// local tells if a Host header names the loopback host of the server.
-	local := func(host string) bool {
-		return host == listener.Addr().String() || host == fmt.Sprintf("localhost:%d", s.info.Port)
+	// The default origin check compares only the host of the Origin. A remote upgrade
+	// needs the complete HTTPS origin of the remote host.
+	remoteUpgrader := upgrader
+	remoteUpgrader.CheckOrigin = s.remote.origin
+	// local tells if a request is for the loopback host of the server and came without a
+	// reverse proxy. Each other request needs remote access.
+	local := func(r *http.Request) bool {
+		return !forwarded(r) && (r.Host == listener.Addr().String() || r.Host == fmt.Sprintf("localhost:%d", s.info.Port))
 	}
 	mux := http.NewServeMux()
 	webui.Register(mux, func() (string, error) {
@@ -112,13 +117,17 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		s.wg.Add(1)
 		s.mu.Unlock()
 		defer s.wg.Done()
-		conn, err := upgrader.Upgrade(w, r, nil)
+		upgrade := &upgrader
+		if !local(r) {
+			upgrade = &remoteUpgrader
+		}
+		conn, err := upgrade.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
 		wire := protocol.Wrap(conn)
 		defer wire.Close()
-		if !local(r.Host) {
+		if !local(r) {
 			if !s.remote.add(wire, r) {
 				return
 			}
@@ -127,16 +136,15 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		s.handle(ctx, wire)
 	})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Apply the Host restriction to both assets and WebSockets. A Host that is not
-		// the loopback host needs remote access. The upgrader also rejects foreign browser
-		// origins.
+		// Apply the Host restriction to both assets and WebSockets. A request that is not
+		// local needs remote access. The upgrader also rejects foreign browser origins.
 		connect := fmt.Sprintf("ws://127.0.0.1:%d ws://localhost:%d", s.info.Port, s.info.Port)
-		if !local(r.Host) {
+		if !local(r) {
 			if err := s.remote.check(r); err != nil {
 				http.Error(w, err.Error(), http.StatusForbidden)
 				return
 			}
-			connect = s.remote.origins()
+			connect = s.remote.socketOrigin()
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -206,13 +214,12 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		}
 		if err == nil {
 			s.updates.saved(result)
+			// Apply remote access before the reply, so that a change is in effect when
+			// the client learns of the save. A change closes the remote connections. This
+			// connection stays open for its reply, and closes after it.
+			s.remote.saved(result, conn)
 		}
 		s.reply(conn, result, err)
-		// A change of remote access closes the remote connections. Reply first, because
-		// this connection can be one of them.
-		if err == nil {
-			s.remote.saved(result)
-		}
 	case "workspace-inspect":
 		s.reply(conn, inspectRepository(ctx, request.Workspace), nil)
 	case "project-draft":

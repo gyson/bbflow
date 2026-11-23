@@ -509,30 +509,43 @@ both are set. A new database and an upgraded database have neither.
 | `remoteLogin` | The Tailscale login that can use remote access, such as `user@example.com`. It has at most 254 printable ASCII characters, without spaces. |
 
 - A save of one value alone succeeds and keeps remote access off.
-- A change applies at once, without a server restart.
+- A change applies without a server restart. It is in effect before the server
+  replies to the save. Thus a request after a successful save gets the new rules.
 - A change of either value closes each open WebSocket connection of a remote request.
   The connections of local views stay open.
+- The server applies the saved values in the order of the settings revisions. When two
+  saves complete in the other order, the values of the later revision stay.
 - A save of another setting keeps the remote connections.
 
 #### Remote requests
 
-A request whose Host is a loopback host name of the server is local. Each other request
-is remote, and the server answers it only when all of these conditions are true:
+A request is local only when its Host is a loopback host name of the server and it has
+no header of a reverse proxy, such as `X-Forwarded-Host`. See
+[Host and Origin](PROTOCOL.md#host-and-origin) for the headers. Each other request is
+remote, and the server answers it only when all of these conditions are true:
 
 - Remote access is on.
 - The Host is exactly the saved `remoteHost`.
 - The request has exactly one `Tailscale-User-Login` header, and its value is the saved
   `remoteLogin`. The comparison ignores letter case.
 
-The server answers each other remote request with status 403. Tailscale Serve keeps the
-Host of the browser request. It removes each `Tailscale-User-Login` header that the
-client sent, and it sets its own header for a user device of the tailnet. A request
-that comes through Tailscale Funnel from the internet has no login, so the server
-rejects it.
+The server answers each other remote request with status 403. A remote WebSocket
+upgrade also needs the Origin `https://` with the saved `remoteHost`. Thus an HTTP page
+of the same host cannot connect.
+
+Tailscale Serve selects its backend by the TLS server name, and it keeps the Host that
+the client sent. A client in the tailnet can thus send a loopback Host through the
+proxy. Tailscale Serve sets `X-Forwarded-Host` on each request that it forwards, so the
+server does not handle such a request as local. This applies also while remote access
+is off.
+
+Tailscale Serve removes each `Tailscale-User-Login` header that the client sent, and it
+sets its own header for a user device of the tailnet. A request that comes through
+Tailscale Funnel from the internet has no login, so the server rejects it.
 
 A remote page uses the same UI and the same operations as a local page. On an HTTPS
 page, the UI connects with `wss://`. The content security policy of a remote page names
-the WebSocket origin of the remote host instead of the loopback addresses.
+the secure WebSocket origin of the remote host instead of the loopback addresses.
 
 #### Setup with Tailscale Serve
 
@@ -558,6 +571,14 @@ procedure, the Tailscale commands, and the solutions to problems.
 - `bbflow ui`, the menu bar, and the server start message use the `localhost` URL only.
 - The web UI loads its files and its WebSocket connection from the root of the host.
   Thus it does not work below a path of the proxy.
+- Another application at a path of the same HTTPS host and port has the browser origin
+  of bbflow. Its scripts can use bbflow as the signed-in user. The remote host needs an
+  HTTPS port that serves only bbflow.
+- Tailscale Serve forwards to a port number. When the server
+  [selects another port](#port-selection), the address reaches the program that holds
+  the earlier port.
+- A reverse proxy that sets none of the proxy headers makes its requests with a loopback
+  Host local. Tailscale Serve sets them.
 - The checks with a real Tailscale Serve proxy used one Mac with Tailscale 1.104.7 and
   one iPhone. No check used a real Funnel request, a device with a tag, or another
   reverse proxy. See
@@ -750,8 +771,8 @@ terminal cannot start, the menu shows the reason below the disabled item.
   keyboard input. The page does not follow the on-screen keyboard of a phone.
 - A phone in landscape orientation is usually wider than 700 pixels and uses the
   regular layout.
-- The server does not support remote access. See
-  [loopback address](#loopback-address).
+- A phone reaches the server only through [remote access](#remote-access), which is
+  off by default.
 
 ### Sidebar
 
@@ -1209,6 +1230,10 @@ name, and the name of a default that failed to save.
 - To turn remote access off, the user empties a field and clicks **Save**.
 - A value that the server rejects stays in its field, with the server error below the
   fields. New text in a field hides the error.
+- When another view changed remote access after the fields showed their values, **Save**
+  does not save. The error names the saved host name and login of that change, and the
+  text stays in the fields. A second **Save** replaces those values. Thus a view with
+  earlier values cannot restore a login that another view removed.
 - A text that is not saved shows as **Remote access** in the save status. The page
   discards it when the user leaves Settings.
 - A save of remote access does not join a save of another setting.
@@ -3258,12 +3283,20 @@ Each check sends the requests of such a proxy to the loopback port:
   and the unchanged policy of a local page.
 - It verifies status 403 for no login, another login, two login headers, a request with
   only the Funnel header, another host, a longer host, and the remote host with a port.
-- It verifies status 403 for a remote upgrade with a foreign Origin.
+- It verifies status 403 for a remote upgrade with a foreign Origin, the HTTP origin of
+  the remote host, another port, and no Origin.
+- It verifies status 403 for a page request and an upgrade with a loopback Host and the
+  headers of a proxy. The cases are remote access off, the saved login, another login,
+  no login, and the Funnel header. It verifies that each proxy header alone has this
+  effect, and that a direct local request still gets the page.
 - It verifies that a change of remote access closes a remote status watch and keeps a
   local one, and that a save of another setting keeps the remote one.
 - It verifies that the saved values apply again after a server restart.
 - It verifies that a saved host with a port admits that Host and rejects the host
   without the port.
+- Server tests apply settings of revisions 3 and 2 in that order and verify that the
+  removed login of revision 3 stays removed. They also cover the proxy headers and the
+  remote Origin rule.
 - Store fixtures cover the rules of the two values, a save of one value alone, and a
   title tool change that keeps them.
 - Migration fixtures upgrade a frozen format 15 archive with a saved custom title
@@ -3272,6 +3305,9 @@ Each check sends the requests of such a proxy to the loopback port:
 - Web fixtures cover the **Remote access** card: a save of both fields, the saved lower
   case host name, the status texts, a rejected value, and a failure after **Done**. A
   protocol fixture verifies `wss://` on an HTTPS page and `ws://` on an HTTP page.
+- Web fixtures cover two views: one view removes the login, and a save of the other
+  view with its earlier values fails, shows the saved values, and sends no second save.
+  A second **Save** then replaces them.
 - A browser check of a demo instance saved a sample host name and login in the card. The
   status changed from **Not saved: Remote access** to **All settings saved**, and the
   card showed that remote access is on.
@@ -3292,6 +3328,14 @@ A manual check used a real Tailscale Serve proxy of Tailscale 1.104.7 on macOS, 
   the proxy replaced the header of the client with the login of the device.
 - The iPhone then loaded the web UI in its browser. The check did not record the
   operations that the user tried there.
+- Before the local request rule had the proxy headers, a request with the Host
+  `localhost:PORT` through the proxy got status 200. With the rule, a page request,
+  `GET /client-config`, and a WebSocket upgrade with a loopback Host got status 403. A
+  request that named the forwarding headers in its `Connection` header also got 403.
+- With the remote Origin rule, an upgrade through the proxy got status 101 for the
+  HTTPS origin, and 403 for the HTTP origin of the same host and for no Origin. The
+  policy of the remote page named only the `wss://` origin.
+- A direct request to `localhost:PORT` still got the page and the upgrade.
 - After a rebase onto the mobile layout and a server restart, the same address gave
   status 200 and 101 again, with the saved values.
 - `tailscale serve --bg --https=8443 PORT` for a local test server gave the Host

@@ -1117,23 +1117,31 @@ input.
 
 ## Browser access
 
-The server has two checks. Each HTTP request, including a WebSocket upgrade, must name
-the loopback host of the server, or the [remote host](#remote-host) while remote access
-is on. A WebSocket upgrade that has an Origin header must also have the same host and
-port in that header. An upgrade without an Origin header passes, and the other HTTP
-routes have no origin check. These checks stop other web sites. They do not
-authenticate local programs.
+The server has two checks. Each HTTP request, including a WebSocket upgrade, must be a
+local request, or it must pass the checks of the [remote host](#remote-host) while
+remote access is on. A local WebSocket upgrade that has an Origin header must also have
+the same host and port in that header. A local upgrade without an Origin header passes,
+and the other HTTP routes have no origin check. These checks stop other web sites. They
+do not authenticate local programs.
 
 ### Host and Origin
 
-The HTTP Host of a local request is `127.0.0.1:PORT` or `localhost:PORT`. Each other
-Host must pass the checks of the [remote host](#remote-host). The Host check applies to
-each HTTP route and to the WebSocket upgrade.
+A request is local only when both of these conditions are true:
 
-Only the WebSocket upgrade checks the Origin header. An Origin header, if present, must
-have the same host and port as the Host. CLI clients omit Origin. Browser clients send
-it automatically. Thus the server rejects WebSocket connections from other sites,
-different ports, and opaque origins such as `file:` pages.
+- Its HTTP Host is `127.0.0.1:PORT` or `localhost:PORT`.
+- It has none of the headers of a reverse proxy: `Forwarded`, `X-Forwarded-For`,
+  `X-Forwarded-Host`, `X-Forwarded-Proto`, `Tailscale-User-Login`, and
+  `Tailscale-Funnel-Request`.
+
+Each other request must pass the checks of the [remote host](#remote-host). This rule
+applies to each HTTP route and to the WebSocket upgrade. A reverse proxy keeps the Host
+that its client sent, and a client can send a loopback Host. Thus the Host alone does
+not make a request local.
+
+Only the WebSocket upgrade checks the Origin header. For a local upgrade, an Origin
+header, if present, must have the same host and port as the Host. CLI clients omit
+Origin. Browser clients send it automatically. Thus the server rejects WebSocket
+connections from other sites, different ports, and opaque origins such as `file:` pages.
 
 The embedded UI is served from the same local origin at `/`. Separate UI development
 servers would need an explicit origin policy change or a same-origin proxy. There is no
@@ -1143,28 +1151,35 @@ authentication token or TLS. Host and origin checks do not authenticate local pr
 
 [Remote access](SPEC.md#remote-access) admits the requests that a reverse proxy on the
 computer of the server forwards to the loopback port. The supported proxy is Tailscale
-Serve. The server answers a request whose Host is not a loopback host only when all of
-these conditions are true:
+Serve. The server answers a request that is not [local](#host-and-origin) only when all
+of these conditions are true:
 
 - The settings have a `remoteHost` and a `remoteLogin`.
 - The Host is exactly `remoteHost`, with the same port or no port.
 - The request has exactly one `Tailscale-User-Login` header. Its value is `remoteLogin`,
   compared without letter case.
 
-Each other request gets status 403. The Origin rule of a WebSocket upgrade applies
-without change, so a browser upgrade needs the remote host in its Origin.
+Each other request gets status 403. A remote WebSocket upgrade also needs exactly one
+Origin header with the value `https://` and `remoteHost`. An HTTP origin of the same
+host, another port, and a missing Origin get status 403.
 
 - The proxy must keep the Host of the browser request, as Tailscale Serve does.
+- The proxy must set `X-Forwarded-Host` or another header of the local request rule on
+  each request, after it removes these headers of the client. Tailscale Serve does. A
+  proxy without this rule lets each client send a loopback Host and pass as local.
 - The proxy must remove each `Tailscale-User-Login` header of the client and set its
   own, as Tailscale Serve does. A proxy without this rule lets each client name a login.
 - A browser client on an HTTPS page connects to `wss://HOST/ws`. On an HTTP page, it
-  connects to `ws://HOST/ws`.
-- The `connect-src` of the content security policy names `ws://HOST` and `wss://HOST`
-  for a remote page. For a local page, it names the two loopback addresses.
+  connects to `ws://HOST/ws`. A remote page must be an HTTPS page.
+- The `connect-src` of the content security policy names only `wss://HOST` for a remote
+  page. For a local page, it names the two loopback addresses.
 - The greeting and `GET /client-config` are the same as for a local request. They name
   the loopback port of the server, not the remote host.
-- A change of `remoteHost` or `remoteLogin` closes each open connection of a remote
-  request.
+- A change of `remoteHost` or `remoteLogin` is in effect before the reply of its
+  `settings-save`. It closes each open connection of a remote request. The connection
+  of the save itself closes after its reply.
+- The server applies the saved values in the order of the settings revisions. A save
+  with an earlier revision does not replace the values of a later one.
 
 ### Example client
 

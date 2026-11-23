@@ -13,7 +13,7 @@ import (
 
 // TestRemoteAccess sends the requests of a reverse proxy, such as Tailscale Serve, to a
 // real test server. The proxy connects to the loopback port, keeps the Host of the
-// remote request, and names the Tailscale user in a header.
+// remote request, adds forwarding headers, and names the Tailscale user in a header.
 func TestRemoteAccess(t *testing.T) {
 	directory := t.TempDir()
 	port := startTestServer(t, directory)
@@ -27,14 +27,26 @@ func TestRemoteAccess(t *testing.T) {
 		}
 		return string(output)
 	}
-	// get sends one page request with a Host and an optional Tailscale login.
-	get := func(requestHost, requestLogin string) *http.Response {
+	// proxy returns the headers that Tailscale Serve adds to a request for requestHost.
+	// A direct request to the loopback address has none.
+	proxy := func(requestHost, requestLogin string) http.Header {
+		headers := http.Header{}
+		if requestHost != address {
+			headers.Set("X-Forwarded-Host", requestHost)
+			headers.Set("X-Forwarded-Proto", "https")
+			headers.Set("X-Forwarded-For", "100.64.0.1")
+		}
+		if requestLogin != "" {
+			headers.Set("Tailscale-User-Login", requestLogin)
+		}
+		return headers
+	}
+	// send sends one page request with a Host and headers.
+	send := func(requestHost string, headers http.Header) *http.Response {
 		t.Helper()
 		request, _ := http.NewRequest("GET", "http://"+address+"/", nil)
 		request.Host = requestHost
-		if requestLogin != "" {
-			request.Header.Set("Tailscale-User-Login", requestLogin)
-		}
+		request.Header = headers
 		response, err := (&http.Client{Timeout: 3 * time.Second}).Do(request)
 		if err != nil {
 			t.Fatal(err)
@@ -42,19 +54,43 @@ func TestRemoteAccess(t *testing.T) {
 		response.Body.Close()
 		return response
 	}
-	// dial opens a WebSocket connection as a browser on the remote page does.
-	dial := func(requestHost, origin, requestLogin string) (*websocket.Conn, int) {
+	// get sends one page request with a Host and an optional Tailscale login.
+	get := func(requestHost, requestLogin string) *http.Response {
 		t.Helper()
-		headers := http.Header{"Host": {requestHost}, "Origin": {origin}}
-		if requestLogin != "" {
-			headers.Set("Tailscale-User-Login", requestLogin)
-		}
+		return send(requestHost, proxy(requestHost, requestLogin))
+	}
+	// upgrade opens a WebSocket connection with a Host, an Origin, and headers.
+	upgrade := func(requestHost, origin string, headers http.Header) (*websocket.Conn, int) {
+		t.Helper()
+		headers.Set("Host", requestHost)
+		headers.Set("Origin", origin)
 		conn, response, _ := (&websocket.Dialer{HandshakeTimeout: time.Second}).Dial("ws://"+address+"/ws", headers)
 		if response == nil {
 			t.Fatal("no handshake response")
 		}
 		response.Body.Close()
 		return conn, response.StatusCode
+	}
+	// dial opens a WebSocket connection as a browser on the remote page does.
+	dial := func(requestHost, origin, requestLogin string) (*websocket.Conn, int) {
+		t.Helper()
+		return upgrade(requestHost, origin, proxy(requestHost, requestLogin))
+	}
+	// loopbackRejected sends a loopback Host through the proxy. Tailscale Serve selects
+	// its backend by the TLS server name and keeps the Host that the client sent. Such a
+	// request must not get the access of a local request.
+	loopbackRejected := func(name string, headers http.Header) {
+		t.Helper()
+		for _, loopback := range []string{address, "localhost:" + port} {
+			headers.Set("X-Forwarded-Host", loopback)
+			if response := send(loopback, headers.Clone()); response.StatusCode != http.StatusForbidden {
+				t.Fatalf("%s: page request for %s through the proxy got %d", name, loopback, response.StatusCode)
+			}
+			if conn, status := upgrade(loopback, "http://"+loopback, headers.Clone()); status != http.StatusForbidden {
+				conn.Close()
+				t.Fatalf("%s: WebSocket upgrade for %s through the proxy got %d", name, loopback, status)
+			}
+		}
 	}
 	rejected := func(name, requestHost, requestLogin string) {
 		t.Helper()
@@ -69,6 +105,7 @@ func TestRemoteAccess(t *testing.T) {
 
 	// Remote access starts off. One saved value alone keeps it off.
 	rejected("off", host, login)
+	loopbackRejected("off", http.Header{"Tailscale-User-Login": {login}})
 	if output := cli("settings", "set", "remote-host", "My-Mac.Example.ts.net"); output != "Saved remote-host: "+host+".\nRemote access is off. It needs both remote-host and remote-login.\n" {
 		t.Fatalf("set remote-host: %q", output)
 	}
@@ -84,14 +121,28 @@ func TestRemoteAccess(t *testing.T) {
 	// The remote page gets a policy for its own WebSocket origin.
 	response := get(host, login)
 	policy := response.Header.Get("Content-Security-Policy")
-	if response.StatusCode != http.StatusOK || !strings.Contains(policy, "connect-src 'self' ws://"+host+" wss://"+host+";") || strings.Contains(policy, "127.0.0.1") {
+	if response.StatusCode != http.StatusOK || !strings.Contains(policy, "connect-src 'self' wss://"+host+";") || strings.Contains(policy, "ws://") || strings.Contains(policy, "127.0.0.1") {
 		t.Fatalf("remote page: %d %q", response.StatusCode, policy)
 	}
 	if response = get(host, "USER@example.com"); response.StatusCode != http.StatusOK {
 		t.Fatal("the login check depends on letter case")
 	}
-	if policy = get(address, "").Header.Get("Content-Security-Policy"); !strings.Contains(policy, "ws://127.0.0.1:"+port+" ws://localhost:"+port+";") || strings.Contains(policy, host) {
+	if response = get(address, ""); response.StatusCode != http.StatusOK {
+		t.Fatalf("direct local page: %d", response.StatusCode)
+	}
+	if policy = response.Header.Get("Content-Security-Policy"); !strings.Contains(policy, "ws://127.0.0.1:"+port+" ws://localhost:"+port+";") || strings.Contains(policy, host) {
 		t.Fatalf("local policy changed: %q", policy)
+	}
+	// A loopback Host through the proxy stays rejected while remote access is on.
+	loopbackRejected("the saved login", http.Header{"Tailscale-User-Login": {login}})
+	loopbackRejected("another login", http.Header{"Tailscale-User-Login": {"other@example.com"}})
+	loopbackRejected("no login", http.Header{})
+	loopbackRejected("Funnel", http.Header{"Tailscale-Funnel-Request": {"?1"}})
+	// Each header of a proxy alone marks a forwarded request.
+	for _, name := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Proto", "Tailscale-User-Login", "Tailscale-Funnel-Request"} {
+		if response := send(address, http.Header{name: {"value"}}); response.StatusCode != http.StatusForbidden {
+			t.Fatalf("a loopback Host with %s got %d", name, response.StatusCode)
+		}
 	}
 	rejected("no login", host, "")
 	rejected("another login", host, "other@example.com")
@@ -101,6 +152,7 @@ func TestRemoteAccess(t *testing.T) {
 	// Tailscale Funnel requests come from the internet and name no Tailscale user.
 	request, _ := http.NewRequest("GET", "http://"+address+"/", nil)
 	request.Host = host
+	request.Header.Set("X-Forwarded-Host", host)
 	request.Header.Set("Tailscale-Funnel-Request", "?1")
 	if response, err := http.DefaultClient.Do(request); err != nil || response.StatusCode != http.StatusForbidden {
 		t.Fatal("accepted a Funnel request", response, err)
@@ -116,10 +168,21 @@ func TestRemoteAccess(t *testing.T) {
 	} else {
 		response.Body.Close()
 	}
-	// The Origin of a remote upgrade must be the remote host.
-	if conn, status := dial(host, "https://example.com", login); status != http.StatusForbidden {
-		conn.Close()
-		t.Fatal("accepted a foreign origin for the remote host")
+	// The Origin of a remote upgrade must be the HTTPS origin of the remote host.
+	for _, origin := range []string{"https://example.com", "http://" + host, "https://" + host + ":8443", "https://" + strings.ToUpper(host)} {
+		if conn, status := dial(host, origin, login); status != http.StatusForbidden {
+			conn.Close()
+			t.Fatalf("accepted the origin %s for the remote host", origin)
+		}
+	}
+	// A browser sends an Origin with each upgrade. A remote upgrade without one fails.
+	headers := proxy(host, login)
+	headers.Set("Host", host)
+	if conn, response, _ := (&websocket.Dialer{HandshakeTimeout: time.Second}).Dial("ws://"+address+"/ws", headers); response == nil || response.StatusCode != http.StatusForbidden {
+		if conn != nil {
+			conn.Close()
+		}
+		t.Fatal("accepted a remote upgrade without an Origin")
 	}
 
 	// A remote view and a local view watch the statuses.
@@ -184,6 +247,15 @@ func TestRemoteAccess(t *testing.T) {
 	cli("settings", "set", "remote-host", host+":8443")
 	if response = get(host+":8443", login); response.StatusCode != http.StatusOK {
 		t.Fatalf("remote page with a port: %d", response.StatusCode)
+	}
+	if conn, status := dial(host+":8443", "https://"+host+":8443", login); status != http.StatusSwitchingProtocols {
+		t.Fatalf("remote upgrade with a port got %d", status)
+	} else {
+		conn.Close()
+	}
+	if conn, status := dial(host+":8443", "https://"+host, login); status != http.StatusForbidden {
+		conn.Close()
+		t.Fatal("accepted the origin of the default port for the host with a port")
 	}
 	rejected("the host without its port", host, login)
 }

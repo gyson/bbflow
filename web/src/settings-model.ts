@@ -74,6 +74,26 @@ export function toolRemoval(id: string, warned: boolean): { change: SettingsChan
   };
 }
 
+// The saved values of remote access that a Settings view shows.
+export interface RemoteValues {
+  host: string;
+  login: string;
+}
+
+// RemoteChanged is the failure of a remote access save after another client changed
+// remote access. saved holds the values of that change. A second save from them is a
+// decision of the user to replace them.
+export class RemoteChanged extends Error {
+  readonly saved: RemoteValues;
+
+  constructor(settings: Settings) {
+    const host = settings.remoteHost || 'none';
+    const login = settings.remoteLogin || 'none';
+    super(`Another view changed remote access. The saved host name is ${host}, and the saved login is ${login}. Click Save again to replace them.`);
+    this.saved = { host: settings.remoteHost, login: settings.remoteLogin };
+  }
+}
+
 // The server calls of the Settings saves. conflict tells a rejected save that another
 // save can cause, such as a revision change.
 export interface SettingsService {
@@ -171,9 +191,15 @@ export class SettingsSaves {
     return this.enqueue(() => this.save(settings => ({ ...settings, port })));
   }
 
-  // The two values of remote access save together and alone, as the port does.
-  saveRemote(remoteHost: string, remoteLogin: string): Promise<void> {
-    return this.enqueue(() => this.save(settings => ({ ...settings, remoteHost, remoteLogin })));
+  // The two values of remote access save together and alone, as the port does. base
+  // holds the saved values that the user edited from. When another client changed
+  // remote access since then, the save fails with RemoteChanged and keeps that change.
+  // Thus a view with earlier values cannot restore a login that another view removed.
+  saveRemote(base: RemoteValues, remoteHost: string, remoteLogin: string): Promise<void> {
+    return this.enqueue(() => this.save(settings => {
+      if (settings.remoteHost !== base.host || settings.remoteLogin !== base.login) throw new RemoteChanged(settings);
+      return { ...settings, remoteHost, remoteLogin };
+    }));
   }
 
   // update takes the settings that a request outside the queue saved, such as a title

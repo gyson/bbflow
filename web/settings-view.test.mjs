@@ -368,6 +368,42 @@ test('remote access saves both fields with Save and shows the saved values', asy
   assert.deepEqual(toasts, []);
 });
 
+test('a remote access save after a change in another view shows that change and does not replace it', async () => {
+  const { nodes, pending, view, reply, type } = await setup();
+  const { ConnectionError } = await import('./dist/protocol.js');
+  const host = 'my-mac.example.ts.net', login = 'user@example.com';
+  type('settings-remote-host', host);
+  type('settings-remote-login', login);
+  nodes['settings-remote-form'].onsubmit(event);
+  await tick();
+  await reply('settings-save');
+  // Another view removes the login. This view then saves an edit of the host only.
+  const latest = { ...view.saves.saved, remoteLogin: '', revision: view.saves.saved.revision + 1 };
+  type('settings-remote-host', 'other.example.ts.net');
+  nodes['settings-remote-form'].onsubmit(event);
+  await tick();
+  pending.shift().reject(new ConnectionError('settings changed', false, true));
+  await tick();
+  await reply('settings-get', structuredClone(latest));
+  // No second save goes out. The error and the status show the saved values.
+  assert.equal(pending.length, 0);
+  assert.ok(!nodes['settings-remote-error'].hidden);
+  assert.match(nodes['settings-remote-error'].textContent, /^Another view changed remote access\. The saved host name is my-mac\.example\.ts\.net, and the saved login is none\. Click Save again/);
+  assert.equal(nodes['settings-remote-status'].textContent, 'Remote access is off. It needs both the host name and the login.');
+  // The text stays as an edit.
+  assert.deepEqual([nodes['settings-remote-host'].value, nodes['settings-remote-login'].value], ['other.example.ts.net', login]);
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Remote access');
+  assert.ok(!nodes['settings-remote-save'].disabled);
+  // A second Save replaces the values of the other view.
+  nodes['settings-remote-form'].onsubmit(event);
+  await tick();
+  const sent = pending[0].request.settings;
+  assert.deepEqual([sent.revision, sent.remoteHost, sent.remoteLogin], [latest.revision, 'other.example.ts.net', login]);
+  await reply('settings-save');
+  assert.ok(nodes['settings-remote-error'].hidden);
+  assert.ok(!view.unsaved);
+});
+
 test('rejected remote access keeps its text, and Done discards it', async () => {
   const { nodes, view, toasts, fail, type, reopen } = await setup();
   const rejection = 'remote host must be a DNS name such as my-mac.example.ts.net, with an optional port';

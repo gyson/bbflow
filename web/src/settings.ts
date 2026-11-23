@@ -1,7 +1,7 @@
 import { element } from './dom.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, parsePort, PortField, portStatus, remoteStatus, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './settings-model.js';
+import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, parsePort, PortField, portStatus, RemoteChanged, remoteStatus, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './settings-model.js';
 import type { Defaults, SettingsChange } from './settings-model.js';
 
 const portRange = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
@@ -722,6 +722,8 @@ export class SettingsView {
   // Save the two fields of remote access together. The server checks them and saves the
   // host name in lower case. The fields take no edit during the save, so the reply can
   // show the saved values. A failed save keeps the text, with the error below the fields.
+  // After a change of remote access in another view, the save fails and the error shows
+  // the saved values. A second Save then replaces them.
   private saveRemote(): void {
     if (!this.saved || this.remoteBusy) return;
     const visit = this.visits;
@@ -736,12 +738,14 @@ export class SettingsView {
       } else if (visit !== this.visits) {
         this.report(remoteNotSaved, errorMessage(error));
       } else {
+        // The text stays an edit of the values that the other view saved.
+        if (error instanceof RemoteChanged) this.renderedRemote = error.saved;
         this.remoteError.textContent = errorMessage(error);
         this.remoteError.hidden = false;
       }
       this.render();
     };
-    void this.saves.saveRemote(this.remoteHost.value.trim(), this.remoteLogin.value.trim()).then(() => done(), (error: unknown) => done(error ?? new Error('Unknown error')));
+    void this.saves.saveRemote(this.renderedRemote, this.remoteHost.value.trim(), this.remoteLogin.value.trim()).then(() => done(), (error: unknown) => done(error ?? new Error('Unknown error')));
   }
 
   private saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K]): void {
