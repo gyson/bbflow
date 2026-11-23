@@ -774,6 +774,11 @@ line, the search icon, and **More actions**. **Stop session** and **Continue in 
 terminal** move to the top of the [More actions menu](#more-actions-menu). When a new
 terminal cannot start, the menu shows the reason below the disabled item.
 
+The toolbar stays at the top of the main area when the main area scrolls. It has an
+opaque background. A Home Screen web app on iOS blurs the page content below the status
+bar. It does not blur a bar that stays at the top and has an opaque background. Thus
+the session title stays sharp.
+
 #### Limits
 
 - The session keeps the minimum heights of its terminal and its message editor, 440
@@ -3989,6 +3994,15 @@ repository, and a folder outside Git, each with a shell session.
   **Continue in new terminal** in the More actions menu, a draft, Settings, and the
   welcome view. The browser console was empty. The check used a desktop browser with a
   mouse. It did not use a phone, touch input, or an on-screen keyboard.
+- A simulator check of the toolbar used a demo instance as a Home Screen web app on an
+  iPhone 17 simulator with iOS 27.2, in dark Appearance. Without the sticky toolbar,
+  the system blurred the session title. With it, the title was sharp after a page
+  reload and after a new start of the web app. The More actions menu opened above the
+  view switch.
+- A browser check at a width of 390 pixels and a height of 500 pixels scrolled a draft
+  by 300 pixels. The toolbar stayed at the top, and its More actions menu opened above
+  the form. These two checks did not use a real iPhone, light Appearance, a toast, or a
+  visible page bar.
 - A browser check of the view switch used window widths of 885, 1280, 1500, and 1700 pixels.
   At 885 and 1280 pixels, the sidebar stayed and the switch showed each view in the
   full main area. At 1280 pixels with a hidden sidebar and at 1500 pixels, the session

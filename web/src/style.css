@@ -743,7 +743,11 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
   .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 50; width: min(86vw, 330px); padding: 18px 14px 14px; box-shadow: 8px 0 30px var(--shadow-overlay); }
   #sidebar-scrim { display: block; position: fixed; inset: 0; z-index: 49; background: var(--backdrop); }
   #sidebar-divider { display: none; }
-  .toolbar { min-height: 0; flex-wrap: nowrap; gap: 8px; padding: 10px 12px; }
+  /* The toolbar stays at the top when the main area scrolls. A Home Screen web app on
+     iOS blurs the page content below the status bar. It does not blur a sticky bar that
+     has an opaque background. The toolbar is above the menus of the views and below the
+     toasts. */
+  .toolbar { position: sticky; top: 0; z-index: 25; min-height: 0; flex-wrap: nowrap; gap: 8px; padding: 10px 12px; background: var(--workspace); }
   .toolbar-title { min-width: 0; gap: 8px; }
   h1 { font-size: 16px; }
   #workspace { margin-top: 3px; font-size: 11px; }
