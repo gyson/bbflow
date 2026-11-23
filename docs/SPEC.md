@@ -4082,6 +4082,14 @@ repository, and a folder outside Git, each with a shell session.
 - Terminal tests cover the row limit of each width, the allocation of a resize to more
   columns, the scrollback size budget, frames at the message limit, and the
   narrower-view row cache.
+- Cross-engine fixtures compare the input modes of a view with xterm.js after each
+  frame: cursor keys, keypad, bracketed paste, focus reporting, each mouse tracking
+  mode, and each mouse encoding. A Go test checks nine mode sets in two views. One
+  view joins and gets a full frame. The other view shows the terminal and gets a frame
+  with the changed modes. Both views get the modes of the application, and a second
+  frame keeps them.
+- A browser check with mouse tracking mode 1000 and the SGR encoding on showed that a
+  click in the terminal sent one SGR report for the press and one for the release.
 - Cross-engine fixtures compare Go-generated frames with xterm.js for cells, styles,
   cursor, scrollback, resize, split escapes, Unicode, and alternate screens.
 - Fixtures with xterm.js check the focus reports of a view. A frame that sets the focus

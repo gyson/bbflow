@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -241,6 +242,11 @@ func TestBrowserFrames(t *testing.T) {
 		{Input: "shell> \x1b[?2004h\x1b[?1h\x1b[?1006h\x1b[?1000h\x1b[?25l"},
 		{Size: &protocol.Size{Cols: 20, Rows: 6}},
 		{Input: "\x1b[3J\x1b[2J\x1b[Hfinal screen\r\n"},
+		// Each mouse tracking mode and each mouse encoding.
+		{Input: "\x1b[?1002h"},
+		{Input: "\x1b[?1003h\x1b[?1016h"},
+		{Input: "\x1b[?1003l\x1b[?1016l\x1b[?9h\x1b[?1004h"},
+		{Input: "\x1b[?9l\x1b[?1004l\x1b[?66h"},
 	}
 	state := New(protocol.Size{Cols: 28, Rows: 8})
 	var previous *View
@@ -343,6 +349,59 @@ func TestFramesWriteOnlyChangedModes(t *testing.T) {
 	}
 	if data, _ := wide.ViewFor(protocol.Size{Cols: 10, Rows: 4}, nil).Render(cropped); !strings.Contains(string(data), "\x1b[?25h") {
 		t.Fatalf("the frame does not show the cursor again: %q", data)
+	}
+}
+
+// A view must end each frame with the mouse tracking mode and the mouse encoding of the
+// application. The reset of one tracking mode turns all tracking off, and the reset of
+// one encoding selects the default encoding. A view that joins gets a full frame, and a
+// view that shows the terminal gets a frame with the changed modes. Both views must have
+// the same modes.
+func TestFramesKeepTheMouseModesOfTheApplication(t *testing.T) {
+	for _, modes := range []string{
+		"\x1b[?9h", "\x1b[?1000h", "\x1b[?1002h", "\x1b[?1003h",
+		"\x1b[?1000h\x1b[?1006h", "\x1b[?1002h\x1b[?1016h", "\x1b[?1000h\x1b[?1002h\x1b[?1006h",
+		"\x1b[?1003h\x1b[?1006h\x1b[?1003l\x1b[?1006l", "\x1b[?1004h\x1b[?2004h\x1b[?1h\x1b[?66h",
+	} {
+		// The application starts with other modes, so that each mode set is a change.
+		state := New(protocol.Size{Cols: 20, Rows: 4})
+		apply := func(output string) *View {
+			t.Helper()
+			if _, err := state.Apply(history.Event{Kind: "output", Data: []byte(output)}); err != nil {
+				t.Fatal(err)
+			}
+			return state.View()
+		}
+		before := apply("\x1b[?1003h\x1b[?1016h")
+		after := apply("\x1b[?1003l\x1b[?1016l" + modes)
+		joined := xterm.New(xterm.WithCols(20), xterm.WithRows(4))
+		shown := xterm.New(xterm.WithCols(20), xterm.WithRows(4))
+		baseline, _ := before.Render(nil)
+		shown.Write(baseline)
+		change, full := after.Render(before)
+		if full {
+			t.Fatalf("%q: a mode change gives a full frame", modes)
+		}
+		shown.Write(change)
+		// A view parses each frame after the last one. A second frame must not change the modes.
+		for range 2 {
+			data, _ := after.Render(nil)
+			joined.Write(data)
+		}
+		redraw, _ := apply("redraw").Render(after)
+		shown.Write(redraw)
+		want := state.term.DecPrivateModes()
+		// A new emulator has no value for a mode that no sequence set.
+		tracking := func(mode string) string { return cmp.Or(mode, "NONE") }
+		encoding := func(mode string) string { return cmp.Or(mode, "DEFAULT") }
+		for name, display := range map[string]*xterm.Terminal{"the view that joined": joined, "the view that got the change": shown} {
+			got := display.DecPrivateModes()
+			if tracking(got.MouseTrackingMode) != tracking(want.MouseTrackingMode) || encoding(got.MouseEncoding) != encoding(want.MouseEncoding) ||
+				got.SendFocus != want.SendFocus || got.BracketedPasteMode != want.BracketedPasteMode ||
+				got.ApplicationCursorKeys != want.ApplicationCursorKeys || got.ApplicationKeypad != want.ApplicationKeypad {
+				t.Errorf("%q: %s has %+v, the application has %+v", modes, name, got, want)
+			}
+		}
 	}
 }
 
