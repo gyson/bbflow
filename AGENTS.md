@@ -24,9 +24,9 @@ Follow these rules in all text:
   frozen fixtures unchanged during style edits.
 
 Reference text states rules, procedures, and behavior. It includes `README.md`, this
-file, `SPEC.md`, `PROTOCOL.md`, `COMMANDS.md`, `DEVELOPMENT.md`, `cmd/bbflow/skill.md`,
-the project skills, UI text, and code comments. Follow these additional rules in
-reference text:
+file, `SPEC.md`, `PROTOCOL.md`, `COMMANDS.md`, `REMOTE.md`, `DEVELOPMENT.md`,
+`cmd/bbflow/skill.md`, the project skills, UI text, and code comments. Follow these
+additional rules in reference text:
 
 - Use short, clear sentences. Prefer sentences of fewer than 25 words.
 - Give one instruction in each sentence.
@@ -88,6 +88,7 @@ reference details, such as limits, format numbers, or UI behavior, into the READ
 | [docs/SPEC.md](docs/SPEC.md) | What is currently implemented: behavior, architecture, interfaces, and verified limitations. Do not put proposals or plans there. | The implementation changes. Update it alongside the change. Until code exists, a minimal statement of the current state is sufficient. |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | The WebSocket messages between the clients and the server. | An operation, a message, or the protocol version changes. |
 | [docs/COMMANDS.md](docs/COMMANDS.md) | The `bbflow` commands only. Clearly identify unavailable commands. | bbflow commands, options, defaults, or their effects change. |
+| [docs/REMOTE.md](docs/REMOTE.md) | The user guide for remote access with Tailscale Serve: setup steps, Tailscale commands, and solutions to problems. `SPEC.md` owns the rules and limits. | The setup steps, the Tailscale commands, or the messages of remote access change. |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Developer build, test, and release commands and procedures. | A build, check, or release procedure changes, or you add a toolchain. |
 | `cmd/bbflow/skill.md` | The guide for agents that `bbflow skill` prints. | The archive tables, event kinds, or `bbflow query` behavior change. |
 | This file | Contributor guidance. | A rule for contributors changes. |
