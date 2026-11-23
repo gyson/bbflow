@@ -569,8 +569,8 @@ procedure, the Tailscale commands, and the solutions to problems.
 - A login with characters outside printable ASCII cannot be saved.
 - **Open in browser** and **Show in Finder** act on the computer of the server, not on
   the remote device.
-- A remote view can become the [size owner](#size-owner), as each view can. Input from
-  a phone gives the PTY the size of the phone view.
+- A remote view can become the [size owner](#size-owner), as each view can. A typed key
+  or a message from a phone gives the PTY the size of the phone view.
 - `bbflow ui`, the menu bar, and the server start message use the `localhost` URL only.
 - The web UI loads its files and its WebSocket connection from the root of the host.
   Thus it does not work below a path of the proxy.
@@ -668,7 +668,8 @@ session. A window of 700 pixels or less uses the [mobile layout](#mobile-layout)
 
 The UI renders titles, errors, and recorded output as text. It never treats them as
 HTML. Each tab has its own selected session. Tabs can share a session. Every tab can
-type and send messages. The PTY uses the size of the tab that most recently sent input.
+type and send messages. The PTY uses the size of the tab that most recently did so. See
+[Size owner](#size-owner).
 
 The browser favicon uses the same pixel logo as the macOS menu bar, in six rainbow
 bands from violet to red. The logo selects brighter band colors when the browser uses
@@ -2892,14 +2893,28 @@ button.
 ### Size owner
 
 The PTY uses the viewport size of one view, the size owner. A view becomes the size
-owner when it joins and no view owns the size. A view that sends input becomes the size
-owner before the server writes that input. A mouse report is input too. So is the focus
-report that a view sends when the focus of its terminal changes. A frame causes no
-input, see [Frames](#frames). Signals do not change the size owner.
+owner when it joins and no view owns the size. A view that sends user input becomes the
+size owner before the server writes that input. User input is typed keys, a paste, or a
+message from the message editor. Signals do not change the size owner.
+
+A report does not change the size owner. A report is a focus report or a mouse report
+that the application turned on. The server writes the report to the PTY, as it writes
+other input. Thus a click, a tap, a pointer move, or a focus change in a view does not
+resize the PTY. A frame causes no input, see [Frames](#frames).
+
+The server uses the modes of the application to identify a report:
+
+| Mode of the application | Input that is a report |
+| --- | --- |
+| Focus reporting is on. | `ESC [ I` and `ESC [ O`. |
+| Mouse tracking is on. | A mouse report in the default encoding or in an SGR encoding. |
+
+Input that has other bytes with a report is user input. The same bytes are user input
+when the mode is off.
 
 A socket closing only removes that view. When the size owner leaves, the PTY keeps its
-size. The next view that sends input or a new viewport size becomes the size owner. Stop
-ends work for all views. There is no Detach button.
+size. The next view that sends user input or a new viewport size becomes the size owner.
+Stop ends work for all views. There is no Detach button.
 
 ### Viewport of each view
 
@@ -4015,11 +4030,16 @@ repository, and a folder outside Git, each with a shell session.
 - Fixtures with xterm.js check the focus reports of a view. A frame that sets the focus
   reporting mode sends no input. A later focus report and typed data are sent, also
   after a frame that the view parsed while its input was off.
-- A browser check showed one session with focus reporting on in two views, of 82 and
-  39 columns. No view sent input in 4 seconds without a user action, and the PTY kept
-  its size. A click on the terminal of a view sent one focus report, and the PTY changed
-  to the size of that view one time. A program in the terminal got one report for each
-  focus change.
+- A server test checks the size owner with reports. A focus report and a mouse report
+  from another view reach the process, and the PTY keeps its size. A typed key from
+  that view resizes the PTY first. The same bytes resize the PTY when the application
+  has the mode off. A terminal test checks the report formats for each mode.
+- A browser check showed one session with focus reporting and mouse tracking on in two
+  views, of 82 and 39 columns. No view sent input in 4 seconds without a user action,
+  and the PTY kept its size. A program in the terminal got one report for each focus
+  change. A click and a pointer move in the view without the size sent a focus report
+  and mouse reports, and the PTY kept its size. A typed key in that view then changed
+  the PTY to the size of that view one time.
 
 - TypeScript fixtures cover reconnect delays, canceled retries, uncertain session
   starts, identity checks, binary input, and input guards for inactive views. They also

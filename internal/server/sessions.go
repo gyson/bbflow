@@ -97,7 +97,9 @@ func (a *attachment) inputAck(id string, err error) {
 }
 
 // Every view can send input and signals. The PTY uses the size of the view that most
-// recently sent input. When no view has the size, a view that sends its size takes it.
+// recently sent user input: typed keys, a paste, or a message. A focus report or a mouse
+// report is input that the user did not type. It reaches the PTY, but it does not change
+// the size owner. When no view has the size, a view that sends its size takes it.
 // Signals never change the size owner. Serialize accepted controls so that a size
 // change always reaches the PTY before the input that caused it. Input receipts always
 // go to the view that sent the input.
@@ -116,9 +118,10 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 		a.wake()
 	}
 	var controls []agent.Control
-	if r.sizeOwner != a && (message.Type == "input" || (message.Type == "resize" && r.sizeOwner == nil)) {
+	userInput := message.Type == "input" && !r.terminal.IsReport(message.Data)
+	if r.sizeOwner != a && (userInput || (message.Type == "resize" && r.sizeOwner == nil)) {
 		r.sizeOwner = a
-		if message.Type == "input" {
+		if userInput {
 			// The runtime ignores a resize to the current PTY size.
 			controls = append(controls, agent.Control{Message: protocol.Message{Type: "resize", Size: a.size}})
 		}

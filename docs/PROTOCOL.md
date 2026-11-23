@@ -940,9 +940,13 @@ again after each change. An ended session sends `exit` and no `status` message.
 
 The PTY uses the viewport size of one view, the size owner. A view becomes the size
 owner when it joins and no view owns the size. A view also becomes the size owner when
-it sends `input`, or when it sends `resize` and no view owns the size. Before the server
-writes input from a new size owner, it resizes the PTY to the size of that view.
-`signal` does not change the size owner.
+it sends `input` that is not a report, or when it sends `resize` and no view owns the
+size. Before the server writes input from a new size owner, it resizes the PTY to the
+size of that view. `signal` does not change the size owner.
+
+A report is `input` that holds only focus reports or mouse reports, while the
+application has that mode on. The server writes a report to the PTY, but the size owner
+does not change. See [size owner](SPEC.md#size-owner) for the rule.
 
 An input receipt always goes to the view that sent the input. Closing the socket removes
 that view. The PTY keeps its size until another view becomes the size owner. No process

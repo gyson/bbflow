@@ -5,7 +5,7 @@ type View = Pick<Terminal, 'parser' | 'onData'>;
 // xterm.js reports the focus state each time it parses the sequence that turns focus
 // reporting on (`CSI ? 1004 h`). Each frame from the server contains that sequence
 // while the application uses focus reporting. Such a report is not a focus change. As
-// input, it would make this view the size owner after each frame.
+// input, it would give the application a false focus event after each frame.
 //
 // onUserData calls send with the data that xterm.js emits, except for the focus report
 // of a parsed mode sequence. The report of a real focus change still reaches send.

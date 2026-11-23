@@ -220,8 +220,9 @@ folder with a `SKILL.md` file.
 ## Product priorities
 
 - Treat browser tabs as equal views. Every view can send input. Do not add a controller
-  role. The PTY uses the size of the view that most recently sent input. Closing a view
-  never stops the session.
+  role. The PTY uses the size of the view that most recently sent user input: typed
+  keys, a paste, or a message. A focus report or a mouse report does not change the
+  size. Closing a view never stops the session.
 - Keep source terminal parsing and query replies in the server. Clients receive rendered
   frames and acknowledge them. Keep the lossless recording separate from display
   updates.
