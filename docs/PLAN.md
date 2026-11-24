@@ -24,8 +24,7 @@ Follow these rules when you change this file:
 ## Custom context
 
 Status: deferred. Let the user add, edit, and apply custom context to projects and
-sessions, including General. Today bbflow neither inserts context nor delivers it
-automatically.
+sessions. Today bbflow neither inserts context nor delivers it automatically.
 
 - Saved context lives in SQLite.
 - The user sees the selected context and its scope before bbflow applies it.

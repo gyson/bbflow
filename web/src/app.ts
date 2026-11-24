@@ -678,16 +678,14 @@ function renderSessions() {
       add.dataset.focus = `add:${id}`;
       add.onclick = () => action(() => showLaunch(project.id), `Could not add a draft to ${name}.`);
       heading.append(add);
-      if (id !== 'general') {
-        const edit = document.createElement('button');
-        edit.className = 'project-action';
-        edit.textContent = '⋯';
-        edit.title = `Edit ${name}`;
-        edit.setAttribute('aria-label', edit.title);
-        edit.dataset.focus = `edit:${id}`;
-        edit.onclick = () => showProject(project);
-        heading.append(edit);
-      }
+      const edit = document.createElement('button');
+      edit.className = 'project-action';
+      edit.textContent = '⋯';
+      edit.title = `Edit ${name}`;
+      edit.setAttribute('aria-label', edit.title);
+      edit.dataset.focus = `edit:${id}`;
+      edit.onclick = () => showProject(project);
+      heading.append(edit);
     }
     for (const family of group.families) list.append(familyBlock(family, !project));
     if (moreGroups.has(id)) {
@@ -720,7 +718,7 @@ function renderSessions() {
   if (!groups.length) {
     const empty = document.createElement('p');
     empty.className = 'muted';
-    empty.textContent = archivedList ? 'No archived sessions found.' : 'No matching projects or sessions.';
+    empty.textContent = archivedList ? 'No archived sessions found.' : query.trim() ? 'No matching projects or sessions.' : 'No projects yet. Click ＋ Project to add a folder.';
     $('sessions').append(empty);
   }
   showListStatuses();

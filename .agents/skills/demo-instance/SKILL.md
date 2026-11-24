@@ -70,7 +70,7 @@ Git worktree has its own demo. Git ignores the folder, so it is never committed.
 
 | Path | Contents |
 | --- | --- |
-| `.bbflow-demo/` | The regular instance files: SQLite history, log, worktrees, and the General folder. |
+| `.bbflow-demo/` | The regular instance files: SQLite history, log, and worktrees. |
 | `.bbflow-demo/demo/projects/` | Two simulated Git repositories. |
 | `.bbflow-demo/demo/demo-agent.sh` | A copy of the simulated agent tool. |
 | `.bbflow-demo/demo/DEMO` | The marker that lets `clean` remove the directory. |
@@ -109,7 +109,7 @@ error of the shell.
 | Build tide chart | Tide Web | Live, with continuous output. |
 | Plan release notes | Tide Web | A draft that did not start. It has a saved message, **Use worktree**, and the base `feature/tide-chart`. |
 | Old layout spike | Tide Web | Ended and archived. A Shell session. |
-| Scratch shell | General | Ended. A Shell session. |
+| Scratch shell | Tide Web | Ended. A Shell session. |
 
 The Demo agent accepts these commands in its terminal:
 
@@ -209,9 +209,6 @@ A removal of the checkout worktree also discards these files, with no warning. T
 
 - The Demo agent is a shell script. It does not show how a real agent tool draws its
   screen. For that, add the real tool in Settings of the demo.
-- The General folder is in the checkout. Thus Git finds the bbflow repository for a
-  session in General. Use `--dir` with a folder outside the checkout if this has an
-  effect on your check.
 - An older `bin/bbflow` rejects the database of a newer one. After a checkout of an
   older commit, run `clean`, then create the demo again.
 - If `seed` stops before it completes, the data is not complete. Run `clean`, then

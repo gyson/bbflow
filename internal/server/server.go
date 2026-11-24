@@ -75,9 +75,6 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 	if settings, err := store.Settings(); err == nil {
 		s.remote.saved(settings, nil)
 	}
-	if err := s.ensureGeneral(); err != nil {
-		return protocol.ServerInfo{}, err
-	}
 	if err := s.checkTools(ctx); err != nil {
 		return protocol.ServerInfo{}, err
 	}

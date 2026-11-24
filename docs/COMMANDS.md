@@ -188,10 +188,9 @@ Open that URL in a browser to use the web UI. The command does not launch a brow
 the [web client specification](SPEC.md#web-client) for the UI controls.
 
 **Impact:** creates or opens the selected history archive and appends server output to
-`server.log`. It creates private data and lock files as needed, saves the built-in
-General project, and creates its `<instance>/workspaces/general` folder. Before serving
-requests, it upgrades supported older database formats using SQL embedded in the binary.
-All pending migrations commit together. A failure rolls them back and stops startup.
+`server.log`. It creates private data and lock files as needed. Before serving requests,
+it upgrades supported older database formats using SQL embedded in the binary. All
+pending migrations commit together. A failure rolls them back and stops startup.
 
 The command starts no shell or agent. Create sessions in the UI. The server uses the
 port from Settings or the saved port of the directory when it is free. Otherwise, it
@@ -433,8 +432,8 @@ unsupported formats without changing their contents. Downgrades are not supporte
 [database upgrades](SPEC.md#database-upgrades) for the format numbers.
 
 No separate migration command or SQLite CLI is needed. Manage projects in the UI. There
-are no project CLI commands. Removing a custom project clears session membership but
-preserves its recorded workspace and history.
+are no project CLI commands. Removing a project clears session membership but preserves
+its recorded workspace and history.
 
 Archiving hides a draft or finished session in the UI. SQL still includes it unless you
 filter `sessions.archived`. Restoration never starts a process.
@@ -521,9 +520,8 @@ and day are estimates. See [storage report](SPEC.md#storage-report) for the meth
 
 The report shows project names, session titles, tool names, and the first 8 characters
 of session IDs. It never shows terminal content or workspace paths. Use `--redact` to
-replace project names and session titles with short IDs. General and standalone
-sessions keep their labels. The report escapes Markdown characters in names, so each
-name shows as saved.
+replace project names and session titles with short IDs. The Standalone label stays.
+The report escapes Markdown characters in names, so each name shows as saved.
 
 ### Read time and limits
 

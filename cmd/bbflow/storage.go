@@ -48,7 +48,7 @@ func storage(target client.Target, args []string) error {
 
 func redactStorage(report *history.StorageReport) {
 	name := func(id, name string) string {
-		if id == "" || id == history.GeneralProjectID {
+		if id == "" {
 			return name
 		}
 		return "project " + shortID(id)

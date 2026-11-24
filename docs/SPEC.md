@@ -891,8 +891,10 @@ sessions in groups. It also has a search box, and a bottom row with **＋ Projec
 
 - The sidebar lists saved projects and groups sessions, including drafts, through
   `project-list` and `session-list`.
-- General appears first. Custom projects follow in name order. Groups can be collapsed
-  in each view.
+- Projects appear in name order. Case does not change the order. Groups can be
+  collapsed in each view.
+- With no projects and no sessions, the sidebar shows **No projects yet. Click ＋
+  Project to add a folder.**
 - A group lists [session families](#session-families): a top-level session and its
   sub-sessions count as one family.
 - Each group shows its 5 most recent families. **Show more** below a group shows 5 more
@@ -1109,20 +1111,14 @@ defaulting to the folder basename. Git is not required. Canonical paths are uniq
 across saved projects. Parent and child folders remain allowed. Project IDs are
 independent of their names and paths.
 
-Names contain 1–200 characters without control characters. Custom projects can be
-renamed and removed. Removal sets their sessions' `project_id` to NULL. The UI shows
-these sessions under Standalone. Removal preserves recorded workspace paths, runs,
-recordings, drafts, and files. `session-rename` changes the user title of a session
-without changing its ID or recorded activity. See [session titles](#session-titles).
+Names contain 1–200 characters without control characters. Projects can be renamed and
+removed. Removal sets their sessions' `project_id` to NULL. The UI shows these sessions
+under Standalone. Removal preserves recorded workspace paths, runs, recordings, drafts,
+and files. `session-rename` changes the user title of a session without changing its ID
+or recorded activity. See [session titles](#session-titles).
 
-On startup the server creates the General project with ID `general` and a private
-`<instance>/workspaces/general` folder. General cannot be renamed or removed. The folder
-is created only after opening a supported database. At startup, its saved path uses the
-selected instance location.
-
-Old sessions retain their original workspace paths. Project metadata is authoritative in
-SQLite. Files created in General are ordinary workspace files outside the database, like
-files in custom projects.
+A new instance has no projects. Project metadata is authoritative in SQLite. Files in a
+project folder are ordinary files outside the database.
 
 #### Drafts and Start session
 
@@ -1677,9 +1673,9 @@ selected tool, it shows the command of that tool at once, also before the save. 
 Shell, it shows **(no startup command)**.
 
 The preparation keeps its project and workspace. Message drafts and attachments work
-before a run exists. Each project supports multiple independent drafts, including
-General. Each draft keeps its own name, tool snapshot, worktree choices, message text,
-and attachments across views and server restarts. **＋** always creates a new draft.
+before a run exists. Each project supports multiple independent drafts. Each draft
+keeps its own name, tool snapshot, worktree choices, message text, and attachments
+across views and server restarts. **＋** always creates a new draft.
 
 A reopened sidebar entry keeps its choices and message. Launch settings use optimistic
 revisions, separately from message revisions. A launch settings conflict preserves the
@@ -4090,9 +4086,9 @@ output. Restoration starts no process.
 
 ### Checks of projects and launches
 
-- Project fixtures cover General and custom launches, canonical folder uniqueness,
-  protected General identity, renaming, removal while a session runs, and restart
-  persistence.
+- Project fixtures cover a new instance without projects, launches in two projects,
+  name order, canonical folder uniqueness, renaming, removal while a session runs, and
+  restart persistence.
 - Draft fixtures cover concurrent creation of independent drafts, preserved tool
   snapshots, Shell selection, attachment persistence, and starting a fresh draft after
   launch.
@@ -4703,7 +4699,7 @@ These checks apply to the [Changes pane](#changes-pane) and its file menu.
 shell session in a managed worktree.
 
 - It checked Split, Unified, folded regions, View file, deleted files, symlinks, binary
-  files, both baselines, a non-Git General session, and an ended session.
+  files, both baselines, a session outside Git, and an ended session.
 - It also checked two tabs with separate selections, a phone width without horizontal
   scroll, and an empty browser console.
 - Script text in a file showed as text.

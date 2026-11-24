@@ -13,9 +13,6 @@ func TestProjectsPersistAndRemovalPreservesSessionHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { s.Close() }()
-	if err = s.EnsureGeneral("/instance/workspaces/general"); err != nil {
-		t.Fatal(err)
-	}
 	project, err := s.CreateProject(" bbflow ", "/work/bbflow")
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +33,7 @@ func TestProjectsPersistAndRemovalPreservesSessionHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	projects, err := s.Projects()
-	if err != nil || len(projects) != 2 || projects[0].ID != GeneralProjectID || projects[1].Name != "bbflow" {
+	if err != nil || len(projects) != 1 || projects[0].ID != project.ID || projects[0].Name != "bbflow" {
 		t.Fatalf("projects after reopen: %+v %v", projects, err)
 	}
 	if err = s.RenameProject(project.ID, "Renamed"); err != nil {
@@ -65,43 +62,38 @@ func TestProjectsPersistAndRemovalPreservesSessionHistory(t *testing.T) {
 	}
 }
 
-func TestGeneralIdentityAndProjectValidation(t *testing.T) {
+func TestProjectOrderAndValidation(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if err = s.EnsureGeneral("/first/general"); err != nil {
-		t.Fatal(err)
+	projects, err := s.Projects()
+	if err != nil || len(projects) != 0 {
+		t.Fatalf("new archive has projects: %+v %v", projects, err)
 	}
-	session, err := s.CreateSession("General work", "/first/general", GeneralProjectID)
+	beta, err := s.CreateProject("beta", "/work/beta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.EnsureGeneral("/relocated/general"); err != nil {
+	alpha, err := s.CreateProject("Alpha", "/work/alpha")
+	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := s.Project(GeneralProjectID)
-	if err != nil || p.Workspace != "/relocated/general" {
-		t.Fatalf("general: %+v %v", p, err)
-	}
-	old, err := s.Session(session.ID)
-	if err != nil || old.Workspace != "/first/general" {
-		t.Fatal("rewrote historical workspace", old, err)
-	}
-	if err = s.RemoveProject(GeneralProjectID); err == nil {
-		t.Fatal("removed General")
-	}
-	if err = s.RenameProject(GeneralProjectID, "Other"); err == nil {
-		t.Fatal("renamed General")
+	projects, err = s.Projects()
+	if err != nil || len(projects) != 2 || projects[0].ID != alpha.ID || projects[1].ID != beta.ID {
+		t.Fatalf("projects not in name order: %+v %v", projects, err)
 	}
 	for _, name := range []string{"", " \t ", "two\nlines"} {
 		if _, err = s.CreateProject(name, "/work"); err == nil {
 			t.Fatalf("accepted name %q", name)
 		}
 	}
-	if _, err = s.CreateProject("Duplicate", "/relocated/general"); err == nil {
+	if _, err = s.CreateProject("Duplicate", "/work/beta"); err == nil {
 		t.Fatal("accepted duplicate workspace")
+	}
+	if err = s.RenameProject("missing", "Other"); err == nil {
+		t.Fatal("renamed nonexistent project")
 	}
 	if err = s.RemoveProject("missing"); err == nil {
 		t.Fatal("removed nonexistent project")

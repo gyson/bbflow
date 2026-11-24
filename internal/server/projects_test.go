@@ -4,18 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-
-	"bbflow/internal/history"
 )
 
 func TestProjectWorkspaceResolution(t *testing.T) {
 	s, _ := composerServer(t)
 	t.Setenv("SHELL", "/bin/sh")
-	if err := s.ensureGeneral(); err != nil {
-		t.Fatal(err)
-	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if err := os.Mkdir(filepath.Join(home, "repo"), 0700); err != nil {
@@ -40,17 +34,6 @@ func TestProjectWorkspaceResolution(t *testing.T) {
 		if _, err = s.prepareProject(context.Background(), id, ""); err == nil {
 			t.Fatal("accepted missing project")
 		}
-	}
-	draft, err = s.prepareProject(context.Background(), history.GeneralProjectID, "")
-	if err != nil || !strings.HasSuffix(draft.Workspace, "/workspaces/general") {
-		t.Fatalf("general preparation: %+v %v", draft, err)
-	}
-	if err = s.ensureGeneral(); err != nil {
-		t.Fatal(err)
-	}
-	projects, err := s.store.Projects()
-	if err != nil || len(projects) != 2 {
-		t.Fatalf("duplicate General: %+v %v", projects, err)
 	}
 	if err = os.Remove(p.Workspace); err != nil {
 		t.Fatal(err)

@@ -99,8 +99,8 @@ func (d *demo) addData() {
 	})
 	d.saveDraft(plan.ID, "List the changes since the last release.")
 
-	// An ended shell session in the built-in General project.
-	d.runShell(d.launch(d.draft("general", "Scratch shell", "", nil)))
+	// An ended shell session.
+	d.runShell(d.launch(d.draft(tide, "Scratch shell", "", nil)))
 
 	// A live session with many sent messages and long replies, for the steps between
 	// the messages in the terminal.

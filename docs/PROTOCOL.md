@@ -288,10 +288,7 @@ Projects have stable IDs and unique canonical workspace paths. The server remove
 whitespace from the start and end of names. Names must contain 1–200 characters without
 control characters.
 
-General has ID `general`. The server creates it at startup under
-`<instance>/workspaces/general`. Rename and remove requests for General fail.
-
-Removing a custom project preserves sessions and running processes, clearing only their
+Removing a project preserves sessions and running processes, clearing only their
 project membership. Session summaries include `projectId`, an empty string after their
 project is removed. Session-list includes unstarted drafts. After project removal, its
 drafts remain under Standalone. Their `workspace` remains the saved canonical path.

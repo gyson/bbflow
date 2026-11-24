@@ -24,8 +24,10 @@ func TestDraftWatchSyncsEveryView(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	var project history.Project
+	call(protocol.Request{Operation: "project-add", Workspace: t.TempDir()}, &project)
 	var session history.Session
-	call(protocol.Request{Operation: "project-draft", Project: history.GeneralProjectID}, &session)
+	call(protocol.Request{Operation: "project-draft", Project: project.ID}, &session)
 	read := func(conn *protocol.Conn) protocol.Message {
 		t.Helper()
 		conn.SetReadDeadline(time.Now().Add(5 * time.Second))

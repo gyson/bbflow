@@ -3,19 +3,19 @@ import assert from 'node:assert/strict';
 import { familyStep, families, mergeSessions, placeText, sessionGroups, shownChildren } from './dist/projects.js';
 
 const projects = [
-  { id: 'general', name: 'General', workspace: '/instance/workspaces/general' },
+  { id: 'notes', name: 'Notes', workspace: '/work/notes' },
   { id: 'repo', name: 'bbflow', workspace: '/work/bbflow' },
 ];
 const session = (id, projectId, extra = {}) => ({ id, projectId, parentId: '', title: id, autoTitle: '', workspace: '/w', ...extra });
 const sessions = [
   { id: 'a', projectId: 'repo', parentId: '', title: 'Authentication', workspace: '/work/bbflow' },
-  { id: 'b', projectId: 'general', parentId: '', title: 'Research', workspace: '/instance/workspaces/general' },
+  { id: 'b', projectId: 'notes', parentId: '', title: 'Research', workspace: '/work/notes' },
   { id: 'c', projectId: '', parentId: '', title: 'Scratch', workspace: '/work/scratch' },
 ];
 const ids = groups => groups.map(g => g.families.map(f => [f.root.id, ...f.children.map(c => c.id)]));
 
-test('General remains available without sessions and custom projects group by stable identity', () => {
-  assert.deepEqual(sessionGroups(projects, [], '').map(g => g.project.id), ['general', 'repo']);
+test('a project without sessions remains available, and projects group by stable identity', () => {
+  assert.deepEqual(sessionGroups(projects, [], '').map(g => g.project.id), ['notes', 'repo']);
   assert.deepEqual(ids(sessionGroups(projects, sessions, '')), [[['b']], [['a']], [['c']]]);
   const renamed = projects.map(p => p.id === 'repo' ? { ...p, name: 'New name' } : p);
   assert.equal(sessionGroups(renamed, sessions, 'new name')[0].families[0].root.id, 'a');
@@ -68,7 +68,7 @@ test('the recent page and the group windows join in order without a repeated fam
   // repo shows 2 recent families, the selected family r9, and windows at offsets 2 and 4.
   // The window at offset 4 repeats the family r4, because activity changed between the
   // replies. Each family keeps its sub-sessions.
-  const recent = { sessions: [session('r1', 'repo'), session('r1a', 'repo', { parentId: 'r1' }), session('g1', 'general'), session('r2', 'repo'), session('r9', 'repo'), session('x1', 'removed')], more: ['repo', ''] };
+  const recent = { sessions: [session('r1', 'repo'), session('r1a', 'repo', { parentId: 'r1' }), session('g1', 'notes'), session('r2', 'repo'), session('r9', 'repo'), session('x1', 'removed')], more: ['repo', ''] };
   const windows = [
     { group: 'repo', offset: 4, page: { sessions: [session('r4', 'repo'), session('r4a', 'repo', { parentId: 'r4' }), session('r5', 'repo')], more: [] } },
     { group: 'repo', offset: 2, page: { sessions: [session('r3', 'repo'), session('r4', 'repo'), session('r4a', 'repo', { parentId: 'r4' })], more: ['repo'] } },
