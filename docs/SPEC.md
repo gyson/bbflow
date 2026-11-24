@@ -33,6 +33,7 @@ The Web client section has these features:
 | [Mobile layout](#mobile-layout) | The layout of a very narrow window: the sidebar drawer, the short toolbar, the message editor, the file list, and the on-screen keyboard. |
 | [Sidebar](#sidebar) | Projects, session groups, width, search, and refresh. |
 | [Session families](#session-families) | Sub-sessions and their parent. |
+| [Pinned sessions](#pinned-sessions) | The Pinned group at the top of the sidebar, and the pin rules. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
 | [Projects and launches](#projects-and-launches) | Projects, Start session, the shell, the terminal view, and reconnection. |
 | [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, built-in tools, tool types and model lists, the launch preparation of a session, and managed worktrees. |
@@ -884,16 +885,17 @@ the [side terminal](#side-terminal) both use these rules:
 ### Sidebar
 
 The sidebar lists the saved projects. Under each project, it shows the most recent
-sessions in groups. It also has a search box, and a bottom row with **＋ Project**,
-**Archived**, and **Settings**.
+sessions in groups. [Pinned](#pinned-sessions) comes first, above the projects. The
+sidebar also has a search box, and a bottom row with **＋ Project**, **Archived**, and
+**Settings**.
 
 #### Projects and groups
 
 - The sidebar lists saved projects and groups sessions, including drafts, through
   `project-list` and `session-list`.
-- Projects appear in name order. The order ignores the case of ASCII letters only. For
-  example, **alpha** comes before **Beta**, but **Étoile** comes before **éclair**.
-  Groups can be collapsed in each view.
+- **Pinned** comes first when it has families. Projects then appear in name order. The
+  order ignores the case of ASCII letters only. For example, **alpha** comes before
+  **Beta**, but **Étoile** comes before **éclair**. Groups can be collapsed in each view.
 - With no projects and no sessions, the sidebar shows **No projects yet. Click ＋
   Project to add a folder.**
 - A group lists [session families](#session-families): a top-level session and its
@@ -1044,6 +1046,57 @@ Archive and restore follow the family:
   sub-session that was archived alone before.
 - Restore of a sub-session also restores its archived parent.
 
+### Pinned sessions
+
+A pin keeps a top-level session and its sub-sessions at the top of the sidebar.
+**Pinned** lists the pinned families of all projects, above the project groups. A
+pinned family shows only there. The pins are in SQLite, so every view shows the same
+pins.
+
+#### Pin action
+
+- **Pin** is in the row menu of each top-level session outside Archived. It is also in
+  the More actions menu of the toolbar. For a pinned session, **Unpin** replaces it.
+- A pin moves the family to the top of **Pinned** and expands that group.
+- An unpin returns the family to its project group, at the position of its latest
+  activity.
+- After a pin or an unpin with the keyboard from a row menu, the focus moves to the ⋯
+  button of the row in its new place.
+- Other views show the change at their next list refresh.
+
+#### Pinned group
+
+- **Pinned** comes first in the list. It shows only when it has families.
+- The newest pin comes first. Activity does not change the order.
+- Each top-level row shows the name of its project below the title. A session without a
+  saved project shows its workspace there.
+- **Pinned** has no ＋ button, no ⋯ button, and no **Show more**. Its arrow collapses
+  it like a project group.
+- Search filters **Pinned** like a project group. A match of the project name or folder
+  lists the pinned families of that project.
+- Archived ignores pins. It lists each family in the group of its project.
+- `session-list` gives the families of **Pinned** in the group `pinned`. See
+  [`session-list`](PROTOCOL.md#session-list).
+
+#### Pin rules
+
+- Only a top-level session that is not archived can have a pin. A draft can have a pin.
+  A sub-session moves with its family.
+- Archive removes the pin. Restore does not pin the session again.
+- A pin stays after the removal of its project.
+- A pin of a pinned session and an unpin of a session without a pin change nothing.
+- `sessions.pinned_at` keeps the time of the pin, or NULL without a pin. A check of the
+  table rejects a pin of a sub-session or of an archived session.
+- The time is in UTC with nine digits of fractional seconds, so its text order is its
+  time order. A new pin gets a time after the latest pin, also when the clock moved
+  back. Thus two pins in one millisecond keep their order.
+
+#### Limits
+
+- At most 20 sessions can have a pin. A pin beyond that fails, and the error tells the
+  user to unpin a session first. Thus one `session-list` request reads all of
+  **Pinned**.
+
 ### Archive
 
 **Archive** hides a draft or a finished session from the normal list. **Archived**
@@ -1058,14 +1111,16 @@ all recorded data. There is no permanent delete action.
 - The ⋯ button of a row opens its row menu, so one click never archives a session. The
   button shows on pointer hover and on keyboard focus. On devices without hover, it
   always shows.
-- The row menu has **New sub-session** for a top-level session, and **Archive**, or
-  **Restore** in Archived. A row without such an item has no ⋯ button.
+- The row menu has **New sub-session** for a top-level session, **Pin** or **Unpin** for
+  a top-level session outside Archived, and **Archive**, or **Restore** in Archived. A
+  row without such an item has no ⋯ button.
 - While a row menu is open, a list refresh keeps the buttons of the list. The list then
   changes after the menu closes.
 - Escape, a choice, or a click outside the menu closes it. The Up and Down arrow keys
   move between the items.
 - Archive of a top-level session with sub-sessions archives the whole family. See
   [session families](#session-families).
+- Archive removes the [pin](#pinned-sessions) of a session.
 - Archive of the selected session first saves the launch choices and message editor.
   Then the welcome view opens. A family archive does the same when the selected session
   is in the family. Archive of another session keeps the current view.
@@ -1805,7 +1860,8 @@ status.
 #### Status in the sidebar
 
 Each sidebar row has one line: a status icon, then the title. Standalone sessions add
-their workspace on a second line. The icon has a different shape for each status:
+their workspace on a second line. A top-level row in **Pinned** adds the name of its
+project, or its workspace without a saved project. The icon has a different shape for each status:
 
 | Icon | Status |
 | --- | --- |
@@ -1889,6 +1945,8 @@ also shows the reason, and **Reconnect** shows next to the hint.
   button then shows **Session ID copied** for a short time.
 - **New sub-session** shows for a session that is not archived and has a saved project.
   See [session families](#session-families).
+- **Pin** shows for a top-level session that is not archived. It changes to **Unpin**
+  for a pinned session. See [pinned sessions](#pinned-sessions).
 - **Archive** shows for `draft` and `ended` sessions. It changes to **Restore** for an
   archived session.
 - **Remove worktree** shows for a session that is not live and has a managed worktree.
@@ -3643,7 +3701,7 @@ fork ancestry, or inherited history yet.
 ### Database upgrades
 
 The server upgrades the database by itself at start, in one transaction. A failed
-upgrade changes nothing and stops the start. The current format is 18. Formats from 3,
+upgrade changes nothing and stops the start. The current format is 19. Formats from 3,
 shipped in v0.0.1, are supported.
 
 #### Upgrade transaction
@@ -3660,7 +3718,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 18. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 19. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -3727,7 +3785,10 @@ WAL is enabled after the schema transaction commits.
   the settings JSON through migration 18. The switch starts on only when `remoteHost`
   and `remoteLogin` are both saved, because remote access was on there before.
   Elsewhere it starts off. The settings revision and the other values stay.
-- Format 18 opens without running scripts or rewriting history, settings, or metadata.
+- Format 18 gains the nullable `sessions.pinned_at` column through migration 19. It
+  keeps the time of a [pin](#pinned-sessions). Its check allows a pin only on a
+  top-level session that is not archived. Existing sessions start without a pin.
+- Format 19 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -4085,6 +4146,32 @@ output. Restoration starts no process.
 - Server fixtures verify the base from a parent worktree after a branch switch and on a
   detached commit, and the rejection of a parent workspace before the first terminal of
   the parent.
+
+### Checks of pinned sessions
+
+- Pin fixtures verify the Pinned group: the newest pin first, also for pins in quick
+  succession and after the clock moved back, an order that activity does not change, families that leave their project group, sub-sessions, search
+  context, paging, and an included session. They verify that Archived ignores pins, that
+  an unpin returns the family to its project group, and that a pin stays after project
+  removal.
+- Pin fixtures verify the rules: a sub-session, an archived session, and a missing
+  session cannot get a pin. A repeated pin keeps its time. Archive removes the pin, and
+  restore does not add it again. The table check rejects an invalid pin. The 21st pin
+  fails, and an unpin allows a new pin.
+- A real temporary server test pins a family through `session-pin`, lists it in
+  `pinned` and not in its project group, and finds the pin after a restart. An archive
+  then removes the pin.
+- Web fixtures verify the Pinned group first, a pinned session without a saved project,
+  search in Pinned, Archived without Pinned, and a merge of pages in which pins do not
+  count against the step of their project.
+- `TestDemo` verifies the two pinned sessions of the demo.
+- A browser check of a demo instance with the Demo agent verified **Pinned** above the
+  projects, with the project name of each row. It verified a pin and an unpin from a row
+  menu and from the More actions menu. It verified the focus after a pin with the
+  keyboard, a pin of a live session, a pin that expands a collapsed **Pinned**, and no
+  **Pin** for a sub-session. It also verified search context in **Pinned**, Archived
+  without **Pinned**, an archive that removed the pin, and the phone layout. The browser
+  reported no errors. No real agent CLI was used.
 
 ### Checks of projects and launches
 
@@ -5008,12 +5095,14 @@ The final display kept its recorded layout. This check did not run a real agent 
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–17 to format 18
+- Frozen schemas from repository history test upgrades from formats 3–18 to format 19
   and verify that reopen preserves the upgraded data. The format 16 fixture has Codex
   and Code Puppy tools, and the upgrade gives them their types. A blocked preparation
   update rolls back migration 17. The format 17 fixture has both values of remote
   access, and the upgrade turns its switch on. A blocked settings update rolls back
-  migration 18.
+  migration 18. No upgrade pins a session. A `pinned_at` column that exists before the
+  upgrade rolls back migration 19. Four concurrent opens upgrade a format 18 archive
+  once.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.
   They also cover repeated opens, concurrent upgrades, and unsupported formats.

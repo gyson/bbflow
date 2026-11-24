@@ -168,6 +168,8 @@ func TestDemo(t *testing.T) {
 	}
 	expect("SELECT name FROM projects ORDER BY name", "[[Orbit API] [Tide Web]]")
 	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 8] [1 1]]")
+	// Pinned shows two sessions of different projects, the newest pin first.
+	expect("SELECT title FROM sessions WHERE pinned_at IS NOT NULL ORDER BY pinned_at DESC", "[[Plan release notes] [Refactor orbit in a worktree]]")
 	// The reviewer draft is a sub-session of the worktree session. Its base is the branch
 	// of its parent.
 	expect("SELECT s.title, p.title, CAST(r.data AS TEXT)->>'base' FROM sessions s JOIN sessions p ON p.id=s.parent_id JOIN preparations r ON r.session_id=s.id",

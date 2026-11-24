@@ -27,7 +27,7 @@ import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
-import { mergeSessions, placeText, sessionGroups, sessionWindow, shownChildren, welcomeText } from './projects.js';
+import { mergeSessions, pinLimit, pinnedGroup, placeText, sessionGroups, sessionWindow, shownChildren, welcomeText } from './projects.js';
 import type { Family } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
@@ -49,6 +49,7 @@ const elements = {
   'archives-open': element('archives-open', HTMLButtonElement),
   'archived-heading': element('archived-heading', HTMLElement),
   'archive-session': element('archive-session', HTMLButtonElement),
+  'pin-session': element('pin-session', HTMLButtonElement),
   'settings-open': element('settings-open', HTMLButtonElement),
   'settings-close': element('settings-close', HTMLButtonElement),
   'remove-worktree': element('remove-worktree', HTMLButtonElement),
@@ -126,6 +127,7 @@ const $ = <K extends keyof typeof elements>(id: K): typeof elements[K] => elemen
 
 interface SessionView {
   archived?: boolean;
+  pinned?: boolean;
   preparation?: Preparation;
   worktree?: Worktree;
   run?: Run;
@@ -392,6 +394,10 @@ function controls() {
   $('archive-session').hidden = showingSettings || !selected?.id || live(selected.status);
   $('archive-session').disabled = busy;
   $('archive-session').textContent = selected?.archived ? 'Restore' : 'Archive';
+  // Only a top-level session outside Archived can have a pin.
+  $('pin-session').hidden = showingSettings || !selected?.id || !!selected.parentId || !!selected.archived;
+  $('pin-session').disabled = busy;
+  $('pin-session').textContent = selected?.pinned ? 'Unpin' : 'Pin';
   if (!showingSettings && selected?.status === 'draft') $('status').textContent = selected.archived ? 'Draft · Archived' : 'Draft';
   $('settings-open').disabled = busy || !server;
   updateNotice.controls(busy || !server);
@@ -469,6 +475,8 @@ async function action(work: () => Promise<void>, failure = 'The action failed.')
 
 interface RowOptions {
   showWorkspace: boolean;
+  // The project of a row in Pinned. The row shows its name below the title.
+  projectName?: string;
   // The top-level session of a sub-session.
   parent?: SessionInfo;
   // The family of a top-level session.
@@ -483,7 +491,7 @@ const worktreePlaces = new Set(['own worktree', 'new worktree']);
 // icon, the title, and a worktree mark for a sub-session with its own worktree. The
 // status text shows in the tooltip of the icon and in a label for screen readers.
 function sessionRow(session: SessionInfo, options: RowOptions): HTMLElement {
-  const { showWorkspace, parent, family } = options;
+  const { showWorkspace, projectName, parent, family } = options;
   const context = !!family?.context;
   const place = parent ? placeText(session, parent) : '';
   const button = document.createElement('button');
@@ -514,7 +522,11 @@ function sessionRow(session: SessionInfo, options: RowOptions): HTMLElement {
     tag.textContent = session.archived === archivedList ? 'Parent of a match' : session.archived ? 'Archived' : 'Not archived';
     button.append(tag);
   }
-  if (showWorkspace) {
+  if (projectName) {
+    const project = document.createElement('small');
+    project.textContent = projectName;
+    button.append(project);
+  } else if (showWorkspace) {
     const workspace = document.createElement('small');
     workspace.textContent = session.workspace;
     button.append(workspace);
@@ -528,13 +540,16 @@ function sessionRow(session: SessionInfo, options: RowOptions): HTMLElement {
   // A sub-session draft needs a saved project. A family has one level.
   const canAdd = !parent && !context && !archivedList && projects.some(project => project.id === session.projectId);
   if (canAdd) actions.push({ label: 'New sub-session', run: () => void action(() => showSubLaunch(session.id), failed('add a sub-session to', session)) });
+  // Only a top-level session outside Archived can have a pin.
+  const canPin = !parent && !context && !archivedList;
+  if (canPin) actions.push({ label: session.pinned ? 'Unpin' : 'Pin', run: keyboard => void pinFromList(session, keyboard) });
   // A context row is not in this collection. Its own row in the other list changes it.
   if (!context) actions.push({ label: session.archived ? 'Restore' : 'Archive', run: keyboard => void archiveFromList(session, keyboard) });
   const mark = { session, button, icon, label, place };
   if (actions.length) {
     const menu = rowMenus.create(title.textContent, `menu:${session.id}`, actions);
     row.append(menu.box);
-    if (!context) statusMarks.push({ ...mark, archive: menu.items.at(-1)!, menu: menu.button, fixed: canAdd });
+    if (!context) statusMarks.push({ ...mark, archive: menu.items.at(-1)!, menu: menu.button, fixed: canAdd || canPin });
   }
   // A context row is not in the status watch of this list. It shows the listed status.
   if (context) showRowStatus(mark, session.status);
@@ -556,11 +571,13 @@ function showRowStatus(mark: { session: SessionInfo; button: HTMLElement; icon: 
 
 // Return a family: the row of its top-level session, then the rows of its sub-sessions.
 // A family is always open. After the first sub-sessions, Show more shows the others in
-// this view.
-function familyBlock(family: Family, showWorkspace: boolean): HTMLElement {
+// this view. The top-level row shows the workspace in Standalone. In Pinned, it shows the
+// project name, or the workspace without a saved project.
+function familyBlock(family: Family, showWorkspace: boolean, pinned = false): HTMLElement {
   const block = document.createElement('div');
   block.className = 'family';
-  block.append(sessionRow(family.root, { showWorkspace, family }));
+  const project = pinned ? projects.find(item => item.id === family.root.projectId) : undefined;
+  block.append(sessionRow(family.root, { showWorkspace: showWorkspace || (pinned && !project), ...(project ? { projectName: project.name } : {}), family }));
   if (!family.children.length) return block;
   const id = family.root.id;
   const all = !!$('filter').value.trim() || shownFamilies.has(id);
@@ -603,6 +620,22 @@ async function archiveFromList(session: SessionInfo, keyboard: boolean): Promise
   else (archivedList ? $('sessions-open') : $('filter')).focus();
 }
 
+// Pin or unpin a session from its row menu. The row moves between Pinned and its project
+// group. A keyboard user keeps the focus on the menu button of the row in its new place.
+async function pinFromList(session: SessionInfo, keyboard: boolean): Promise<void> {
+  await action(() => setPinned(session.id, !session.pinned), failed(session.pinned ? 'unpin' : 'pin', session));
+  if (keyboard && (!document.activeElement || document.activeElement === document.body)) focusSidebar(`menu:${session.id}`);
+}
+
+// Pin or unpin a session. A pin opens Pinned, so the user sees where the family went.
+async function setPinned(id: string, pinned: boolean): Promise<void> {
+  if (!server) return;
+  await call(server, { operation: 'session-pin', session: id, pinned });
+  if (selected?.id === id) selected.pinned = pinned;
+  if (pinned) collapsedProjects.delete(pinnedGroup);
+  await refreshSessions();
+}
+
 // Return the focus keys of the session rows that show. A collapsed group hides its rows.
 function shownSessionKeys(): string[] {
   return [...$('sessions').querySelectorAll<HTMLElement>('.session-item')]
@@ -639,13 +672,13 @@ function renderSessions() {
   $('archived-heading').hidden = !archivedList;
   $('sessions').setAttribute('aria-label', archivedList ? 'Archived sessions' : 'Projects and sessions');
   $('filter').placeholder = archivedList ? 'Search archived sessions…' : 'Search names and folders…';
-  const groups = sessionGroups(projects, sessions, query).filter(group => !archivedList || group.families.length);
+  const groups = sessionGroups(projects, sessions, query, archivedList).filter(group => !archivedList || group.families.length);
   for (const group of groups) {
     const project = group.project;
-    const id = project?.id ?? '';
-    const name = project?.name ?? 'Standalone';
+    const id = group.pinned ? pinnedGroup : project?.id ?? '';
+    const name = group.pinned ? 'Pinned' : project?.name ?? 'Standalone';
     const section = document.createElement('section');
-    section.className = 'project-group';
+    section.className = 'project-group' + (group.pinned ? ' pinned-group' : '');
     const heading = document.createElement('div');
     heading.className = 'project-heading';
     const toggle = document.createElement('button');
@@ -653,7 +686,7 @@ function renderSessions() {
     const label = document.createElement('span');
     label.className = 'project-name';
     label.textContent = name;
-    label.title = project?.workspace ?? 'Sessions without a saved project';
+    label.title = group.pinned ? 'Pinned sessions of all projects' : project?.workspace ?? 'Sessions without a saved project';
     const list = document.createElement('div');
     list.id = `project-sessions-${id || 'standalone'}`;
     list.className = 'project-sessions';
@@ -689,7 +722,7 @@ function renderSessions() {
       edit.onclick = () => showProject(project);
       heading.append(edit);
     }
-    for (const family of group.families) list.append(familyBlock(family, !project));
+    for (const family of group.families) list.append(familyBlock(family, !project && !group.pinned, group.pinned));
     if (moreGroups.has(id)) {
       const more = document.createElement('button');
       more.className = 'project-more';
@@ -784,9 +817,11 @@ async function refreshSessions() {
     // One reply lists at most sessionWindow sessions. Thus the most recent sessions come in
     // batches of groups, and a group that shows more than one step reads its older sessions
     // in windows. The selected session stays in its group, also when it is older.
+    // Pinned has at most pinLimit families, so one request reads the whole group. Archived
+    // ignores pins.
     const groups = ['', ...nextProjects.map(project => project.id)];
     const batch = sessionWindow / sessionStep;
-    const recentReads = [];
+    const recentReads = archivedList ? [] : [call(server, { operation: 'session-list', limit: pinLimit, groups: [pinnedGroup], ...filter })];
     for (let i = 0; i < groups.length; i += batch) {
       recentReads.push(call(server, { operation: 'session-list', limit: sessionStep, groups: groups.slice(i, i + batch), ...filter, ...(selectedId ? { session: selectedId } : {}) }));
     }
@@ -802,7 +837,7 @@ async function refreshSessions() {
     if (generation !== refreshGeneration) return;
     const recent = { sessions: recentPages.flatMap(page => page.sessions), more: recentPages.flatMap(page => page.more) };
     projects = nextProjects;
-    const merged = mergeSessions(projects, recent, nextWindows, sessionStep);
+    const merged = mergeSessions(projects, recent, nextWindows, sessionStep, archivedList);
     sessions = merged.sessions;
     moreGroups = new Set(merged.more);
     updateNotice.sessionsChanged();
@@ -1002,7 +1037,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   sessionSplit.setEnabled(false);
   if (preparing && session.id) {
     $('status').textContent = session.archived ? 'Draft · Archived' : 'Draft';
-    await preparation.open({ ...session, archived: !!session.archived, id: session.id, projectId: session.projectId ?? '' });
+    await preparation.open({ ...session, archived: !!session.archived, pinned: !!session.pinned, id: session.id, projectId: session.projectId ?? '' });
     await composer.select(session.id);
     renderSessions(); return;
   }
@@ -1251,10 +1286,11 @@ let archiving: { session: ArchiveTarget; members: string[] } | null = null;
 // The server rejects a family archive when the sub-sessions changed after the check.
 const familyChanged = 'sub-sessions of this family changed';
 
-// Read the sub-sessions of a top-level session that are not archived.
+// Read the sub-sessions of a top-level session that are not archived. A pinned family is
+// in Pinned. Another view can pin or unpin it at any time, so read both groups.
 async function familyChildren(session: ArchiveTarget): Promise<SessionInfo[]> {
   if (!server) return [];
-  const page = await call(server, { operation: 'session-list', groups: [groupKey(session.projectId)], limit: 1, session: session.id });
+  const page = await call(server, { operation: 'session-list', groups: [pinnedGroup, groupKey(session.projectId)], limit: 1, session: session.id });
   return page.sessions.filter(item => item.parentId === session.id && !item.archived);
 }
 
@@ -1317,6 +1353,8 @@ async function setArchived(id: string, archived: boolean, family = false, member
   await call(server, { operation: 'session-archive', session: id, archived, ...(members ? { members } : {}) });
   if (current) {
     current.archived = archived;
+    // Archive removes the pin.
+    if (archived) current.pinned = false;
     if (showingSettings) {
       if (archived) selected = null;
     } else if (archived) await showWelcome();
@@ -1335,6 +1373,9 @@ async function initialize() {
   $('archive-session').onclick = () => action(async () => {
     if (selected?.id) await requestArchive({ ...selected, id: selected.id }, !selected.archived);
   }, failed(selected?.archived ? 'restore' : 'archive', selected));
+  $('pin-session').onclick = () => action(async () => {
+    if (selected?.id) await setPinned(selected.id, !selected.pinned);
+  }, failed(selected?.pinned ? 'unpin' : 'pin', selected));
   $('cancel-archive').onclick = () => $('archive-dialog').close();
   $('page-bar-reload').onclick = () => location.reload();
   // A click shows the start warning on devices without hover. A focus loss hides it.

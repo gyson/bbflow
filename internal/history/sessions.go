@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
+	"time"
 )
 
 // ListedSession is a session in a sidebar page. Context is true for a top-level session
@@ -19,8 +21,10 @@ type ListedSession struct {
 
 // SessionFilter selects sessions for the sidebar. Sessions form one group for each saved
 // project. Sessions without a saved project form the Standalone group, with the key "".
-// A family is a top-level session and its sub-sessions. The page lists the most recent
-// families of each selected group. With Offset, the page lists one window of one group.
+// In the list that is not archived, pinned families form the Pinned group, with the key
+// PinnedGroup, and they are not in the group of their project. A family is a top-level
+// session and its sub-sessions. The page lists the most recent families of each selected
+// group. With Offset, the page lists one window of one group.
 type SessionFilter struct {
 	Limit    int      // The number of families in each group. Zero selects 10.
 	Groups   []string // The group keys to list. Nil selects all groups.
@@ -42,11 +46,24 @@ type SessionPage struct {
 // larger. More families need more pages.
 const MaxSessionLimit = 100
 
+// PinnedGroup is the group key of the pinned families. A project ID is hexadecimal, so
+// it cannot be this key.
+const PinnedGroup = "pinned"
+
+// MaxPinned is the largest number of pinned sessions. Thus one page with this limit lists
+// the whole Pinned group.
+const MaxPinned = 20
+
+// pinFormat gives each pin time the same width in UTC. Thus the text order of the times
+// is their time order, in nanoseconds. Two pins in one millisecond keep their order.
+const pinFormat = "2006-01-02T15:04:05.000000000Z07:00"
+
 // ListSessions orders families by the terminal input, output, and run lifecycle activity
 // of their members in the archive collection. This includes output while detached. View
 // changes and unsent drafts do not count. SQLite compares these times in whole
 // milliseconds. For equal times, the event sequence and then the creation order decide.
-// The rowid keeps the creation order. Search and archive filters apply to each member
+// The rowid keeps the creation order. The Pinned group orders its families by the time
+// of the pin, newest first, and activity does not change that order. Search and archive filters apply to each member
 // before the group limits, including to old sessions. A family is listed when one of its
 // members in the collection matches. A match of the top-level session lists all members
 // in the collection. Otherwise the top-level session shows as context for the matching
@@ -87,7 +104,7 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 		var row listedRow
 		item := &row.item
 		if err = rows.Scan(&item.ID, &item.Title, &item.AutoTitle, &item.Workspace, &item.Created, &item.ProjectID, &item.Archived,
-			&item.Updated, &item.ParentID, &item.Context, &row.group, &row.beyond); err != nil {
+			&item.Updated, &item.ParentID, &item.Pinned, &item.Context, &row.group, &row.beyond); err != nil {
 			rows.Close()
 			return SessionPage{}, err
 		}
@@ -143,12 +160,17 @@ func family(session Session) string {
 // sub-sessions. A member is in the collection and matches, or its top-level session
 // matches. A family with a member is listed. Its latest member in the collection gives
 // its position in its group. The top-level session always shows with a listed family.
+// In the list that is not archived, a pinned top-level session puts its family in the
+// Pinned group. There, the time of the pin gives the position. pin is NULL in the other
+// groups, so it does not change their order. pinFormat makes the text order exact.
 const listSessionsSQL = `WITH listed AS (
         SELECT sessions.id,title,auto_title,workspace,sessions.created,COALESCE(project_id,'') AS project,archived,
             COALESCE(parent_id,'') AS parent,COALESCE(parent_id,sessions.id) AS family,
             COALESCE(activity.created,sessions.created) AS updated,julianday(COALESCE(activity.created,sessions.created)) AS day,
-            COALESCE(activity.seq,0) AS activity,sessions.rowid AS creation,
-            CASE WHEN EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id) THEN project_id ELSE '' END AS grp,
+            COALESCE(activity.seq,0) AS activity,sessions.rowid AS creation,pinned_at IS NOT NULL AS pinned,
+            CASE WHEN NOT ?1 THEN pinned_at END AS pin,
+            CASE WHEN NOT ?1 AND pinned_at IS NOT NULL THEN '` + PinnedGroup + `'
+                WHEN EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id) THEN project_id ELSE '' END AS grp,
             archived=?1 AS shown,
             (?2='' OR instr(lower(title),lower(?2))>0 OR instr(lower(auto_title),lower(?2))>0
                 OR instr(lower(workspace),lower(?2))>0 OR instr(lower(sessions.id),lower(?2))>0
@@ -164,24 +186,26 @@ const listSessionsSQL = `WITH listed AS (
     ), ranked AS (
         SELECT *,MAX(member) OVER (PARTITION BY family) AS listed_family,
             MAX(CASE WHEN parent='' THEN grp END) OVER (PARTITION BY family) AS family_group,
+            MAX(CASE WHEN parent='' THEN pin END) OVER (PARTITION BY family) AS family_pin,
             ROW_NUMBER() OVER (PARTITION BY family ORDER BY shown DESC,day DESC,activity DESC,creation DESC) AS latest
         FROM members
     ), positions AS (
-        SELECT family,family_group,day,activity,creation,
-            ROW_NUMBER() OVER (PARTITION BY family_group ORDER BY day DESC,activity DESC,creation DESC) AS position
+        SELECT family,family_group,family_pin AS pin,day,activity,creation,
+            ROW_NUMBER() OVER (PARTITION BY family_group ORDER BY family_pin DESC,day DESC,activity DESC,creation DESC) AS position
         FROM ranked WHERE latest=1 AND listed_family
     )
-    SELECT r.id,r.title,r.auto_title,r.workspace,r.created,r.project,r.archived,r.updated,r.parent,NOT r.member,
+    SELECT r.id,r.title,r.auto_title,r.workspace,r.created,r.project,r.archived,r.updated,r.parent,r.pinned,NOT r.member,
         p.family_group,p.position>?3+?4
     FROM ranked AS r JOIN positions AS p ON p.family=r.family
     WHERE (r.member OR r.parent='') AND (?5 OR p.family_group IN (SELECT value FROM json_each(?6)))
         AND p.position>?3 AND (p.position<=?3+?4+1 OR r.family IN (SELECT COALESCE(parent_id,id) FROM sessions WHERE id=?7))
-    ORDER BY p.day DESC,p.activity DESC,p.creation DESC,r.parent<>'',r.creation`
+    ORDER BY p.pin DESC,p.day DESC,p.activity DESC,p.creation DESC,r.parent<>'',r.creation`
 
 // SetSessionArchived archives or restores a session and returns the IDs of the changed
 // sessions. Archive changes affect visibility only.
 //
 //   - Archive of a top-level session also archives its sub-sessions.
+//   - Archive removes the pin of a session. Restore does not pin it again.
 //   - Restore of a top-level session also restores its archived sub-sessions.
 //   - Restore of a sub-session also restores its archived parent.
 //
@@ -258,11 +282,58 @@ func (s *Store) SetSessionArchived(id string, archived bool, live func(id string
 		}
 	}
 	for _, member := range ids {
-		if _, err = tx.Exec("UPDATE sessions SET archived=? WHERE id=?", archived, member); err != nil {
+		if _, err = tx.Exec("UPDATE sessions SET archived=?1,pinned_at=CASE WHEN ?1 THEN NULL ELSE pinned_at END WHERE id=?2", archived, member); err != nil {
 			return nil, err
 		}
 	}
 	return ids, tx.Commit()
+}
+
+// SetSessionPinned pins or unpins a top-level session that is not archived. A new pin
+// puts the family first in the Pinned group: its time is after the latest pin, also when
+// the clock moved back. A pin of a pinned session and an unpin of a session without a
+// pin change nothing. At most MaxPinned sessions have a pin.
+func (s *Store) SetSessionPinned(id string, pinned bool) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var parent, pin sql.NullString
+	var archived bool
+	err = tx.QueryRow("SELECT parent_id,archived,pinned_at FROM sessions WHERE id=?", id).Scan(&parent, &archived, &pin)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrNotFound
+	case err != nil:
+		return err
+	case pin.Valid == pinned:
+		return nil
+	case !pinned:
+		_, err = tx.Exec("UPDATE sessions SET pinned_at=NULL WHERE id=?", id)
+	case parent.Valid:
+		return errors.New("a sub-session cannot have a pin; pin its top-level session")
+	case archived:
+		return errors.New("restore the session before you pin it")
+	default:
+		var count int
+		var latest sql.NullString
+		if err = tx.QueryRow("SELECT count(pinned_at),MAX(pinned_at) FROM sessions").Scan(&count, &latest); err != nil {
+			return err
+		}
+		if count >= MaxPinned {
+			return fmt.Errorf("at most %d sessions can have a pin; unpin a session first", MaxPinned)
+		}
+		now := time.Now().UTC()
+		if last, err := time.Parse(time.RFC3339Nano, latest.String); err == nil && !now.After(last) {
+			now = last.Add(time.Nanosecond)
+		}
+		_, err = tx.Exec("UPDATE sessions SET pinned_at=? WHERE id=?", now.Format(pinFormat), id)
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ErrFamilyChanged reports that the sub-sessions of a family are not the ones that the

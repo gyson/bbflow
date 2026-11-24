@@ -325,6 +325,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "session-archive":
 		err := s.archiveSession(request.Session, request.Archived, request.Members)
 		s.reply(conn, map[string]bool{"archived": request.Archived}, err)
+	case "session-pin":
+		err := s.store.SetSessionPinned(request.Session, request.Pinned)
+		s.reply(conn, map[string]bool{"pinned": request.Pinned}, err)
 	case "session-stop":
 		result, err := s.stopSession(request.Session)
 		s.reply(conn, result, err)

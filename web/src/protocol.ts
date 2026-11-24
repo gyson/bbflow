@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/41';
+export const VERSION = 'bbflow/42';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -66,7 +66,7 @@ export interface TerminalInfo { number: number; run: string; tool: string; statu
 // of the latest run.
 // title is the title that the user set, or empty. autoTitle is derived by the server.
 // parentId is the top-level session of a sub-session, or empty.
-export interface PreparedSession { archived: boolean; id: string; projectId: string; parentId?: string; title: string; autoTitle?: string; workspace: string; status: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
+export interface PreparedSession { archived: boolean; pinned: boolean; id: string; projectId: string; parentId?: string; title: string; autoTitle?: string; workspace: string; status: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
 // bbflow writes the handoff folder before it starts a new terminal in an ended session.
 // available means that the folder has a README, so the prompt can be used now.
 export interface Handoff { folder: string; prompt: string; available: boolean }
@@ -77,9 +77,11 @@ export interface RepositoryInfo { available: boolean; root: string; head: string
 // top-level session first, then its sub-sessions in creation order.
 export interface SessionPage { sessions: SessionInfo[]; more: string[] }
 // parentId is the top-level session of a sub-session, or empty. context marks a
-// top-level session that shows only as the parent of listed sub-sessions.
+// top-level session that shows only as the parent of listed sub-sessions. pinned marks a
+// pinned top-level session.
 export interface SessionInfo {
   archived: boolean;
+  pinned: boolean;
   parentId: string;
   context?: boolean;
   preparation?: Preparation;
@@ -160,14 +162,17 @@ type SentRequest = { operation: 'composer-sent'; session: string; revision?: num
 type UploadRequest = { operation: 'composer-attach'; session: string; upload: { name: string; mediaType: string; data: string } };
 
 // limit applies to the families of each listed group. limit times the number of groups
-// must be at most 100. offset skips the first families of one group. A group key is a project ID, or ''
-// for Standalone. Without offset, the list includes session outside its group limit.
+// must be at most 100. offset skips the first families of one group. A group key is a
+// project ID, '' for Standalone, or 'pinned' for Pinned. Without offset, the list includes
+// session outside its group limit.
 type ListRequest = { operation: 'session-list'; limit?: number; groups: string[]; offset?: number; session?: string; archived?: boolean; query?: string };
 // Archive of a top-level session also archives its sub-sessions. Restore of a top-level
 // session also restores its sub-sessions. Restore of a sub-session also restores its parent.
 // members are the sub-sessions that the user confirmed for the archive of a top-level
 // session. The server then archives nothing if the family has other sub-sessions.
 type ArchiveRequest = { operation: 'session-archive'; session: string; archived: boolean; members?: string[] };
+// A pin moves the family of a top-level session to the Pinned group. Archive removes it.
+type PinRequest = { operation: 'session-pin'; session: string; pinned: boolean };
 type StopSessionRequest = { operation: 'session-stop'; session: string };
 type ProjectListRequest = { operation: 'project-list' };
 type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: string };
@@ -197,7 +202,7 @@ type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
 // shell stops only that shell. Without shell, the request stops the live shell.
 type StopSideRequest = { operation: 'side-terminal-stop'; session: string; shell?: string };
-type RPCRequest = ToolCheckRequest | ToolModelsRequest | UpdateRequest | DiffRPC | TitleTestRequest | TitleToolSetRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = ToolCheckRequest | ToolModelsRequest | UpdateRequest | DiffRPC | TitleTestRequest | TitleToolSetRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | PinRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -447,6 +452,7 @@ export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Pr
 export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;
 export function call(server: ServerInfo, request: ProjectRemoveRequest): Promise<{ removed: boolean }>;
 export function call(server: ServerInfo, request: ArchiveRequest): Promise<{ archived: boolean }>;
+export function call(server: ServerInfo, request: PinRequest): Promise<{ pinned: boolean }>;
 export function call(server: ServerInfo, request: ListRequest): Promise<SessionPage>;
 export function call(server: ServerInfo, request: StopSessionRequest | StopSideRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;

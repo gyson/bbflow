@@ -3,9 +3,24 @@ import type { Project, SessionInfo, SessionPage } from './protocol.js';
 // A family is a top-level session and its sub-sessions in the list. A context family
 // shows its top-level session only as the parent of matching sub-sessions.
 export interface Family { root: SessionInfo; children: SessionInfo[]; context: boolean }
-export interface SessionGroup { project: Project | null; families: Family[] }
+// A group lists the families of one project, of Standalone without a project, or of
+// Pinned. pinned is true only for Pinned, and project is then null.
+export interface SessionGroup { project: Project | null; families: Family[]; pinned?: boolean }
 
 const familyKey = (session: SessionInfo) => session.parentId || session.id;
+
+// The group key of the pinned families. The list that is not archived shows them in
+// this group, and not in the group of their project. Archived ignores pins.
+export const pinnedGroup = 'pinned';
+// The server allows at most this many pins. Thus one request reads the whole group.
+export const pinLimit = 20;
+
+// Return the group key of a family with this top-level session: Pinned, a project ID,
+// or '' for Standalone.
+export function familyGroup(root: SessionInfo, known: Set<string>, archived: boolean): string {
+  if (!archived && root.pinned) return pinnedGroup;
+  return known.has(root.projectId) ? root.projectId : '';
+}
 
 // Join the sessions of the list into families, in list order. The server lists a
 // top-level session before its sub-sessions. A sub-session without its top-level session
@@ -30,22 +45,25 @@ export function families(sessions: SessionInfo[]): Family[] {
 // Group the page filtered by the server. Keep empty matching projects available for new
 // drafts. The filter applies at once, before the server reply for a new search. A match
 // of a top-level session shows its family. A match of a sub-session shows its top-level
-// session as context.
-export function sessionGroups(projects: Project[], sessions: SessionInfo[], filter: string): SessionGroup[] {
+// session as context. Outside Archived, Pinned comes first when it has families.
+export function sessionGroups(projects: Project[], sessions: SessionInfo[], filter: string, archived = false): SessionGroup[] {
   const query = filter.trim().toLowerCase();
   const matches = (session: SessionInfo) => `${session.title} ${session.autoTitle} ${session.workspace} ${session.id}`.toLowerCase().includes(query);
-  const filtered = (list: Family[], projectMatches: boolean) => list.flatMap(family => {
-    if (!query || projectMatches || matches(family.root)) return [family];
+  const projectMatches = (project: Project | undefined) => !!project && `${project.name} ${project.workspace}`.toLowerCase().includes(query);
+  const byId = new Map(projects.map(project => [project.id, project]));
+  const filtered = (list: Family[]) => list.flatMap(family => {
+    if (!query || projectMatches(byId.get(family.root.projectId)) || matches(family.root)) return [family];
     const children = family.children.filter(matches);
     return children.length ? [{ root: family.root, children, context: true }] : [];
   });
+  const known = new Set(byId.keys());
   const all = families(sessions);
-  const groups: SessionGroup[] = projects.map(project => {
-    const projectMatches = `${project.name} ${project.workspace}`.toLowerCase().includes(query);
-    return { project, families: filtered(all.filter(family => family.root.projectId === project.id), projectMatches) };
-  }).filter(group => !query || group.families.length || `${group.project!.name} ${group.project!.workspace}`.toLowerCase().includes(query));
-  const known = new Set(projects.map(project => project.id));
-  const standalone = filtered(all.filter(family => !known.has(family.root.projectId)), false);
+  const inGroup = (key: string) => all.filter(family => familyGroup(family.root, known, archived) === key);
+  const groups: SessionGroup[] = projects.map(project => ({ project, families: filtered(inGroup(project.id)) }))
+    .filter(group => !query || group.families.length || projectMatches(group.project!));
+  const pinned = filtered(inGroup(pinnedGroup));
+  if (pinned.length) groups.unshift({ project: null, families: pinned, pinned: true });
+  const standalone = filtered(inGroup(''));
   if (standalone.length) groups.push({ project: null, families: standalone });
   return groups;
 }
@@ -97,10 +115,10 @@ function familyRuns(sessions: SessionInfo[]): SessionInfo[][] {
 
 // Join the recent page and the windows of each group into one list. Separate replies can
 // see different activity. Thus the merge drops a repeated family. A skipped family shows
-// again at the next refresh.
-export function mergeSessions(projects: Project[], recent: SessionPage, windows: SessionWindow[], step: number): SessionPage {
+// again at the next refresh. archived tells that the pages are from Archived.
+export function mergeSessions(projects: Project[], recent: SessionPage, windows: SessionWindow[], step: number, archived = false): SessionPage {
   const known = new Set(projects.map(project => project.id));
-  const groupOf = (session: SessionInfo) => known.has(session.projectId) ? session.projectId : '';
+  const groupOf = (session: SessionInfo) => familyGroup(session, known, archived);
   const groups = new Map<string, { top: SessionInfo[][]; extra: SessionInfo[][]; more: boolean }>();
   const entry = (group: string) => {
     let value = groups.get(group);
