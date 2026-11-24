@@ -1,6 +1,6 @@
 import type { IDecoration, IDisposable, IMarker, Terminal } from '@xterm/xterm';
 import { element } from './dom.js';
-import { call } from './protocol.js';
+import { call, errorMessage } from './protocol.js';
 import type { SentMessage, ServerInfo, TerminalInfo } from './protocol.js';
 import { addPage, barState, emptyCache, locate, messageTime, sentText, stepMark, wantsOlder } from './message-marks.js';
 
@@ -11,7 +11,8 @@ const flashTime = 1200;
 
 export type MarkState = 'current' | 'found' | 'missing';
 // The result of a seek. cancelled means that the view changed before the seek ended.
-export type SeekResult = 'found' | 'missing' | 'cancelled';
+// failed means that the view could not read the sent messages. See readError.
+export type SeekResult = 'found' | 'missing' | 'cancelled' | 'failed';
 
 interface Mark { message: SentMessage; row: number; marker?: IMarker; decoration?: IDecoration | undefined }
 
@@ -37,6 +38,7 @@ export class MessageNav {
   private cache = emptyCache(); // The sent messages of the shown terminal.
   private loading = false;
   private loaded = false; // The view read the newest page for the shown terminal.
+  private failure = ''; // The error of the last read of sent messages, or empty.
   private drawn = false; // The terminal of the view drew a frame.
   // A jump that waits until the view can find its message. See seek.
   private seeking: { revision: number; done(result: SeekResult): void } | null = null;
@@ -114,6 +116,7 @@ export class MessageNav {
     if (terminal?.run !== this.terminal?.run) this.finish('cancelled');
     this.terminal = terminal;
     this.loaded = false;
+    this.failure = '';
     // The cache keeps only the messages of one terminal. Read them again. The marks stay
     // until the next search.
     this.cache = emptyCache();
@@ -157,15 +160,21 @@ export class MessageNav {
     return true;
   }
 
+  // The error of the last read of sent messages, or empty.
+  get readError(): string { return this.failure; }
+
   // Scroll to a message after the view opened another terminal. The view jumps when a
   // search finds the message. The seek ends without a jump when the terminal drew its
   // first frame, and the view read every message that it can find, without the message.
-  // Another jump, a step, and a change of the session or the terminal cancel the seek.
+  // A read of the sent messages that fails also ends the seek. When the newest page
+  // failed before the seek, the seek reads it again first. Another jump, a step, and a
+  // change of the session or the terminal cancel the seek.
   seek(revision: number): Promise<SeekResult> {
     this.finish('cancelled');
     if (!this.session || !this.view) return Promise.resolve('cancelled');
     return new Promise(done => {
       this.seeking = { revision, done };
+      if (this.failure && !this.loading && !this.loaded) void this.load(false);
       this.schedule(0);
     });
   }
@@ -197,6 +206,7 @@ export class MessageNav {
     this.timer = undefined;
     this.cache = emptyCache();
     this.loading = this.reading = this.again = this.loaded = false;
+    this.failure = '';
     this.pinned = null;
     this.clear();
     this.marks = [];
@@ -211,6 +221,7 @@ export class MessageNav {
     if (!server || !session || (older && this.loading)) return;
     const request = older ? this.request : ++this.request;
     this.loading = true;
+    this.failure = '';
     if (!older) this.reading = true;
     try {
       const page = await call(server, { operation: 'composer-sent', session, ...(older ? { revision: this.cache.cursor } : {}) });
@@ -223,8 +234,10 @@ export class MessageNav {
       const changed = this.newest !== null && this.newest !== newest;
       this.newest = newest;
       if (changed) this.host.sent();
-    } catch {
-      // Without the messages, the bar shows no position. The list reports the failure.
+    } catch (error) {
+      // Without the messages, the bar shows no position. The list reports the failure,
+      // and a seek reports it too.
+      if (request === this.request) this.failure = errorMessage(error);
     } finally {
       if (request === this.request) {
         this.loading = false;
@@ -232,6 +245,7 @@ export class MessageNav {
           this.reading = false;
           if (this.again) { this.again = false; void this.load(false); }
         }
+        if (this.failure) this.settle();
       }
     }
   }
@@ -274,7 +288,11 @@ export class MessageNav {
     if (index >= 0) {
       this.finish('found');
       this.jump(index);
-    } else if (this.drawn && this.loaded && !this.loading) {
+    } else if (this.loading) {
+      // Wait for the read.
+    } else if (this.failure) {
+      this.finish('failed');
+    } else if (this.drawn && this.loaded) {
       this.finish('missing');
     }
   }

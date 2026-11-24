@@ -11,7 +11,8 @@ const settle = async () => { for (let turn = 0; turn < 4; turn++) await new Prom
 const sent = (revision, text, created = '2026-11-23T10:10:00Z') => ({ revision, created, text, attachments: [], confirmed: true });
 
 // A small fake DOM and a fake server. pages returns the page of sent messages for a
-// request. The terminal is a real xterm.js terminal without a page.
+// request, or an Error for a failed request. The terminal is a real xterm.js terminal
+// without a page.
 function fixture(t, pages) {
   class Node { hidden = false; disabled = false; textContent = ''; title = ''; }
   const ids = ['message-bar', 'message-open', 'message-previous', 'message-next', 'message-latest'];
@@ -24,7 +25,9 @@ function fixture(t, pages) {
     send(text) {
       const { request } = JSON.parse(text);
       requests.push(request);
-      queueMicrotask(() => this.onmessage({ data: JSON.stringify({ type: 'result', result: pages(request) }) }));
+      const reply = pages(request);
+      const message = reply instanceof Error ? { type: 'error', error: reply.message } : { type: 'result', result: reply };
+      queueMicrotask(() => this.onmessage({ data: JSON.stringify(message) }));
     }
     close() { this.readyState = 3; }
   }
@@ -226,4 +229,42 @@ test('a change of the terminal or a step cancels a seek', async t => {
   nav.rendered();
   await settle();
   assert.notEqual(top(view), 0);
+});
+
+test('a seek reads a failed newest page again, and a failed read ends it without a later jump', async t => {
+  let fail = true;
+  const { nav, view, requests } = fixture(t, () => fail ? new Error('database is locked') : { messages: [sent(1, 'first question')], more: false });
+  await write(view, lines(3) + '> first question\r\n' + lines(20));
+  nav.select('one');
+  nav.window(earlier);
+  nav.rendered();
+  await settle();
+  // The read failed before the seek. The seek reads the newest page again.
+  const count = requests.length;
+  assert.equal(await nav.seek(1), 'failed');
+  assert.equal(requests.length, count + 1);
+  assert.match(nav.readError, /database is locked/);
+  // A later read, for example after a draft change, does not complete the old click.
+  const bottom = top(view);
+  fail = false;
+  nav.reload();
+  await settle();
+  assert.notEqual(nav.state(1), 'missing', 'the view found the message');
+  assert.equal(top(view), bottom, 'the view did not jump');
+  assert.equal(nav.readError, '');
+  assert.equal(await nav.seek(1), 'found');
+  assert.equal(top(view), 3);
+});
+
+test('a seek ends with failed when an older page of sent messages cannot be read', async t => {
+  // The newest page has only messages of a later terminal. The message is older.
+  const later = Array.from({ length: 20 }, (_, index) => sent(21 - index, `later message ${21 - index}`, '2026-11-23T11:00:00Z'));
+  const { nav, view, requests } = fixture(t, request => request.revision ? new Error('older page failed') : { messages: later, more: true });
+  await write(view, lines(3) + '> the message of terminal one\r\n' + lines(2));
+  nav.select('one');
+  nav.window(earlier);
+  nav.rendered();
+  assert.equal(await nav.seek(1), 'failed');
+  assert.match(nav.readError, /older page failed/);
+  assert.equal(requests.at(-1).revision, 2);
 });

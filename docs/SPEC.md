@@ -2628,9 +2628,13 @@ to terminal programs.
 for example **Show in terminal 1**. A click opens that terminal in the session view. The
 view then scrolls to the message as it does for a jump in the shown terminal.
 
-- The view opens the terminal as the [terminal selector](#terminal-selector) does. An
-  earlier terminal shows its saved final screen, with input and Send off. The latest
-  terminal joins its live process.
+- First the view reads the [terminal list](#terminal-list) again, because another
+  view can have started a terminal. The request then names the run of the terminal.
+  Thus a newer terminal cannot take the place of that terminal. Without the list, an
+  error toast says that the list is not available.
+- An earlier terminal shows its saved final screen, with input and Send off. The latest
+  terminal joins its live process. A view that names the latest terminal by its run is
+  a view of the latest terminal.
 - In a narrow main area, the view first closes the workspace pane. Thus the terminal
   opens at its shown size, and a later fit does not scroll it away from the message.
 - The view waits until the terminal draws its first frame. It also waits until it reads
@@ -2639,6 +2643,9 @@ view then scrolls to the message as it does for a jump in the shown terminal.
   rows.
 - When the search does not find the message, the view shows the terminal without a
   jump. An error toast says that the terminal does not show the message.
+- When a read of the sent messages fails, the jump ends. An error toast gives the
+  reason. A later click reads the newest page again. A later read does not complete
+  the jump that ended.
 - A change of the session or of the shown terminal cancels the wait. Another jump and a
   step also cancel it.
 
@@ -2798,13 +2805,22 @@ the whole session. While you view an earlier terminal, the session toolbar hides
 #### Terminal list
 
 The UI reads the list with `session-terminals` when it opens a session, when a terminal
-starts or exits, and when the selector opens. A start or a continue first clears the
-list of the view, because the list then lacks the new terminal. The selector hides until
-the new list arrives. The tool name comes from the start event of each run. Start events
-from bbflow 0.0.4 and earlier have no tool, so the first run uses the tool of the
-preparation. A new terminal has no run record until its process starts. Until then, the
-list ends with a `starting` terminal without a run ID. The UI reads the list again every
-five seconds until that terminal has a run.
+starts or exits, and when the selector opens. It also reads the list when the
+`status-watch` stream reports that a terminal of the selected session started or ended,
+for example in another view. A start or a continue first clears the list of the view,
+because the list then lacks the new terminal. The selector hides until the new list
+arrives.
+
+The tool name comes from the start event of each run. Start events from bbflow 0.0.4
+and earlier have no tool, so the first run uses the tool of the preparation. A new
+terminal has no run record until its process starts. Until then, the list ends with a
+`starting` terminal without a run ID. The UI reads the list again every five seconds
+until that terminal has a run.
+
+A view of the saved screen of the latest terminal keeps that terminal when another view
+starts a newer terminal. The view then shows its terminal as an earlier terminal, with
+**Back to live terminal**. Thus the selector label and the message marks continue to
+match the screen.
 
 #### Limits
 
@@ -4691,6 +4707,11 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
 - In the same file, a jump to another terminal waits for the first frame of that
   terminal, then puts the row of the message at the top. It ends without a jump when the
   terminal does not show the message. A change of the terminal and a step cancel it.
+  A failed read of the newest page or of an older page ends it with an error. A jump
+  after a failed read reads the newest page again, and a later read does not complete
+  a jump that ended.
+- `web/terminal-picker.test.mjs` covers a view that names the latest terminal by its
+  run. It is a view of the latest terminal until a newer terminal starts.
 - `web/sent-history.test.mjs` covers the **Show in terminal** button: the label for the
   shown terminal, the label and the tooltip for another terminal and for the live
   terminal, and an off button. It also covers the text of a terminal heading.
@@ -4737,6 +4758,16 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
   the row at the top, and the bar named message 7 of 8.
 - The terminal headings stayed at the top of the list in the dark and the light
   appearance.
+- A two-tab check used **Refactor orbit in a worktree**. Tab A showed terminal 1 with
+  the **Messages** view open. Tab B stopped terminal 2 and continued in terminal 3. Tab
+  A then showed `Terminal 1 of 3`, and its heading of terminal 2 showed `stopped`.
+  **Show in terminal 2** opened the saved final screen of terminal 2, and the bar named
+  message 2 of 2.
+- In the same check, a message that tab B sent in terminal 3 appeared in tab A under a
+  heading of terminal 3. **Show in terminal 3** joined the live terminal, without **Back
+  to live terminal**, and Send turned on for typed text. Then tab B stopped terminal 3
+  and continued in terminal 4. Tab A showed `Terminal 3 of 4 · Demo agent · stopped`,
+  the hint of an earlier terminal, and **Back to live terminal**.
 - The error toast for a message that the opened terminal does not show was not checked
   in a browser. The fixtures of `web/message-nav.test.mjs` cover the end of that jump.
 - A timing run in Node.js searched 10,000 rows of 100 columns for 20 messages in about

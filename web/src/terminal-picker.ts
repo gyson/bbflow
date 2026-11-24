@@ -14,6 +14,13 @@ export function requestRun(terminals: readonly TerminalInfo[], terminal: Termina
   return terminal === terminals.at(-1) ? '' : terminal.run;
 }
 
+// Return the run of the shown terminal when it is an earlier terminal, or an empty run
+// for the latest terminal. A view can name the latest terminal by its run. That view
+// shows the latest terminal until another view starts a newer one.
+export function earlierRun(terminals: readonly TerminalInfo[], run: string): string {
+  return run && run !== terminals.at(-1)?.run ? run : '';
+}
+
 // Return the run to request for the terminal at offset from the shown terminal, or null
 // when no terminal is there.
 export function stepRun(terminals: readonly TerminalInfo[], run: string, offset: number): string | null {
@@ -83,7 +90,7 @@ export class TerminalPicker {
       if (!terminal) return;
       this.open(false);
       const run = requestRun(this.terminals, terminal);
-      if (run !== this.run) this.host.select(run);
+      if (run !== this.shownRun) this.host.select(run);
     };
     this.list.onkeydown = event => {
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -106,8 +113,9 @@ export class TerminalPicker {
     });
   }
 
-  // An empty run shows the latest terminal.
-  get shownRun(): string { return this.run; }
+  // The run of the shown earlier terminal. It is empty when the view shows the latest
+  // terminal.
+  get shownRun(): string { return earlierRun(this.terminals, this.run); }
   // The terminals of the selected session in start order.
   get all(): readonly TerminalInfo[] { return this.terminals; }
   shown(): TerminalInfo | undefined { return shownTerminal(this.terminals, this.run); }
@@ -155,7 +163,7 @@ export class TerminalPicker {
     this.menu.disabled = this.blocked;
     this.previous.disabled = this.blocked || stepRun(this.terminals, this.run, -1) === null;
     this.next.disabled = this.blocked || stepRun(this.terminals, this.run, 1) === null;
-    this.latest.hidden = !this.run;
+    this.latest.hidden = !this.shownRun;
     this.latest.textContent = latestLabel(this.terminals);
     this.latest.disabled = this.blocked;
     if (!this.expanded) return;

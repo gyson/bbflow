@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { earlierHint, latestLabel, requestRun, shownTerminal, stepRun, terminalLabel, terminalTimes } from './dist/terminal-picker.js';
+import { earlierHint, earlierRun, latestLabel, requestRun, shownTerminal, stepRun, terminalLabel, terminalTimes } from './dist/terminal-picker.js';
 
 const terminal = (number, status, started = '2026-10-29T18:02:00Z', ended = '2026-10-29T18:30:00Z') =>
   ({ number, run: `run-${number}`, tool: number % 2 ? 'Codex' : 'Claude', status, started, ended });
@@ -19,6 +19,17 @@ test('the latest terminal uses an empty run, so a view joins its process', () =>
   // A new terminal has no run until its process starts.
   const starting = [...terminals.slice(0, 2), { ...terminals[2], run: '', status: 'starting' }];
   assert.equal(requestRun(starting, starting[2]), '');
+});
+
+test('a view that names the latest terminal by its run is a view of the latest terminal', () => {
+  assert.equal(earlierRun(terminals, 'run-3'), '');
+  assert.equal(earlierRun(terminals, ''), '');
+  assert.equal(earlierRun(terminals, 'run-1'), 'run-1');
+  // Another view stopped terminal 3 and continued the session in terminal 4. The view of
+  // terminal 3 now shows an earlier terminal.
+  const continued = [...terminals.slice(0, 2), { ...terminals[2], status: 'stopped', ended: '2026-10-30T11:00:00Z' }, terminal(4, 'running', '2026-10-30T11:01:00Z', '')];
+  assert.equal(earlierRun(continued, 'run-3'), 'run-3');
+  assert.equal(shownTerminal(continued, 'run-3'), continued[2]);
 });
 
 test('steps move one terminal and stop at the first and the latest terminal', () => {
