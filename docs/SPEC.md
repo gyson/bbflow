@@ -1064,7 +1064,10 @@ pins.
 - After a pin or an unpin with the keyboard from a row menu, the focus moves to the ⋯
   button of the row in its new place. When the row is behind **Show more**, the focus
   moves to the nearest later session row that shows, or else the nearest earlier one.
-  Without such a row, the focus moves to the search box.
+  Without such a row, the focus moves to the search box. The list then scrolls to show
+  the focused control.
+- **New sub-session** and the restore of the selected session expand the group that
+  shows the family: **Pinned** for a pinned family, or else the group of the project.
 - Other views show the change at their next list refresh.
 
 #### Pinned group
@@ -4180,6 +4183,11 @@ output. Restoration starts no process.
   the other view unpins it. It also verified that a keyboard unpin expands a collapsed
   project group, with the focus on the ⋯ button of the row. After an unpin of a family
   behind **Show more**, the focus moved to the nearest later row.
+- A third browser check collapsed **Pinned** and the project group. **New sub-session**
+  of a pinned session, and the restore of a sub-session of a pinned family, expanded
+  **Pinned** and showed the selected row there. In a window 420 pixels high, a keyboard
+  pin from the end of the scrolled list, and a keyboard unpin from its top, scrolled the
+  list to the focused ⋯ button.
 
 ### Checks of projects and launches
 

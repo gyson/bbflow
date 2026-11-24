@@ -27,7 +27,7 @@ import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
-import { mergeSessions, pinLimit, pinnedGroup, placeText, sessionGroups, sessionWindow, shownChildren, welcomeText } from './projects.js';
+import { familyGroup, mergeSessions, pinLimit, pinnedGroup, placeText, sessionGroups, sessionWindow, shownChildren, welcomeText } from './projects.js';
 import type { Family } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
@@ -628,10 +628,11 @@ async function pinFromList(session: SessionInfo, keyboard: boolean): Promise<voi
   const before = shownSessionKeys();
   await action(() => setPinned(session, !session.pinned), failed(session.pinned ? 'unpin' : 'pin', session));
   if (!keyboard || (document.activeElement && document.activeElement !== document.body)) return;
-  focusSidebar(`menu:${session.id}`);
+  // The row can move out of the visible part of the list, so scroll to the focus.
+  focusSidebar(`menu:${session.id}`, true);
   if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.focus === `menu:${session.id}`) return;
   const key = nearestRow(before, `session:${session.id}`, shownSessionKeys());
-  if (key) focusSidebar(key);
+  if (key) focusSidebar(key, true);
   else $('filter').focus();
 }
 
@@ -772,10 +773,24 @@ function renderSessions() {
 
 // Give the keyboard focus to the sidebar button with this focus key. Show more is not there
 // after a group shows all of its sessions. Then its key selects the last session of the group.
-function focusSidebar(key: string): void {
+// A list refresh keeps the scroll position. reveal scrolls the list to the button, for a
+// row that an action moved to another group.
+function focusSidebar(key: string, reveal = false): void {
   const target = [...$('sessions').querySelectorAll<HTMLElement>('[data-focus]')].find(button => button.dataset.focus === key)
     ?? (key.startsWith('more:') ? [...document.getElementById(`project-sessions-${key.slice(5) || 'standalone'}`)?.querySelectorAll<HTMLElement>('.session-item') ?? []].at(-1) : undefined);
   target?.focus({ preventScroll: true });
+  if (reveal) target?.scrollIntoView({ block: 'nearest' });
+}
+
+// Expand the group that shows the family of a session in the list: Pinned for a pinned
+// family, or else the group of its project. Call it after a refresh, which lists the
+// family of the selected session.
+function revealFamily(id: string): void {
+  const session = sessions.find(item => item.id === id);
+  const root = session?.parentId ? sessions.find(item => item.id === session.parentId) : session;
+  if (!root) return;
+  const known = new Set(projects.map(project => project.id));
+  if (collapsedProjects.delete(familyGroup(root, known, archivedList))) renderSessions();
 }
 
 // Show brief activity of each session in the list. The list refresh is too slow for it.
@@ -1230,9 +1245,10 @@ async function showSubLaunch(parent: string): Promise<void> {
   await leaveView();
   const session = await call(server, { operation: 'project-draft', parent });
   archivedList = false; $('filter').value = '';
-  collapsedProjects.delete(session.projectId);
   await openSession({ ...session, status: 'draft' });
   await refreshSessions();
+  // The family can be in Pinned.
+  revealFamily(session.id);
 }
 
 async function showWelcome(): Promise<void> {
@@ -1374,11 +1390,12 @@ async function setArchived(id: string, archived: boolean, family = false, member
     } else if (archived) await showWelcome();
     else {
       archivedList = false; $('filter').value = '';
-      collapsedProjects.delete(current.projectId ?? '');
       await openSession(current);
     }
   }
   await refreshSessions();
+  // A restored session opens in the normal list. Its family can be in Pinned.
+  if (current?.id && !archived && !showingSettings) revealFamily(current.id);
 }
 
 async function initialize() {
