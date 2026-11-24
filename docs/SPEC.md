@@ -1493,7 +1493,7 @@ command keeps no list, and its error shows below the menu. **Other…** still wo
 The tool editor in Settings also tells where each list comes from, and it has **Refresh
 list**. A draft shows only the error of a failed list. A refresh also updates each other
 model menu of the type that is in view. A chosen model stays, also when the new list does
-not have it.
+not have it. When two refreshes overlap, only the later one updates the menus.
 
 The **Thinking effort** menus follow the type. For Codex, they list the efforts of the
 chosen model and show its default, for example **Model default (Medium)**. Claude Code
@@ -3931,7 +3931,8 @@ Upgrade fixtures verify that 100 custom tools still save after the upgrade adds 
 built-in tools, and that a 101st fails. They give new built-in tools free IDs and names
 when a saved tool has `builtin-codex` or `Codex (built-in)`. They leave a relative or
 an overlong program a custom tool. Web fixtures verify that a refresh in one model
-picker updates a picker of the type that is in view, with its chosen model, and that the browser waits 35 seconds
+picker updates a picker of the type that is in view, with its chosen model, that the
+later of two overlapping refreshes reaches every picker, and that the browser waits 35 seconds
 for a model list.
 
 Tool menu fixtures verify the order of the menus: the built-in tools and Shell by name,

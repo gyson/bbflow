@@ -233,7 +233,11 @@ export class ModelPicker {
       const list = await from;
       if (token !== this.token) return;
       this.list = list;
-      if (refresh) for (const other of pickers) if (other !== this) other.adopt(server, type, from, list);
+      // Only the current shared list goes to the other pickers. An earlier refresh that
+      // ends after a later one started is no longer current.
+      if (refresh && lists.get(listKey(server, type)) === from) {
+        for (const other of pickers) if (other !== this) other.adopt(server, type, from, list);
+      }
     } catch (error) {
       if (token !== this.token) return;
       this.error = errorMessage(error);
@@ -247,6 +251,7 @@ export class ModelPicker {
   private adopt(server: ServerInfo, type: string, from: Promise<ToolModels>, list: ToolModels): void {
     const current = this.host.server();
     if (this.type !== type || !current || listKey(current, type) !== listKey(server, type) || this.from === from) return;
+    if (lists.get(listKey(server, type)) !== from) return;
     this.token++;
     this.from = from;
     this.list = list;

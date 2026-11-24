@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SettingsView } from './dist/settings.js';
+import { forgetModelLists } from './dist/model-choice.js';
 
 // A small fake DOM. It has only the parts that the Settings view uses.
 class Node {
@@ -83,6 +84,8 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 // setup opens the Settings view with the saved settings. Each server call waits in
 // pending until the fixture sends its reply with reply or fail.
 async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex exec' }]) {
+  // Each test starts without the model lists of an earlier test.
+  forgetModelLists();
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
   nodes['tool-editor-error'].hidden = true;
   for (const id of ['tool-editor-error', 'settings-port-error', 'settings-remote-error', 'settings-error', 'tool-error', 'title-test-result']) nodes[id].hidden = true;
@@ -659,4 +662,32 @@ test('an unsaved title model goes after a close, and a newer model from another 
   assert.deepEqual(toasts.at(-1), ['The title tool did not save.', 'model not found']);
   assert.ok(!view.unsaved, 'the failed edit stayed after Settings closed');
   assert.equal(nodes['title-model'].value, 'gpt-6-sol');
+});
+
+test('of two refreshes that overlap, the later one reaches every picker', async () => {
+  const codex = { id: 'codex', name: 'Codex', command: 'codex exec -', type: 'codex', prefix: 'codex exec', suffix: ' -', model: '', effort: '' };
+  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', builtin: true, enabled: true, path: '' };
+  const { nodes, reply, view } = await setup([codex]);
+  view.saves.update({ ...view.saves.saved, revision: 9, tools: [builtin, agent] });
+  const list = id => ({ type: 'codex', source: 'codex debug models', loaded: 'now', efforts: [], models: [{ id, name: id, efforts: [] }] });
+  const models = id => nodes[id].children.map(option => option.value);
+  nodes['title-tool'].value = 'codex';
+  nodes['title-tool'].onchange();
+  await reply('tool-models', list('model-a'));
+  // The tool editor starts a refresh, and the title picker starts a later one.
+  document.getElementById('tool-edit-builtin-codex').onclick();
+  await tick();
+  nodes['tool-model-refresh'].onclick();
+  nodes['tool-cancel'].onclick();
+  nodes['title-model-refresh'].onclick();
+  await tick();
+  // The replies come in the order of the requests.
+  await reply('tool-models', list('model-b'));
+  await reply('tool-models', list('model-c'));
+  assert.ok(models('title-model').includes('model-c'));
+  assert.ok(!models('title-model').includes('model-b'));
+  // The tool editor reads the current list when it opens again.
+  document.getElementById('tool-edit-builtin-codex').onclick();
+  await tick();
+  assert.ok(models('tool-model').includes('model-c'));
 });
