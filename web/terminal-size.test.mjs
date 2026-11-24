@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scrollbackRows, smallestSize, terminalSize } from './dist/terminal-size.js';
+import { hiddenSize, scrollbackRows, smallestSize, terminalSize } from './dist/terminal-size.js';
 
 test('a view asks for a PTY size of at least 20 columns and 5 rows', () => {
   // The size of a terminal that a narrow session column squeezed.
@@ -12,6 +12,16 @@ test('a view asks for a PTY size of at least 20 columns and 5 rows', () => {
 
 test('a new terminal starts at the smallest size that a view asks for', () => {
   assert.deepEqual(smallestSize, terminalSize({ rows: 1, cols: 1 }));
+});
+
+test('a hidden terminal joins with a shown size, or else with 80 columns and 24 rows', () => {
+  // The map keeps the latest entry last.
+  const shown = new Map([['one', { rows: 30, cols: 100 }], ['two', { rows: 18, cols: 40 }]]);
+  assert.deepEqual(hiddenSize(shown, 'one'), { rows: 30, cols: 100 });
+  assert.deepEqual(hiddenSize(shown, 'three'), { rows: 18, cols: 40 });
+  assert.deepEqual(hiddenSize(shown, ''), { rows: 18, cols: 40 });
+  // The first terminal of the tab is hidden. It does not ask for the smallest size.
+  assert.deepEqual(hiddenSize(new Map(), 'one'), { rows: 24, cols: 80 });
 });
 
 test('a view asks for no more than the server limits', () => {

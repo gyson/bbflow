@@ -24,7 +24,7 @@ import { followKeyboard, keyboardShown } from './keyboard.js';
 import { followCursor, showCursor } from './terminal-clip.js';
 import { fitEndedRows } from './ended-fit.js';
 import { touchScroll } from './terminal-touch.js';
-import { smallestSize, terminalSize } from './terminal-size.js';
+import { hiddenSize, smallestSize, terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
@@ -895,9 +895,7 @@ async function refreshSessions() {
 function size(view: Terminal) { return terminalSize(view); }
 
 // A hidden terminal has no size. A narrow main area hides the session while it shows the
-// workspace pane. A hidden terminal joins with the last size of the session terminal while
-// it showed, or else with the last size of another session terminal. The map keeps the
-// latest entry last. Thus a join keeps the PTY size until the terminal shows again.
+// workspace pane. See hiddenSize in terminal-size.ts for the size that it joins with.
 const shownSizes = new Map<string, Size>();
 
 function terminalShown(): boolean {
@@ -910,9 +908,6 @@ function rememberSize(value: Size): void {
   shownSizes.set(selected.id, value);
 }
 
-function hiddenSize(): Size | undefined {
-  return (selected?.id ? shownSizes.get(selected.id) : undefined) ?? [...shownSizes.values()].at(-1);
-}
 
 // A view sends no resize while it opens. The terminal selector, the draft, and Handoff
 // prompt load after the request, and they can change the height of the terminal area.
@@ -946,10 +941,9 @@ function requestFit(resized = false) {
   }
   rememberSize(dimensions);
   if (opening) return;
-  if (dimensions.cols !== terminal.cols || dimensions.rows !== terminal.rows) {
-    // Apply the server's size event in stream order, after output at the old size.
-    peer.send({ type: 'resize', size: dimensions });
-  }
+  // The frames keep the old size until the server applies the resize in stream order,
+  // after output at the old size. The connection sends each size once.
+  connection.resize(dimensions);
 }
 
 function darkScheme(): boolean {
@@ -1018,8 +1012,7 @@ function makeTerminal(): Terminal {
   terminal.open(host);
   // The hint of the earlier view goes before the fit. Its row would make the fit lower.
   hint();
-  const hidden = terminalShown() ? undefined : hiddenSize();
-  if (!hidden) {
+  if (terminalShown()) {
     // xterm.js rounds the cell width for the current number of columns. The later fits
     // measure at the size of the request. Thus fit again until the size stays.
     let cols = 0, rows = 0;
@@ -1027,8 +1020,9 @@ function makeTerminal(): Terminal {
       cols = view.cols; rows = view.rows;
       fit.fit();
     }
-    if (terminalShown()) rememberSize(size(view));
+    rememberSize(size(view));
   } else {
+    const hidden = hiddenSize(shownSizes, selected?.id ?? '');
     view.resize(hidden.cols, hidden.rows);
   }
   onTerminalInput(terminal, input => {

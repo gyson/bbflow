@@ -27,6 +27,9 @@ export class SessionConnection {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private attempt = 0;
   private closed = false;
+  // The size that this connection asked for last: the size of its request, then the size
+  // of each resize. The frames of that size arrive later.
+  private asked: Size | undefined;
 
   constructor(
     private readonly server: ServerInfo,
@@ -49,6 +52,7 @@ export class SessionConnection {
     this.peer?.close();
     this.ready = false;
     if (rejoins(this.request)) this.request = { ...this.request, size: this.host.size() };
+    this.asked = this.request.size;
     return new Promise<void>((resolve, reject) => {
       const stream = this.stream = new TerminalStream(this.view, {
         current: () => !this.closed && this.peer === peer,
@@ -84,6 +88,16 @@ export class SessionConnection {
         },
       });
     });
+  }
+
+  // Ask the server for this view size. Until the frame of a size arrives, other fits can
+  // give the same size again. The connection sends each size only once. Return true when
+  // it sent the resize.
+  resize(size: Size): boolean {
+    if (size.cols === this.asked?.cols && size.rows === this.asked.rows) return false;
+    if (!this.peer?.send({ type: 'resize', size })) return false;
+    this.asked = size;
+    return true;
   }
 
   close(): void {
