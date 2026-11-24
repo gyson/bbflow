@@ -17,7 +17,7 @@ const usage = `Usage:
   bbflow [--dir DIR] ui
   bbflow [--dir DIR] query SQL
   bbflow [--dir DIR] storage [--redact]
-  bbflow [--dir DIR] tool list|add|remove
+  bbflow [--dir DIR] tool list|add|remove|enable|disable
   bbflow [--dir DIR] settings get|set
   bbflow [--dir DIR] title-tool list|show|set|test
   bbflow skill
