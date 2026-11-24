@@ -28,6 +28,16 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 			t.Fatalf("%v: want error %q, got %s %v", args, want, output, err)
 		}
 	}
+	// own returns the tools that the user added, without the built-in tools.
+	own := func(settings history.Settings) []history.Tool {
+		var tools []history.Tool
+		for _, tool := range settings.Tools {
+			if !tool.Builtin {
+				tools = append(tools, tool)
+			}
+		}
+		return tools
+	}
 	saved := func() history.Settings {
 		t.Helper()
 		var settings history.Settings
@@ -43,19 +53,55 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 		cli("tool", "add", "Other", "other")
 	}
 	settings := saved()
-	if len(settings.Tools) != 2 || settings.Tools[0].Name != "Agent" || settings.Tools[1].Command != "other" || settings.DefaultTool != settings.Tools[0].ID {
+	if tools := own(settings); len(tools) != 2 || tools[0].Name != "Agent" || tools[1].Command != "other" || settings.DefaultTool != tools[0].ID {
 		t.Fatalf("tools after add: %+v", settings)
 	}
-	agent := settings.Tools[0].ID
+	agent := own(settings)[0].ID
 	if output := cli("tool", "add", "Agent", "agent --slow"); !strings.Contains(output, `Updated tool "Agent"`) {
 		t.Fatal(output)
 	}
-	if settings = saved(); settings.Tools[0].ID != agent || settings.Tools[0].Command != "agent --slow" {
+	if settings = saved(); own(settings)[0].ID != agent || own(settings)[0].Command != "agent --slow" {
 		t.Fatalf("tools after update: %+v", settings)
 	}
-	// The list is text with one tool on each line. A tab divides the name and the command.
-	if output := cli("tool", "list"); output != "Agent\tagent --slow\nOther\tother\n" {
+	// The list is text with one tool on each line. Tabs divide the name, the command, and
+	// on or off. The built-in tools come first in a new instance. The test server finds no
+	// CLI, so they are off.
+	builtins := "Codex\tcodex --no-alt-screen\toff\nClaude Code\tclaude\toff\nAntigravity\tagy\toff\nCode Puppy\tcode-puppy\toff\n"
+	if output := cli("tool", "list"); output != builtins+"Agent\tagent --slow\ton\nOther\tother\ton\n" {
 		t.Fatalf("tool list: %q", output)
+	}
+	// A built-in tool turns on and off, and remove does not remove it. A tool that is off
+	// cannot be the default tool, so disable selects Shell.
+	fails("is a built-in tool", "tool", "remove", "Codex")
+	fails("bbflow keeps its command", "tool", "add", "Codex", "codex --search")
+	fails("is off", "settings", "set", "default-tool", "Codex")
+	cli("tool", "enable", "Codex")
+	cli("settings", "set", "default-tool", "Codex")
+	if output := cli("tool", "disable", "Codex"); output != "Turned off tool \"Codex\".\nShell is now the default tool.\n" {
+		t.Fatalf("disable the default tool: %q", output)
+	}
+	// Shell turns off with the settings key shell. Shell that is off cannot be the default
+	// tool, so the first tool that is on becomes the default.
+	cli("settings", "set", "default-tool", "")
+	if output := cli("settings", "set", "shell", "false"); output != "Saved shell: false.\n" {
+		t.Fatalf("set shell: %q", output)
+	}
+	if output := cli("settings", "get", "default-tool"); output != "Agent\n" {
+		t.Fatalf("default after Shell turned off: %q", output)
+	}
+	fails("Shell is off", "settings", "set", "default-tool", "")
+	cli("settings", "set", "shell", "true")
+	cli("settings", "set", "default-tool", "Agent")
+	// A tool that the user added turns off too. It stays saved, and add keeps it off.
+	cli("tool", "disable", "Agent")
+	cli("tool", "add", "Agent", "agent --slow")
+	if output := cli("tool", "list"); !strings.Contains(output, "Agent\tagent --slow\toff\n") {
+		t.Fatalf("tool list after disable: %q", output)
+	}
+	// The default tool must be on, so --default turns the tool on.
+	cli("tool", "add", "--default", "Agent", "agent --slow")
+	if output := cli("tool", "list"); !strings.Contains(output, "Agent\tagent --slow\ton\n") {
+		t.Fatalf("tool list after add --default: %q", output)
 	}
 	// The flag package reads an option only before NAME.
 	fails("put --default before NAME", "tool", "add", "Agent", "agent --slow", "--default")
@@ -67,7 +113,7 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	if output := cli("tool", "add", "--default", "--", "--default", "false"); !strings.Contains(output, `Updated tool "--default"`) {
 		t.Fatal(output)
 	}
-	if settings = saved(); settings.Tools[2].Command != "false" || settings.DefaultTool != settings.Tools[2].ID {
+	if settings = saved(); own(settings)[2].Command != "false" || settings.DefaultTool != own(settings)[2].ID {
 		t.Fatalf("tool with the name of the option: %+v", settings)
 	}
 	cli("tool", "remove", "--", "--default")
@@ -101,7 +147,7 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	}
 	cli("settings", "set", "update-check", "false")
 	settings = saved()
-	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != settings.Tools[1].ID || settings.TitleTool != "none" || settings.UpdateCheck {
+	if settings.Appearance != "dark" || !settings.Worktree || settings.Base != "main" || settings.DefaultTool != own(settings)[1].ID || settings.TitleTool != "none" || settings.UpdateCheck {
 		t.Fatalf("settings after set: %+v", settings)
 	}
 
@@ -130,14 +176,14 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	// Removal of the default tool selects Shell.
 	cli("tool", "remove", "Other")
 	settings = saved()
-	if len(settings.Tools) != 1 || settings.DefaultTool != "" {
+	if len(own(settings)) != 1 || settings.DefaultTool != "" {
 		t.Fatalf("settings after remove: %+v", settings)
 	}
 
 	// A tool can have the name Shell. Only an empty value selects the built-in Shell.
 	cli("tool", "add", "shell", "bash -l")
 	cli("settings", "set", "default-tool", "shell")
-	if settings = saved(); settings.DefaultTool != settings.Tools[1].ID {
+	if settings = saved(); settings.DefaultTool != own(settings)[1].ID {
 		t.Fatalf("named shell tool is not the default: %+v", settings)
 	}
 	if output := cli("settings", "set", "default-tool", ""); output != "Saved default-tool: the built-in Shell.\n" {
@@ -171,14 +217,14 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	fails("more than one tool has the name", "settings", "get", "default-tool")
 	cli("settings", "set", "default-tool", "")
 
-	// An empty list tells so.
+	// A save without the tools that the user added keeps the built-in tools.
 	settings = saved()
 	settings.Tools = nil
 	if _, err := (client.Target{Dir: directory}).Call(protocol.Request{Operation: "settings-save", Settings: &settings}); err != nil {
 		t.Fatal(err)
 	}
-	if output := cli("tool", "list"); output != "No tools are saved.\n" {
-		t.Fatalf("empty tool list: %q", output)
+	if output := cli("tool", "list"); output != builtins {
+		t.Fatalf("tool list with only the built-in tools: %q", output)
 	}
 }
 

@@ -10,28 +10,61 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"bbflow/internal/models"
 )
 
-// Tool is a named startup command.
+// Tool is a named startup command. Type is one of models.Types. A built-in tool has the
+// type of its agent. A tool that the user adds is custom. For a type other than custom,
+// Model and Effort are the defaults of new drafts. An empty Model or Effort selects the
+// default of the CLI.
+//
+// Builtin marks the one preset of each agent type. The server owns this flag. A save
+// cannot remove a built-in tool or change its type. The built-in tools come first in the
+// saved list. Enabled turns a tool on or off. A tool that is off is not a choice for new
+// drafts and new terminals. A tool that the user adds starts on.
+//
+// A built-in tool has a fixed name, type, and command. The user sets only its optional
+// CLI path, its default model and effort, and whether it is on. Path is the CLI path. The
+// server builds Command from it. See models.BuiltinCommand. The server also runs the
+// path for the model list, the check for the CLI, and the title tool of the type. An
+// empty path selects the plain CLI name. A tool that the user added has no Path.
 type Tool struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Command string `json:"command"`
+	Type    string `json:"type"`
+	Model   string `json:"model"`
+	Effort  string `json:"effort"`
+	Builtin bool   `json:"builtin"`
+	Enabled bool   `json:"enabled"`
+	Path    string `json:"path"`
 }
 
 type Settings struct {
 	Revision    int64  `json:"revision"`
 	Appearance  string `json:"appearance"`
 	DefaultTool string `json:"defaultTool"`
-	Worktree    bool   `json:"worktree"`
-	Base        string `json:"base"`
-	Tools       []Tool `json:"tools"`
+	// ShellOff turns off the built-in Shell, the tool with the empty ID. Shell is then not
+	// a choice for new drafts and new terminals, and it cannot be the default tool. A
+	// saved settings row without the value has Shell on.
+	ShellOff bool   `json:"shellOff"`
+	Worktree bool   `json:"worktree"`
+	Base     string `json:"base"`
+	Tools    []Tool `json:"tools"`
 	// TitleTool selects the CLI that makes automatic session titles. It is one of
 	// TitleTools. "none" turns automatic titles off. "custom" runs TitleCommand.
 	TitleTool string `json:"titleTool"`
 	// TitleCommand is the command of the custom title tool. It stays saved when another
 	// title tool is selected. The server owns the commands of the other title tools.
 	TitleCommand string `json:"titleCommand"`
+	// TitleModel and TitleEffort are the model and the thinking effort of a title tool of
+	// an agent CLI. An empty value adds no option. Only SetTitleTool changes them.
+	TitleModel  string `json:"titleModel"`
+	TitleEffort string `json:"titleEffort"`
+	// CheckTools tells the server to turn on the built-in tools whose CLI is on PATH, once
+	// at its next start. The server owns this flag.
+	CheckTools bool `json:"checkTools"`
 	// UpdateCheck lets the server read the latest release from GitHub once a day.
 	UpdateCheck bool `json:"updateCheck"`
 	// Port is the loopback port that the server uses at its next start. 0 selects the
@@ -47,6 +80,9 @@ type Settings struct {
 // RemoteAccess tells if the settings turn remote access on.
 func (s Settings) RemoteAccess() bool { return s.RemoteHost != "" && s.RemoteLogin != "" }
 
+// maxCustomTools is the most tools that the user can add.
+const maxCustomTools = 100
+
 // The lowest port that Settings accepts. Lower ports are for system services.
 const MinPort = 1024
 
@@ -59,13 +95,18 @@ var blockedPorts = []int{1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6
 var TitleTools = []string{"none", "claude", "codex", "code-puppy", "apple", "custom"}
 
 // Preparation stores a snapshot of the selected preset. Preset changes never rewrite a
-// prepared or launched session. The server owns this state.
+// prepared or launched session. The server owns this state. ToolType is the type of the
+// tool, or empty for Shell. Model and Effort are the choices of the draft. The launch
+// adds their options to Command. See models.Command.
 type Preparation struct {
 	Revision int64  `json:"revision"`
 	State    string `json:"state"`
 	ToolID   string `json:"toolId"`
 	ToolName string `json:"toolName"`
+	ToolType string `json:"toolType"`
 	Command  string `json:"command"`
+	Model    string `json:"model"`
+	Effort   string `json:"effort"`
 	Worktree bool   `json:"worktree"`
 	Base     string `json:"base"`
 	Branch   string `json:"branch"`
@@ -86,6 +127,29 @@ func ValidateCommand(command string) error {
 		return errors.New("startup command must be one line, at most 1000 bytes, without control characters")
 	}
 	return nil
+}
+
+// FallbackTool returns the default tool after the default tool turns off or leaves the
+// list: Shell when it is on, else the first other tool that is on. It returns false when
+// no tool is left.
+func FallbackTool(settings Settings, leaving string) (string, bool) {
+	if !settings.ShellOff && leaving != "" {
+		return "", true
+	}
+	for _, tool := range settings.Tools {
+		if tool.Enabled && tool.ID != leaving {
+			return tool.ID, true
+		}
+	}
+	return "", false
+}
+
+// validPreparation checks the command, the model, and the effort of a draft.
+func validPreparation(p Preparation) error {
+	if err := ValidateCommand(p.Command); err != nil {
+		return err
+	}
+	return models.Validate(p.ToolType, p.Model, p.Effort)
 }
 
 func (s *Store) Settings() (Settings, error) {
@@ -120,8 +184,26 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	default:
 		return settings, errors.New("appearance must be system, light, or dark")
 	}
-	if len(settings.Tools) > 100 {
-		return settings, errors.New("at most 100 tools are supported")
+	saved, err := s.Settings()
+	if err != nil {
+		return settings, err
+	}
+	builtins, known := map[string]Tool{}, map[string]bool{}
+	for _, tool := range saved.Tools {
+		known[tool.ID] = true
+		if tool.Builtin {
+			builtins[tool.ID] = tool
+		}
+	}
+	// The limit counts the custom tools. The built-in tools are always in the list.
+	custom := 0
+	for _, tool := range settings.Tools {
+		if _, builtin := builtins[tool.ID]; !builtin {
+			custom++
+		}
+	}
+	if custom > maxCustomTools {
+		return settings, fmt.Errorf("at most %d custom tools are supported", maxCustomTools)
 	}
 	seen := map[string]bool{"": true}
 	for i := range settings.Tools {
@@ -135,15 +217,74 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 			return settings, errors.New("tools need unique IDs")
 		}
 		seen[tool.ID] = true
+		original, builtin := builtins[tool.ID]
+		tool.Builtin = builtin
+		if builtin {
+			// The name and the type of a built-in tool stay. The server builds its command
+			// from its CLI path.
+			if tool.Type != "" && tool.Type != original.Type {
+				return settings, fmt.Errorf("the type of the built-in tool %q cannot change", original.Name)
+			}
+			if err = models.ValidPath(tool.Path); err != nil {
+				return settings, err
+			}
+			tool.Name, tool.Type = original.Name, original.Type
+			tool.Command = models.BuiltinCommand(original.Type, tool.Path)
+		} else {
+			// A tool of the user is a Custom tool. Its command holds all of its options.
+			switch {
+			case tool.Path != "":
+				return settings, errors.New("only a built-in tool has a CLI path; put the path in the startup command")
+			case tool.Type != "" && tool.Type != models.Custom:
+				return settings, errors.New("only a built-in tool has an agent type; a tool that you add is a Custom tool")
+			}
+			tool.Type = models.Custom
+		}
 		if strings.TrimSpace(tool.Command) == "" {
 			return settings, errors.New("tool command is required; use Shell for an empty command")
 		}
 		if err = ValidateCommand(tool.Command); err != nil {
 			return settings, err
 		}
+		// A new tool starts on, also from a client that sends no enabled value.
+		if !known[tool.ID] {
+			tool.Enabled = true
+		}
+		if !slices.Contains(models.Types, tool.Type) {
+			return settings, errors.New("tool type must be codex, claude, agy, code-puppy, or custom")
+		}
+		if err = models.Validate(tool.Type, tool.Model, tool.Effort); err != nil {
+			return settings, err
+		}
 	}
+	// A save cannot remove a built-in tool. A save without one keeps the saved tool.
+	for _, tool := range saved.Tools {
+		if tool.Builtin && !seen[tool.ID] {
+			settings.Tools = append(settings.Tools, tool)
+			seen[tool.ID] = true
+		}
+	}
+	// The built-in tools come first, in their saved order. The tools that the user added
+	// follow. Settings and the tool menus show the two groups in this order.
+	slices.SortStableFunc(settings.Tools, func(a, b Tool) int {
+		switch {
+		case a.Builtin == b.Builtin:
+			return 0
+		case a.Builtin:
+			return -1
+		}
+		return 1
+	})
 	if !seen[settings.DefaultTool] {
 		return settings, errors.New("default tool does not exist")
+	}
+	for _, tool := range settings.Tools {
+		if tool.ID == settings.DefaultTool && !tool.Enabled {
+			return settings, fmt.Errorf("%q is off; turn it on before you make it the default tool", tool.Name)
+		}
+	}
+	if settings.DefaultTool == "" && settings.ShellOff {
+		return settings, errors.New("Shell is off, so it cannot be the default tool; choose another default tool, or turn Shell on")
 	}
 	if settings.Port != 0 && (settings.Port < MinPort || settings.Port > 65535) {
 		return settings, fmt.Errorf("port must be from %d to 65535, or 0 for an automatic port", MinPort)
@@ -151,7 +292,6 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	if slices.Contains(blockedPorts, settings.Port) {
 		return settings, fmt.Errorf("web browsers do not open port %d; choose another port", settings.Port)
 	}
-	var err error
 	if settings.RemoteHost, err = validRemoteHost(settings.RemoteHost); err != nil {
 		return settings, err
 	}
@@ -167,11 +307,8 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	if settings.Tools == nil {
 		settings.Tools = []Tool{}
 	}
-	saved, err := s.Settings()
-	if err != nil {
-		return settings, err
-	}
-	settings.TitleTool, settings.TitleCommand = saved.TitleTool, saved.TitleCommand
+	settings.TitleTool, settings.TitleCommand, settings.CheckTools = saved.TitleTool, saved.TitleCommand, saved.CheckTools
+	settings.TitleModel, settings.TitleEffort = saved.TitleModel, saved.TitleEffort
 	data, err := json.Marshal(settings)
 	if err != nil {
 		return settings, err
@@ -182,6 +319,39 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	}
 	settings.Revision++
 	return settings, nil
+}
+
+// FinishToolCheck turns on the built-in tools whose type installed reports, and it ends
+// the check that Settings.CheckTools asks for. It turns no tool off. Without a pending
+// check, it changes nothing. The server runs it before it takes requests, so no view has
+// read the settings yet. Thus the check keeps the settings revision, as a migration does.
+// A settings save between the read and the write fails the revision guard, so the write
+// then reads the settings again.
+func (s *Store) FinishToolCheck(installed func(kind string) bool) (Settings, error) {
+	for {
+		settings, err := s.Settings()
+		if err != nil || !settings.CheckTools {
+			return settings, err
+		}
+		for i := range settings.Tools {
+			tool := &settings.Tools[i]
+			if tool.Builtin && !tool.Enabled && installed(tool.Type) {
+				tool.Enabled = true
+			}
+		}
+		settings.CheckTools = false
+		data, err := json.Marshal(settings)
+		if err != nil {
+			return settings, err
+		}
+		result, err := s.db.Exec("UPDATE settings SET data=? WHERE id=1 AND revision=? AND json_extract(data,'$.checkTools')", string(data), settings.Revision)
+		if err != nil {
+			return settings, err
+		}
+		if n, err := result.RowsAffected(); err != nil || n == 1 {
+			return settings, err
+		}
+	}
 }
 
 // validRemoteHost returns the saved form of Settings.RemoteHost: lower case, without
@@ -233,17 +403,44 @@ func validRemoteLogin(login string) (string, error) {
 	return login, nil
 }
 
-// TitleChoice is a selected title tool and the saved custom command. Command is empty
-// for a change to a built-in tool or none, because such a change keeps the saved custom
-// command.
+// TitleChoice is a selected title tool, the saved custom command, and the model and the
+// effort. Command is empty for a change to a built-in tool or none, because such a change
+// keeps the saved custom command. Only the title tools of an agent CLI take a model and an
+// effort.
+//
+// Path is the CLI path of the built-in tool of the agent type that a test ran, for
+// SetTitleTool. Settings.Choice leaves it empty.
 type TitleChoice struct {
 	Tool    string
 	Command string
+	Model   string
+	Effort  string
+	Path    string
 }
 
-// Choice returns the title tool and the custom command of the settings.
+// BuiltinPath returns the CLI path of the built-in tool of an agent type, or empty.
+func (s Settings) BuiltinPath(kind string) string {
+	for _, tool := range s.Tools {
+		if tool.Builtin && tool.Type == kind {
+			return tool.Path
+		}
+	}
+	return ""
+}
+
+// Choice returns the title tool, the custom command, and the model and effort of the
+// settings.
 func (s Settings) Choice() TitleChoice {
-	return TitleChoice{Tool: s.TitleTool, Command: s.TitleCommand}
+	return TitleChoice{Tool: s.TitleTool, Command: s.TitleCommand, Model: s.TitleModel, Effort: s.TitleEffort}
+}
+
+// TitleType returns the agent type of a title tool, or empty for a title tool without a
+// model choice. The IDs of the agent title tools are their types.
+func TitleType(tool string) string {
+	if models.Typed(tool) {
+		return tool
+	}
+	return ""
 }
 
 // ErrTitleChanged reports that another change of the title tool or the custom command
@@ -251,8 +448,9 @@ func (s Settings) Choice() TitleChoice {
 var ErrTitleChanged = errors.New("the title tool changed during the test")
 
 // SetTitleTool saves next, with a new revision, and returns the saved settings. It
-// saves only while the settings still have the title tool and the custom command of
-// from. A test can run for 90 seconds, and a later change must not be undone by an
+// saves only while the settings still have the title tool, the custom command, the
+// model, and the effort of from. For a title tool of an agent CLI, it also saves only
+// while the built-in tool of that type has the CLI path next.Path, which the test ran. A test can run for 90 seconds, and a later change must not be undone by an
 // earlier test. Other settings can change meanwhile. For custom, next.Command is the
 // custom command, and it saves too. Other tools take no command. SetTitleTool does not
 // test the tool. The server tests it before this call.
@@ -260,18 +458,28 @@ func (s *Store) SetTitleTool(next, from TitleChoice) (Settings, error) {
 	if !slices.Contains(TitleTools, next.Tool) {
 		return Settings{}, fmt.Errorf("title tool must be one of %s", strings.Join(TitleTools, ", "))
 	}
+	if err := models.Validate(TitleType(next.Tool), next.Model, next.Effort); err != nil {
+		return Settings{}, fmt.Errorf("only the title tools of Claude, Codex, and Code Puppy take a model and an effort: %w", err)
+	}
 	var row *sql.Row
-	const unchanged = " WHERE id=1 AND json_extract(data,'$.titleTool')=? AND json_extract(data,'$.titleCommand')=? RETURNING revision,data"
+	const program = " AND coalesce((SELECT json_extract(t.value,'$.path') FROM json_each(data,'$.tools') AS t" +
+		" WHERE json_extract(t.value,'$.builtin') AND json_extract(t.value,'$.type')=?),'')=?"
+	const unchanged = " WHERE id=1 AND json_extract(data,'$.titleTool')=? AND json_extract(data,'$.titleCommand')=?" +
+		" AND json_extract(data,'$.titleModel')=? AND json_extract(data,'$.titleEffort')=?" + program + " RETURNING revision,data"
+	// A title tool without an agent type matches no built-in tool, so its path is empty.
+	from4 := []any{from.Tool, from.Command, from.Model, from.Effort, TitleType(next.Tool), next.Path}
 	if next.Tool != "custom" {
 		if next.Command != "" {
 			return Settings{}, errors.New("only the custom title tool takes a command")
 		}
-		row = s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?)"+unchanged, next.Tool, from.Tool, from.Command)
+		row = s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?,'$.titleModel',?,'$.titleEffort',?)"+unchanged,
+			append([]any{next.Tool, next.Model, next.Effort}, from4...)...)
 	} else {
 		if err := ValidateTitleCommand(next.Command); err != nil {
 			return Settings{}, err
 		}
-		row = s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?,'$.titleCommand',?)"+unchanged, next.Tool, next.Command, from.Tool, from.Command)
+		row = s.db.QueryRow("UPDATE settings SET revision=revision+1,data=json_set(data,'$.titleTool',?,'$.titleCommand',?,'$.titleModel','','$.titleEffort','')"+unchanged,
+			append([]any{next.Tool, next.Command}, from4...)...)
 	}
 	settings, err := scanSettings(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -328,7 +536,7 @@ func (s *Store) createPreparation(title, workspace, project, parent string, p Pr
 			return Session{}, err
 		}
 	}
-	if err = ValidateCommand(p.Command); err != nil {
+	if err = validPreparation(p); err != nil {
 		return Session{}, err
 	}
 	tx, err := s.db.Begin()
@@ -370,7 +578,7 @@ func (s *Store) SavePreparation(id, title string, p Preparation) (Session, error
 			return Session{}, err
 		}
 	}
-	if err := ValidateCommand(p.Command); err != nil {
+	if err := validPreparation(p); err != nil {
 		return Session{}, err
 	}
 	if len(p.ToolName) > 200 || len(p.Base) > 250 || len(p.Branch) > 250 || strings.ContainsAny(p.Base+p.Branch, "\x00\r\n") {

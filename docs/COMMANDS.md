@@ -28,7 +28,7 @@ local builds, and [SPEC.md](SPEC.md) for implementation details and current limi
 | [`bbflow [--dir DIR] update [--yes]`](#update-bbflow) | Install the latest release and restart the server with it. | Asks first when a server runs. Replaces the invoked executable, then stops the server, which ends its sessions, and starts the new version. |
 | [`bbflow query SQL`](#query-sqlite) | Read sessions, events, and run details with SQL. | Reads the archive. SQL selects the scope. Returns JSON. |
 | [`bbflow storage [--redact]`](#storage-report) | See which projects, sessions, and event kinds use the most space. | Reads the archive. Prints a Markdown report. |
-| [`bbflow tool list\|add\|remove`](#manage-tools) | Show, add, update, or remove tools from a script. | Changes saved settings. Starts no session. |
+| [`bbflow tool list\|add\|remove\|enable\|disable`](#manage-tools) | Show, add, update, remove, or turn on and off tools from a script. | Changes saved settings. Starts no session. |
 | [`bbflow settings get\|set`](#manage-settings) | Show or change appearance, session defaults, the update check, the server port, and remote access. | Changes saved settings. Starts no session. |
 | [`bbflow title-tool list\|show\|set\|test`](#title-tool) | Show, select, or test the tool for automatic session titles. | `set` and `test` run the tool once with a sample message. `set` saves the tool only after the test passes. Starts no session. |
 | [`bbflow skill`](#agent-guide) | Teach an agent how to read bbflow sessions and history. | Prints a Markdown guide. Does not contact a server. |
@@ -542,6 +542,8 @@ capture. A missing server is an error.
 bbflow [--dir DIR] tool list
 bbflow [--dir DIR] tool add [--default] NAME COMMAND
 bbflow [--dir DIR] tool remove NAME
+bbflow [--dir DIR] tool enable NAME
+bbflow [--dir DIR] tool disable NAME
 ```
 
 Use these commands to prepare tools from a setup script, for example to share a tool set
@@ -549,21 +551,38 @@ with a team. The script must start the server first:
 
 ```sh
 bbflow server start
-bbflow tool add --default Codex 'codex --no-alt-screen'
-bbflow tool add Claude claude
+bbflow tool enable 'Claude Code'
+bbflow tool enable Codex
+bbflow settings set default-tool Codex
+bbflow tool add 'Codex (fast)' 'codex --no-alt-screen --profile fast'
 ```
 
-`tool list` prints one saved tool on each line, in the saved order: the name, a tab, and
-the startup command. A name and a command contain no tab, so a script can divide each
-line at the tab. The list does not align the commands in one column. Without a tool, it
-prints `No tools are saved.` For the tool IDs, use `settings get`, which prints JSON.
+Each instance has a [built-in tool](SPEC.md#built-in-tools) for Codex, Claude Code,
+Antigravity, and Code Puppy. A script uses their names, such as `Codex`.
 
-`tool add` creates a tool at the end of the list. If a tool has the same name, the
-command replaces its startup command and keeps its position and ID. `--default` makes
-the tool the default for new drafts.
+`tool list` prints one saved tool on each line, in the saved order: the name, the startup
+command, and `on` or `off`, divided by tabs. A name and a command contain no tab, so a
+script can divide each line at the tabs. The list does not align the commands in one
+column. The built-in tools are always in the list, and they come first. For the tool IDs, use `settings
+get`, which prints JSON.
+
+`tool add` creates a Custom tool at the end of the list. bbflow submits its command
+unchanged. If a tool of the user has the same name, the command replaces its startup
+command and keeps its position and ID. bbflow keeps the
+command of a [built-in tool](SPEC.md#built-in-tools), so `tool add` with its name fails.
+Set its CLI path in Settings. `--default` makes the tool
+the default for new drafts. Select a model in Settings.
 
 `tool remove` removes the tool with this name. If it was the default tool, Shell becomes
-the default tool. Drafts and sessions keep their own copy of the command.
+the default tool. Drafts and sessions keep their own copy of the command. A built-in tool
+cannot be removed. Turn it off instead.
+
+`tool enable` and `tool disable` turn a tool on or off. A tool that is off stays saved,
+but it is not a choice for new drafts and new terminals. A new tool starts on. If
+`disable` turns off the default tool, Shell becomes the default tool. If Shell is off
+too, the first other tool that is on becomes the default tool. The command prints the
+new default tool. `tool add --default` also turns the tool on. To turn Shell on or off,
+use `settings set shell`.
 
 Names match exactly after bbflow removes leading and trailing spaces. If two tools have
 the same name, `add` and `remove` fail. Rename one of them in Settings. Put `--default`
@@ -601,7 +620,7 @@ bbflow settings set remote-login user@example.com
 `settings get` prints the saved settings as JSON, including the revision and the tools.
 The JSON uses the field names of the protocol. Thus `default-tool` is `defaultTool`,
 `update-check` is `updateCheck`, `remote-host` is `remoteHost`, and `remote-login` is
-`remoteLogin`.
+`remoteLogin`. `shell` is the opposite of `shellOff`.
 
 `settings get KEY` prints one value as text, in the form that `settings set` accepts.
 For `default-tool`, it prints the tool name, or an empty line for the built-in Shell.
@@ -618,6 +637,7 @@ the command prints the result.
 | `default-tool` | The name of a tool. An empty value, `""`, selects the built-in Shell. |
 | `worktree` | `true` or `false`. No other spelling is a value. `true` selects **Use worktree** for new drafts in Git folders. A new installation starts with `true`. An upgrade keeps the saved value. |
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
+| `shell` | `true` or `false`. `false` turns off the built-in Shell, so it is not a choice for new sessions. If Shell is the default tool, the first tool that is on becomes the default tool. |
 | `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
 | `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port, or when browsers refuse the port, such as 6000 and 10080. See [Instance directory](#instance-directory). |
 | `remote-host` | The host name of this computer in Tailscale Serve, such as `my-mac.example.ts.net`, with an optional port. An empty value, `""`, removes it. The server saves the name in lower case. See [remote access](SPEC.md#remote-access). |
@@ -642,13 +662,14 @@ key. `settings get title-tool` and `settings set title-tool` fail and name that 
 ```text
 bbflow [--dir DIR] title-tool list
 bbflow [--dir DIR] title-tool show
-bbflow [--dir DIR] title-tool set TOOL
+bbflow [--dir DIR] title-tool set TOOL [--model MODEL] [--effort EFFORT]
 bbflow [--dir DIR] title-tool set custom [COMMAND]
 bbflow [--dir DIR] title-tool test
 ```
 
 ```sh
 bbflow title-tool set apple
+bbflow title-tool set claude --model sonnet --effort low
 bbflow title-tool set custom 'my-llm --fast'
 bbflow title-tool test
 bbflow title-tool set none
@@ -664,7 +685,8 @@ value.
 
 - `list` prints the ID and the exact command of each built-in tool, one tool on each
   line. The commands come from the running server. A later release can change them.
-- `show` prints the saved tool and the command that the server runs for it. It also
+- `show` prints the saved tool and the command that the server runs for it. For
+  `claude`, `codex`, and `code-puppy`, it also prints the model and the effort. It also
   prints a saved custom command when another tool is selected.
 - `set TOOL` runs the tool once with a fixed sample message, then saves it. Before the
   test, the command writes the tool name and its exact command to standard error. If the
@@ -673,6 +695,12 @@ value.
   and the error. It then exits with code `1` and changes nothing. If another change of
   the title tool saves during the test, the command also changes nothing and exits with
   code `1`. `set none` saves without a test. An empty `TOOL` is an error.
+- `--model` and `--effort` select the model and the thinking effort of `claude`,
+  `codex`, or `code-puppy`. Without them, `set` uses the default model and effort of the
+  tool, which `list` shows in the command. An empty value adds no option, so the CLI uses
+  its own default. `code-puppy` has no effort. The test runs with the chosen model, and
+  the model saves only after a passed test. See
+  [title models](SPEC.md#title-models).
 - `set custom COMMAND` tests `COMMAND` and saves it together with the Custom choice.
   `set custom` without `COMMAND` tests the saved custom command again. It fails when no
   custom command is saved. An empty `COMMAND` is an error, and it does not test the

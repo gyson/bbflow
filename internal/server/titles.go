@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"bbflow/internal/history"
+	"bbflow/internal/models"
 	"bbflow/internal/protocol"
 )
 
@@ -40,24 +41,24 @@ const (
 // MCP servers, but it always loads the user plugins. Apple runs the on-device model of
 // macOS, which has no tools in this command. The empty temporary folder is not a file
 // access limit. Tests replace the commands.
-var titleTools = []protocol.TitleTool{
+var titleTools = withTitleCommands([]protocol.TitleTool{
 	// --restricted ignores the settings files, with their hooks and plugins. It also
 	// limits @ file references to the working folder. --tools "" turns off all
 	// built-in tools.
-	{ID: "claude", Name: "Claude", Command: `claude -p --model haiku --restricted --tools "" --strict-mcp-config`},
+	{ID: "claude", Name: "Claude", Type: models.Claude, Prefix: `claude -p`, Suffix: ` --restricted --tools "" --strict-mcp-config`, Model: "haiku"},
 	// --ignore-user-config skips config.toml, with its hooks, MCP servers, and slow
 	// reasoning effort, but keeps the sign-in. The read-only sandbox and the disabled
 	// features remove the tools that read files or run code. --ephemeral saves no
 	// session.
-	{ID: "codex", Name: "Codex", Command: "codex exec --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules " +
+	{ID: "codex", Name: "Codex", Type: models.Codex, Prefix: "codex exec --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules " +
 		"--sandbox read-only --disable shell_tool --disable unified_exec --disable view_image --disable code_mode_host " +
 		"--disable apps --disable plugins --disable hooks --disable multi_agent --disable browser_use --disable computer_use " +
-		"--disable image_generation --disable mentions_v2 -c web_search=disabled --model gpt-6-luna -c model_reasoning_effort=low -"},
+		"--disable image_generation --disable mentions_v2 -c web_search=disabled", Suffix: " -", Model: "gpt-6-luna", Effort: "low"},
 	// Code Puppy takes the prompt only as an argument. "$(cat)" reads standard input, and
 	// the shell does not parse the text again. --no-tools turns off its tools and MCP
 	// servers. It always attaches existing files whose paths are in the prompt, so
 	// titleRequest masks paths.
-	{ID: "code-puppy", Name: "Code Puppy", Command: `code-puppy --no-tools --model codex-gpt-6-luna -p "$(cat)"`},
+	{ID: "code-puppy", Name: "Code Puppy", Type: models.CodePuppy, Prefix: "code-puppy --no-tools", Suffix: ` -p "$(cat)"`, Model: "codex-gpt-6-luna"},
 	// fm is the Apple Foundation Models CLI of macOS 27. The full system path makes sure
 	// that no other program named fm on the PATH gets the message. It also works when the
 	// PATH of the server does not include /usr/bin. Without a prompt argument, fm reads
@@ -66,6 +67,43 @@ var titleTools = []protocol.TitleTool{
 	// such as a summary. --greedy gives the same title for the same message. --no-stream
 	// prints the answer once.
 	{ID: "apple", Name: "Apple", Command: "/usr/bin/fm respond --model system --guardrails permissive-content-transformations --greedy --no-stream"},
+})
+
+// withTitleCommands sets the command of each title tool with a type to the command with
+// its default model and effort.
+func withTitleCommands(tools []protocol.TitleTool) []protocol.TitleTool {
+	for i := range tools {
+		if tools[i].Type != "" {
+			tools[i].Command = titleCommand(tools[i], tools[i].Model, tools[i].Effort)
+		}
+	}
+	return tools
+}
+
+// titleToolsWith returns the title tools with the program of each agent type at the
+// start of its command. The program is the CLI path of the built-in tool of the type. See
+// toolPrograms. A type without a path keeps its plain CLI name.
+func titleToolsWith(programs map[string]string) []protocol.TitleTool {
+	tools := slices.Clone(titleTools)
+	for i := range tools {
+		tool := &tools[i]
+		if program := programs[tool.Type]; tool.Type != "" && program != "" && program != tool.Type {
+			// The prefix of an agent title tool starts with its plain CLI name.
+			tool.Prefix = program + strings.TrimPrefix(tool.Prefix, tool.Type)
+			tool.Command = titleCommand(*tool, tool.Model, tool.Effort)
+		}
+	}
+	return tools
+}
+
+// titleCommand returns the command of a title tool with a model and an effort. The
+// options go between the prefix and the suffix, because the end of a title command reads
+// the request. A tool without a type has one fixed command.
+func titleCommand(tool protocol.TitleTool, model, effort string) string {
+	if tool.Type == "" {
+		return tool.Command
+	}
+	return models.Command(tool.Type, tool.Prefix, model, effort) + tool.Suffix
 }
 
 // pathMask replaces the characters that start or separate a local path in the message.
@@ -77,17 +115,28 @@ var pathUnmask = strings.NewReplacer("\u2215", "/", "\u223c", "~")
 // customTitleTool is the name of the title tool that runs the custom command of the user.
 const customTitleTool = "Custom"
 
-// findTitleTool returns the title tool with the ID. For custom, command is the custom
-// command. The other tools have a command from titleTools. None has no title tool.
-func findTitleTool(id, command string) (protocol.TitleTool, error) {
+// findTitleTool returns the title tool of a choice, with the command that the server
+// runs. For custom, the command is the custom command. The other tools have a command
+// from titleTools, with the model and the effort of the choice. None has no title tool.
+func findTitleTool(choice history.TitleChoice) (protocol.TitleTool, error) {
+	return findTitleToolWith(choice, nil)
+}
+
+// findTitleToolWith is findTitleTool with the programs of the agent types.
+func findTitleToolWith(choice history.TitleChoice, programs map[string]string) (protocol.TitleTool, error) {
+	id, command := choice.Tool, choice.Command
+	if err := models.Validate(history.TitleType(id), choice.Model, choice.Effort); err != nil {
+		return protocol.TitleTool{}, fmt.Errorf("only the title tools of Claude, Codex, and Code Puppy take a model and an effort: %w", err)
+	}
 	if id == "custom" {
 		if err := history.ValidateTitleCommand(command); err != nil {
 			return protocol.TitleTool{}, err
 		}
 		return protocol.TitleTool{ID: id, Name: customTitleTool, Command: command}, nil
 	}
-	for _, tool := range titleTools {
+	for _, tool := range titleToolsWith(programs) {
 		if tool.ID == id {
+			tool.Command = titleCommand(tool, choice.Model, choice.Effort)
 			return tool, nil
 		}
 	}
@@ -114,13 +163,14 @@ func titleToolName(id string) string {
 }
 
 // chosenTitleTool returns the title tool of a test or a change. Only custom takes a
-// command, and it needs one. The client sends the custom command that it shows, so the
-// test runs exactly that command, also after another client saves another one.
-func chosenTitleTool(id, command string) (protocol.TitleTool, error) {
-	if id != "custom" && command != "" {
+// command, and it needs one. The client sends the custom command, the model, and the
+// effort that it shows, so the test runs exactly that command, also after another client
+// saves other values.
+func chosenTitleTool(choice history.TitleChoice, programs map[string]string) (protocol.TitleTool, error) {
+	if choice.Tool != "custom" && choice.Command != "" {
 		return protocol.TitleTool{}, errors.New("only the custom title tool takes a command")
 	}
-	return findTitleTool(id, command)
+	return findTitleToolWith(choice, programs)
 }
 
 // titleSample is the message of a title test. It is like a first message of a session.
@@ -128,8 +178,8 @@ const titleSample = "The login page redirects to a blank page after sign-in. Fin
 
 // testTitleTool runs a title tool once with the sample message and returns the title. It
 // saves nothing.
-func (s *Server) testTitleTool(ctx context.Context, id, command string) (protocol.TitleTest, error) {
-	tool, err := chosenTitleTool(id, command)
+func (s *Server) testTitleTool(ctx context.Context, choice history.TitleChoice) (protocol.TitleTest, error) {
+	tool, err := chosenTitleTool(choice, s.programs())
 	if err != nil {
 		return protocol.TitleTest{}, err
 	}
@@ -142,7 +192,8 @@ func (s *Server) testTitleTool(ctx context.Context, id, command string) (protoco
 // not configured. The test holds no lock, so other settings can save while it runs. The
 // save applies only when no other title tool change saved during the test. A client
 // that disconnects during the test cancels it, and the tool does not save.
-func (s *Server) setTitleTool(ctx context.Context, id, command string) (protocol.TitleToolSet, error) {
+func (s *Server) setTitleTool(ctx context.Context, choice history.TitleChoice) (protocol.TitleToolSet, error) {
+	id, command := choice.Tool, choice.Command
 	var result protocol.TitleToolSet
 	before, err := s.store.Settings()
 	if err != nil {
@@ -154,7 +205,7 @@ func (s *Server) setTitleTool(ctx context.Context, id, command string) (protocol
 			return result, errors.New("only the custom title tool takes a command")
 		}
 	} else {
-		tool, err := chosenTitleTool(id, command)
+		tool, err := chosenTitleTool(choice, toolPrograms(before))
 		if err != nil {
 			return result, err
 		}
@@ -166,10 +217,17 @@ func (s *Server) setTitleTool(ctx context.Context, id, command string) (protocol
 			return result, err
 		}
 	}
-	result.Settings, err = s.store.SetTitleTool(history.TitleChoice{Tool: id, Command: command}, before.Choice())
+	// The save names the CLI path that the test ran, so a path change during the test
+	// stops it.
+	choice.Path = before.BuiltinPath(history.TitleType(id))
+	result.Settings, err = s.store.SetTitleTool(choice, before.Choice())
 	if errors.Is(err, history.ErrTitleChanged) {
+		latest, readErr := s.store.Settings()
+		if readErr == nil && latest.Choice() == before.Choice() {
+			return result, fmt.Errorf("%s did not save, because the CLI path of its tool changed during the test; test it again", name)
+		}
 		current := "another tool"
-		if latest, readErr := s.store.Settings(); readErr == nil {
+		if readErr == nil {
 			current = titleToolName(latest.TitleTool)
 		}
 		return result, fmt.Errorf("%s did not save, because another change selected %s during the test", name, current)
@@ -184,6 +242,8 @@ func (s *Server) notConfigured(tool protocol.TitleTool, err error) error {
 	switch {
 	case readErr != nil:
 		return fmt.Errorf("%s is not configured. The test failed: %w", tool.Name, err)
+	case current.TitleTool == tool.ID && tool.ID != "custom" && titleCommand(tool, current.TitleModel, current.TitleEffort) != tool.Command:
+		return fmt.Errorf("%s is still the title tool, with its saved model. The test of the new model failed: %w", tool.Name, err)
 	case current.TitleTool == tool.ID && (tool.ID != "custom" || current.TitleCommand == tool.Command):
 		return fmt.Errorf("%s is still the title tool, but its test failed: %w", tool.Name, err)
 	case tool.ID == "custom" && current.TitleTool == "custom":
@@ -325,9 +385,7 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// runTitleCommand runs the title command once through the server shell. The command is
-// not an interactive shell, and it is not a session terminal. It runs in an empty
-// temporary folder, so that agent CLIs do not read project files. The request goes to
+// runTitleCommand runs the title command once through runCLI. The request goes to
 // standard input. The server never puts message text in the command line.
 func runTitleCommand(ctx context.Context, command, message string) (string, error) {
 	if strings.TrimSpace(command) == "" {
@@ -336,21 +394,33 @@ func runTitleCommand(ctx context.Context, command, message string) (string, erro
 	if strings.TrimSpace(message) == "" {
 		return "", errors.New("message is empty")
 	}
+	output, err := runCLI(ctx, command, titleRequest(message), titleTimeout, titleOutput)
+	if err != nil {
+		return "", err
+	}
+	return parseTitle(output)
+}
+
+// runCLI runs a command once through the server shell and returns its standard output.
+// The command is not an interactive shell, and it is not a session terminal. It runs in
+// an empty temporary folder, so that agent CLIs do not read project files. Standard
+// output keeps the first limit bytes.
+func runCLI(ctx context.Context, command, input string, timeout time.Duration, limit int) (string, error) {
 	shell, env, err := serverShell()
 	if err != nil {
 		return "", err
 	}
-	dir, err := os.MkdirTemp("", "bbflow-title-")
+	dir, err := os.MkdirTemp("", "bbflow-cli-")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(dir)
-	ctx, cancel := context.WithTimeout(ctx, titleTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, shell, "-c", command)
 	cmd.Dir, cmd.Env = dir, env
-	cmd.Stdin = strings.NewReader(titleRequest(message))
-	stdout := &limitedBuffer{limit: titleOutput}
+	cmd.Stdin = strings.NewReader(input)
+	stdout := &limitedBuffer{limit: limit}
 	stderr := &limitedBuffer{limit: 4 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	// Stop the whole process group. An agent CLI can start child processes.
@@ -359,7 +429,7 @@ func runTitleCommand(ctx context.Context, command, message string) (string, erro
 	cmd.WaitDelay = 2 * time.Second
 	err = cmd.Run()
 	if ctx.Err() != nil {
-		return "", fmt.Errorf("the command did not finish in %s", titleTimeout)
+		return "", fmt.Errorf("the command did not finish in %s", timeout)
 	}
 	if err != nil {
 		detail := strings.TrimSpace(terminalEscapes.ReplaceAllString(stderr.String(), ""))
@@ -372,7 +442,7 @@ func runTitleCommand(ctx context.Context, command, message string) (string, erro
 		}
 		return "", fmt.Errorf("the command ended with %w: %s", err, detail)
 	}
-	return parseTitle(stdout.String())
+	return stdout.String(), nil
 }
 
 // receiptPrefix starts the input ID of a send from the message editor. The rest is the
@@ -449,7 +519,7 @@ func (s *Server) claimTitle(sid string, revision int64, data []byte) (text, comm
 	if err != nil || session.AutoTitle == "" {
 		return "", "", false
 	}
-	tool, err := findTitleTool(settings.TitleTool, settings.TitleCommand)
+	tool, err := findTitleToolWith(settings.Choice(), toolPrograms(settings))
 	requested := err == nil && session.Title == ""
 	if claimed, err := s.store.ClaimTitle(sid, revision, settings.TitleTool, requested); err != nil || !claimed || !requested {
 		return "", "", false

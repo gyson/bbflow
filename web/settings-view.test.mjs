@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SettingsView } from './dist/settings.js';
+import { forgetModelLists } from './dist/model-choice.js';
 
 // A small fake DOM. It has only the parts that the Settings view uses.
 class Node {
@@ -37,8 +38,7 @@ class Node {
     for (let node = this; node; node = node.parent) if (node.dataset.toolId) return node;
     return null;
   }
-  // The view asks only for the rows of the saved tools.
-  querySelectorAll() { return this.children.filter(child => child.tag === 'div' && child.className === 'tool-row'); }
+  querySelectorAll() { return []; }
   find(id) {
     if (this.id === id) return this;
     for (const child of this.children) {
@@ -61,37 +61,34 @@ class Node {
   close() { this.open = false; }
 }
 
-const editors = ['add-tool', 'edit-tool'];
 const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-tool', 'settings-worktree', 'settings-base',
   'settings-update-check', 'settings-port-form', 'settings-port', 'settings-port-error', 'settings-port-status',
   'settings-remote-form', 'settings-remote-host', 'settings-remote-login', 'settings-remote-save', 'settings-remote-error',
   'settings-remote-status',
-  'settings-error', 'settings-status', 'settings-tools', 'tool-error', 'tool-remove-dialog', 'tool-remove-form',
+  'settings-error', 'settings-status', 'settings-builtin-tools', 'settings-tools', 'settings-tool-help', 'tool-error', 'tool-add', 'tool-editor-dialog', 'tool-editor', 'tool-close',
+  'tool-editor-title', 'tool-name', 'tool-command', 'tool-command-help', 'tool-path-field', 'tool-path', 'tool-path-help', 'tool-builtin-note', 'tool-identity', 'tool-command-field', 'tool-models',
+  'tool-model', 'tool-model-other', 'tool-model-help', 'tool-model-refresh', 'tool-effort', 'tool-effort-help',
+  'tool-preview', 'tool-submit', 'tool-cancel', 'tool-editor-error', 'tool-remove-dialog', 'tool-remove-form',
   'cancel-tool-remove', 'tool-remove-summary', 'tool-remove-default', 'title-settings', 'title-tool', 'title-spinner',
   'title-builtin', 'title-tool-command', 'title-custom', 'title-custom-command', 'title-custom-save', 'title-test',
-  'title-test-result', 'title-test-sample', 'title-test-outcome', 'title-test-detail'];
-const agent = { id: 'a', name: 'Agent', command: 'agent' };
-const other = { id: 'b', name: 'Other', command: 'other' };
+  'title-test-result', 'title-test-sample', 'title-test-outcome', 'title-test-detail', 'title-model-save', 'title-models',
+  'title-model', 'title-model-other', 'title-model-help', 'title-model-refresh', 'title-effort', 'title-effort-help'];
+const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', builtin: false, enabled: true, path: '' };
+const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', builtin: false, enabled: true, path: '' };
 const saved = { revision: 4, appearance: 'system', defaultTool: '', worktree: false, base: 'HEAD', tools: [agent, other],
-  titleTool: 'none', titleCommand: '', updateCheck: true, port: 0, remoteHost: '', remoteLogin: '' };
+  titleTool: 'none', titleCommand: '', titleModel: '', titleEffort: '', updateCheck: true, port: 0, remoteHost: '', remoteLogin: '' };
 const server = { protocol: 'test', instance: 'test', port: 50000, dataDir: '/fixture' };
 const event = { preventDefault() {} };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 // setup opens the Settings view with the saved settings. Each server call waits in
 // pending until the fixture sends its reply with reply or fail.
-async function setup() {
+async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex exec' }]) {
+  // Each test starts without the model lists of an earlier test.
+  forgetModelLists();
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
-  for (const prefix of editors) {
-    const form = nodes[`${prefix}-editor`] = new Node('form');
-    for (const part of ['name', 'command', 'submit', 'cancel', 'error']) {
-      const node = nodes[`${prefix}-${part}`] = new Node();
-      form.append(node);
-    }
-    nodes[`${prefix}-error`].hidden = true;
-    nodes['settings-tools'].append(form);
-  }
-  for (const id of ['settings-port-error', 'settings-remote-error', 'settings-error', 'tool-error', 'title-test-result']) nodes[id].hidden = true;
+  nodes['tool-editor-error'].hidden = true;
+  for (const id of ['tool-editor-error', 'settings-port-error', 'settings-remote-error', 'settings-error', 'tool-error', 'title-test-result']) nodes[id].hidden = true;
   nodes['settings-remote-form'].append(nodes['settings-remote-host'], nodes['settings-remote-login'], nodes['settings-remote-save']);
   nodes['settings-view'].hidden = true;
   for (const [id, node] of Object.entries(nodes)) node.id = id;
@@ -105,7 +102,7 @@ async function setup() {
     body,
     activeElement: body,
     documentElement: new Node('html'),
-    getElementById: id => nodes[id] ?? nodes['settings-tools'].find(id),
+    getElementById: id => nodes[id] ?? nodes['settings-tools'].find(id) ?? nodes['settings-builtin-tools'].find(id),
     createElement: tag => new Node(tag),
   };
   const pending = [];
@@ -131,9 +128,10 @@ async function setup() {
   const view = new SettingsView(() => server, () => {}, (title, detail) => toasts.push([title, detail]), send);
   const opening = view.open();
   await tick();
-  await reply('title-tools', { tools: [{ id: 'codex', name: 'Codex', command: 'codex exec' }], sample: 'Sample' });
+  await reply('title-tools', { tools: titleTools, sample: 'Sample' });
   await reply('settings-get', structuredClone(saved));
   await opening;
+  await reply('tool-check', { installed: {} });
   // type enters text in a field, as the keyboard does.
   const type = (id, text) => {
     nodes[id].value = text;
@@ -145,23 +143,30 @@ async function setup() {
     await tick();
     if (pending.some(call => call.request.operation === 'settings-get')) await reply('settings-get', structuredClone(view.saves.saved));
     await opened;
+    if (pending.some(call => call.request.operation === 'tool-check')) await reply('tool-check', { installed: {} });
   };
   return { nodes, pending, view, toasts, reply, fail, type, reopen };
 }
 
+// addTool opens the editor with Add tool and enters a name and a command.
+function addTool(nodes, type, name, command) {
+  nodes['tool-add'].onclick();
+  type('tool-name', name);
+  type('tool-command', command);
+}
+
 test('a tool save that fails after Done shows a toast that names the action', async () => {
   const { nodes, view, toasts, fail, type, reopen } = await setup();
-  type('add-tool-name', 'Temp');
-  type('add-tool-command', 'temp');
+  addTool(nodes, type, 'Temp', 'temp');
   assert.equal(nodes['settings-status'].textContent, 'Not saved: New tool');
-  nodes['add-tool-editor'].onsubmit(event);
+  nodes['tool-editor'].onsubmit(event);
   await tick();
-  // The user clicks Done before the reply. The close clears the row.
+  // The user clicks Done before the reply. The close discards the editor.
   view.close();
   await fail('settings-save', 'database is locked');
   assert.deepEqual(toasts, [['The new tool “Temp” did not save.', 'database is locked']]);
-  assert.ok(nodes['add-tool-error'].hidden, 'the error went to the hidden row');
-  assert.equal(nodes['add-tool-name'].value, '');
+  assert.ok(nodes['tool-editor-error'].hidden, 'the error went to the hidden editor');
+  assert.ok(!nodes['tool-editor-dialog'].open);
   assert.ok(!view.unsaved);
 
   // A removal and a move name their tool too.
@@ -184,29 +189,61 @@ test('a tool save that fails after Done shows a toast that names the action', as
   // A reply after the user opened Settings again also goes to a toast. The row has no
   // entry of that save any more.
   await reopen();
-  type('add-tool-name', 'Temp');
-  type('add-tool-command', 'temp');
-  nodes['add-tool-editor'].onsubmit(event);
+  addTool(nodes, type, 'Temp', 'temp');
+  nodes['tool-editor'].onsubmit(event);
   await tick();
   view.close();
   await reopen();
   await fail('settings-save', 'database is locked');
   assert.equal(toasts.length, 4);
-  assert.ok(nodes['add-tool-error'].hidden);
+  assert.ok(nodes['tool-editor-error'].hidden);
 });
 
-test('a tool save that fails in Settings shows its error in the row', async () => {
+test('a tool save that fails in Settings shows its error in the editor', async () => {
   const { nodes, toasts, fail, type } = await setup();
-  type('add-tool-name', 'Temp');
-  type('add-tool-command', 'temp');
-  nodes['add-tool-editor'].onsubmit(event);
+  addTool(nodes, type, 'Temp', 'temp');
+  nodes['tool-editor'].onsubmit(event);
   await tick();
   await fail('settings-save', 'database is locked');
   assert.deepEqual(toasts, []);
-  assert.ok(!nodes['add-tool-error'].hidden);
-  assert.equal(nodes['add-tool-error'].textContent, 'database is locked');
-  // An error keeps the entered values.
-  assert.equal(nodes['add-tool-name'].value, 'Temp');
+  assert.ok(!nodes['tool-editor-error'].hidden);
+  assert.equal(nodes['tool-editor-error'].textContent, 'database is locked');
+  // An error keeps the entered values and the editor.
+  assert.equal(nodes['tool-name'].value, 'Temp');
+  assert.ok(nodes['tool-editor-dialog'].open);
+});
+
+test('Add custom tool adds a Custom tool with a name and a command, in a dialog', async () => {
+  const { nodes, pending, reply, type } = await setup();
+  addTool(nodes, type, 'Codex search', 'codex --no-alt-screen --search');
+  // Add custom tool opens the editor as a dialog. It waits while the dialog is open.
+  assert.ok(nodes['tool-editor-dialog'].open);
+  assert.equal(nodes['tool-editor-title'].textContent, 'New custom tool');
+  assert.ok(nodes['tool-add'].disabled, 'Add custom tool waits while the editor is open');
+  // A custom tool has no model fields, also when its command starts an agent.
+  assert.ok(nodes['tool-models'].hidden);
+  assert.ok(!pending.some(call => call.request.operation === 'tool-models'));
+  assert.equal(nodes['tool-preview'].textContent, 'codex --no-alt-screen --search');
+  nodes['tool-editor'].onsubmit(event);
+  await tick();
+  const request = await reply('settings-save');
+  const added = request.settings.tools.at(-1);
+  assert.deepEqual({ ...added, id: '' }, { id: '', name: 'Codex search', command: 'codex --no-alt-screen --search', type: 'custom', model: '', effort: '', builtin: false, enabled: true, path: '' });
+  assert.ok(!nodes['tool-editor-dialog'].open);
+  assert.ok(!nodes['tool-add'].disabled);
+
+  // Escape closes the dialog like Cancel.
+  addTool(nodes, type, 'Temp', 'temp');
+  let prevented = false;
+  nodes['tool-editor-dialog'].oncancel({ preventDefault() { prevented = true; } });
+  assert.ok(prevented && !nodes['tool-editor-dialog'].open);
+  assert.equal(nodes['settings-status'].textContent, 'All settings saved');
+
+  // An edit opens the editor with the saved values.
+  document.getElementById(`tool-edit-${added.id}`).onclick();
+  assert.equal(nodes['tool-editor-title'].textContent, 'Edit of Codex search');
+  assert.equal(nodes['tool-submit'].textContent, 'Save');
+  assert.equal(nodes['tool-name'].value, 'Codex search');
 });
 
 test('a corrected port that saves after Done gives no toast', async () => {
@@ -436,4 +473,221 @@ test('rejected remote access keeps its text, and Done discards it', async () => 
   assert.equal(nodes['settings-remote-host'].value, '');
   assert.ok(!nodes['settings-remote-host'].disabled);
   assert.ok(!view.unsaved);
+});
+
+test('each tool has a switch, a built-in tool has no Remove or move, and turning off the default tool selects Shell', async () => {
+  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex', type: 'codex', model: '', effort: '', builtin: true, enabled: true, path: '' };
+  const { nodes, reply, view } = await setup();
+  view.saves.update({ ...view.saves.saved, revision: 9, tools: [builtin, agent], defaultTool: 'builtin-codex' });
+  assert.equal(document.getElementById('tool-remove-builtin-codex'), null);
+  assert.equal(document.getElementById('tool-move-up-builtin-codex'), null);
+  assert.ok(document.getElementById('tool-remove-a'));
+  // The built-in tools and the custom tools have a table each, and a tool of the user has
+  // a switch too.
+  assert.match(nodes['settings-builtin-tools'].textContent, /^OnCodex.*Shell/);
+  assert.match(nodes['settings-tools'].textContent, /^OnAgent/);
+  // A line divides the built-in tools and the custom tools in the menu.
+  assert.deepEqual(nodes['settings-tool'].children.map(child => child.tag), ['option', 'option', 'hr', 'option']);
+  assert.equal(document.getElementById('tool-switch-a').getAttribute('aria-checked'), 'true');
+  // The only tool of the user cannot move, also not above a built-in tool.
+  assert.ok(document.getElementById('tool-move-up-a').disabled);
+  assert.ok(document.getElementById('tool-move-down-a').disabled);
+  const toggle = document.getElementById('tool-switch-builtin-codex');
+  assert.equal(toggle.getAttribute('aria-checked'), 'true');
+  // The check of the open found no CLI, so a built-in tool tells that its CLI is missing.
+  assert.match(nodes['settings-builtin-tools'].textContent, /NOT FOUND/);
+  toggle.onclick();
+  await tick();
+  const request = await reply('settings-save');
+  assert.equal(request.settings.tools[0].enabled, false);
+  assert.equal(request.settings.defaultTool, '');
+  // A tool that is off is not a choice for the default tool.
+  assert.deepEqual(nodes['settings-tool'].children.filter(child => child.tag === 'option').map(option => option.value), ['', 'a']);
+  // A tool of the user turns off the same way and stays saved.
+  document.getElementById('tool-switch-a').onclick();
+  await tick();
+  const off = await reply('settings-save');
+  assert.deepEqual(off.settings.tools.map(tool => tool.enabled), [false, false]);
+  assert.deepEqual(nodes['settings-tool'].children.filter(child => child.tag === 'option').map(option => option.value), ['']);
+});
+
+test('a title tool of an agent CLI waits for Save and test, with its default model', async () => {
+  const codex = { id: 'codex', name: 'Codex', command: 'codex exec --model gpt-6-luna -c model_reasoning_effort=low -', type: 'codex',
+    prefix: 'codex exec', suffix: ' -', model: 'gpt-6-luna', effort: 'low' };
+  const { nodes, pending, reply, view } = await setup([codex]);
+  nodes['title-tool'].value = 'codex';
+  nodes['title-tool'].onchange();
+  await tick();
+  // The selection saves nothing. It shows the default model and Save and test.
+  assert.ok(!pending.some(call => call.request.operation === 'title-tool-set'));
+  assert.ok(!nodes['title-models'].hidden);
+  assert.ok(!nodes['title-model-save'].hidden);
+  assert.ok(nodes['title-test'].hidden);
+  assert.equal(nodes['title-tool-command'].textContent, codex.command);
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Title tool');
+
+  // A failed test keeps the selection and the model, so another model can be tried.
+  nodes['title-model'].value = 'gpt-6-sol';
+  nodes['title-model'].onchange();
+  nodes['title-model-save'].onclick();
+  await tick();
+  pending.find(call => call.request.operation === 'title-tool-set').reject(new Error('model not found'));
+  pending.splice(pending.findIndex(call => call.request.operation === 'title-tool-set'), 1);
+  await tick();
+  await reply('settings-get', structuredClone(view.saves.saved));
+  assert.equal(nodes['title-tool'].value, 'codex');
+  assert.ok(!nodes['title-models'].hidden);
+  assert.equal(nodes['title-model'].value, 'gpt-6-sol');
+  assert.match(nodes['title-test-outcome'].textContent, /model not found/);
+  assert.ok(!nodes['title-test-result'].hidden);
+
+  // Another model saves after its test passes.
+  nodes['title-model'].value = 'gpt-6-luna';
+  nodes['title-model'].onchange();
+  nodes['title-model-save'].onclick();
+  await tick();
+  const set = await reply('title-tool-set', { settings: { ...view.saves.saved, revision: 5, titleTool: 'codex', titleModel: 'gpt-6-luna', titleEffort: 'low' }, title: 'Fix login' });
+  assert.deepEqual(set.settings, { titleTool: 'codex', titleCommand: '', titleModel: 'gpt-6-luna', titleEffort: 'low' });
+  assert.equal(nodes['settings-status'].textContent, 'All settings saved');
+  assert.ok(nodes['title-model-save'].hidden);
+
+  // A model change of the saved tool waits for Save and test too. Test runs only the
+  // saved model.
+  nodes['title-model'].value = 'gpt-6-sol';
+  nodes['title-model'].onchange();
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Title model');
+  assert.ok(!nodes['title-model-save'].hidden);
+  assert.ok(nodes['title-test'].disabled);
+  assert.equal(nodes['title-tool-command'].textContent, 'codex exec --model gpt-6-sol -c model_reasoning_effort=low -');
+  nodes['title-model-save'].onclick();
+  await tick();
+  const saved = await reply('title-tool-set', { settings: { ...view.saves.saved, revision: 6, titleModel: 'gpt-6-sol' }, title: 'Fix login' });
+  assert.equal(saved.settings.titleModel, 'gpt-6-sol');
+  assert.equal(nodes['settings-status'].textContent, 'All settings saved');
+});
+
+test('a built-in tool shows only its CLI path, model, and effort, and a tool of the user has no path', async () => {
+  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', builtin: true, enabled: true, path: '' };
+  const { nodes, pending, reply, view, type } = await setup();
+  view.saves.update({ ...view.saves.saved, revision: 9, tools: [builtin, agent] });
+  document.getElementById('tool-edit-a').onclick();
+  assert.ok(nodes['tool-path-field'].hidden);
+  assert.ok(!nodes['tool-identity'].hidden && !nodes['tool-command-field'].hidden && nodes['tool-builtin-note'].hidden);
+  nodes['tool-cancel'].onclick();
+  document.getElementById('tool-edit-builtin-codex').onclick();
+  // bbflow keeps the name, the type, and the command.
+  assert.ok(nodes['tool-identity'].hidden && nodes['tool-command-field'].hidden && !nodes['tool-builtin-note'].hidden);
+  assert.ok(!nodes['tool-path-field'].hidden);
+  assert.equal(nodes['tool-path'].placeholder, 'codex');
+  type('tool-path', ' /opt/homebrew/bin/codex ');
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Edit of Codex');
+  // Sessions run the path, with the fixed arguments of Codex.
+  assert.equal(nodes['tool-preview'].textContent, '/opt/homebrew/bin/codex --no-alt-screen');
+  nodes['tool-editor'].onsubmit(event);
+  await tick();
+  const request = await reply('settings-save');
+  assert.equal(request.settings.tools[0].path, '/opt/homebrew/bin/codex');
+  assert.equal(request.settings.tools[0].name, 'Codex');
+  // The page then asks again for the CLI check and the title commands.
+  assert.ok(pending.some(call => call.request.operation === 'tool-check'));
+  assert.ok(pending.some(call => call.request.operation === 'title-tools'));
+});
+
+test('Shell has a switch in the built-in tools, and turning it off removes it from Default tool', async () => {
+  const { nodes, reply, view } = await setup();
+  view.saves.update({ ...view.saves.saved, revision: 9, defaultTool: '' });
+  const toggle = document.getElementById('tool-switch-shell');
+  assert.equal(toggle.getAttribute('aria-checked'), 'true');
+  assert.equal(document.getElementById('tool-edit-'), null, 'Shell has nothing to edit');
+  assert.deepEqual(nodes['settings-tool'].children.filter(child => child.tag === 'option').map(option => option.value), ['', 'a', 'b']);
+  toggle.onclick();
+  await tick();
+  const request = await reply('settings-save');
+  assert.equal(request.settings.shellOff, true);
+  assert.equal(request.settings.defaultTool, 'a');
+  assert.deepEqual(nodes['settings-tool'].children.filter(child => child.tag === 'option').map(option => option.value), ['a', 'b']);
+  assert.equal(document.getElementById('tool-switch-shell').getAttribute('aria-checked'), 'false');
+});
+
+test('Refresh list in one picker reaches the other pickers of the same type', async () => {
+  const codex = { id: 'codex', name: 'Codex', command: 'codex exec -', type: 'codex', prefix: 'codex exec', suffix: ' -', model: '', effort: '' };
+  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', builtin: true, enabled: true, path: '' };
+  const { nodes, pending, reply, view } = await setup([codex]);
+  view.saves.update({ ...view.saves.saved, revision: 9, tools: [builtin, agent] });
+  const list = id => ({ type: 'codex', source: 'codex debug models', loaded: 'now', efforts: [], models: [{ id, name: id, efforts: [] }] });
+  const models = id => nodes[id].children.map(option => option.value);
+  nodes['title-tool'].value = 'codex';
+  nodes['title-tool'].onchange();
+  await reply('tool-models', list('model-a'));
+  assert.ok(models('title-model').includes('model-a'));
+  // The user chooses model A in the title picker, which stays in view.
+  nodes['title-model'].value = 'model-a';
+  nodes['title-model'].onchange();
+  // The tool editor refreshes the list of the same type.
+  document.getElementById('tool-edit-builtin-codex').onclick();
+  await tick();
+  assert.ok(!pending.some(call => call.request.operation === 'tool-models'), 'the editor reads the shared list');
+  nodes['tool-model-refresh'].onclick();
+  const refresh = await reply('tool-models', list('model-b'));
+  assert.equal(refresh.refresh, true);
+  assert.ok(models('tool-model').includes('model-b'));
+  nodes['tool-cancel'].onclick();
+  // The visible title picker shows the refreshed list at once, and keeps the chosen
+  // model, which the new list does not have.
+  assert.ok(models('title-model').includes('model-b'));
+  assert.equal(nodes['title-model'].value, 'model-a');
+  assert.ok(!pending.some(call => call.request.operation === 'tool-models'));
+});
+
+test('an unsaved title model goes after a close, and a newer model from another view is no edit', async () => {
+  const codex = { id: 'codex', name: 'Codex', command: 'codex exec --model gpt-6-luna -', type: 'codex', prefix: 'codex exec', suffix: ' -', model: 'gpt-6-luna', effort: '' };
+  const { nodes, reply, fail, toasts, view } = await setup([codex]);
+  view.saves.update({ ...view.saves.saved, revision: 9, titleTool: 'codex', titleModel: 'gpt-6-luna', titleEffort: '' });
+  assert.equal(nodes['title-model'].value, 'gpt-6-luna');
+  // Another view saves model B. This view has no edit, so it shows B.
+  view.saves.update({ ...view.saves.saved, revision: 10, titleModel: 'gpt-6-sol' });
+  assert.equal(nodes['title-model'].value, 'gpt-6-sol');
+  assert.equal(nodes['settings-status'].textContent, 'All settings saved');
+  assert.ok(!view.unsaved);
+  // A model edit fails its test after the user left Settings. The edit goes, so it does
+  // not block a reload, and the controls show the saved model again.
+  nodes['title-model'].value = 'gpt-6-luna';
+  nodes['title-model'].onchange();
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Title model');
+  nodes['title-model-save'].onclick();
+  await tick();
+  view.close();
+  await fail('title-tool-set', 'model not found');
+  await reply('settings-get', structuredClone(view.saves.saved));
+  assert.deepEqual(toasts.at(-1), ['The title tool did not save.', 'model not found']);
+  assert.ok(!view.unsaved, 'the failed edit stayed after Settings closed');
+  assert.equal(nodes['title-model'].value, 'gpt-6-sol');
+});
+
+test('of two refreshes that overlap, the later one reaches every picker', async () => {
+  const codex = { id: 'codex', name: 'Codex', command: 'codex exec -', type: 'codex', prefix: 'codex exec', suffix: ' -', model: '', effort: '' };
+  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', builtin: true, enabled: true, path: '' };
+  const { nodes, reply, view } = await setup([codex]);
+  view.saves.update({ ...view.saves.saved, revision: 9, tools: [builtin, agent] });
+  const list = id => ({ type: 'codex', source: 'codex debug models', loaded: 'now', efforts: [], models: [{ id, name: id, efforts: [] }] });
+  const models = id => nodes[id].children.map(option => option.value);
+  nodes['title-tool'].value = 'codex';
+  nodes['title-tool'].onchange();
+  await reply('tool-models', list('model-a'));
+  // The tool editor starts a refresh, and the title picker starts a later one.
+  document.getElementById('tool-edit-builtin-codex').onclick();
+  await tick();
+  nodes['tool-model-refresh'].onclick();
+  nodes['tool-cancel'].onclick();
+  nodes['title-model-refresh'].onclick();
+  await tick();
+  // The replies come in the order of the requests.
+  await reply('tool-models', list('model-b'));
+  await reply('tool-models', list('model-c'));
+  assert.ok(models('title-model').includes('model-c'));
+  assert.ok(!models('title-model').includes('model-b'));
+  // The tool editor reads the current list when it opens again.
+  document.getElementById('tool-edit-builtin-codex').onclick();
+  await tick();
+  assert.ok(models('tool-model').includes('model-c'));
 });

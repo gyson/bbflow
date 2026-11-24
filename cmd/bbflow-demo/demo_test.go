@@ -188,8 +188,11 @@ func TestDemo(t *testing.T) {
 	}
 	expect("SELECT count(*) FROM events WHERE kind='draft' AND CAST(data AS TEXT)->>'pending'=1", "[[12]]")
 	expect("SELECT count(*) FROM events WHERE kind='draft' AND CAST(data AS TEXT)->>'text'='List the changes since the last release.'", "[[1]]")
-	expect("SELECT group_concat(value->>'name', ','), data->>'$.defaultTool'=data->>'$.tools[0].id', data->>'$.worktree' FROM settings, json_each(data, '$.tools')",
-		"[[Demo agent,Detail agent,Busy agent,Claude,Codex 1 1]]")
+	expect("SELECT group_concat(value->>'name', ','), data->>'$.defaultTool'=data->>'$.tools[4].id', data->>'$.worktree' FROM settings, json_each(data, '$.tools')",
+		"[[Codex,Claude Code,Antigravity,Code Puppy,Demo agent,Detail agent,Busy agent 1 1]]")
+	// Claude Code and Codex are on, whatever CLIs this computer has.
+	expect("SELECT group_concat(value->>'name', ',') FROM settings, json_each(data, '$.tools') WHERE value->>'enabled'",
+		"[[Codex,Claude Code,Demo agent,Detail agent,Busy agent]]")
 	// The seed calls no model, so it selects no title tool.
 	expect("SELECT data->>'$.titleTool' FROM settings", "[[none]]")
 	expect(`SELECT count(*) FROM events AS input

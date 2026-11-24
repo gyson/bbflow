@@ -35,7 +35,7 @@ The Web client section has these features:
 | [Session families](#session-families) | Sub-sessions and their parent. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
 | [Projects and launches](#projects-and-launches) | Projects, Start session, the shell, the terminal view, and reconnection. |
-| [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, the launch preparation of a session, and managed worktrees. |
+| [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, built-in tools, tool types and model lists, the launch preparation of a session, and managed worktrees. |
 | [Session status](#session-status) | The four statuses, the sidebar icon, the session toolbar, and the More actions menu. |
 | [Session titles](#session-titles) | User titles, derived titles, and the title tools. |
 | [Message editor](#message-editor) | Send, the shared draft, sent messages, and attachments. |
@@ -1057,7 +1057,9 @@ The server resolves its `$SHELL` and starts it with `-i`, using `/bin/sh` when u
 The server rejects a nonempty relative shell path. It accepts names on PATH and absolute
 paths. Requests cannot override the shell or environment.
 
-A selected tool supplies an optional startup command to submit through that shell. The
+A selected tool supplies an optional startup command to submit through that shell. For
+a tool with a type other than Custom, the launch adds the options of the chosen model and
+effort to the end of the command. See [Tool types and models](#tool-types-and-models). The
 server inherits its startup environment and sets `TERM=xterm-256color`. The launch
 stores the tool name and workspace basename as the derived title, even when the user set
 a title.
@@ -1075,8 +1077,8 @@ After the shell exits, the session ends.
 #### Terminal view
 
 xterm.js displays server-rendered frames and forwards keyboard input, paste and resize
-requests through the shared stream. The server uses the saved tool command without
-adding provider flags or prompts. Source terminal queries are answered by the server,
+requests through the shared stream. The server submits the saved tool command with only
+the model and effort options of its type. It adds no prompts. Source terminal queries are answered by the server,
 including while detached. Generated frames exclude hyperlinks, clipboard requests and
 other non-display source escape sequences.
 
@@ -1166,9 +1168,10 @@ is no semantic chat transcript.
 This section has three related parts:
 
 - **Settings** is one page for the instance. It has the appearance, the server port,
-  remote access, the tools with their startup commands, and the session defaults.
+  remote access, the tools with their startup commands, types, and default models, and
+  the session defaults.
 - A **preparation** holds the launch choices of a session that did not start: the
-  project, the tool, and the worktree choices. The message draft saves separately.
+  project, the tool, its model and thinking effort, and the worktree choices. The message draft saves separately.
   Start does not send it. It stays in the editor for the user to send.
 - A **managed worktree** gives a session its own checkout and branch. bbflow creates it
   at Start from a base commit.
@@ -1199,7 +1202,7 @@ way:
 | --- | --- |
 | Appearance, default tool, worktree default, update check | At once, on selection. |
 | Starting branch or commit, Port | On Enter, or when the field loses focus. Escape restores the saved value. |
-| Tools | **Add tool** and **Save** in the row. **Remove** asks first. The move buttons save at once. |
+| Tools | **Add tool** and **Save** in the tool editor. A switch and the move buttons save at once. **Remove** asks first. |
 | Title tool | After a passed test. See [Title controls in Settings](#title-controls-in-settings). |
 | Remote access | **Save** in the card saves both fields together. See [Remote access in Settings](#remote-access-in-settings). |
 
@@ -1273,16 +1276,45 @@ name, and the name of a default that failed to save.
 
 #### Tools
 
-In **Tools**, enter a name and command in the blank row at the bottom. Its placeholders
-are **Name** and **Startup command**. Click **Add tool** to save the new tool. **Clear**
-shows while the row has text. It empties the row. Click **Edit** beside a saved tool to
-edit it in its row. Click **Save** to apply changes. The add row stays at the bottom
-during an edit.
+**Tools** shows the saved tools in two tables, each with a title. **Built-in tools**
+comes first, then **Custom tools**, the tools that the user added:
 
-In a wide view, **Name** and **Command** head the columns for saved tools and editor
-fields. The primary action spans **Edit** and **Move up**. **Cancel** or **Clear** spans
-**Move down** and **Remove**. A narrow view puts each label above its field.
-**Cancel** discards the edit. An error keeps the entered values.
+| Table | Columns | Row actions |
+| --- | --- | --- |
+| **Built-in tools** | **On**, **Name**, **Command**, **Default model** | **Edit**. Shell has no Edit. |
+| **Custom tools** | **On**, **Name**, **Command** | **Edit**, **↑**, **↓**, **Remove** |
+
+- Each row starts with a switch, **On** or **Off**. A tool that is off stays saved, and
+  its row is dimmed. See [Built-in tools](#built-in-tools) for the effect.
+- The default tool has a **DEFAULT** mark beside its name.
+- **Default model** shows the model and the effort, for example **gpt-6-luna ·
+  Medium**. For Shell it shows **None**.
+- A built-in tool keeps its place and cannot be removed. A custom tool moves only among
+  the custom tools.
+- When Settings opens, the page asks the server which CLIs it finds. A built-in tool
+  without its CLI gets a **NOT FOUND** mark. See [Tool program](#tool-program).
+- A narrow window scrolls each table sideways. Without a custom tool, the second table
+  tells how to add one.
+- The settings hold at most 100 custom tools. The built-in tools do not count.
+
+**＋ Add custom tool** below the custom tools and **Edit** in a row open the tool editor as a
+dialog, so a long tool list needs no scroll to reach it:
+
+- **＋ Add custom tool** opens it with the title **New custom tool**. **Edit** opens it
+  with the values of a saved tool, and its title is **Edit of** with the tool name.
+- Each tool that the user adds is a Custom tool. Its editor has **Name** and **Startup
+  command**. bbflow submits the command unchanged, so it holds all options of the tool.
+- For a built-in tool, the editor has only **CLI path**, **Default model**, and
+  **Default thinking effort**, with a note that bbflow keeps its name and command. See
+  [Tool program](#tool-program).
+- **New sessions submit** shows the command with the options of the model and the
+  effort.
+- **Add tool** or **Save** saves the tool and closes the dialog. **Cancel**, **✕**, and
+  Escape discard the entry. An error keeps the dialog and its values. The dialog stays
+  open while a save runs.
+- Focus goes to the first field when the dialog opens. While the dialog is open or a
+  change saves, the buttons of the rows and **＋ Add custom tool** wait. The row of the edited
+  tool is marked.
 
 The page does not add a tool with the name of another tool. It also does not rename a
 tool to such a name. The error shows in the row. The CLI selects a tool by its name, so
@@ -1293,7 +1325,8 @@ view or the CLI added meanwhile also stops the save.
 
 **Remove** opens a dialog that names the tool. The dialog tells that drafts and sessions
 keep their own copy of the command, and that a removal has no undo. For the default
-tool, it also tells that Shell becomes the default tool. **Remove tool** saves the
+tool, it also names the tool that becomes the default tool. See
+[Built-in tools](#built-in-tools). **Remove tool** saves the
 removal. The move buttons save at once.
 
 Another view or the CLI can make the tool the default tool while the dialog is open.
@@ -1302,11 +1335,17 @@ default tool, and the user confirms again.
 
 A move returns keyboard focus to its button if another move in that direction is
 available. Otherwise focus goes to **Edit** on the moved row. After a removal, focus
-goes to **Edit** on the nearest row. If the list is empty, focus goes to the add row.
+goes to **Edit** on the nearest row. If no custom tool is left, focus goes to **＋ Add
+custom tool**. After a save or **Cancel**, focus goes to **Edit** of the tool, or to
+**＋ Add custom tool**.
+
+In **Session defaults**, the text below **Default tool** names the default model and
+effort that new drafts select.
 
 The page sends one settings save at a time. If another view or the CLI saved first,
 the page applies the requested change to the latest settings. An edit keeps the latest
-value of each tool field that the user did not change.
+value of each tool field that the user did not change. The type, the model, and the
+effort count as one field, because the model and the effort belong to the type.
 
 #### Theme
 
@@ -1326,11 +1365,158 @@ New installations and upgrades start with the setting on. See
 Settings also has a default tool, default worktree choice, default Git base, and an
 ordered list of named commands. In **Session defaults**, their labels are **Default
 tool**, **Start new Git sessions in a new worktree**, and **Starting branch or commit
-for new worktrees**. Shell is built in and sends no startup command.
+for new worktrees**. Shell is a [built-in tool](#built-in-tools) that sends no startup
+command.
 Users can add, edit, reorder, and remove other presets. A command is one line of shell
 syntax, at most 1,000 UTF-8 bytes, without control characters. bbflow does not install
-tools, choose models, or check provider-specific arguments. Commands may contain secrets
+tools or check the other arguments of a command. Commands may contain secrets
 and are stored locally in the same unencrypted archive as terminal input.
+
+#### Built-in tools
+
+Each instance has **Shell** and one built-in tool for each agent type:
+
+| Name | Command without a CLI path | Type |
+| --- | --- | --- |
+| **Shell** | None. It starts the shell of the session. | None |
+| **Codex** | `codex --no-alt-screen` | `codex` |
+| **Claude Code** | `claude` | `claude` |
+| **Antigravity** | `agy` | `agy` |
+| **Code Puppy** | `code-puppy` | `code-puppy` |
+
+Each tool is on or off, also a tool that the user added. A tool that is off stays
+saved. It is not a choice in the **Tool** menu of a draft, the **Continue in new
+terminal** dialog, or **Default tool**. A draft that chose the tool before keeps it, as
+for a removed tool. A tool that is off cannot be the default tool. A tool that the user
+adds starts on.
+
+When the default tool turns off or leaves the list, Shell becomes the default tool. If
+Shell is off too, the first other tool that is on becomes the default tool. The last
+tool that is on cannot turn off or leave the list while it is the default tool.
+
+Shell has the empty ID, as before. Its row in the **Built-in tools** table has only
+its switch, because Shell has no command, model, or path. The settings save Shell as
+`shellOff`. A draft that chose Shell before Shell turned off keeps it, and its menu shows
+**Shell (off)**.
+
+bbflow keeps the name, the type, and the command of a built-in tool. The user sets only
+its [CLI path](#tool-program), its default model and effort, and whether it is on. The
+tool cannot be removed. For other options or a wrapper, the user adds a Custom tool. A
+save with another name or command for a built-in tool keeps the kept values, and a save
+with another type fails. A settings save without a built-in tool keeps it. Only the
+server marks a tool as built in. The saved list has the built-in tools first, then the
+tools of the user.
+
+The tool menus of a draft, of **Continue in new terminal**, and of **Default tool** show
+the built-in tools that are on, Shell among them, sorted by name. A line follows, then
+the custom tools that are on, in their saved order. The **Built-in tools** table in
+Settings is sorted by name too. The custom tools keep the order of **↑** and
+**↓**.
+
+At its first start, the server checks which CLIs it finds, through its shell. See
+[Tool program](#tool-program). It turns on each built-in tool whose CLI it finds. It
+runs this check once, before it takes
+requests, and it keeps the settings revision. Later starts do not turn a tool on or off.
+A failed check turns on no tool. The check finds only the CLI. It does not tell if the
+user is signed in.
+
+#### Tool program
+
+A built-in tool has an optional **CLI path**. The program of an agent type is this
+path, or the plain CLI name when the path is empty: `codex`, `claude`, `agy`, or
+`code-puppy`. bbflow runs the program in four places:
+
+- The sessions of the built-in tool. Its command is the program, then `--no-alt-screen`
+  for Codex. The launch adds the model and effort options.
+
+- The [model list](#model-lists) of the type, for example
+  `/opt/homebrew/bin/codex debug models`.
+- The check for the CLI: at the first start, and for the **NOT FOUND** mark. A plain
+  name must be on the PATH of the server. A path must name an executable file.
+- The [title tool](#title-models) of the type. The start of its command is the
+  program.
+
+A session runs in the shell of the session, which reads the startup files of the user.
+The other three run in the shell of the server without them. So a plain name can work in
+a session and fail in the check. A CLI path serves all four.
+
+A CLI path has at most 500 characters: letters, digits, and `_ . / ~ + @ -`, without
+spaces. So the shell does not interpret it, except a `~` at its start. A path with a
+folder starts with `/` or `~/`. Sessions, the model lists, the check, and the title
+tools run in different folders, so a relative path would name different files. Only a built-in
+tool has a CLI path. After a save with another path, the page reads the model lists,
+the check, and the title commands again.
+
+#### Tool types and models
+
+Each tool has a type. A built-in tool has the type of its agent: **Codex**, **Claude
+Code**, **Antigravity**, or **Code Puppy**, saved as `codex`, `claude`, `agy`, and
+`code-puppy`. Each tool that the user adds is **Custom**, saved as `custom`, also when
+its command starts an agent. A save of a tool of the user with another type fails. A
+built-in tool also has a default model and a default thinking effort. An empty value
+selects the default of the CLI and adds no option.
+
+The launch adds the options at the end of the command, so the command must end with the
+agent call:
+
+| Type | Model option | Effort option |
+| --- | --- | --- |
+| Codex | `--model MODEL` | `-c model_reasoning_effort=EFFORT` |
+| Claude Code | `--model MODEL` | `--effort EFFORT` |
+| Antigravity | `--model MODEL-EFFORT`, or `--model MODEL` without an effort | Part of the model ID |
+| Code Puppy | `--model MODEL` | None |
+| Custom | None | None |
+
+A model name has at most 200 characters. It starts with a letter or a digit and has only
+letters, digits, and `. _ : / @ + -`. An effort is one lowercase word. These rules keep
+the names safe in a shell line without quotes. The server rejects a model or an effort
+for a Custom tool or Shell, an effort for Code Puppy, and an Antigravity effort without
+a model.
+
+#### Model lists
+
+The **Model** menus suggest the models of each type. The first choice is **CLI
+default**, which adds no `--model` option. The last choice is **Other…**, which shows a
+field for any model name. A saved model that the list does not have stays a choice. The
+server runs one list command for each type, through its shell, in an empty temporary
+folder:
+
+| Type | Command | Result |
+| --- | --- | --- |
+| Codex | `codex debug models` | The models with `visibility` `list`, with the efforts of each model and its default effort. |
+| Antigravity | `agy models` | Lines of an ID, a tab, and a name. IDs such as `gemini-4-neon-high` join to the model `gemini-4-neon` with its efforts. |
+| Code Puppy | `code-puppy --setup model list` | The configured models of Code Puppy. |
+| Claude Code | None | A built-in list of the aliases `fable`, `opus`, `sonnet`, and `haiku`, and full model names. |
+
+The server keeps each list in memory until **Refresh list** or a server restart. A failed
+command keeps no list, and its error shows below the menu. **Other…** still works then.
+The tool editor in Settings also tells where each list comes from, and it has **Refresh
+list**. A draft shows only the error of a failed list. A refresh also updates each other
+model menu of the type that is in view. A chosen model stays, also when the new list does
+not have it. When two refreshes overlap, only the later one updates the menus.
+
+The **Thinking effort** menus follow the type. For Codex, they list the efforts of the
+chosen model and show its default, for example **Model default (Medium)**. Claude Code
+has **CLI default** and `low`, `medium`, `high`, `xhigh`, and `max`. For Antigravity,
+the menu lists the efforts of the chosen model and shows no default, because the
+effort is part of the model ID. Code Puppy has no effort.
+
+#### Limits of tool types and models
+
+- The list commands run the [program](#tool-program) of the built-in tool of the type.
+  Without a CLI path, the list needs the CLI on the PATH of the server.
+- A browser waits 35 seconds for a model list, a little longer than the 30-second limit
+  of a list command on the server.
+- A built-in tool has no other options. A command with other options or a wrapper is a
+  Custom tool, which has no model choice. Its command holds its model option.
+- `codex debug models` is a debugging command of Codex 0.171.0. Other Codex versions
+  can change its output.
+- The built-in list of Claude Code is fixed in the bbflow release.
+- The session records its startup command, with the options, in its start event. The
+  toolbar shows only the tool name. A model change inside the agent, such as `/model`, is
+  not recorded.
+- A new terminal in an ended session uses the default model and effort of the selected
+  tool. Its dialog has no model choice.
 
 #### Preparation
 
@@ -1338,7 +1524,17 @@ The server copies defaults when it creates a preparation. Non-Git folders do not
 the worktree default. A preparation stores its chosen tool name and command
 independently of later preset changes, including deletion. Startup commands are edited
 only in Settings. When the user selects a different tool, the server copies its current
-command. Shell clears the command.
+name, type, and command. Shell clears the command. The view then selects the default
+model and effort of the tool.
+
+**Session name** has its own row. Below it, one group holds **Tool**, **Model**, and
+**Thinking effort** in a row. A line above and below the group separates it from the
+other fields. **Model** and **Thinking effort** are hidden for Shell and for a Custom
+tool. A change of the model or the effort applies only to the draft. The draft shows no notes about the model list or the options. Settings shows
+them. Only a failed model list shows its error in the draft, with **Refresh list**. At
+the end of the group, **bbflow submits** shows the command with its options. For a newly
+selected tool, it shows the command of that tool at once, also before the save. For
+Shell, it shows **(no startup command)**.
 
 The preparation keeps its project and workspace. Message drafts and attachments work
 before a run exists. Each project supports multiple independent drafts, including
@@ -1616,8 +1812,9 @@ Puppy, Apple, or Custom. The settings JSON stores `titleTool` as `none`, `claude
 the default. `bbflow title-tool` selects and tests the title tool from the CLI. See
 [title tool commands](COMMANDS.md#title-tool).
 
-For a built-in tool, the settings JSON stores only the choice. The server supplies the
-command, so a later release can change it. Custom runs the command in `titleCommand`.
+For a built-in tool, the settings JSON stores the choice, and for Claude, Codex, and
+Code Puppy also `titleModel` and `titleEffort`. The server supplies the command, so a
+later release can change it. See [Title models](#title-models). Custom runs the command in `titleCommand`.
 This command stays saved when the user selects another tool, so a later selection of
 Custom can use it again. Only Custom has a saved command.
 
@@ -1678,7 +1875,9 @@ earlier revision fails.
 
 #### Title controls in Settings
 
-- In Settings, a selection in the tool list starts the change.
+- In Settings, a selection of None, Apple, or Custom with a saved command in the tool
+  list starts the change. A selection of Claude, Codex, or Code Puppy waits for **Save
+  and test**. See [Title models](#title-models).
 - A spinner shows after **Test** until the change ends. It also shows during a test
   that **Test** starts. The spinner does not turn when the system asks for reduced
   motion.
@@ -1721,6 +1920,45 @@ A built-in tool and Custom have different controls:
 - When another change of the title tool saved during the test, the note under the error
   tells about that change, because the tool or the command can have no fault.
 
+#### Title models
+
+Claude, Codex, and Code Puppy have **Model** and **Thinking effort** below the title
+tool list. They use the menus and model lists of
+[Tool types and models](#tool-types-and-models). Apple and Custom have no model choice.
+
+- A selection of one of these title tools shows its default model and effort, and
+  **Save and test**. It saves nothing yet, and the status shows **Not saved: Title
+  tool**. Thus the user can choose another model before the first test. The defaults
+  are Haiku for Claude, Luna with low effort for Codex, and `codex-gpt-6-luna` for Code
+  Puppy.
+- A failed test of a selection keeps the selection, its model, and the error, so the
+  user can choose another model and test again. The saved title tool stays. A selection
+  or a model edit that is not saved goes when the user leaves Settings, also when its
+  test ends later.
+- A newer title model from another view replaces the shown model when this view has no
+  edit of it.
+- A change of the model or the effort does not save at once. **Save and test** shows,
+  and the status shows **Not saved: Title model**. **Test** waits, because it runs the
+  saved model.
+- **Save and test** runs the title command with the new model. The model saves only
+  after a passed test, and only while no other title change saved meanwhile. The save
+  also needs the [CLI path](#tool-program) of the built-in tool that the test ran, so a
+  change of that path during the test saves nothing.
+- The command under the list shows the command with the chosen model.
+- An empty model or effort adds no option, so the CLI uses its own default. For Codex,
+  the title command ignores `config.toml`, so the CLI default is the default of Codex.
+- The server builds each command from a fixed start, the options of the model and the
+  effort, and a fixed end. The end reads the request, so the options cannot go at the
+  end. Thus the user cannot add other options to a built-in title command.
+- The start of each command is the [program](#tool-program) of its type, so the CLI
+  path of the built-in tool also serves its title tool.
+- After the page asks the server which CLIs it finds, the list marks a title tool
+  without its CLI with **(not found)**.
+- The upgrade to SQLite format 17 saves the model and the effort that the earlier
+  command of the saved title tool had. So the command stays the same.
+- Antigravity has no title tool. bbflow has not verified options that turn off its
+  tools for one request.
+
 #### Title tool in the CLI
 
 In the CLI, `bbflow title-tool set` writes the tool name and its exact command to
@@ -1735,7 +1973,8 @@ not change the settings.
 #### Built-in commands
 
 The server owns the command of each built-in title tool. Users cannot edit these
-commands:
+commands. The table shows each command with its default model and effort. Another
+model replaces the model and effort options. See [Title models](#title-models).
 
 | Title tool | Command |
 | --- | --- |
@@ -1744,7 +1983,7 @@ commands:
 | Code Puppy | `code-puppy --no-tools --model codex-gpt-6-luna -p "$(cat)"` |
 | Apple | `/usr/bin/fm respond --model system --guardrails permissive-content-transformations --greedy --no-stream` |
 
-Claude uses Haiku. Codex and Code Puppy use Luna. Apple uses the on-device Apple
+By default, Claude uses Haiku, and Codex and Code Puppy use Luna. Apple uses the on-device Apple
 Foundation Model. Settings shows the command of the selected tool. Each command gives
 the model only the request text:
 
@@ -3274,7 +3513,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 16. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 17. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -3313,7 +3552,31 @@ WAL is enabled after the schema transaction commits.
 - Format 15 gains `remoteHost: ""` and `remoteLogin: ""` in the settings JSON through
   migration 16. Thus remote access starts off, also after an upgrade. The settings
   revision and the other values stay.
-- Format 16 opens without running scripts or rewriting history, settings, or metadata.
+- Format 16 gains tool types, built-in tools, and title models through migration 17:
+  - Each tool gains a type, a default model, and a default thinking effort. The type
+    comes from the first word of the command, without its folder: `codex`, `claude`,
+    `agy`, and `code-puppy` keep that name, and other commands are `custom`. The model
+    and the effort start empty, so each launch submits the same command as before.
+  - A saved tool becomes the built-in tool of its type when its command is the command
+    of the built-in tool, with the CLI name or a [CLI path](#tool-program) as the first
+    word. A path of more than 500 bytes or a relative path is no CLI path. The path
+    becomes its CLI path, and the tool keeps its ID and name. Only the first such tool
+    of a type does. Other saved tools stay tools of the user, with the type `custom`
+    and an empty `path`. Every saved tool stays on, and each launch submits the same
+    words as before.
+  - A type without such a tool gets a new built-in tool that is off. Its ID is
+    `builtin-` and the type, or a random ID when a saved tool has that ID. A new name
+    that another tool has gets the suffix ` (built-in)`, and a random suffix when that
+    name is taken too. The built-in tools then come first in the list: the saved ones
+    in their order, then the new ones. The other saved tools follow in their order.
+  - The migration sets `checkTools`, so the next start runs the tool check.
+  - The settings gain `titleModel` and `titleEffort` with the model and the effort of
+    the earlier command of the saved title tool.
+  - Each preparation gains `toolType`: the type of its tool when that tool is a
+    built-in tool, `custom` for other tools, and an empty type for Shell. Its `model`
+    and `effort` start empty.
+  - The upgrade keeps the settings revision and the preparation revisions.
+- Format 17 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -3653,6 +3916,72 @@ active or dirty worktrees. Synthetic sh, bash, and zsh runs verify one startup i
 shell availability afterward, reconnect without replay, and an untouched composer draft.
 These shell fixtures do not establish model availability or agent CLI compatibility.
 
+Title model fixtures verify that the default models give the commands of earlier
+releases and that a chosen model goes between the fixed start and end of a title
+command. They verify that Apple and Custom reject a model, that a settings save keeps
+the title model, and that a stale title change saves nothing. A server fixture changes
+the CLI path of Claude Code during a title test and verifies that the title tool does
+not save. CLI fixtures cover `title-tool set --model` and its errors. Web fixtures
+verify that a selection of an agent title tool waits for **Save and test** with its
+default model, that a failed test keeps the selection and the model, and that a model
+change waits for **Save and test**. They verify that a model edit goes when its test
+fails after a close, and that a newer model from another view is no edit.
+
+Upgrade fixtures verify that 100 custom tools still save after the upgrade adds the
+built-in tools, and that a 101st fails. They give new built-in tools free IDs and names
+when a saved tool has `builtin-codex` or `Codex (built-in)`. They leave a relative or
+an overlong program a custom tool. Web fixtures verify that a refresh in one model
+picker updates a picker of the type that is in view, with its chosen model, that the
+later of two overlapping refreshes reaches every picker, and that the browser waits 35 seconds
+for a model list.
+
+Tool menu fixtures verify the order of the menus: the built-in tools and Shell by name,
+then the custom tools in their saved order, with a line between the groups.
+
+Shell fixtures verify that Shell that is off cannot be the default tool, that the
+fallback default skips Shell and tools that are off, and that a draft and a new terminal
+cannot choose Shell that is off. CLI fixtures cover `settings set shell`, and web
+fixtures cover the switch of Shell and the menus without Shell. A web fixture verifies
+the command that a draft shows for each choice, also for Shell before a save.
+
+Built-in tool fixtures cover the migration of saved tools to built-in tools, the
+presets that start off, and the suffix of a name that another tool has. Store fixtures
+verify that a save keeps the built-in tools first, keeps their type, starts a new tool
+on, turns a tool of the user off, and rejects a default tool that is off. They verify that the tool check turns on only installed tools, once,
+and keeps the revision. Server fixtures verify the check at start, a failed check, and
+that a draft and a new terminal cannot choose a tool that is off, while a draft keeps a
+tool that turned off later. CLI fixtures cover `tool enable`, `tool disable`, the `on`
+and `off` column of `tool list`, and the refusal to remove a built-in tool. Their
+server finds no CLI, so the result does not depend on the computer. Web fixtures cover
+the two tables and their columns, the switch of each tool, the **NOT FOUND** mark, the moves among the
+tools of the user, and the **Default tool** menu without tools that are off.
+
+CLI path fixtures cover the accepted and the rejected paths and the command of each
+built-in tool. A server fixture saves a built-in tool with the path of a synthetic CLI.
+It verifies that the check finds that file, that the model list and the title command
+run it, that a change of the path runs the list again, that the session command takes
+the path, and that a tool of the user takes no path. Store fixtures verify that a save
+keeps the name and the command of a built-in tool, and that a tool of the user is a
+Custom tool. The migration fixture has saved tools with the
+command of a built-in tool, a path, other options, and a quoted program. Only the first
+two become built-in tools. The others become Custom tools. A web fixture verifies that the editor of a built-in tool
+shows only the CLI path and the model fields, and that a saved path starts the check and
+the title commands again.
+
+Model fixtures cover the options of each tool type, the inferred type of a command, and
+the rejection of model and effort names that are not safe in a shell line. They parse
+synthetic output of `codex debug models`, `agy models`, and `code-puppy --setup model
+list`, including hidden Codex models, Antigravity efforts in model IDs, and progress
+lines. Server fixtures verify that a draft copies the defaults of its tool, saves its
+own model and effort, and launches with their options. They verify that a new terminal
+uses the defaults of the tool, that a model list runs once until a refresh, and that a
+failed list command keeps no list. Web fixtures cover the model and effort menus of
+each type and the merge of a tool edit. The view and the server build the same command
+for the same cases. Interface inspection of Codex 0.171.0, Claude Code 2.1.330,
+Antigravity 1.5.15, and Code Puppy 0.0.969 found the list commands and the options. A
+live run of each list command confirmed the output formats. No fixture starts a real
+agent with a chosen model.
+
 Web fixtures cover settings comparison, edits that preserve fields changed by another
 view, and repeated add requests. View fixtures run the Settings view on a small fake DOM
 and send each server reply at a chosen time. They cover a tool save, a port, a default,
@@ -3664,8 +3993,11 @@ cover that check after a revision conflict, and a removal that asks again after 
 tool became the default tool. They cover a rejected default that the page discards, and
 a default whose save runs during the discard. They
 cover the range check of the Port field and a reset of that field during a save. They
-verify that the page has **Clear** for the add row, the Remove dialog, and Tools before
-the session defaults. Protocol fixtures verify that a server error reply is
+verify that the page has the tool table with its columns, one hidden tool editor, the
+Remove dialog, and Tools before the session defaults. They verify that a new tool is a
+Custom tool without model fields, that **＋ Add custom tool** waits while the editor
+dialog is open, that Escape closes it, and that **Edit** opens it with the
+saved values. Protocol fixtures verify that a server error reply is
 marked apart from a transport failure.
 
 - CLI fixtures run `bbflow tool` and `bbflow settings` against a temporary server. They
@@ -3705,13 +4037,13 @@ A later browser check with the demo instance verified the saves in Settings:
 
 - The status bar stayed at the top of the page while the page scrolled.
 - A second tool with the name Codex did not save, and the status showed
-  **Not saved: New tool**. **Clear** emptied the row and then did not show.
+  **Not saved: New tool**.
 - **Remove** opened the dialog. For the default tool, the dialog named Shell as the
   next default tool. **Remove tool** removed a tool, and focus went to **Edit** on the
   nearest row.
 - Port 80 showed the range message of the page. Escape restored the saved port.
 - **Done** with the port text 99 showed the toast that the port did not save.
-- **Done** with a name in the add row and an open Custom field discarded both.
+- **Done** with a name in the new tool editor and an open Custom field discarded both.
 - **Test** did not show for None or for a Custom that is not saved.
 - With the CLI as a second client, a tool name that the CLI added stopped the add in
   an open page. A removal asked again after the CLI made the tool the default tool.
@@ -4406,8 +4738,10 @@ The final display kept its recorded layout. This check did not run a real agent 
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–15 to format 16
-  and verify that reopen preserves the upgraded data.
+- Frozen schemas from repository history test upgrades from formats 3–16 to format 17
+  and verify that reopen preserves the upgraded data. The format 16 fixture has Codex
+  and Code Puppy tools, and the upgrade gives them their types. A blocked preparation
+  update rolls back migration 17.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.
   They also cover repeated opens, concurrent upgrades, and unsupported formats.

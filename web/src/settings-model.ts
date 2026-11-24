@@ -7,10 +7,18 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
   const current = tools[index];
   if (!current) throw new Error('This tool was removed in another view.');
   const updated = [...tools];
+  const field = <K extends 'name' | 'command' | 'type' | 'path'>(key: K) => edited[key] === original[key] ? current[key] : edited[key];
+  // The model and the effort belong to the type. An edit of one of the three saves all
+  // three from the edit.
+  const modelEdited = edited.type !== original.type || edited.model !== original.model || edited.effort !== original.effort;
   updated[index] = {
-    id: current.id,
-    name: edited.name === original.name ? current.name : edited.name,
-    command: edited.command === original.command ? current.command : edited.command,
+    ...current,
+    name: field('name'),
+    command: field('command'),
+    type: field('type'),
+    path: field('path'),
+    model: modelEdited ? edited.model : current.model,
+    effort: modelEdited ? edited.effort : current.effort,
   };
   return updated;
 }
@@ -54,6 +62,38 @@ export function toolEdit(edited: Tool, original?: Tool): SettingsChange {
   };
 }
 
+// fallbackTool is the default tool after the default tool turns off or leaves the list:
+// Shell when it is on, else the first other tool that is on. It is null when no tool is
+// left. It matches history.FallbackTool.
+export function fallbackTool(settings: Settings, leaving: string): string | null {
+  if (!settings.shellOff && leaving !== '') return '';
+  return settings.tools.find(tool => tool.enabled && tool.id !== leaving)?.id ?? null;
+}
+
+// nextDefault returns the default tool of the settings after the tool with the ID turns
+// off or leaves the list.
+function nextDefault(settings: Settings, id: string): string {
+  if (settings.defaultTool !== id) return settings.defaultTool;
+  const fallback = fallbackTool(settings, id);
+  if (fallback === null) throw new Error('This is the only tool that is on. Turn on another tool first.');
+  return fallback;
+}
+
+// toolSwitch is the change that turns a tool on or off. The empty ID is Shell. A tool that
+// is off cannot be the default tool, so turning off the default tool selects the
+// fallback tool.
+export function toolSwitch(id: string, enabled: boolean): SettingsChange {
+  return settings => {
+    const defaultTool = enabled ? settings.defaultTool : nextDefault(settings, id);
+    if (id === '') return { ...settings, shellOff: !enabled, defaultTool };
+    const index = settings.tools.findIndex(tool => tool.id === id);
+    if (index < 0) throw new Error('This tool was removed in another view.');
+    const tools = [...settings.tools];
+    tools[index] = { ...tools[index]!, enabled };
+    return { ...settings, tools, defaultTool };
+  };
+}
+
 // toolRemoval is the change that removes a tool. A removal of the default tool makes
 // Shell the default tool. warned tells that the user confirmed this result. Another
 // client can make the tool the default tool after the user confirmed. The change then
@@ -66,7 +106,7 @@ export function toolRemoval(id: string, warned: boolean): { change: SettingsChan
       if (reconfirm) return settings;
       return {
         ...settings,
-        defaultTool: settings.defaultTool === id ? '' : settings.defaultTool,
+        defaultTool: nextDefault(settings, id),
         tools: settings.tools.filter(tool => tool.id !== id),
       };
     },
@@ -235,7 +275,7 @@ export function failedTitleChange(tool: string, before: TitleChoice, after: Titl
 // settings save keeps the saved title tool and custom title command, so they are not
 // among them.
 export function sameSettings(a: Settings, b: Settings): boolean {
-  return a.appearance === b.appearance && a.defaultTool === b.defaultTool &&
+  return a.appearance === b.appearance && a.defaultTool === b.defaultTool && !!a.shellOff === !!b.shellOff &&
     a.worktree === b.worktree && a.base === b.base &&
     a.updateCheck === b.updateCheck && a.port === b.port &&
     a.remoteHost === b.remoteHost && a.remoteLogin === b.remoteLogin && sameTools(a.tools, b.tools);
@@ -319,7 +359,9 @@ export function remoteStatus(host: string, login: string): string {
 export function sameTools(a: Tool[], b: Tool[]): boolean {
   return a.length === b.length && a.every((tool, index) => {
     const other = b[index]!;
-    return tool.id === other.id && tool.name === other.name && tool.command === other.command;
+    return tool.id === other.id && tool.name === other.name && tool.command === other.command &&
+      tool.type === other.type && tool.model === other.model && tool.effort === other.effort &&
+      tool.builtin === other.builtin && tool.enabled === other.enabled && tool.path === other.path;
   });
 }
 

@@ -15,7 +15,7 @@ each operation, and each stream. See [COMMANDS.md](COMMANDS.md) for user command
 | [Sessions and projects](#sessions-and-projects) | New sessions, session fields, projects, the session list, and archive. |
 | [Recorded-output search](#recorded-output-search) | `history-search` and `history-context`. |
 | [Workspace changes](#workspace-changes) | The operations of the Changes and Files views. |
-| [Settings and prepared launches](#settings-and-prepared-launches) | Settings, the preparation of a session, and managed worktrees. |
+| [Settings and prepared launches](#settings-and-prepared-launches) | Settings, model lists, the preparation of a session, and managed worktrees. |
 | [New terminals in ended sessions](#new-terminals-in-ended-sessions) | `session-continue`, the handoff folder, and `session-terminals`. |
 | [Side terminals](#side-terminals) | The shell of the workspace pane. |
 | [Session status](#session-status) | The derived status, `status-watch`, and release offers. |
@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/39`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/40`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/39",
+    "protocol": "bbflow/40",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/39",
+    "protocol": "bbflow/40",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -225,10 +225,12 @@ See [Settings and prepared launches](#settings-and-prepared-launches).
 | Operation | Additional request fields | Reply |
 | --- | --- | --- |
 | `settings-get` | none | `result`, saved settings and revision |
-| `settings-save` | `settings`, including current revision | `result`, updated settings and revision. It keeps the saved `titleTool` and `titleCommand`. |
-| `title-tools` | None | `result`, containing `tools`, the built-in title tools with `id`, `name`, and the exact `command`, and `sample`, the message of a title test. Custom is not in the list. |
-| `title-test` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the `title`. It runs the title tool once with the sample message and saves nothing. `custom` needs `titleCommand`. The client sends the custom command that it shows, so the test runs that command. |
-| `title-tool-set` | `settings` with `titleTool`, and `titleCommand` for `custom` | `result`, containing the saved `settings` with a new revision, and the `title` of the test. See [Title tool change](#title-tool-change). |
+| `settings-save` | `settings`, including current revision | `result`, updated settings and revision. It keeps the saved `titleTool`, `titleCommand`, `titleModel`, and `titleEffort`. |
+| `tool-check` | None | `result`, containing `installed`: the agent types whose [program](SPEC.md#tool-program) the server finds, such as `{"codex": true}`. It finds only the CLI. |
+| `tool-models` | `toolType`: `codex`, `claude`, `agy`, or `code-puppy`. Optional `refresh` | `result`, the model list of the type. See [Model lists](#model-lists). |
+| `title-tools` | None | `result`, containing `tools`, the built-in title tools with `id`, `name`, and the exact `command` with the default model and the [program](SPEC.md#tool-program) of the type, and for Claude, Codex, and Code Puppy also `type`, `prefix`, `suffix`, `model`, and `effort`. The command with another model is `prefix`, the model options of `type`, then `suffix`. and `sample`, the message of a title test. Custom is not in the list. |
+| `title-test` | `settings` with `titleTool`, `titleModel` and `titleEffort`, and `titleCommand` for `custom` | `result`, containing the `title`. It runs the title tool once with the sample message and saves nothing. `custom` needs `titleCommand`. The client sends the custom command that it shows, so the test runs that command. |
+| `title-tool-set` | `settings` with `titleTool`, `titleModel` and `titleEffort`, and `titleCommand` for `custom` | `result`, containing the saved `settings` with a new revision, and the `title` of the test. See [Title tool change](#title-tool-change). |
 
 ### Side terminal operations
 
@@ -699,7 +701,24 @@ current revision.
 
 - Settings contain revision, defaultTool (empty means Shell), worktree, base (default
   HEAD), and an ordered tools array. Each tool has a stable client-generated id, name,
-  and command.
+  command, type, model, effort, builtin, enabled, and path.
+- path is the optional [CLI path](SPEC.md#tool-program) of a built-in tool. A save with
+  a path for another tool fails.
+- A save holds at most 100 custom tools. The built-in tools do not count.
+- builtin marks the [built-in tool](SPEC.md#built-in-tools) of an agent type. The server
+  owns it. A save cannot remove a built-in tool or change its type. A save without one
+  keeps it. The saved list has the built-in tools first, then the other tools. enabled
+  turns a tool on or off. A tool with a new id starts on, whatever the save sends.
+  defaultTool must name a tool that is on.
+- checkTools is true until the server ran its one tool check. The server owns it.
+- shellOff turns off the built-in Shell, the empty tool ID. defaultTool cannot be empty
+  while shellOff is true. `session-config` and `session-continue` reject Shell that is
+  off as a new choice.
+- type is `codex`, `claude`, `agy`, or `code-puppy` for a built-in tool, and `custom`
+  for each other tool. A save with an empty type for another tool saves `custom`. model
+  and effort of a built-in tool are the defaults of new drafts. An empty value selects the default of the CLI. See
+  [Tool types and models](SPEC.md#tool-types-and-models) for the options that each type
+  adds and for the accepted names.
 - A startup command is one shell line of at most 1,000 bytes, without control
   characters. The server submits it once after the PTY opens. It records the command as
   input, separate from the composer draft.
@@ -720,6 +739,25 @@ current revision.
   another default in the same save.
 - These operations do not install or authenticate tools.
 
+### Model lists
+
+`tool-models` runs the list command with the [program](SPEC.md#tool-program) of the
+type. It returns an object with these fields:
+
+| Field | Value |
+| --- | --- |
+| `type` | The tool type of the request. |
+| `source` | The command that printed the list, or empty for the built-in list of `claude`. |
+| `models` | The choices. Each has `id`, `name`, `efforts`, and an optional `default` effort. |
+| `efforts` | The efforts that the CLI accepts with any model. It is empty for `agy` and `code-puppy`. |
+| `loaded` | The time of the list command in RFC 3339 format, or empty for a built-in list. |
+
+The server runs the list command once and keeps the list until a request with `refresh`,
+a change of the program, or a server restart. A failed command returns an error and keeps no list. A disconnect
+stops a running command. `custom` and an empty type return an error. For `agy`, a
+model ID is the ID without its effort, such as `gemini-4-neon`. The launch adds the
+effort to the ID.
+
 ### Title tool change
 
 `title-tool-set` changes the title tool with these rules:
@@ -731,17 +769,25 @@ current revision.
   at the start of the test. Otherwise another change saved during the test, and the
   request fails without a change.
 - `none` saves without a test, with an empty `title`. An empty `titleTool` is an error.
+- Only `claude`, `codex`, and `code-puppy` take `titleModel` and `titleEffort`. An
+  empty value adds no option. `code-puppy` takes no effort. The test runs with them, and
+  they save with the choice. The save applies only while the saved tool, command, model,
+  and effort are the same as at the start of the test.
 - Only `custom` takes `titleCommand`. It needs one, and the command saves with the
   choice.
 - A disconnect during the test stops it and saves nothing.
 
 ### Preparation
 
-A prepared session includes preparation with revision, state, toolId, toolName, command,
-worktree, base, and branch. Configuration saves send the current preparation revision
-with toolId, worktree, base, and branch, plus name for the session title. Project,
-workspace, toolName, command, and state are not writable configuration fields. A change
-to toolId copies the selected command from Settings.
+A prepared session includes preparation with revision, state, toolId, toolName,
+toolType, command, model, effort, worktree, base, and branch. Configuration saves send
+the current preparation revision with toolId, model, effort, worktree, base, and branch,
+plus name for the session title. Project, workspace, toolName, toolType, command, and
+state are not writable configuration fields. A change to toolId copies the name, type,
+and command of the selected tool from Settings. The save takes model and effort from the
+request, also for a new toolId, so the client sends the defaults of a newly selected
+tool. An omitted model or effort is empty. The server rejects a model or an effort that
+the type does not accept. Start adds their options to the command.
 
 An empty ID selects Shell and clears the command. Keeping the same tool preserves the
 existing snapshot, including a removed preset. Start uses that snapshot without
@@ -1205,13 +1251,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/39") {
+    if (message.server.protocol !== "bbflow/40") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/39", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/40", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1321,6 +1367,14 @@ versions.
 - Protocol 39 adds the optional `report` field of `input`. A view marks its focus
   reports and mouse reports with it. See [size owner](#size-owner). The SQLite format
   does not change.
+- Protocol 40 adds `type`, `model`, `effort`, `builtin`, `enabled`, and `path` to each
+  tool of the settings, `checkTools` and `shellOff` to the settings, and `toolType`,
+  `model`, and `effort` to the preparation. `session-config` reads `model` and `effort`,
+  and it rejects a new tool that is off. The operations `tool-models` and `tool-check` are new. Settings gain
+  `titleModel` and `titleEffort`, which `title-test` and `title-tool-set` read.
+  `title-tools` adds `type`, `prefix`, `suffix`, `model`, and `effort`. SQLite format 17
+  gives each tool the type of its command, an empty model and effort, and the built-in
+  tools.
 
 ## Source files
 

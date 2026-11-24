@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"bbflow/internal/history"
+	"bbflow/internal/models"
 	"bbflow/internal/protocol"
 	agent "bbflow/internal/runtime"
 )
@@ -109,21 +110,21 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 	return session, run, nil
 }
 
-// continueTool returns the tool name and its startup command.
+// continueTool returns the tool name and its startup command, with the default model and
+// effort of the tool.
 func (s *Server) continueTool(id string) (name, command string, err error) {
-	if id == "" {
-		return "Shell", "", nil
-	}
 	settings, err := s.store.Settings()
 	if err != nil {
 		return "", "", err
 	}
-	for _, tool := range settings.Tools {
-		if tool.ID == id {
-			return tool.Name, tool.Command, nil
-		}
+	if id == "" {
+		return "Shell", "", shellChoice(settings)
 	}
-	return "", "", errors.New("tool no longer exists; choose Shell or a tool from Settings")
+	tool, err := enabledTool(settings, id)
+	if err != nil {
+		return "", "", err
+	}
+	return tool.Name, models.Command(tool.Type, tool.Command, tool.Model, tool.Effort), nil
 }
 
 // handoffTerminal is one earlier terminal in the handoff folder. Number counts from 1 in

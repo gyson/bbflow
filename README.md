@@ -45,9 +45,9 @@ it needs no other tools. If that directory is not on your PATH, add
    bbflow ui
    ```
 
-2. Click **Settings**. Enter a name and a startup command for a tool, for example
-   **Codex** with `codex`. Then click **Add tool**. The agent CLI must be on PATH and
-   signed in.
+2. Click **Settings**. In **Tools**, set the agent that you use, such as **Codex**, to
+   **On**. bbflow turns on the agents that it finds on PATH. The agent CLI must be
+   signed in. If bbflow does not find it, edit the tool and enter its **CLI path**.
 3. Click **＋ Project**. Enter the path of a folder. Then click **Add project**.
 4. Click **＋** beside the project. Select the tool. Then click **Start session**.
 

@@ -1,4 +1,3 @@
-import type { Tool } from './protocol.js';
 import { restartedMessage } from './restart.js';
 
 export interface ContinueTarget { status: string; archived?: boolean; run?: { id: string }; worktree?: { state: string } }
@@ -32,8 +31,12 @@ export function continueDialogError(error: DialogError, shown: string, problem: 
   return { error, shown: '', blocked: false };
 }
 
-// Prefer the tool that the session started with, if it still exists.
-export function defaultContinueTool(tools: readonly Tool[], preferred: string | undefined, fallback: string): string {
-  if (preferred !== undefined && (preferred === '' || tools.some(tool => tool.id === preferred))) return preferred;
-  return tools.some(tool => tool.id === fallback) ? fallback : '';
+// Prefer the tool that the session started with, if it is still a choice. tools are the
+// tools that are on, in the order of the menu. shell tells that Shell, the empty ID, is
+// on. Without a choice, the first tool is the answer.
+export function defaultContinueTool(tools: readonly { id: string }[], preferred: string | undefined, fallback: string, shell = true): string {
+  const choice = (id: string | undefined) => id !== undefined && (id === '' ? shell : tools.some(tool => tool.id === id));
+  if (choice(preferred)) return preferred!;
+  if (choice(fallback)) return fallback;
+  return shell ? '' : tools[0]?.id ?? '';
 }

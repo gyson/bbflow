@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, RemoteChanged, remoteStatus, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
+import { fallbackTool, toolSwitch, defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, PortField, portStatus, portText, RemoteChanged, remoteStatus, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
 
-const agent = { id: 'a', name: 'Agent', command: 'agent' };
-const other = { id: 'b', name: 'Other', command: 'other' };
+const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', path: '', builtin: false, enabled: true };
+const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', path: '', builtin: false, enabled: true };
 const settings = { revision: 4, appearance: 'system', defaultTool: 'a', worktree: false, base: 'HEAD', tools: [agent, other] };
 
 test('an unchanged tool or defaults do not need another save', () => {
@@ -18,9 +18,19 @@ test('a saved edit applies its changed fields to the latest tool', () => {
   const latest = { ...agent, command: 'agent --new' };
   assert.deepEqual(mergeToolEdit([other, latest], renamed, agent), [
     other,
-    { id: 'a', name: 'Renamed', command: 'agent --new' },
+    { id: 'a', name: 'Renamed', command: 'agent --new', type: 'custom', model: '', effort: '', path: '', builtin: false, enabled: true },
   ]);
   assert.throws(() => mergeToolEdit([other], renamed, agent), /removed/);
+});
+
+test('an edit of the type, the model, or the effort saves all three from the edit', () => {
+  const codex = { ...agent, type: 'codex', model: 'gpt-6-luna', effort: 'medium' };
+  const latest = { ...codex, name: 'Codex', effort: 'high' };
+  const edited = { ...codex, model: 'gpt-6-sol' };
+  assert.deepEqual(mergeToolEdit([latest], edited, codex), [{ ...latest, model: 'gpt-6-sol', effort: 'medium' }]);
+  const renamed = { ...codex, name: 'Renamed' };
+  assert.deepEqual(mergeToolEdit([latest], renamed, codex), [{ ...latest, name: 'Renamed' }]);
+  assert.ok(!sameSettings(settings, { ...settings, tools: [{ ...agent, model: 'x' }, other] }));
 });
 
 test('adding the same tool twice keeps one copy', () => {
@@ -133,11 +143,17 @@ test('a removal asks again when the tool became the default tool after the warni
   assert.deepEqual(saves.saved.tools, []);
 });
 
-test('the Settings page has one Clear for the add row and asks before a removal', () => {
+test('the Settings page has a tool table, one editor dialog, and asks before a removal', () => {
   const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
-  // The add row has no example of a saved tool, and Clear shows only with text.
-  assert.match(html, /<input id="add-tool-name"[^>]*placeholder="Name"/);
-  assert.match(html, /<button id="add-tool-cancel" type="button" hidden>Clear<\/button>/);
+  // The built-in tools and the custom tools have a table each. The editor dialog opens from
+  // Add custom tool or Edit.
+  assert.match(html, /<tbody id="settings-builtin-tools">/);
+  assert.match(html, /<th scope="col">On<\/th><th scope="col">Name<\/th><th scope="col">Command<\/th><th scope="col">Default model<\/th>/);
+  // The custom tools have no type and no default model.
+  assert.match(html, /<th scope="col">On<\/th><th scope="col">Name<\/th><th scope="col">Command<\/th><th scope="col"><span class="sr-only">Actions/);
+  assert.doesNotMatch(html, /<th scope="col">Type<\/th>/);
+  assert.match(html, /<button id="tool-add" type="button" class="tool-add">＋ Add custom tool<\/button>/);
+  assert.match(html, /<dialog id="tool-editor-dialog" class="tool-editor-dialog" aria-labelledby="tool-editor-title">\s*<form id="tool-editor" class="tool-editor">/);
   assert.match(html, /<dialog id="tool-remove-dialog"/);
   // Tools come before the default tool that selects one of them.
   assert.ok(html.indexOf('id="settings-tools"') < html.indexOf('id="settings-tool"'));
@@ -493,4 +509,24 @@ test('a late port reply does not change the error of a newer edit', () => {
   const failed = field.begin();
   field.input('xyz', 50001);
   assert.ok(!field.done(failed, false), 'a late failure would replace the newer error');
+});
+
+test('turning off the default tool or Shell selects Shell or the first other tool that is on', () => {
+  const on = { ...settings, defaultTool: 'a', shellOff: false, tools: [agent, other] };
+  assert.equal(toolSwitch('a', false)(on).defaultTool, '');
+  // Shell is off, so the first other tool that is on takes its place.
+  const shellOff = { ...on, shellOff: true };
+  assert.equal(toolSwitch('a', false)(shellOff).defaultTool, 'b');
+  assert.equal(fallbackTool(shellOff, 'a'), 'b');
+  // Shell turns off as a tool with the empty ID.
+  const shellDefault = { ...on, defaultTool: '' };
+  const off = toolSwitch('', false)(shellDefault);
+  assert.equal(off.shellOff, true);
+  assert.equal(off.defaultTool, 'a');
+  assert.equal(toolSwitch('', true)(off).shellOff, false);
+  // The last tool that is on cannot turn off while it is the default tool.
+  const last = { ...shellOff, tools: [agent, { ...other, enabled: false }] };
+  assert.throws(() => toolSwitch('a', false)(last), /only tool that is on/);
+  assert.throws(() => toolRemoval('a', true).change(last), /only tool that is on/);
+  assert.equal(fallbackTool(last, 'a'), null);
 });

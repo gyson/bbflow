@@ -53,8 +53,18 @@
         <form id="launch-form">
           <div class="preparation-heading"><h2 id="launch-heading">Prepare a session.</h2><span id="launch-saved" role="status"></span></div>
           <div class="launch-grid">
-            <label>Session name<input id="launch-name" maxlength="200" placeholder="What are you working on?"></label>
-            <label>Tool<select id="launch-tool"></select></label>
+            <label class="wide">Session name<input id="launch-name" maxlength="200" placeholder="What are you working on?"></label>
+            <fieldset id="launch-tool-group" class="wide launch-tool-group">
+              <legend class="sr-only">Tool and model</legend>
+              <label>Tool<select id="launch-tool"></select></label>
+              <div id="launch-models" class="model-fields" hidden>
+                <div class="model-field"><label for="launch-model">Model</label><select id="launch-model"></select>
+                  <input id="launch-model-other" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Type the full model name" aria-label="Model name" hidden>
+                  <p class="model-help"><span id="launch-model-help"></span> <button type="button" id="launch-model-refresh" class="link-button">Refresh list</button></p></div>
+                <div class="model-field"><label for="launch-effort">Thinking effort</label><select id="launch-effort"></select><p id="launch-effort-help" class="model-help"></p></div>
+              </div>
+              <p class="form-help launch-command">bbflow submits <code id="launch-command"></code></p>
+            </fieldset>
             <label id="launch-worktree-option" class="checkbox wide"><input id="launch-worktree" type="checkbox">Use worktree</label>
             <fieldset id="launch-place" class="wide place-group" hidden>
               <legend>Workspace</legend>
@@ -157,29 +167,28 @@
         </section>
         <section class="settings-card">
           <div class="settings-heading"><h3>Tools</h3></div>
-          <p class="form-help">A tool starts a session. bbflow runs the command in your shell when the session starts. For Codex, add <code>--no-alt-screen</code> so that bbflow can record the scrollback.</p>
-          <div class="tool-grid">
-            <p id="tool-error" class="form-error" role="alert" hidden></p>
-            <div class="tool-columns" aria-hidden="true"><span>Name</span><span>Command</span></div>
-            <div id="settings-tools">
-              <form id="edit-tool-editor" class="tool-row" aria-label="Edit tool" hidden>
-                <label><span class="tool-field-label">Name</span><input id="edit-tool-name" maxlength="200" required></label>
-                <label><span class="tool-field-label">Command</span><input id="edit-tool-command" class="tool-command" maxlength="1000" spellcheck="false" required></label>
-                <div class="tool-actions"><button id="edit-tool-submit" type="submit" class="primary">Save</button><button id="edit-tool-cancel" type="button">Cancel</button></div>
-                <p id="edit-tool-error" class="form-error" role="alert" hidden></p>
-              </form>
-              <form id="add-tool-editor" class="tool-row" aria-label="Add tool">
-                <label><span class="tool-field-label">Name</span><input id="add-tool-name" maxlength="200" placeholder="Name" required></label>
-                <label><span class="tool-field-label">Command</span><input id="add-tool-command" class="tool-command" maxlength="1000" placeholder="Startup command" spellcheck="false" required></label>
-                <div class="tool-actions"><button id="add-tool-submit" type="submit" class="primary">Add tool</button><button id="add-tool-cancel" type="button" hidden>Clear</button></div>
-                <p id="add-tool-error" class="form-error" role="alert" hidden></p>
-              </form>
-            </div>
+          <p class="form-help">A tool starts a session in your shell. A tool that is off stays saved, but it is not a choice for new sessions.</p>
+          <h4 class="tool-table-title">Built-in tools</h4>
+          <div class="tool-table-box">
+            <table class="tool-table" aria-label="Built-in tools">
+              <thead><tr><th scope="col">On</th><th scope="col">Name</th><th scope="col">Command</th><th scope="col">Default model</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+              <tbody id="settings-builtin-tools"></tbody>
+            </table>
           </div>
+          <h4 class="tool-table-title">Custom tools</h4>
+          <div class="tool-table-box">
+            <table class="tool-table" aria-label="Custom tools">
+              <thead><tr><th scope="col">On</th><th scope="col">Name</th><th scope="col">Command</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+              <tbody id="settings-tools"></tbody>
+            </table>
+          </div>
+          <p id="tool-error" class="form-error" role="alert" hidden></p>
+          <button id="tool-add" type="button" class="tool-add">＋ Add custom tool</button>
         </section>
         <form id="settings-form">
           <section class="settings-card"><h3>Session defaults</h3>
             <label>Default tool<select id="settings-tool"></select></label>
+            <p id="settings-tool-help" class="form-help tool-default-help"></p>
             <label class="checkbox"><input id="settings-worktree" type="checkbox">Start new Git sessions in a new worktree</label>
             <label>Starting branch or commit for new worktrees<input id="settings-base" placeholder="HEAD" maxlength="250"></label>
             <p class="form-help">HEAD is the current commit of the project. Uncommitted changes are not included. The field saves when you press Enter or leave it. Press Esc to restore the saved value.</p>
@@ -189,12 +198,18 @@
           <h3>Automatic titles</h3>
           <p class="form-help">bbflow asks the title tool once for a title, after your first sent message. A title that you set has priority. bbflow tests a title tool before it saves it. The test can take up to 90 seconds. A title tool is separate from the tools that start sessions.</p>
           <label>Title tool<select id="title-tool"></select></label>
+          <div id="title-models" class="model-fields title-models" hidden>
+            <div class="model-field"><label for="title-model">Model</label><select id="title-model"></select>
+              <input id="title-model-other" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Type the full model name" aria-label="Title model name" hidden>
+              <p class="model-help"><span id="title-model-help"></span> <button type="button" id="title-model-refresh" class="link-button">Refresh list</button></p></div>
+            <div class="model-field"><label for="title-effort">Thinking effort</label><select id="title-effort"></select><p id="title-effort-help" class="model-help"></p></div>
+          </div>
           <p id="title-builtin" class="form-help" hidden>Command: <code id="title-tool-command"></code></p>
           <form id="title-custom" hidden>
             <label>Custom command<input id="title-custom-command" maxlength="1000" placeholder="my-llm --fast" spellcheck="false" autocomplete="off"></label>
             <p class="form-help">The command gets the request on standard input. It must print one line that starts with bbflow-title: and then the title. bbflow does not limit what a custom command can do. Prefer standard input to "$(cat)", because other programs on this Mac can read the arguments of a command.</p>
           </form>
-          <div class="title-actions"><button id="title-custom-save" type="submit" form="title-custom" hidden>Save and test</button><button id="title-test" type="button" hidden disabled>Test</button><span id="title-spinner" class="spinner" role="img" aria-label="Testing" hidden></span></div>
+          <div class="title-actions"><button id="title-custom-save" type="submit" form="title-custom" hidden>Save and test</button><button id="title-model-save" type="button" hidden>Save and test</button><button id="title-test" type="button" hidden disabled>Test</button><span id="title-spinner" class="spinner" role="img" aria-label="Testing" hidden></span></div>
           <div id="title-test-result" role="status" hidden><p id="title-test-sample" class="form-help"></p><p id="title-test-outcome"></p><p id="title-test-detail" class="form-help"></p></div>
           <ul class="form-help title-notes">
             <li><strong>Claude</strong>, <strong>Codex</strong>, and <strong>Code Puppy</strong> must be installed on the PATH of the server and signed in. They send your first message to their provider, with paths masked and the tools of the CLI turned off.</li>
@@ -250,6 +265,32 @@
       <p class="form-help">Restore of the parent brings back all of its sub-sessions. Nothing is deleted.</p>
       <p id="archive-error" class="form-error" role="alert" hidden></p>
       <button id="archive-submit" type="submit" class="primary">Archive family</button>
+    </form>
+  </dialog>
+  <dialog id="tool-editor-dialog" class="tool-editor-dialog" aria-labelledby="tool-editor-title">
+    <form id="tool-editor" class="tool-editor">
+      <div class="dialog-heading"><h2 id="tool-editor-title">New tool</h2><button type="button" id="tool-close" class="text-button" aria-label="Close the tool editor">✕</button></div>
+      <p id="tool-builtin-note" class="model-help" hidden></p>
+      <div id="tool-identity" class="model-field"><label for="tool-name">Name</label><input id="tool-name" maxlength="200" placeholder="Name" required></div>
+      <div id="tool-command-field" class="model-field tool-command-field">
+        <label for="tool-command">Startup command</label>
+        <input id="tool-command" class="tool-command" maxlength="1000" placeholder="Startup command" spellcheck="false" required>
+        <p id="tool-command-help" class="model-help"></p>
+      </div>
+      <div id="tool-path-field" class="model-field" hidden>
+        <label for="tool-path">CLI path</label>
+        <input id="tool-path" class="tool-command" maxlength="500" spellcheck="false" autocomplete="off">
+        <p id="tool-path-help" class="model-help"></p>
+      </div>
+      <div id="tool-models" class="model-fields" hidden>
+        <div class="model-field"><label for="tool-model">Default model</label><select id="tool-model"></select>
+          <input id="tool-model-other" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Type the full model name" aria-label="Default model name" hidden>
+          <p class="model-help"><span id="tool-model-help"></span> <button type="button" id="tool-model-refresh" class="link-button">Refresh list</button></p></div>
+        <div class="model-field"><label for="tool-effort">Default thinking effort</label><select id="tool-effort"></select><p id="tool-effort-help" class="model-help"></p></div>
+      </div>
+      <p class="tool-preview">New sessions submit <code id="tool-preview"></code></p>
+      <p id="tool-editor-error" class="form-error" role="alert" hidden></p>
+      <div class="tool-editor-actions"><button id="tool-cancel" type="button">Cancel</button><button id="tool-submit" type="submit" class="primary">Add tool</button></div>
     </form>
   </dialog>
   <dialog id="tool-remove-dialog" aria-labelledby="tool-remove-title">

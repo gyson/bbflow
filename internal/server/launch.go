@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"bbflow/internal/history"
+	"bbflow/internal/models"
 	"bbflow/internal/protocol"
 	agent "bbflow/internal/runtime"
 )
@@ -45,7 +46,7 @@ func (s *Server) prepareProject(ctx context.Context, projectID, parentID string)
 	p := history.Preparation{ToolID: settings.DefaultTool, ToolName: "Shell", Base: settings.Base}
 	for _, tool := range settings.Tools {
 		if tool.ID == p.ToolID {
-			p.ToolName, p.Command = tool.Name, tool.Command
+			p.ToolName, p.ToolType, p.Command, p.Model, p.Effort = tool.Name, tool.Type, tool.Command, tool.Model, tool.Effort
 		}
 	}
 	workspace, err := agent.Canonical(project.Workspace)
@@ -94,26 +95,28 @@ func (s *Server) savePreparation(request *protocol.Request) (history.Session, er
 		return history.Session{}, errors.New("session already started; reload the session")
 	}
 	p, edit := *session.Preparation, request.Preparation
+	// A change of the tool copies its name, type, and command. The view sends the model
+	// and the effort, also the defaults of a newly selected tool.
 	if edit.ToolID != p.ToolID {
-		p.ToolID, p.ToolName, p.Command = edit.ToolID, "Shell", ""
-		if edit.ToolID != "" {
-			settings, err := s.store.Settings()
+		p.ToolID, p.ToolName, p.ToolType, p.Command = edit.ToolID, "Shell", "", ""
+		settings, err := s.store.Settings()
+		if err != nil {
+			return history.Session{}, err
+		}
+		if edit.ToolID == "" {
+			if err = shellChoice(settings); err != nil {
+				return history.Session{}, err
+			}
+		} else {
+			tool, err := enabledTool(settings, edit.ToolID)
 			if err != nil {
 				return history.Session{}, err
 			}
-			found := false
-			for _, tool := range settings.Tools {
-				if tool.ID == edit.ToolID {
-					p.ToolName, p.Command, found = tool.Name, tool.Command, true
-					break
-				}
-			}
-			if !found {
-				return history.Session{}, errors.New("tool no longer exists; choose Shell or a tool from Settings")
-			}
+			p.ToolName, p.ToolType, p.Command = tool.Name, tool.Type, tool.Command
 		}
 	}
 	p.Revision, p.Worktree, p.Base, p.Branch = edit.Revision, edit.Worktree, edit.Base, edit.Branch
+	p.Model, p.Effort = edit.Model, edit.Effort
 	return s.store.SavePreparation(session.ID, request.Name, p)
 }
 
@@ -145,7 +148,8 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 		}
 		workspace = parent.Workspace
 	}
-	run, err := prepareRun(&protocol.Run{Workspace: workspace, Title: session.Title, Command: p.Command, Size: size})
+	command := models.Command(p.ToolType, p.Command, p.Model, p.Effort)
+	run, err := prepareRun(&protocol.Run{Workspace: workspace, Title: session.Title, Command: command, Size: size})
 	if err != nil {
 		return session, nil, err
 	}
