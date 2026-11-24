@@ -234,9 +234,11 @@
         <section class="settings-card">
           <div class="settings-heading"><h3>Remote access</h3><button id="settings-remote-switch" type="button" class="switch" role="switch" aria-checked="false" aria-label="Remote access">Off</button></div>
           <p class="form-help">Remote access lets you open bbflow on another device, such as a phone, through Tailscale Serve on this Mac. It works only while the switch is on and both fields are saved. A person who can use remote access can run commands on this Mac as you.</p>
-          <label>Tailscale host name<input id="settings-remote-host" maxlength="259" placeholder="my-mac.example.ts.net" spellcheck="false" autocomplete="off" autocapitalize="off"></label>
-          <label>Tailscale login<input id="settings-remote-login" maxlength="254" placeholder="you@example.com" spellcheck="false" autocomplete="off" autocapitalize="off"></label>
           <p id="settings-remote-error" class="form-error" role="alert" hidden></p>
+          <label>Tailscale host name<input id="settings-remote-host" maxlength="259" placeholder="my-mac.example.ts.net" spellcheck="false" autocomplete="off" autocapitalize="off"></label>
+          <p id="settings-remote-host-error" class="form-error" role="alert" hidden></p>
+          <label>Tailscale login<input id="settings-remote-login" maxlength="254" placeholder="you@example.com" spellcheck="false" autocomplete="off" autocapitalize="off"></label>
+          <p id="settings-remote-login-error" class="form-error" role="alert" hidden></p>
           <p id="settings-remote-status" class="form-help" role="status"></p>
           <p class="form-help">The host name is the name of this Mac in your tailnet. The login is the account of your Tailscale devices. Tailscale Serve on this Mac must forward the host name to the port of the server.</p>
           <p class="form-help">Each field saves when you press Enter or leave it. Press Esc to restore the saved value. The switch saves at once and keeps both fields. A change closes the open remote connections. Thus a remote view that turns the switch off cannot turn it on again.</p>

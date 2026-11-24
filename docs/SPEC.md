@@ -1377,8 +1377,8 @@ entry is saved. Otherwise it names each entry that is not saved, for example
   click saves only the switch, with the saved values. The switch takes no click during
   its save.
 - Each field saves alone, as **Port** does: on Enter, or when the field loses focus.
-  Escape restores the saved value and hides the error. A save of a field does not change
-  the switch or the other field.
+  Escape restores the saved value and hides the error of the field. A save of a field
+  does not change the switch or the other field.
 - The fields take input during a save. A save clears the edit of its field only when no
   input came after the save started. Then the field shows the saved value, with the host
   name in lower case. Enter and the blur after it save the text once. An input or Escape
@@ -1387,21 +1387,27 @@ entry is saved. Otherwise it names each entry that is not saved, for example
   login. When the switch is on without both values, the status tells that remote access
   needs both.
 - To turn remote access off, the user clicks the switch. The fields keep their values.
-- A value that the server rejects stays in its field, with the server error below the
-  fields. New text in either field hides the error.
+- A value that the server rejects stays in its field, with the server error below that
+  field. Each field has its own error. New text in a field hides only its error, and a
+  save of the other field keeps it. The error of the switch shows below the card text.
 - A save of a field applies to the latest settings after a revision conflict. Thus a
   view with an earlier login cannot restore a login that another view removed.
-- A click that turns the switch on first saves each field with an edit, and it waits for
-  a running save of a field. Safari does not move the focus to a button at a click, so
-  the field gets no blur first.
+- A press on the switch keeps the focus in a field, as Safari does for each button. Thus
+  a field with an edit gets no blur before the click, and its save cannot come first.
+- A click that turns the switch off saves at once, before an edit of a field. Thus no
+  change of a value comes before Off. From a remote view, such a change could close the
+  connection of the view and keep access on.
+- A click that turns the switch on uses the values that the card shows at the click: the
+  text of a field with an edit, as the server saves it, or else the saved value. The
+  click first saves each field with an edit, and it waits for a running save of a field.
 - When a field keeps an edit that did not save, the switch stays off. The error of the
-  field stays in view, or an error tells that a field did not save. Thus the switch never
-  turns remote access on for a value that differs from the text in a field.
-- When another view changed the host name or the login, a click that turns the switch on
-  does not save. The fields show the new values, and the error names them. A second
-  click turns remote access on for those values. Thus the switch never turns remote
-  access on for values that the view did not read or save.
-- A click that turns the switch off saves at once, without these steps.
+  field stays in view, or an error tells that a field did not save.
+- When the saved values then differ from the values at the click, the switch stays off
+  too. A save of a field can take a new value of the other field from another view. The
+  fields show the new values, and the error names them. A second click turns remote
+  access on for those values.
+- Thus the switch never turns remote access on for a host name or a login that the card
+  did not show at the click.
 - A failed save of the switch or a field after the user left Settings shows the toast
   **Remote access did not save.**
 - A text that is not saved shows in the save status with the name of its field. The page
@@ -3979,6 +3985,11 @@ Each check sends the requests of such a proxy to the loopback port:
   first, then the switch. With a rejected login, two clicks send no save of the switch,
   and the error of the field stays. After Escape, the click turns remote access on for
   the saved login.
+- Web fixtures cover the order of a press: the press keeps the focus, and Off saves
+  before an edited login. A host save at the click that takes a login from another view
+  sends no save of the switch, and a second click turns access on for the login in view.
+  A save of the login keeps the error of a rejected host, and **Done** repeats that
+  error in a toast.
 - Model fixtures verify that a field save before the switch in the queue is no conflict,
   and that a click that turns the switch off needs no check.
 - `curl` requests to that demo server, with the Host and the login header of a proxy,
@@ -3997,6 +4008,10 @@ Each check sends the requests of such a proxy to the loopback port:
   lower case, and Enter in **Tailscale login** saved the login. The status then showed
   **All settings saved**. A save of the host name while the switch was off kept it off.
   Escape in the login field restored the saved login.
+- In the browser pane of the desktop app, a mouse click on the switch kept the focus in
+  the login field with an edit. With access on, the click saved Off first, and the saved
+  login stayed the earlier login. A second click saved the edited login, then turned
+  access on for it. No check used Safari.
 
 A manual check used a real Tailscale Serve proxy of Tailscale 1.104.7 on macOS, with
 `tailscale serve --bg PORT` for a demo instance:

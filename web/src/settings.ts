@@ -3,8 +3,8 @@ import { fillToolMenu, sortedBuiltins } from './tool-menu.js';
 import { builtinCommand, forgetModelLists, launchCommand, modelSummary, ModelPicker, typed } from './model-choice.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, FieldEdit, parsePort, portStatus, portText, remoteStatus, fallbackTool, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval, toolSwitch } from './settings-model.js';
-import type { Defaults, RemoteKey, SettingsChange } from './settings-model.js';
+import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, FieldEdit, parsePort, portStatus, portText, remoteStatus, remoteValue, fallbackTool, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval, toolSwitch } from './settings-model.js';
+import type { Defaults, RemoteKey, RemoteValues, SettingsChange } from './settings-model.js';
 
 const portRange = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
 const portNotSaved = 'The port did not save.';
@@ -13,14 +13,15 @@ const remoteFieldNotSaved = 'Remote access stays off, because a field did not sa
 const defaultNotSaved = 'A setting did not save.';
 const titleToolNotSaved = 'The title tool did not save.';
 
-// A field of remote access. It saves alone, as Port does. sending is the running save of
-// the current text, so that Enter and the blur after it save the text once. Its result
-// tells if the text saved. An input or a reset ends it, so that the next Enter or blur
-// saves again.
+// A field of remote access. It saves alone, as Port does, and it shows its own error.
+// sending is the running save of the current text, so that Enter and the blur after it
+// save the text once. Its result tells if the text saved. An input or a reset ends it,
+// so that the next Enter or blur saves again.
 interface RemoteField {
   key: RemoteKey;
   label: string;
   input: HTMLInputElement;
+  error: HTMLElement;
   edit: FieldEdit<string>;
   sending: { text: string; saved: Promise<boolean> } | null;
 }
@@ -103,8 +104,8 @@ export class SettingsView {
   private renderedBase = '';
   private readonly portField = new FieldEdit(portText);
   private readonly remoteFields: RemoteField[] = [
-    { key: 'remoteHost', label: 'Tailscale host name', input: element('settings-remote-host', HTMLInputElement), edit: new FieldEdit((host: string) => host), sending: null },
-    { key: 'remoteLogin', label: 'Tailscale login', input: element('settings-remote-login', HTMLInputElement), edit: new FieldEdit((login: string) => login), sending: null },
+    { key: 'remoteHost', label: 'Tailscale host name', input: element('settings-remote-host', HTMLInputElement), error: element('settings-remote-host-error', HTMLElement), edit: new FieldEdit((host: string) => host), sending: null },
+    { key: 'remoteLogin', label: 'Tailscale login', input: element('settings-remote-login', HTMLInputElement), error: element('settings-remote-login-error', HTMLElement), edit: new FieldEdit((login: string) => login), sending: null },
   ];
   // switchBusy reports a running save of the switch of remote access. The switch then
   // takes no click.
@@ -191,6 +192,10 @@ export class SettingsView {
       this.showStatus();
     };
     this.portForm.onsubmit = event => { event.preventDefault(); this.savePort(); };
+    // A press on the switch keeps the focus in a field, as Safari does for each button.
+    // Thus the field gets no blur before the click, and its save does not go out before
+    // the switch. A click that turns access off then saves first. See switchRemote.
+    this.remoteSwitch.onmousedown = event => event.preventDefault();
     this.remoteSwitch.onclick = () => void this.switchRemote();
     for (const field of this.remoteFields) {
       field.input.onchange = () => void this.saveRemoteField(field);
@@ -198,7 +203,7 @@ export class SettingsView {
         field.sending = null;
         field.edit.input(field.input.value, this.saved?.[field.key] ?? '');
         // The error is about the earlier text.
-        this.remoteError.hidden = true;
+        field.error.hidden = true;
         this.showStatus();
       };
       // The card has two fields, so Enter does not submit a form. The field saves itself.
@@ -302,8 +307,11 @@ export class SettingsView {
     this.restorePort();
     // The click on Done also saves a remote access field. As for the port, the toast
     // repeats an error that came before the click ended.
-    if (this.remoteFields.some(field => field.edit.edited) && !this.remoteError.hidden) this.report(remoteNotSaved, this.remoteError.textContent ?? '');
-    for (const field of this.remoteFields) this.restoreRemote(field);
+    for (const field of this.remoteFields) {
+      if (field.edit.edited && !field.error.hidden) this.report(remoteNotSaved, field.error.textContent ?? '');
+      this.restoreRemote(field);
+    }
+    this.remoteError.hidden = true;
     // A running title tool change continues. Its end discards the custom entry.
     if (!this.busy) {
       this.discardCustom();
@@ -365,11 +373,11 @@ export class SettingsView {
     this.render();
   }
 
-  // Show the saved value of a remote access field again, and hide the error.
+  // Show the saved value of a remote access field again, and hide its error.
   private restoreRemote(field: RemoteField): void {
     field.sending = null;
     field.edit.reset();
-    this.remoteError.hidden = true;
+    field.error.hidden = true;
     this.render();
   }
 
@@ -982,8 +990,8 @@ export class SettingsView {
 
   // A field of remote access saves alone, as Port does. The server checks the value and
   // saves the host name in lower case. A failed save keeps the text, with the error below
-  // the fields. Only a current save changes the error. See FieldEdit. The result tells
-  // if the field has no edit that failed to save.
+  // the field. Only a current save changes the error of its field. See FieldEdit. The
+  // result tells if the field has no edit that failed to save.
   private saveRemoteField(field: RemoteField): Promise<boolean> {
     const text = field.input.value.trim();
     if (!this.saved || !field.edit.edited) return Promise.resolve(true);
@@ -995,10 +1003,10 @@ export class SettingsView {
       if (!field.edit.done(token, error === undefined)) {
         if (error !== undefined && visit !== this.visits) this.report(remoteNotSaved, errorMessage(error));
       } else if (error === undefined) {
-        this.remoteError.hidden = true;
+        field.error.hidden = true;
       } else {
-        this.remoteError.textContent = errorMessage(error);
-        this.remoteError.hidden = false;
+        field.error.textContent = errorMessage(error);
+        field.error.hidden = false;
       }
       this.render();
       return error === undefined;
@@ -1009,36 +1017,39 @@ export class SettingsView {
   }
 
   // The switch of remote access saves at once and alone. It keeps the saved host name and
-  // login. Turning it on first saves each field with an edit, and it waits for a running
-  // save of a field. A click on a button in Safari leaves the focus in the field, so the
-  // field did not save yet. When a field keeps an edit that did not save, the switch stays
-  // off, and the error of the field stays in view. Turning the switch on also fails when
-  // another view changed the host name or the login. The fields then show the new values,
-  // and the error names them. A second click turns remote access on for them. Turning the
-  // switch off saves without these steps.
+  // login. The press keeps the focus in a field, so a field with an edit did not save yet.
+  // Turning the switch off saves first, so that no change of a value comes before it.
+  //
+  // Turning it on uses the values that the card shows at the click: the text of a field
+  // with an edit, else the saved value. It first saves each field with an edit, and it
+  // waits for a running save of a field. When a field keeps an edit that did not save,
+  // the switch stays off, and the error of the field stays in view. When the saved values
+  // then differ from the values at the click, also after a change in another view, the
+  // switch stays off too. The fields then show the new values, and the error names them.
+  // A second click turns remote access on for them.
   private async switchRemote(): Promise<void> {
     if (!this.saved || this.switchBusy) return;
     const visit = this.visits;
     const on = !this.saved.remoteOn;
+    const shown = Object.fromEntries(this.remoteFields.map(field => [field.key, field.edit.edited ? remoteValue(field.key, field.input.value) : this.saved![field.key]])) as RemoteValues;
     this.switchBusy = true;
-    if (!on) this.remoteError.hidden = true;
+    this.remoteError.hidden = true;
     this.render();
     let error: unknown;
+    let fieldNotSaved = false;
     if (on) {
       const saved = await Promise.all(this.remoteFields.map(field => this.saveRemoteField(field)));
-      if (saved.includes(false) || (visit === this.visits && this.remoteFields.some(field => field.edit.edited))) {
-        error = new Error(remoteFieldNotSaved);
-      }
+      fieldNotSaved = saved.includes(false) || (visit === this.visits && this.remoteFields.some(field => field.edit.edited));
+      if (fieldNotSaved) error = new Error(remoteFieldNotSaved);
     }
     if (error === undefined) {
-      this.remoteError.hidden = true;
-      error = await this.saves.saveRemoteSwitch(on).then(() => undefined, (cause: unknown) => cause ?? new Error('Unknown error'));
+      error = await this.saves.saveRemoteSwitch(on, shown).then(() => undefined, (cause: unknown) => cause ?? new Error('Unknown error'));
     }
     this.switchBusy = false;
     if (error !== undefined && visit !== this.visits) {
       this.report(remoteNotSaved, errorMessage(error));
-    } else if (error !== undefined && this.remoteError.hidden) {
-      // The error of a field that did not save stays. Otherwise this error shows.
+    } else if (error !== undefined && !(fieldNotSaved && this.remoteFields.some(field => !field.error.hidden))) {
+      // The error of a field that did not save explains why the switch stays off.
       this.remoteError.textContent = errorMessage(error);
       this.remoteError.hidden = false;
     }

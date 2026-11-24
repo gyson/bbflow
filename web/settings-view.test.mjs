@@ -63,7 +63,7 @@ class Node {
 
 const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-tool', 'settings-worktree', 'settings-base',
   'settings-update-check', 'settings-port-form', 'settings-port', 'settings-port-error', 'settings-port-status',
-  'settings-remote-switch', 'settings-remote-host', 'settings-remote-login', 'settings-remote-error',
+  'settings-remote-switch', 'settings-remote-host', 'settings-remote-host-error', 'settings-remote-login', 'settings-remote-login-error', 'settings-remote-error',
   'settings-remote-status',
   'settings-error', 'settings-status', 'settings-builtin-tools', 'settings-tools', 'settings-tool-help', 'tool-error', 'tool-add', 'tool-editor-dialog', 'tool-editor', 'tool-close',
   'tool-editor-title', 'tool-name', 'tool-command', 'tool-command-help', 'tool-path-field', 'tool-path', 'tool-path-help', 'tool-builtin-note', 'tool-identity', 'tool-command-field', 'tool-models',
@@ -88,7 +88,7 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
   forgetModelLists();
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
   nodes['tool-editor-error'].hidden = true;
-  for (const id of ['tool-editor-error', 'settings-port-error', 'settings-remote-error', 'settings-error', 'tool-error', 'title-test-result']) nodes[id].hidden = true;
+  for (const id of ['tool-editor-error', 'settings-port-error', 'settings-remote-error', 'settings-remote-host-error', 'settings-remote-login-error', 'settings-error', 'tool-error', 'title-test-result']) nodes[id].hidden = true;
   nodes['settings-view'].hidden = true;
   for (const [id, node] of Object.entries(nodes)) node.id = id;
   for (const name of ['HTMLElement', 'HTMLFormElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLButtonElement', 'HTMLDialogElement']) globalThis[name] = Node;
@@ -504,7 +504,7 @@ test('a remote access field saves alone, so it keeps a login that another view r
   const sent = (await reply('settings-save')).settings;
   assert.deepEqual([sent.revision, sent.remoteHost, sent.remoteLogin], [latest.revision, 'other.example.ts.net', '']);
   assert.deepEqual([nodes['settings-remote-host'].value, nodes['settings-remote-login'].value], ['other.example.ts.net', '']);
-  assert.ok(nodes['settings-remote-error'].hidden);
+  assert.ok(nodes['settings-remote-host-error'].hidden);
   assert.ok(!view.unsaved);
 });
 
@@ -515,14 +515,14 @@ test('a rejected remote access value keeps its text, Esc restores the saved valu
   blur(nodes, 'settings-remote-host');
   await tick();
   await fail('settings-save', rejection);
-  assert.ok(!nodes['settings-remote-error'].hidden);
-  assert.equal(nodes['settings-remote-error'].textContent, rejection);
+  assert.ok(!nodes['settings-remote-host-error'].hidden);
+  assert.equal(nodes['settings-remote-host-error'].textContent, rejection);
   assert.equal(nodes['settings-remote-host'].value, 'localhost');
   assert.equal(nodes['settings-status'].textContent, 'Not saved: Tailscale host name');
   assert.ok(view.unsaved);
   // The new text hides the error of the earlier text.
   type('settings-remote-host', 'localhos');
-  assert.ok(nodes['settings-remote-error'].hidden);
+  assert.ok(nodes['settings-remote-host-error'].hidden);
   // Esc restores the saved value.
   press(nodes, 'settings-remote-host', 'Escape');
   assert.equal(nodes['settings-remote-host'].value, '');
@@ -537,7 +537,7 @@ test('a rejected remote access value keeps its text, Esc restores the saved valu
   view.close();
   assert.deepEqual(toasts, [['Remote access did not save.', rejection]]);
   assert.equal(nodes['settings-remote-host'].value, '');
-  assert.ok(nodes['settings-remote-error'].hidden);
+  assert.ok(nodes['settings-remote-host-error'].hidden);
   assert.ok(!view.unsaved);
 
   // The reply comes after the click on Done.
@@ -582,10 +582,10 @@ test('an edit during a running save of a remote field makes the next blur save a
   blur(nodes, 'settings-remote-host');
   await fail('settings-save', rejection);
   // The first reply is not current, so it shows no error.
-  assert.ok(nodes['settings-remote-error'].hidden);
+  assert.ok(nodes['settings-remote-host-error'].hidden);
   await fail('settings-save', rejection);
-  assert.equal(nodes['settings-remote-error'].textContent, rejection);
-  assert.ok(!nodes['settings-remote-error'].hidden);
+  assert.equal(nodes['settings-remote-host-error'].textContent, rejection);
+  assert.ok(!nodes['settings-remote-host-error'].hidden);
   assert.ok(view.unsaved);
 });
 
@@ -627,8 +627,10 @@ test('the switch stays off while a remote field keeps an edit that did not save'
   await fail('settings-save', rejection);
   await tick();
   assert.equal(pending.length, 0);
-  assert.equal(nodes['settings-remote-error'].textContent, rejection);
-  assert.ok(!nodes['settings-remote-error'].hidden);
+  assert.equal(nodes['settings-remote-login-error'].textContent, rejection);
+  assert.ok(!nodes['settings-remote-login-error'].hidden);
+  // The error of the field tells why the switch stays off, so the switch shows none.
+  assert.ok(nodes['settings-remote-error'].hidden);
   assert.deepEqual(switchState(nodes), ['false', 'Off']);
   assert.equal(nodes['settings-remote-login'].value, 'new @example.com');
   assert.ok(!nodes['settings-remote-switch'].disabled);
@@ -639,7 +641,8 @@ test('the switch stays off while a remote field keeps an edit that did not save'
   await fail('settings-save', rejection);
   await tick();
   assert.equal(pending.length, 0);
-  assert.equal(nodes['settings-remote-error'].textContent, rejection);
+  assert.equal(nodes['settings-remote-login-error'].textContent, rejection);
+  assert.ok(!nodes['settings-remote-login-error'].hidden);
   assert.ok(view.unsaved);
   // Esc restores the saved login. Then the switch turns remote access on for it.
   press(nodes, 'settings-remote-login', 'Escape');
@@ -647,8 +650,97 @@ test('the switch stays off while a remote field keeps an edit that did not save'
   await tick();
   const switched = await reply('settings-save');
   assert.deepEqual([switched.settings.remoteOn, switched.settings.remoteLogin], [true, 'old@example.com']);
-  assert.ok(nodes['settings-remote-error'].hidden);
+  assert.ok(nodes['settings-remote-error'].hidden && nodes['settings-remote-login-error'].hidden);
   assert.ok(!view.unsaved);
+});
+
+test('the switch does not turn on for a login that a field save took from another view', async () => {
+  const { nodes, pending, view, reply, type } = await setup();
+  const { ConnectionError } = await import('./dist/protocol.js');
+  for (const [id, text] of [['settings-remote-host', 'my-mac.example.ts.net'], ['settings-remote-login', 'user@example.com']]) {
+    type(id, text);
+    blur(nodes, id);
+    await tick();
+    await reply('settings-save');
+  }
+  // The user edits the host and clicks On. The press keeps the focus in the field, so
+  // the click saves the host first. That save meets a login from another view.
+  type('settings-remote-host', 'other.example.ts.net');
+  nodes['settings-remote-switch'].onclick();
+  await tick();
+  const latest = { ...view.saves.saved, remoteLogin: 'second@example.com', revision: view.saves.saved.revision + 1 };
+  pending.shift().reject(new ConnectionError('settings changed', false, true));
+  await tick();
+  await reply('settings-get', structuredClone(latest));
+  await tick();
+  const field = await reply('settings-save');
+  assert.deepEqual([field.settings.remoteHost, field.settings.remoteLogin, field.settings.remoteOn], ['other.example.ts.net', 'second@example.com', false]);
+  await tick();
+  // The card showed another login at the click, so no save of the switch goes out.
+  assert.equal(pending.length, 0);
+  assert.equal(nodes['settings-remote-error'].textContent, 'Another view changed remote access. The saved host name is other.example.ts.net, and the saved login is second@example.com. Turn the switch on again to use them.');
+  assert.equal(nodes['settings-remote-login'].value, 'second@example.com');
+  assert.deepEqual(switchState(nodes), ['false', 'Off']);
+  // A second click turns remote access on for the login in view.
+  nodes['settings-remote-switch'].onclick();
+  await tick();
+  const switched = await reply('settings-save');
+  assert.deepEqual([switched.settings.remoteOn, switched.settings.remoteLogin], [true, 'second@example.com']);
+  assert.ok(nodes['settings-remote-error'].hidden);
+});
+
+test('a click that turns the switch off saves before the edit of a field', async () => {
+  const { nodes, pending, reply, type } = await setup();
+  for (const [id, text] of [['settings-remote-host', 'my-mac.example.ts.net'], ['settings-remote-login', 'user@example.com']]) {
+    type(id, text);
+    blur(nodes, id);
+    await tick();
+    await reply('settings-save');
+  }
+  nodes['settings-remote-switch'].onclick();
+  await tick();
+  await reply('settings-save');
+  assert.deepEqual(switchState(nodes), ['true', 'On']);
+  // The user edits the login and presses the switch. The press keeps the focus in the
+  // field, so the field gets no blur before the click, and Off is the first save.
+  type('settings-remote-login', 'new@example.com');
+  const mousedown = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  nodes['settings-remote-switch'].onmousedown(mousedown);
+  assert.ok(mousedown.defaultPrevented);
+  nodes['settings-remote-switch'].onclick();
+  await tick();
+  assert.equal(pending.length, 1);
+  const off = await reply('settings-save');
+  assert.deepEqual([off.settings.remoteOn, off.settings.remoteLogin], [false, 'user@example.com']);
+  assert.deepEqual(switchState(nodes), ['false', 'Off']);
+  // The field saves when it loses focus later.
+  blur(nodes, 'settings-remote-login');
+  await tick();
+  const login = await reply('settings-save');
+  assert.deepEqual([login.settings.remoteOn, login.settings.remoteLogin], [false, 'new@example.com']);
+});
+
+test('a save of one remote field keeps the error of the other field', async () => {
+  const { nodes, view, toasts, reply, fail, type } = await setup();
+  const rejection = 'remote host must be a DNS name such as my-mac.example.ts.net, with an optional port';
+  type('settings-remote-host', 'localhost');
+  blur(nodes, 'settings-remote-host');
+  type('settings-remote-login', 'user@example.com');
+  blur(nodes, 'settings-remote-login');
+  await tick();
+  await fail('settings-save', rejection);
+  await reply('settings-save');
+  // The login saved. The rejected host keeps its text and its error.
+  assert.equal(nodes['settings-remote-host-error'].textContent, rejection);
+  assert.ok(!nodes['settings-remote-host-error'].hidden);
+  assert.ok(nodes['settings-remote-login-error'].hidden);
+  assert.equal(nodes['settings-remote-login'].value, 'user@example.com');
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Tailscale host name');
+  // Done discards the host text, and the toast repeats its error.
+  view.close();
+  assert.deepEqual(toasts, [['Remote access did not save.', rejection]]);
+  assert.equal(nodes['settings-remote-host'].value, '');
+  assert.ok(nodes['settings-remote-host-error'].hidden);
 });
 
 test('each tool has a switch, a built-in tool has no Remove or move, and turning off the default tool selects Shell', async () => {

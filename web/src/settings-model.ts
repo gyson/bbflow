@@ -116,6 +116,13 @@ export function toolRemoval(id: string, warned: boolean): { change: SettingsChan
 
 // The two values of remote access. Each has its own field in Settings.
 export type RemoteKey = 'remoteHost' | 'remoteLogin';
+export type RemoteValues = Pick<Settings, RemoteKey>;
+
+// remoteValue gives the value that the server saves for the text of a field. The server
+// saves the host name in lower case, and it removes the spaces around each value.
+export function remoteValue(key: RemoteKey, text: string): string {
+  return key === 'remoteHost' ? text.trim().toLowerCase() : text.trim();
+}
 
 // RemoteChanged is the failure of a click that turns remote access on after another
 // client changed the host name or the login. The message names the saved values. A
@@ -233,20 +240,17 @@ export class SettingsSaves {
   }
 
   // The switch of remote access saves alone. It keeps the saved host name and login.
-  // Turning it on admits the remote requests for them. Thus it needs the values that this
-  // view read or saved last, when the save starts. A save of a field before it in the
-  // queue then counts. When another client changed the values since then, the save fails
-  // with RemoteChanged. Turning the switch off needs no check.
-  saveRemoteSwitch(remoteOn: boolean): Promise<void> {
-    return this.enqueue(() => {
-      const known = this.saved;
-      return this.save(settings => {
-        if (remoteOn && !settings.remoteOn && (settings.remoteHost !== known?.remoteHost || settings.remoteLogin !== known?.remoteLogin)) {
-          throw new RemoteChanged(settings);
-        }
-        return { ...settings, remoteOn };
-      });
-    });
+  // Turning it on admits the remote requests for them. Thus it needs the values that the
+  // view showed at the click, shown. When the saved values differ, also after a change
+  // in another view, the save fails with RemoteChanged. Turning the switch off needs no
+  // check.
+  saveRemoteSwitch(remoteOn: boolean, shown: RemoteValues): Promise<void> {
+    return this.enqueue(() => this.save(settings => {
+      if (remoteOn && !settings.remoteOn && (settings.remoteHost !== shown.remoteHost || settings.remoteLogin !== shown.remoteLogin)) {
+        throw new RemoteChanged(settings);
+      }
+      return { ...settings, remoteOn };
+    }));
   }
 
   // update takes the settings that a request outside the queue saved, such as a title

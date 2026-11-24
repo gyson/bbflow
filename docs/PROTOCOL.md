@@ -735,7 +735,8 @@ current revision.
 - remoteHost is a DNS name with at least two labels and an optional port, and the
   server saves it in lower case. remoteLogin has at most 254 printable ASCII characters,
   without spaces. A save with another value fails. A save that changes remoteOn or
-  either value closes the open connections of remote requests, after its reply.
+  either value closes the open connections of remote requests before its reply. Only
+  the connection of the save stays open for its reply. See [Remote host](#remote-host).
 - Saving requires the current revision. Removing a default tool requires selecting
   another default in the same save.
 - These operations do not install or authenticate tools.

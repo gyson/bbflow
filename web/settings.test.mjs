@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fallbackTool, toolSwitch, defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, FieldEdit, portStatus, portText, RemoteChanged, remoteStatus, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
+import { fallbackTool, toolSwitch, defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, FieldEdit, portStatus, portText, RemoteChanged, remoteStatus, remoteValue, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', path: '', builtin: false, enabled: true };
 const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', path: '', builtin: false, enabled: true };
@@ -267,6 +267,9 @@ test('a remote access change needs a save, and its status needs the switch and b
   assert.match(remoteStatus(true, host, ''), /^The switch is on, but remote access needs both/);
   assert.match(remoteStatus(true, '', login), /^The switch is on, but remote access needs both/);
   assert.equal(remoteStatus(true, host, login), 'Remote access is on for my-mac.example.ts.net and the Tailscale user user@example.com.');
+  // A field shows the value that the server saves for its text.
+  assert.equal(remoteValue('remoteHost', ' My-Mac.Example.ts.net '), host);
+  assert.equal(remoteValue('remoteLogin', ' User@Example.com '), 'User@Example.com');
 });
 
 // remoteServer keeps one copy of the settings and rejects a save with an earlier revision.
@@ -282,7 +285,7 @@ function remoteServer(stored) {
   };
 }
 
-test('the remote switch keeps the values, and turns on only for the values that the view knows', async () => {
+test('the remote switch keeps the values, and turns on only for the values that the view showed', async () => {
   const host = 'my-mac.example.ts.net', other = 'other.example.ts.net', login = 'user@example.com';
   const server = remoteServer({ ...settings, revision: 1, remoteOn: false, remoteHost: host, remoteLogin: login });
   const first = new SettingsSaves(server, () => {}, () => {});
@@ -290,33 +293,42 @@ test('the remote switch keeps the values, and turns on only for the values that 
   first.saved = second.saved = server.stored;
   const state = () => [server.stored.revision, server.stored.remoteOn, server.stored.remoteHost, server.stored.remoteLogin];
   // The switch turns on and off. The values stay.
-  await first.saveRemoteSwitch(true);
+  await first.saveRemoteSwitch(true, { remoteHost: host, remoteLogin: login });
   assert.deepEqual(state(), [2, true, host, login]);
-  await first.saveRemoteSwitch(false);
+  await first.saveRemoteSwitch(false, { remoteHost: host, remoteLogin: login });
   assert.deepEqual(state(), [3, false, host, login]);
-  // The first view saves another host. The second view still knows revision 1, and it
-  // does not turn remote access on for a host that it did not show.
+  // The first view saves another host. The second view still shows the first host, and
+  // it does not turn remote access on for a host that it did not show.
   await first.saveRemoteValue('remoteHost', other);
-  const failure = await second.saveRemoteSwitch(true).then(() => null, error => error);
+  const failure = await second.saveRemoteSwitch(true, { remoteHost: host, remoteLogin: login }).then(() => null, error => error);
   assert.ok(failure instanceof RemoteChanged);
   assert.equal(failure.message, 'Another view changed remote access. The saved host name is other.example.ts.net, and the saved login is user@example.com. Turn the switch on again to use them.');
   assert.deepEqual(state(), [4, false, other, login]);
-  // The failed save read the values of the other view. A second click turns it on.
+  // The failed save read the values of the other view. A second click from them turns it on.
   assert.equal(second.saved.remoteHost, other);
-  await second.saveRemoteSwitch(true);
+  await second.saveRemoteSwitch(true, { remoteHost: other, remoteLogin: login });
   assert.deepEqual(state(), [5, true, other, login]);
-  // A save of a field before the switch in the queue counts as known. Thus the own edit
-  // of a view is no conflict.
-  await second.saveRemoteSwitch(false);
+  // An own save of a field before the switch is no conflict, when the view showed its value.
+  await second.saveRemoteSwitch(false, { remoteHost: other, remoteLogin: login });
   const field = second.saveRemoteValue('remoteHost', host);
-  await second.saveRemoteSwitch(true);
+  await second.saveRemoteSwitch(true, { remoteHost: host, remoteLogin: login });
   await field;
   assert.deepEqual(state(), [8, true, host, login]);
-  // Turning the switch off needs no check, also when the view knows other values.
+  // A field save that took another value of the other field does not turn the switch on.
+  await second.saveRemoteSwitch(false, { remoteHost: host, remoteLogin: login });
   first.update(server.stored);
-  await second.saveRemoteValue('remoteLogin', 'other@example.com');
-  await first.saveRemoteSwitch(false);
-  assert.deepEqual(state(), [10, false, host, 'other@example.com']);
+  await first.saveRemoteValue('remoteLogin', 'other@example.com');
+  const field2 = second.saveRemoteValue('remoteHost', other);
+  const changed = await second.saveRemoteSwitch(true, { remoteHost: other, remoteLogin: login }).then(() => null, error => error);
+  await field2;
+  assert.ok(changed instanceof RemoteChanged);
+  assert.deepEqual(state(), [11, false, other, 'other@example.com']);
+  // Turning the switch off needs no check, also when the view showed other values.
+  await second.saveRemoteSwitch(true, { remoteHost: other, remoteLogin: 'other@example.com' });
+  first.update(server.stored);
+  await second.saveRemoteValue('remoteLogin', login);
+  await first.saveRemoteSwitch(false, { remoteHost: host, remoteLogin: 'stale@example.com' });
+  assert.deepEqual(state(), [14, false, other, login]);
 });
 
 test('a view with earlier values does not restore a login that another view removed', async () => {
