@@ -16,13 +16,15 @@ export function dragAxis(dx: number, dy: number): 'x' | 'y' | undefined {
 }
 
 // A view can be lower than its terminal and show a part of the rows. Return the scroll
-// position of such a view after a finger movement. top is the position now, and max is
-// the last position. A finger that moves down shows earlier rows. Return undefined when
-// the view is at its end in that direction. Then the drag scrolls the history.
-export function clipDrag(top: number, max: number, distance: number): number | undefined {
+// position of such a view after a finger movement, and the distance that the view did
+// not use. top is the position now, and max is the last position. A finger that moves
+// down shows earlier rows. At the end of the view in that direction, the position stays
+// and the drag scrolls the history with the distance that is left.
+export function clipDrag(top: number, max: number, distance: number): { top: number; distance: number } {
   const next = Math.max(0, Math.min(max, top - distance));
   // The browser can round the position that the page reads.
-  return Math.abs(next - top) < 1 ? undefined : next;
+  if (Math.abs(next - top) < 1) return { top, distance };
+  return { top: next, distance: distance - (top - next) };
 }
 
 // A sample of a finger position: the time in milliseconds and the vertical position in
@@ -76,10 +78,13 @@ export function rowSteps(rest: number, distance: number, cell: number): { rows: 
 // touchScroll makes a one-finger vertical drag in container scroll the terminal in it.
 // view returns the terminal that the container shows. The container keeps its place
 // across terminals, so one call is sufficient. The style sheet stops the vertical pan of
-// the browser in the terminal. A horizontal drag does nothing here.
+// the browser in the terminal. A horizontal drag does nothing here. The returned
+// function stops a glide. Call it when typed input shows the cursor row, so that the
+// glide does not move the view again.
 //
 // A container that is lower than its terminal shows a part of the rows. A drag first
-// moves that part. At its end, the drag continues as follows.
+// moves that part. At its end, the drag continues with the distance that is left, as
+// follows.
 //
 // A drag scrolls the history rows of the view. The frames of the server draw an
 // alternate screen on the screen rows of the normal buffer, so a view always has its
@@ -87,7 +92,7 @@ export function rowSteps(rest: number, distance: number, cell: number): { rows: 
 // effect of a mouse wheel in xterm.js. xterm.js then sends one wheel report for each
 // row. Such a drag has no glide, so that the application gets reports only for the
 // rows that the finger passes.
-export function touchScroll(container: HTMLElement, view: () => Terminal | null): void {
+export function touchScroll(container: HTMLElement, view: () => Terminal | null): () => void {
   let drag: { id: number; target: Element; x: number; y: number; vertical: boolean; rest: number; samples: Sample[] } | null = null;
   let frame = 0;
 
@@ -101,11 +106,8 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
     const screen = container.querySelector('.xterm-screen');
     if (!terminal || !screen) return 0;
     const shown = clipDrag(container.scrollTop, container.scrollHeight - container.clientHeight, distance);
-    if (shown !== undefined) {
-      container.scrollTop = shown;
-      return 0;
-    }
-    const step = rowSteps(rest, distance, screen.clientHeight / terminal.rows);
+    if (shown.top !== container.scrollTop) container.scrollTop = shown.top;
+    const step = rowSteps(rest, shown.distance, screen.clientHeight / terminal.rows);
     if (!step.rows) return step.rest;
     if (scrollsHistory(terminal)) {
       terminal.scrollLines(-step.rows);
@@ -173,4 +175,5 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
   };
   container.addEventListener('touchend', end, { passive: true });
   container.addEventListener('touchcancel', end, { passive: true });
+  return stopGlide;
 }

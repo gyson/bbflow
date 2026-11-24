@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addSample, clipDrag, dragAxis, glide, releaseSpeed, rowSteps } from './dist/terminal-touch.js';
+import { addSample, clipDrag, dragAxis, glide, releaseSpeed, rowSteps, touchScroll } from './dist/terminal-touch.js';
 
 test('a drag scrolls by the whole rows that the finger passes', () => {
   // A cell of 21 pixels, as on a phone.
@@ -80,19 +80,138 @@ test('a horizontal swipe with a vertical drift is not a vertical drag', () => {
 
 test('a drag first moves the shown part of a lower view', () => {
   // The view shows the last rows: position 333 of 333.
-  assert.equal(clipDrag(333, 333, 75), 258);
-  assert.equal(clipDrag(258, 333, 400), 0);
-  assert.equal(clipDrag(100, 333, -50), 150);
-  assert.equal(clipDrag(300, 333, -50), 333);
+  assert.deepEqual(clipDrag(333, 333, 75), { top: 258, distance: 0 });
+  assert.deepEqual(clipDrag(100, 333, -50), { top: 150, distance: 0 });
+});
+
+test('a movement across the end of the shown part keeps the distance that is left', () => {
+  assert.deepEqual(clipDrag(258, 333, 400), { top: 0, distance: 142 });
+  assert.deepEqual(clipDrag(300, 333, -50), { top: 333, distance: -17 });
+  // Four pixels to the first row, then four history rows of 16 pixels and a rest.
+  const down = clipDrag(4, 333, 75);
+  assert.deepEqual(down, { top: 0, distance: 71 });
+  assert.deepEqual(rowSteps(0, down.distance, 16), { rows: 4, rest: 7 });
+  const up = clipDrag(329, 333, -75);
+  assert.deepEqual(up, { top: 333, distance: -71 });
+  assert.deepEqual(rowSteps(0, up.distance, 16), { rows: -4, rest: -7 });
 });
 
 test('a drag scrolls the history when the view is at its end in that direction', () => {
-  assert.equal(clipDrag(0, 333, 75), undefined);
-  assert.equal(clipDrag(333, 333, -75), undefined);
+  assert.deepEqual(clipDrag(0, 333, 75), { top: 0, distance: 75 });
+  assert.deepEqual(clipDrag(333, 333, -75), { top: 333, distance: -75 });
   // A view that shows all rows has no other position.
-  assert.equal(clipDrag(0, 0, 75), undefined);
-  assert.equal(clipDrag(0, -12, -75), undefined);
+  assert.deepEqual(clipDrag(0, 0, 75), { top: 0, distance: 75 });
+  assert.deepEqual(clipDrag(0, -12, -75), { top: 0, distance: -75 });
   // The page reads a rounded position.
-  assert.equal(clipDrag(333, 333.4, -75), undefined);
-  assert.equal(clipDrag(0, 333.4, 0), undefined);
+  assert.deepEqual(clipDrag(333, 333.4, -75), { top: 333, distance: -75 });
+  assert.deepEqual(clipDrag(0, 333.4, 0), { top: 0, distance: 0 });
+});
+
+// A terminal of 30 rows with cells of 16 pixels, in a view of 147 pixels. The view
+// shows a part of the rows, as with an on-screen keyboard.
+class FakeElement {
+  isConnected = true;
+  wheels = [];
+  closest(selector) { return selector === '.xterm' ? this : null; }
+  dispatchEvent(event) { this.wheels.push(event.deltaY); return true; }
+}
+
+function fixture(scrollTop, mode = 'none') {
+  const listeners = {};
+  const frames = [];
+  globalThis.Element = FakeElement;
+  globalThis.WheelEvent = class { static DOM_DELTA_LINE = 1; constructor(type, init) { Object.assign(this, init); } };
+  globalThis.requestAnimationFrame = callback => frames.push(callback);
+  globalThis.cancelAnimationFrame = id => { frames[id - 1] = null; };
+  const target = new FakeElement();
+  const container = {
+    scrollTop, scrollHeight: 480, clientHeight: 147,
+    querySelector: () => ({ clientHeight: 480 }),
+    addEventListener: (type, listener) => { listeners[type] = listener; },
+  };
+  const terminal = { rows: 30, lines: 0, modes: { mouseTrackingMode: mode }, scrollLines(count) { this.lines += count; } };
+  const stop = touchScroll(container, () => terminal);
+  let time = 0;
+  const touch = (type, x, y, wait = 16) => {
+    time += wait;
+    const point = { identifier: 1, clientX: x, clientY: y };
+    listeners[type]({ type, target, timeStamp: time, touches: type === 'touchend' ? [] : [point] });
+  };
+  // Run the frame that the glide asked for last. Return false when no frame waits.
+  const frame = elapsed => {
+    const callback = frames.at(-1);
+    if (!callback) return false;
+    frames.push(null);
+    callback(performance.now() + elapsed);
+    return true;
+  };
+  return { container, terminal, target, stop, touch, frame };
+}
+
+test('a movement across the first shown row scrolls the history with the distance that is left', () => {
+  const { container, terminal, touch } = fixture(4);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 175);
+  assert.equal(container.scrollTop, 0);
+  assert.equal(terminal.lines, -4);
+  // The rest of 7 pixels and 9 more pixels are one row.
+  touch('touchmove', 100, 184);
+  assert.equal(terminal.lines, -5);
+});
+
+test('a movement across the last shown row scrolls the history with the distance that is left', () => {
+  const { container, terminal, touch } = fixture(329);
+  touch('touchstart', 100, 200);
+  touch('touchmove', 100, 125);
+  assert.equal(container.scrollTop, 333);
+  assert.equal(terminal.lines, 4);
+});
+
+test('a movement across the end of the shown part sends the wheel reports of the distance that is left', () => {
+  const { container, terminal, target, touch } = fixture(4, 'vt200');
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 175);
+  assert.equal(container.scrollTop, 0);
+  assert.equal(terminal.lines, 0);
+  assert.deepEqual(target.wheels, [-1, -1, -1, -1]);
+});
+
+test('a horizontal swipe with a vertical drift moves nothing', () => {
+  const { container, terminal, target, touch, frame } = fixture(200);
+  touch('touchstart', 100, 100);
+  for (let step = 1; step <= 24; step++) touch('touchmove', 100 + 10 * step, 100 + 1.5 * step);
+  touch('touchend', 340, 136);
+  assert.equal(frame(16), false);
+  assert.equal(container.scrollTop, 200);
+  assert.equal(terminal.lines, 0);
+  assert.deepEqual(target.wheels, []);
+});
+
+test('a fast release glides, and the stop function ends the glide', () => {
+  const { container, touch, frame, stop } = fixture(333);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 130);
+  touch('touchmove', 100, 160);
+  touch('touchend', 100, 160);
+  assert.equal(container.scrollTop, 273);
+  assert.equal(frame(16), true);
+  const glided = container.scrollTop;
+  assert.ok(glided < 273, `position ${glided}`);
+  // Typed input shows the cursor row and stops the glide.
+  stop();
+  container.scrollTop = 333;
+  assert.equal(frame(16), false);
+  assert.equal(container.scrollTop, 333);
+});
+
+test('a touch stops a glide', () => {
+  const { container, touch, frame } = fixture(333);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 160);
+  touch('touchend', 100, 160);
+  assert.equal(frame(16), true);
+  const glided = container.scrollTop;
+  touch('touchstart', 100, 100);
+  assert.equal(frame(16), false);
+  assert.equal(container.scrollTop, glided);
 });

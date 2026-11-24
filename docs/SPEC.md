@@ -830,11 +830,13 @@ the [side terminal](#side-terminal) both use these rules:
 - The view is lower than the terminal and shows a part of its rows.
 - The view shows the last rows of the terminal. When the cursor is above them, the
   cursor row is the last shown row.
-- The shown part follows the cursor when the cursor moves.
+- The shown part follows the cursor after each frame and each cursor movement.
 - A [finger drag](#touch-scroll-in-a-terminal) moves the shown part to other rows.
-  Then the shown part stays when the cursor moves, because many terminal applications
-  move the cursor all the time. Typed input in the terminal shows the cursor row
-  again. A change of the keyboard does this too.
+  Then the shown part stays after a frame and a cursor movement, because many
+  terminal applications write output and move the cursor all the time.
+- Typed input in the terminal shows the cursor row again. A change of the keyboard
+  does this too, and a new PTY size from another view. A drag back to the position of
+  the cursor row also starts to follow the cursor again.
 - When the keyboard goes away, the view shows all rows. Then it asks for the size that
   fits, as before.
 
@@ -1164,14 +1166,16 @@ a finger drag. Thus the page handles a finger drag in the session terminal and i
   drag keeps its direction until the finger leaves the screen.
 - A horizontal drag does not scroll the terminal and sends no report, also when it
   drifts up or down.
-- After a fast release, the scroll continues and gets slower. A touch stops it.
+- After a fast release, the scroll continues and gets slower. A touch stops it. Typed
+  input in the terminal also stops it, because typed input shows the cursor row.
 - The browser does not pan the page for a vertical drag that starts in a terminal. A
   horizontal drag and a pinch keep their browser behavior.
 - A drag on the scroll bar of the terminal moves the scroll bar, as before.
 - A view can be lower than its terminal and show a part of the rows, for example with
   an [on-screen keyboard](#on-screen-keyboard). There, a drag first moves the shown
   part, to the first or the last row of the terminal. When the shown part is at that
-  end, the drag continues with the history or the reports below.
+  end, the drag continues with the history or the reports below. A movement across
+  that end uses its other distance for the history or the reports.
 - A drag scrolls the history rows of the view, as the mouse wheel does. It sends no
   input. That includes a view of an alternate screen, because the frames draw an
   alternate screen below the history rows.
@@ -4715,7 +4719,16 @@ repository, and a folder outside Git, each with a shell session.
   rest for the next movement, the release speed from the last 100 milliseconds, no
   glide for a slow or rested finger, and the end of a glide. They also check the
   direction of a drag, with a horizontal swipe of 240 pixels that drifts 36 pixels
-  down, and the shown part of a lower view at each end. Other fixtures check the
+  down, and the shown part of a lower view at each end.
+- Web fixtures run the touch handler with a simulated view of 30 rows. A movement of 75
+  pixels across the first shown row moves the view 4 pixels, scrolls 4 history rows of
+  16 pixels, and keeps 7 pixels for the next movement. A movement across the last
+  shown row does the same in the other direction. With mouse reports on, the movement
+  sends 4 wheel events. A horizontal swipe with a drift moves nothing. A glide ends
+  when the stop function of typed input runs, and when a touch starts.
+- Web fixtures check the shown part of a lower view after a frame. Without a drag, the
+  view shows the new cursor row. After a drag, the view keeps its part until typed
+  input, a size change, or a drag back to the cursor row. Other fixtures check the
   keyboard height from the visual viewport, with a low bar and a pinch zoom, and the
   shown part of a terminal that is higher than its view.
 - A simulator check of touch input and the on-screen keyboard used a demo instance in
@@ -4743,6 +4756,10 @@ repository, and a folder outside Git, each with a shell session.
   - With the keyboard and 30 full rows in the side terminal, a slow drag of 140 points
     down showed rows 6 to 22 in place of the last rows. The typed letter `x` showed the
     prompt row again.
+  - In the session of the Busy agent, which prints one line each second, the view
+    showed each new line while the keyboard showed. After a slow drag of 130 points
+    down, the view kept the earlier lines for 3 seconds of new output. In an idle
+    session, the same drag moved the view 126 pixels.
 - A browser check with a keyboard state that a script set used a demo instance and
   touch events from the script.
   - At a width of 390 pixels with 10 terminal rows in a lower view, a drag of 75 pixels

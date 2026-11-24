@@ -849,12 +849,14 @@ function hiddenSize(): Size | undefined {
   return (selected?.id ? shownSizes.get(selected.id) : undefined) ?? [...shownSizes.values()].at(-1);
 }
 
-function requestFit() {
+// resized tells that the size of the terminal view changed. Each frame also calls this
+// function.
+function requestFit(resized = false) {
   if (!terminal || !connection?.ready || !connection?.peer?.active || connection?.resizing) return;
   if (!terminalShown()) return;
   // The terminal keeps its PTY size while the on-screen keyboard shows. The lower view
-  // shows the part with the cursor row.
-  if (keyboardShown()) return showCursor($('terminal'), terminal);
+  // shows the part with the cursor row. A frame keeps the part that a drag shows.
+  if (keyboardShown()) return resized ? showCursor($('terminal'), terminal) : followCursor($('terminal'), terminal);
   const proposed = fit?.proposeDimensions();
   const dimensions = proposed && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows) ? terminalSize(proposed) : undefined;
   if (dimensions) rememberSize(dimensions);
@@ -892,6 +894,9 @@ function updateTerminalTheme(): void {
     messageNav.restyle();
   }
 }
+
+// Stop the glide of a finger drag in the session terminal.
+let stopGlide = () => {};
 
 function makeTerminal(): Terminal {
   terminal?.dispose();
@@ -933,12 +938,18 @@ function makeTerminal(): Terminal {
   }
   hint();
   onTerminalInput(terminal, input => {
-    // Typed input shows the cursor row again, after a drag showed other rows.
-    if (!input.report && keyboardShown()) showCursor($('terminal'), view);
+    // Typed input shows the cursor row again, after a drag showed other rows. xterm.js
+    // shows the last rows for typed input. A glide must not move the view after that.
+    if (!input.report) {
+      stopGlide();
+      if (keyboardShown()) showCursor($('terminal'), view);
+    }
     return !!connection?.ready && !!connection.peer?.active && connection.peer.send(input);
   });
   messageNav.attach(view);
   view.onCursorMove(() => { if (keyboardShown()) followCursor($('terminal'), view); });
+  // Another view can change the PTY size. Then the rows of this view change.
+  view.onResize(() => { if (keyboardShown()) showCursor($('terminal'), view); });
   return view;
 }
 
@@ -1505,8 +1516,8 @@ async function initialize() {
     if (stopped) showStatus();
     await loadTerminals(selected.id);
   }, failed('stop', selected));
-  new ResizeObserver(requestFit).observe($('terminal'));
-  touchScroll($('terminal'), () => terminal);
+  new ResizeObserver(() => requestFit(true)).observe($('terminal'));
+  stopGlide = touchScroll($('terminal'), () => terminal);
   followKeyboard();
   window.addEventListener('pagehide', () => connection?.close());
   try {

@@ -29,9 +29,9 @@ export function showCursor(container: HTMLElement, view: Terminal): void {
   positions.set(container, container.scrollTop);
 }
 
-// followCursor does the work of showCursor after the cursor moved. It keeps the part
-// that a drag of the user shows. Many terminal applications move the cursor all the
-// time, and the user could not read other rows.
+// followCursor does the work of showCursor after a frame or a cursor movement. It keeps
+// the part that a drag of the user shows. Many terminal applications write output and
+// move the cursor all the time, and the user could not read other rows.
 export function followCursor(container: HTMLElement, view: Terminal): void {
   const position = positions.get(container);
   if (position === undefined || Math.abs(container.scrollTop - position) < 1) showCursor(container, view);
