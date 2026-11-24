@@ -81,6 +81,9 @@ export class SettingsView {
   // The saved title tool, model, and effort that the model controls showed last. Other
   // values are an edit.
   private renderedTitle = '';
+  // titlePending is a title tool of an agent CLI that the list shows but that is not
+  // saved. Its model controls wait for Save and test, so the user can choose a model first.
+  private titlePending: string | null = null;
   private readonly testResult = element('title-test-result', HTMLElement);
   private readonly testSample = element('title-test-sample', HTMLElement);
   private readonly testOutcome = element('title-test-outcome', HTMLElement);
@@ -278,6 +281,7 @@ export class SettingsView {
     // A running title tool change continues. Its end discards the custom entry.
     if (!this.busy) {
       this.discardCustom();
+      this.titlePending = null;
       this.renderedTitle = '';
     }
     if (this.editorOpen()) this.discardEditor();
@@ -293,6 +297,7 @@ export class SettingsView {
     if (this.remoteEdited()) names.add('Remote access');
     if (this.customOpen || this.customCommand.value !== this.renderedCustom) names.add('Custom title command');
     if (this.titleModelEdited()) names.add('Title model');
+    if (this.titlePending) names.add('Title tool');
     if (this.adding && (this.toolName.value || this.toolCommand.value)) names.add('New tool');
     if (this.editing && (this.toolName.value !== this.editing.name || this.toolCommand.value !== this.editing.command ||
       this.toolModels.model !== this.editing.model || this.toolModels.effort !== this.editing.effort ||
@@ -368,7 +373,7 @@ export class SettingsView {
     }
     this.remoteStatus.textContent = remoteStatus(saved.remoteHost, saved.remoteLogin);
     this.remoteHost.disabled = this.remoteLogin.disabled = this.remoteSave.disabled = this.remoteBusy;
-    this.titleTool.value = this.settingTool ?? (this.customOpen ? 'custom' : saved.titleTool ?? 'none');
+    this.titleTool.value = this.settingTool ?? (this.customOpen ? 'custom' : this.titlePending ?? saved.titleTool ?? 'none');
     // Keep any text entered in the custom command field since the last render.
     if (this.customCommand.value === this.renderedCustom) {
       this.renderedCustom = saved.titleCommand ?? '';
@@ -376,7 +381,7 @@ export class SettingsView {
     }
     // Keep a model choice that is not saved. Otherwise show the saved model of the tool.
     const title = `${saved.titleTool}\n${saved.titleModel}\n${saved.titleEffort}`;
-    if (!this.busy && title !== this.renderedTitle && !this.titleModelEdited()) {
+    if (!this.busy && !this.titlePending && title !== this.renderedTitle && !this.titleModelEdited()) {
       this.renderedTitle = title;
       this.titleModels.set(this.titleType(saved.titleTool), saved.titleModel ?? '', saved.titleEffort ?? '');
     }
@@ -705,16 +710,16 @@ export class SettingsView {
     const edited = this.customCommand.value !== this.renderedCustom;
     const modelEdited = this.titleModelEdited();
     const controls = titleControls(this.titleTools, this.titleTool.value, this.saved?.titleTool ?? 'none', this.busy, edited);
-    // The model controls show only for the saved tool. A change of the tool saves at once.
+    // The model controls show for the saved tool and for a pending tool of an agent CLI.
     const shown = this.titleTools.find(tool => tool.id === this.titleTool.value);
-    const modelsShown = !!shown?.type && shown.id === this.saved?.titleTool && !this.settingTool;
+    const modelsShown = !!shown?.type && (shown.id === this.saved?.titleTool || shown.id === this.titlePending);
     this.titleModels.disabled = this.busy;
     // Hidden controls forget their values. The next render shows the saved model again.
     if (!modelsShown && this.renderedTitle) {
       this.titleModels.set('', '', '');
       this.renderedTitle = '';
     }
-    this.titleModelSave.hidden = !modelEdited;
+    this.titleModelSave.hidden = !modelEdited && !(this.titlePending && this.titleTool.value === this.titlePending);
     this.titleModelSave.disabled = this.busy;
     this.titleCommand.textContent = shown?.type && modelsShown
       ? launchCommand(shown.type, shown.prefix ?? '', this.titleModels.model, this.titleModels.effort) + (shown.suffix ?? '')
@@ -722,9 +727,10 @@ export class SettingsView {
     this.titleBuiltin.hidden = !controls.command;
     this.customForm.hidden = this.customSave.hidden = !controls.custom;
     this.customCommand.disabled = this.customSave.disabled = !controls.select;
-    // Test runs the saved model, so it waits while the model has an edit.
+    // Test runs the saved model, so it waits while the model has an edit. A pending tool
+    // has nothing saved to test.
     this.titleTest.disabled = !controls.test || modelEdited;
-    this.titleTest.hidden = !controls.testShown;
+    this.titleTest.hidden = !controls.testShown || !!this.titlePending;
     this.titleTool.disabled = !controls.select;
     this.titleSpinner.hidden = !this.busy;
   }
@@ -770,11 +776,27 @@ export class SettingsView {
     if (tool !== 'custom') {
       this.customOpen = false;
       this.customCommand.value = this.renderedCustom;
-      // A newly selected tool starts with its default model and effort.
+      // A newly selected tool of an agent CLI shows its default model and effort, and
+      // waits for Save and test. The saved tool, None, and Apple save at once.
       const defaults = this.titleTools.find(candidate => candidate.id === tool);
+      if (defaults?.type && tool !== this.saved?.titleTool) {
+        this.titlePending = tool;
+        this.renderedTitle = '';
+        this.titleModels.set(defaults.type, defaults.model ?? '', defaults.effort ?? '');
+        this.testResult.hidden = true;
+        this.render();
+        return;
+      }
+      this.titlePending = null;
+      if (tool === this.saved?.titleTool) {
+        this.render();
+        return;
+      }
       void this.setTitleTool(tool, '', defaults?.model ?? '', defaults?.effort ?? '');
       return;
     }
+    this.titlePending = null;
+    this.renderedTitle = '';
     if (this.saved?.titleCommand) {
       void this.setTitleTool('custom', this.saved.titleCommand);
       return;
@@ -818,6 +840,7 @@ export class SettingsView {
     try {
       const result = await this.send(server, { operation: 'title-tool-set', settings: { titleTool: tool, titleCommand: command, titleModel: model, titleEffort: effort } });
       this.renderedTitle = '';
+      this.titlePending = null;
       if (tool === 'custom') this.customCommand.value = this.renderedCustom = result.settings.titleCommand;
       this.customOpen = false;
       this.saves.update(result.settings);
@@ -839,8 +862,10 @@ export class SettingsView {
     } finally {
       this.busy = false;
       this.settingTool = null;
-      // The result stays below the tool that the list shows after the change.
-      this.testedTool = this.customOpen ? 'custom' : this.saved?.titleTool ?? 'none';
+      // The result stays below the tool that the list shows after the change. A pending
+      // tool that failed its test stays selected with its model.
+      if (visit !== this.visits) this.titlePending = null;
+      this.testedTool = this.customOpen ? 'custom' : this.titlePending ?? this.saved?.titleTool ?? 'none';
       this.render();
       this.focusTitle(this.customOpen ? this.customCommand : this.titleTool);
     }

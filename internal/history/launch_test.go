@@ -368,3 +368,30 @@ func TestShellTurnsOffAndIsNoDefault(t *testing.T) {
 		t.Fatal("Shell is not the fallback", id, ok)
 	}
 }
+
+func TestTitleSaveNeedsTheTestedCLIPath(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings, _ := store.Settings()
+	for i := range settings.Tools {
+		if settings.Tools[i].Type == "claude" {
+			settings.Tools[i].Path = "/opt/a/claude"
+		}
+	}
+	if settings, err = store.SaveSettings(settings); err != nil || settings.BuiltinPath("claude") != "/opt/a/claude" {
+		t.Fatal(settings.BuiltinPath("claude"), err)
+	}
+	if _, err = store.SetTitleTool(TitleChoice{Tool: "claude", Model: "haiku"}, settings.Choice()); !errors.Is(err, ErrTitleChanged) {
+		t.Fatal("saved a title tool that was tested with another CLI path", err)
+	}
+	if _, err = store.SetTitleTool(TitleChoice{Tool: "claude", Model: "haiku", Path: "/opt/a/claude"}, settings.Choice()); err != nil {
+		t.Fatal(err)
+	}
+	// A title tool without an agent type has no CLI path.
+	if _, err = store.SetTitleTool(TitleChoice{Tool: "apple"}, TitleChoice{Tool: "claude", Model: "haiku"}); err != nil {
+		t.Fatal(err)
+	}
+}

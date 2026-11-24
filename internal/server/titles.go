@@ -217,10 +217,17 @@ func (s *Server) setTitleTool(ctx context.Context, choice history.TitleChoice) (
 			return result, err
 		}
 	}
+	// The save names the CLI path that the test ran, so a path change during the test
+	// stops it.
+	choice.Path = before.BuiltinPath(history.TitleType(id))
 	result.Settings, err = s.store.SetTitleTool(choice, before.Choice())
 	if errors.Is(err, history.ErrTitleChanged) {
+		latest, readErr := s.store.Settings()
+		if readErr == nil && latest.Choice() == before.Choice() {
+			return result, fmt.Errorf("%s did not save, because the CLI path of its tool changed during the test; test it again", name)
+		}
 		current := "another tool"
-		if latest, readErr := s.store.Settings(); readErr == nil {
+		if readErr == nil {
 			current = titleToolName(latest.TitleTool)
 		}
 		return result, fmt.Errorf("%s did not save, because another change selected %s during the test", name, current)

@@ -813,3 +813,40 @@ func TestTitleToolChangeSavesTheModel(t *testing.T) {
 		t.Fatalf("a stale change saved: %v", err)
 	}
 }
+
+func TestTitleSaveStopsWhenTheCLIPathChangesDuringTheTest(t *testing.T) {
+	slow, dir := writeTitleScript(t, "sleep 1; echo 'bbflow-title: Fix login redirect'")
+	s, _ := titleServer(t, slow)
+	pickTitleTool(t, s.store, "none", "")
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.setTitleTool(context.Background(), history.TitleChoice{Tool: "claude"})
+		done <- err
+	}()
+	// Wait until the test runs, then save another CLI path for Claude Code.
+	for range 100 {
+		if _, err := os.Stat(filepath.Join(dir, "input")); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	settings, _ := s.store.Settings()
+	for i := range settings.Tools {
+		if settings.Tools[i].Type == "claude" {
+			settings.Tools[i].Path = "/opt/other/claude"
+		}
+	}
+	if _, err := s.store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err == nil || !strings.Contains(err.Error(), "the CLI path of its tool changed during the test") {
+		t.Fatal("a title tool saved after a test of another CLI path:", err)
+	}
+	if saved, _ := s.store.Settings(); saved.TitleTool != "none" {
+		t.Fatal("the title tool changed", saved.TitleTool)
+	}
+	// A test of the current path saves.
+	if _, err := s.setTitleTool(context.Background(), history.TitleChoice{Tool: "claude"}); err != nil {
+		t.Fatal(err)
+	}
+}

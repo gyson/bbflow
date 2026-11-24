@@ -1295,6 +1295,7 @@ comes first, then **Custom tools**, the tools that the user added:
   without its CLI gets a **NOT FOUND** mark. See [Tool program](#tool-program).
 - A narrow window scrolls each table sideways. Without a custom tool, the second table
   tells how to add one.
+- The settings hold at most 100 custom tools. The built-in tools do not count.
 
 **＋ Add custom tool** below the custom tools and **Edit** in a row open the tool editor as a
 dialog, so a long tool list needs no scroll to reach it:
@@ -1440,7 +1441,9 @@ The other three run in the shell of the server without them. So a plain name can
 a session and fail in the check. A CLI path serves all four.
 
 A CLI path has at most 500 characters: letters, digits, and `_ . / ~ + @ -`, without
-spaces. So the shell does not interpret it, except a `~` at its start. Only a built-in
+spaces. So the shell does not interpret it, except a `~` at its start. A path with a
+folder starts with `/` or `~/`. Sessions, the model lists, the check, and the title
+tools run in different folders, so a relative path would name different files. Only a built-in
 tool has a CLI path. After a save with another path, the page reads the model lists,
 the check, and the title commands again.
 
@@ -1500,14 +1503,13 @@ effort is part of the model ID. Code Puppy has no effort.
 
 - The list commands run the [program](#tool-program) of the built-in tool of the type.
   Without a CLI path, the list needs the CLI on the PATH of the server.
-- The **Default model** menu of a tool of the user shows the list of the built-in tool
-  of its type, also when its own command starts another program.
+- A browser waits 35 seconds for a model list, a little longer than the 30-second limit
+  of a list command on the server.
 - A built-in tool has no other options. A command with other options or a wrapper is a
   Custom tool, which has no model choice. Its command holds its model option.
 - `codex debug models` is a debugging command of Codex 0.171.0. Other Codex versions
   can change its output.
 - The built-in list of Claude Code is fixed in the bbflow release.
-- A type change does not change the command. Change both when a tool starts another CLI.
 - The session records its startup command, with the options, in its start event. The
   toolbar shows only the tool name. A model change inside the agent, such as `/model`, is
   not recorded.
@@ -1871,7 +1873,9 @@ earlier revision fails.
 
 #### Title controls in Settings
 
-- In Settings, a selection in the tool list starts the change.
+- In Settings, a selection of None, Apple, or Custom with a saved command in the tool
+  list starts the change. A selection of Claude, Codex, or Code Puppy waits for **Save
+  and test**. See [Title models](#title-models).
 - A spinner shows after **Test** until the change ends. It also shows during a test
   that **Test** starts. The spinner does not turn when the system asks for reduced
   motion.
@@ -1920,14 +1924,20 @@ Claude, Codex, and Code Puppy have **Model** and **Thinking effort** below the t
 tool list. They use the menus and model lists of
 [Tool types and models](#tool-types-and-models). Apple and Custom have no model choice.
 
-- A selection of a title tool starts with its default model and effort. The defaults
+- A selection of one of these title tools shows its default model and effort, and
+  **Save and test**. It saves nothing yet, and the status shows **Not saved: Title
+  tool**. Thus the user can choose another model before the first test. The defaults
   are Haiku for Claude, Luna with low effort for Codex, and `codex-gpt-6-luna` for Code
   Puppy.
+- A failed test of a selection keeps the selection, its model, and the error, so the
+  user can choose another model and test again. The saved title tool stays.
 - A change of the model or the effort does not save at once. **Save and test** shows,
   and the status shows **Not saved: Title model**. **Test** waits, because it runs the
   saved model.
 - **Save and test** runs the title command with the new model. The model saves only
-  after a passed test, and only while no other title change saved meanwhile.
+  after a passed test, and only while no other title change saved meanwhile. The save
+  also needs the [CLI path](#tool-program) of the built-in tool that the test ran, so a
+  change of that path during the test saves nothing.
 - The command under the list shows the command with the chosen model.
 - An empty model or effort adds no option, so the CLI uses its own default. For Codex,
   the title command ignores `config.toml`, so the CLI default is the default of Codex.
@@ -3542,15 +3552,17 @@ WAL is enabled after the schema transaction commits.
     `agy`, and `code-puppy` keep that name, and other commands are `custom`. The model
     and the effort start empty, so each launch submits the same command as before.
   - A saved tool becomes the built-in tool of its type when its command is the command
-    of the built-in tool, with the CLI name or a path of the CLI as the first word. The
-    path becomes its CLI path, and the tool keeps its ID and name. Only the first such
-    tool of a type does. Other saved tools stay tools of the user, with the type
-    `custom` and an empty `path`.
-    Every saved tool stays on, and each launch submits the same words as before.
-  - A type without such a tool gets a new built-in tool that is off. A new name that
-    another tool has gets the suffix ` (built-in)`. The built-in tools then come first
-    in the list: the saved ones in their order, then the new ones. The other saved tools
-    follow in their order.
+    of the built-in tool, with the CLI name or a [CLI path](#tool-program) as the first
+    word. A path of more than 500 bytes or a relative path is no CLI path. The path
+    becomes its CLI path, and the tool keeps its ID and name. Only the first such tool
+    of a type does. Other saved tools stay tools of the user, with the type `custom`
+    and an empty `path`. Every saved tool stays on, and each launch submits the same
+    words as before.
+  - A type without such a tool gets a new built-in tool that is off. Its ID is
+    `builtin-` and the type, or a random ID when a saved tool has that ID. A new name
+    that another tool has gets the suffix ` (built-in)`, and a random suffix when that
+    name is taken too. The built-in tools then come first in the list: the saved ones
+    in their order, then the new ones. The other saved tools follow in their order.
   - The migration sets `checkTools`, so the next start runs the tool check.
   - The settings gain `titleModel` and `titleEffort` with the model and the effort of
     the earlier command of the saved title tool.
@@ -3901,9 +3913,19 @@ These shell fixtures do not establish model availability or agent CLI compatibil
 Title model fixtures verify that the default models give the commands of earlier
 releases and that a chosen model goes between the fixed start and end of a title
 command. They verify that Apple and Custom reject a model, that a settings save keeps
-the title model, and that a stale title change saves nothing. CLI fixtures cover
-`title-tool set --model` and its errors. Web fixtures verify that a selection sends the
-default model, and that a model change waits for **Save and test**.
+the title model, and that a stale title change saves nothing. A server fixture changes
+the CLI path of Claude Code during a title test and verifies that the title tool does
+not save. CLI fixtures cover `title-tool set --model` and its errors. Web fixtures
+verify that a selection of an agent title tool waits for **Save and test** with its
+default model, that a failed test keeps the selection and the model, and that a model
+change waits for **Save and test**.
+
+Upgrade fixtures verify that 100 custom tools still save after the upgrade adds the
+built-in tools, and that a 101st fails. They give new built-in tools free IDs and names
+when a saved tool has `builtin-codex` or `Codex (built-in)`. They leave a relative or
+an overlong program a custom tool. Web fixtures verify that a refresh in one model
+picker reaches the other pickers of the type, and that the browser waits 35 seconds
+for a model list.
 
 Tool menu fixtures verify the order of the menus: the built-in tools and Shell by name,
 then the custom tools in their saved order, with a line between the groups.

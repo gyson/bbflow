@@ -48,9 +48,19 @@ var programPattern = regexp.MustCompile(`^[A-Za-z0-9_./~+@-]+$`)
 // ValidPath checks the optional CLI path of a built-in tool: a program name or a path
 // that the shell does not interpret, except a ~ at its start. An empty path selects the
 // plain CLI name.
+//
+// A path with a folder must start with / or ~/. Sessions, the model lists, the CLI check,
+// and the title tools run in different folders, so a relative path would name different
+// files for them.
 func ValidPath(path string) error {
-	if path != "" && (len(path) > 500 || !programPattern.MatchString(path)) {
+	if path == "" {
+		return nil
+	}
+	if len(path) > 500 || !programPattern.MatchString(path) {
 		return errors.New("a CLI path has at most 500 letters, digits, and the characters _ . / ~ + @ -, without spaces")
+	}
+	if strings.Contains(path, "/") && !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "~/") {
+		return errors.New("a CLI path with a folder must start with / or ~/, because tools run in different folders")
 	}
 	return nil
 }

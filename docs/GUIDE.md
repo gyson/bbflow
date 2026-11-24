@@ -73,7 +73,7 @@ that folder.
 
 ## Start a session
 
-<img src="images/draft.png" alt="The Prepare a session form of a draft, with the session name, the tool, Use worktree, the starting branch, and the Start session button. The message editor is below the form.">
+<img src="images/draft.png" alt="The Prepare a session form of a draft. The session name is first. Below it, the tool Claude Code, its model, and its thinking effort share a row, with the command that bbflow submits. Use worktree, the starting branch, and the Start session button follow. The message editor is below the form.">
 
 1. Click **＋** beside a project to create a draft.
 2. Select a tool. The draft selects the default model and effort of the tool.

@@ -2,6 +2,7 @@ package models
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -131,6 +132,7 @@ func TestValidPath(t *testing.T) {
 	for path, ok := range map[string]bool{
 		"": true, "codex": true, "/opt/homebrew/bin/codex": true, "~/.local/bin/agy": true,
 		"/a b/codex": false, "$HOME/bin/codex": false, "`which codex`": false, "codex; id": false, "'codex'": false,
+		"./bin/codex": false, "bin/codex": false, "../codex": false, strings.Repeat("a", 501): false,
 	} {
 		if err := ValidPath(path); (err == nil) != ok {
 			t.Errorf("ValidPath(%q) = %v, want ok %v", path, err, ok)

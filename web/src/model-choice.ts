@@ -130,15 +130,12 @@ const lists = new Map<string, Promise<ToolModels>>();
 // tool changes the program that prints its list.
 export function forgetModelLists(): void {
   lists.clear();
-  forgotten++;
 }
 
-// The number of times that the page dropped its lists. A picker reads its list again
-// when this number changed since its last read.
-let forgotten = 0;
+const listKey = (server: ServerInfo, type: string) => `${server.instance} ${type}`;
 
 function loadList(server: ServerInfo, type: string, refresh: boolean, send: typeof call): Promise<ToolModels> {
-  const key = `${server.instance} ${type}`;
+  const key = listKey(server, type);
   let list = lists.get(key);
   if (!list || refresh) {
     list = send(server, { operation: 'tool-models', toolType: type, refresh });
@@ -169,8 +166,9 @@ export class ModelPicker {
   private loading = false;
   private token = 0;
   private locked = false;
-  // The value of forgotten at the last read of the list.
-  private read = 0;
+  // The shared list that the picker read last. A refresh in another picker replaces the
+  // shared list, and the next set reads the new one.
+  private from: Promise<ToolModels> | undefined;
 
   constructor(prefix: string, private readonly host: { server(): ServerInfo | null; changed(): void; send?: typeof call; quiet?: boolean }) {
     this.fields = element(`${prefix}-models`, HTMLElement);
@@ -207,7 +205,9 @@ export class ModelPicker {
     const sameType = type === this.type;
     this.type = type; this.chosen = model; this.chosenEffort = effort; this.other = false;
     this.otherInput.value = '';
-    if (!sameType || this.read !== forgotten) { this.list = null; this.error = ''; }
+    const server = this.host.server();
+    const shared = server && typed(type) ? lists.get(listKey(server, type)) : undefined;
+    if (!sameType || !shared || shared !== this.from) { this.list = null; this.error = ''; }
     this.render();
     if (!this.list) void this.load(false);
   }
@@ -221,11 +221,12 @@ export class ModelPicker {
     const server = this.host.server(), type = this.type;
     if (!server || !typed(type)) return;
     const token = ++this.token;
-    this.read = forgotten;
     this.loading = true; this.error = '';
     this.render();
     try {
-      const list = await loadList(server, type, refresh, this.host.send ?? call);
+      const from = loadList(server, type, refresh, this.host.send ?? call);
+      this.from = from;
+      const list = await from;
       if (token !== this.token) return;
       this.list = list;
     } catch (error) {

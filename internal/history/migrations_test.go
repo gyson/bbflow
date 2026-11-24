@@ -207,7 +207,8 @@ func upgradedTools(tools []any) []any {
 		word, rest, _ := strings.Cut(command, " ")
 		rest = strings.TrimSpace(rest)
 		tool["type"], tool["model"], tool["effort"], tool["path"] = kind, "", "", ""
-		builtin := kind != "custom" && rest == args[kind] && !types[kind]
+		usable := word == kind || (len(word) <= 500 && (strings.HasPrefix(word, "/") || strings.HasPrefix(word, "~/")))
+		builtin := kind != "custom" && rest == args[kind] && usable && !types[kind]
 		tool["builtin"], tool["enabled"] = builtin, true
 		names[tool["name"].(string)] = true
 		if builtin {
@@ -605,4 +606,85 @@ func TestCurrentFormatRequiresRunIndexesWithoutChangingData(t *testing.T) {
 		t.Fatal("accepted current format without the required index")
 	}
 	assertSnapshot(t, rawDatabase(t, path), before, true)
+}
+
+// upgradeTools upgrades a format 16 archive with the tools and returns the store.
+func upgradeTools(t *testing.T, tools []map[string]string) *Store {
+	t.Helper()
+	path, db := oldDatabase(t, 16)
+	data, err := json.Marshal(map[string]any{"appearance": "system", "titleTool": "none", "titleCommand": "", "updateCheck": true, "port": 0,
+		"remoteHost": "", "remoteLogin": "", "defaultTool": "", "worktree": false, "base": "HEAD", "tools": tools})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec("UPDATE settings SET data=? WHERE id=1", string(data)); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return store
+}
+
+func TestUpgradeKeepsAFullToolListSavable(t *testing.T) {
+	var tools []map[string]string
+	for i := range 100 {
+		tools = append(tools, map[string]string{"id": fmt.Sprintf("tool-%d", i), "name": fmt.Sprintf("Tool %d", i), "command": "./run.sh"})
+	}
+	store := upgradeTools(t, tools)
+	settings, err := store.Settings()
+	if err != nil || len(settings.Tools) != 104 {
+		t.Fatal(len(settings.Tools), err)
+	}
+	// The four new built-in tools do not count against the limit of custom tools.
+	settings.Appearance = "dark"
+	if _, err = store.SaveSettings(settings); err != nil {
+		t.Fatal("a full tool list no longer saves after the upgrade:", err)
+	}
+	settings, _ = store.Settings()
+	settings.Tools = append(settings.Tools, Tool{ID: "one-more", Name: "One more", Command: "./run.sh"})
+	if _, err = store.SaveSettings(settings); err == nil || !strings.Contains(err.Error(), "at most 100 custom tools") {
+		t.Fatal("accepted a 101st custom tool", err)
+	}
+}
+
+func TestUpgradeGivesNewBuiltinToolsFreeIDsAndNames(t *testing.T) {
+	long := "/" + strings.Repeat("a", 540) + "/claude"
+	store := upgradeTools(t, []map[string]string{
+		{"id": "builtin-codex", "name": "Codex", "command": "codex --search"},
+		{"id": "taken", "name": "Codex (built-in)", "command": "./other.sh"},
+		{"id": "relative", "name": "Relative", "command": "./bin/claude"},
+		{"id": "long", "name": "Long", "command": long},
+	})
+	settings, err := store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, names := map[string]bool{}, map[string]bool{}
+	for _, tool := range settings.Tools {
+		if ids[tool.ID] || names[tool.Name] {
+			t.Fatalf("two tools share %q or %q: %+v", tool.ID, tool.Name, settings.Tools)
+		}
+		ids[tool.ID], names[tool.Name] = true, true
+		// A relative path or a path over 500 bytes is no CLI path. Such a tool stays a
+		// custom tool, and its command stays.
+		if (tool.ID == "relative" || tool.ID == "long") && (tool.Builtin || tool.Type != "custom") {
+			t.Fatalf("adopted %q as a built-in tool: %+v", tool.ID, tool)
+		}
+		if tool.ID == "long" && tool.Command != long {
+			t.Fatal("changed the command of a custom tool")
+		}
+	}
+	codex := settings.Tools[0]
+	if !codex.Builtin || codex.Type != "codex" || codex.ID == "builtin-codex" || !strings.HasPrefix(codex.Name, "Codex (built-in ") {
+		t.Fatalf("the new Codex tool did not get a free ID and name: %+v", codex)
+	}
+	// The upgraded settings save again.
+	settings.Appearance = "dark"
+	if _, err = store.SaveSettings(settings); err != nil {
+		t.Fatal("the upgraded settings do not save:", err)
+	}
 }

@@ -280,9 +280,15 @@ export class ConnectionError extends Error {
 // A title test runs an agent CLI. The server stops it after 90 seconds, so the browser
 // waits a little longer for the reply. See titleTimeout in internal/server/titles.go.
 export const titleTestLimit = 100000;
+// A model list runs a list command of an agent CLI. The server stops it after 30 seconds,
+// so the browser waits a little longer. See modelListTimeout in internal/server/models.go.
+export const modelListLimit = 35000;
 // The time that the browser waits for the reply of a request.
-const responseLimit = (request: Request) =>
-  request.operation === 'title-test' || request.operation === 'title-tool-set' ? titleTestLimit : 12000;
+export const responseLimit = (request: Request) => {
+  if (request.operation === 'title-test' || request.operation === 'title-tool-set') return titleTestLimit;
+  if (request.operation === 'tool-models') return modelListLimit;
+  return 12000;
+};
 
 export class Peer {
   readonly socket: Socket;

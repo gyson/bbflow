@@ -704,6 +704,7 @@ current revision.
   command, type, model, effort, builtin, enabled, and path.
 - path is the optional [CLI path](SPEC.md#tool-program) of a built-in tool. A save with
   a path for another tool fails.
+- A save holds at most 100 custom tools. The built-in tools do not count.
 - builtin marks the [built-in tool](SPEC.md#built-in-tools) of an agent type. The server
   owns it. A save cannot remove a built-in tool or change its type. A save without one
   keeps it. The saved list has the built-in tools first, then the other tools. enabled

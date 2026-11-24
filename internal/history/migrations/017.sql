@@ -17,15 +17,17 @@ UPDATE settings SET data = json_set(data, '$.tools', (
 -- Each agent type has one built-in tool. bbflow owns its name, type, and command. The user
 -- sets only its CLI path, its default model and effort, and whether it is on. A saved
 -- tool becomes the built-in tool of its type when its command is the command of the
--- built-in tool, with the CLI name or a path of the CLI as the first word. Then the path
--- becomes its CLI path, and it keeps its ID and name. Only the first such tool of a type
+-- built-in tool, with the CLI name or a CLI path as the first word. A CLI path has at
+-- most 500 bytes and starts with / or ~/, because a relative path names other files in
+-- other folders. Then the path becomes its CLI path, and it keeps its ID and name. Only the first such tool of a type
 -- does. Other saved tools stay tools of the user, which are custom. Every saved tool
 -- stays on, and its launches submit the same words as before.
 --
 -- A type without such a tool gets a new built-in tool that is off. The server turns it on
--- at its next start when its CLI is on PATH and no tool of the user of its type is on. A
--- new name that another tool has gets the suffix " (built-in)", because the CLI selects a
--- tool by its name. The built-in tools come first in the list: the saved ones in their
+-- at its next start when its CLI is on PATH. Its ID is builtin- and the type, or a random
+-- ID when a saved tool has that ID. Its name gets the suffix " (built-in)" when another
+-- tool has the name, and a random suffix when that name is taken too, because the CLI
+-- selects a tool by its name. The built-in tools come first in the list: the saved ones in their
 -- order, then the new ones. The other saved tools follow in their order. Shell, the
 -- built-in tool without a command, stays on.
 WITH presets(position, type, name, args) AS (
@@ -43,6 +45,7 @@ WITH presets(position, type, name, args) AS (
   FROM words
 ), matches AS (
   SELECT parts.*, presets.args FROM parts JOIN presets ON presets.type = parts.type AND presets.args = parts.rest
+  WHERE parts.word = parts.type OR (length(parts.word) <= 500 AND (substr(parts.word, 1, 1) = '/' OR substr(parts.word, 1, 2) = '~/'))
 ), saved AS (
   SELECT parts.*, parts.position = (SELECT min(m.position) FROM matches AS m WHERE m.type = parts.type) AS builtin
   FROM parts
@@ -58,9 +61,13 @@ UPDATE settings SET data = json_set(data,
         CASE WHEN s.builtin THEN 0 ELSE 2 END AS tier, s.position
       FROM saved AS s
       UNION ALL
-      SELECT json_object('id', 'builtin-' || p.type,
-          'name', CASE WHEN EXISTS (SELECT 1 FROM saved WHERE json_extract(saved.value, '$.name') = p.name)
-            THEN p.name || ' (built-in)' ELSE p.name END,
+      SELECT json_object(
+          'id', CASE WHEN EXISTS (SELECT 1 FROM saved WHERE json_extract(saved.value, '$.id') = 'builtin-' || p.type)
+            THEN lower(hex(randomblob(16))) ELSE 'builtin-' || p.type END,
+          'name', CASE
+            WHEN NOT EXISTS (SELECT 1 FROM saved WHERE json_extract(saved.value, '$.name') = p.name) THEN p.name
+            WHEN NOT EXISTS (SELECT 1 FROM saved WHERE json_extract(saved.value, '$.name') = p.name || ' (built-in)') THEN p.name || ' (built-in)'
+            ELSE p.name || ' (built-in ' || lower(hex(randomblob(3))) || ')' END,
           'command', CASE WHEN p.args = '' THEN p.type ELSE p.type || ' ' || p.args END,
           'type', p.type, 'model', '', 'effort', '', 'builtin', json('true'), 'enabled', json('false'), 'path', '') AS tool,
         1 AS tier, p.position

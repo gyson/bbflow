@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { call, Peer, VERSION, encodeBytes, decodeBytes } from './dist/protocol.js';
+import { call, Peer, VERSION, encodeBytes, decodeBytes, responseLimit, modelListLimit, titleTestLimit } from './dist/protocol.js';
 import { composeInput, sendShortcut } from './dist/composer.js';
 
 class Socket {
@@ -261,4 +261,12 @@ test('an HTTPS page connects with wss, and an HTTP page with ws', () => {
     globalThis.location = original;
   }
   assert.deepEqual(urls, ['wss://my-mac.example.ts.net/ws', 'ws://localhost:1234/ws']);
+});
+
+test('the browser waits for a model list and a title test longer than for other requests', () => {
+  // The server stops a list command after 30 seconds and a title test after 90 seconds.
+  assert.equal(responseLimit({ operation: 'tool-models', toolType: 'codex' }), modelListLimit);
+  assert.ok(modelListLimit > 30000);
+  assert.equal(responseLimit({ operation: 'title-test', settings: { titleTool: 'codex' } }), titleTestLimit);
+  assert.equal(responseLimit({ operation: 'settings-get' }), 12000);
 });

@@ -80,6 +80,9 @@ type Settings struct {
 // RemoteAccess tells if the settings turn remote access on.
 func (s Settings) RemoteAccess() bool { return s.RemoteHost != "" && s.RemoteLogin != "" }
 
+// maxCustomTools is the most tools that the user can add.
+const maxCustomTools = 100
+
 // The lowest port that Settings accepts. Lower ports are for system services.
 const MinPort = 1024
 
@@ -181,9 +184,6 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	default:
 		return settings, errors.New("appearance must be system, light, or dark")
 	}
-	if len(settings.Tools) > 100 {
-		return settings, errors.New("at most 100 tools are supported")
-	}
 	saved, err := s.Settings()
 	if err != nil {
 		return settings, err
@@ -194,6 +194,16 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 		if tool.Builtin {
 			builtins[tool.ID] = tool
 		}
+	}
+	// The limit counts the custom tools. The built-in tools are always in the list.
+	custom := 0
+	for _, tool := range settings.Tools {
+		if _, builtin := builtins[tool.ID]; !builtin {
+			custom++
+		}
+	}
+	if custom > maxCustomTools {
+		return settings, fmt.Errorf("at most %d custom tools are supported", maxCustomTools)
 	}
 	seen := map[string]bool{"": true}
 	for i := range settings.Tools {
@@ -397,11 +407,25 @@ func validRemoteLogin(login string) (string, error) {
 // effort. Command is empty for a change to a built-in tool or none, because such a change
 // keeps the saved custom command. Only the title tools of an agent CLI take a model and an
 // effort.
+//
+// Path is the CLI path of the built-in tool of the agent type that a test ran, for
+// SetTitleTool. Settings.Choice leaves it empty.
 type TitleChoice struct {
 	Tool    string
 	Command string
 	Model   string
 	Effort  string
+	Path    string
+}
+
+// BuiltinPath returns the CLI path of the built-in tool of an agent type, or empty.
+func (s Settings) BuiltinPath(kind string) string {
+	for _, tool := range s.Tools {
+		if tool.Builtin && tool.Type == kind {
+			return tool.Path
+		}
+	}
+	return ""
 }
 
 // Choice returns the title tool, the custom command, and the model and effort of the
@@ -425,7 +449,8 @@ var ErrTitleChanged = errors.New("the title tool changed during the test")
 
 // SetTitleTool saves next, with a new revision, and returns the saved settings. It
 // saves only while the settings still have the title tool, the custom command, the
-// model, and the effort of from. A test can run for 90 seconds, and a later change must not be undone by an
+// model, and the effort of from. For a title tool of an agent CLI, it also saves only
+// while the built-in tool of that type has the CLI path next.Path, which the test ran. A test can run for 90 seconds, and a later change must not be undone by an
 // earlier test. Other settings can change meanwhile. For custom, next.Command is the
 // custom command, and it saves too. Other tools take no command. SetTitleTool does not
 // test the tool. The server tests it before this call.
@@ -437,9 +462,12 @@ func (s *Store) SetTitleTool(next, from TitleChoice) (Settings, error) {
 		return Settings{}, fmt.Errorf("only the title tools of Claude, Codex, and Code Puppy take a model and an effort: %w", err)
 	}
 	var row *sql.Row
+	const program = " AND coalesce((SELECT json_extract(t.value,'$.path') FROM json_each(data,'$.tools') AS t" +
+		" WHERE json_extract(t.value,'$.builtin') AND json_extract(t.value,'$.type')=?),'')=?"
 	const unchanged = " WHERE id=1 AND json_extract(data,'$.titleTool')=? AND json_extract(data,'$.titleCommand')=?" +
-		" AND json_extract(data,'$.titleModel')=? AND json_extract(data,'$.titleEffort')=? RETURNING revision,data"
-	from4 := []any{from.Tool, from.Command, from.Model, from.Effort}
+		" AND json_extract(data,'$.titleModel')=? AND json_extract(data,'$.titleEffort')=?" + program + " RETURNING revision,data"
+	// A title tool without an agent type matches no built-in tool, so its path is empty.
+	from4 := []any{from.Tool, from.Command, from.Model, from.Effort, TitleType(next.Tool), next.Path}
 	if next.Tool != "custom" {
 		if next.Command != "" {
 			return Settings{}, errors.New("only the custom title tool takes a command")
