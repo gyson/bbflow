@@ -8,7 +8,7 @@ import { element } from './dom.js';
 import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
 import { keyboardShown } from './keyboard.js';
-import { showCursor } from './terminal-clip.js';
+import { followCursor, showCursor } from './terminal-clip.js';
 import { touchScroll } from './terminal-touch.js';
 
 // SideTerminal is the Terminal view of the workspace pane. It shows an interactive
@@ -181,8 +181,10 @@ export class SideTerminal {
     fit.fit();
     this.dimensions.textContent = `${view.cols} × ${view.rows}`;
     view.onResize(({ rows, cols }) => { this.dimensions.textContent = `${cols} × ${rows}`; });
-    view.onCursorMove(() => { if (keyboardShown()) showCursor(this.screen, view); });
+    view.onCursorMove(() => { if (keyboardShown()) followCursor(this.screen, view); });
     onTerminalInput(view, input => {
+      // Typed input shows the cursor row again, after a drag showed other rows.
+      if (!input.report && keyboardShown()) showCursor(this.screen, view);
       const peer = this.connection?.ready ? this.connection.peer : null;
       return !!peer?.active && peer.send(input);
     });

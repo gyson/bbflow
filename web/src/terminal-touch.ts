@@ -4,6 +4,27 @@ import type { Terminal } from '@xterm/xterm';
 // on a finger drag. touchScroll makes a vertical finger drag scroll the terminal by the
 // rows that the finger passes, and continue with a glide after a fast release.
 
+// A finger must move this distance before its drag has a direction, in CSS pixels.
+const slop = 8;
+
+// Return the direction of a drag from its movement since the touch started: 'y' for a
+// vertical drag and 'x' for a horizontal drag. A movement shorter than the slop has no
+// direction yet. A drag keeps its first direction.
+export function dragAxis(dx: number, dy: number): 'x' | 'y' | undefined {
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < slop) return undefined;
+  return Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
+}
+
+// A view can be lower than its terminal and show a part of the rows. Return the scroll
+// position of such a view after a finger movement. top is the position now, and max is
+// the last position. A finger that moves down shows earlier rows. Return undefined when
+// the view is at its end in that direction. Then the drag scrolls the history.
+export function clipDrag(top: number, max: number, distance: number): number | undefined {
+  const next = Math.max(0, Math.min(max, top - distance));
+  // The browser can round the position that the page reads.
+  return Math.abs(next - top) < 1 ? undefined : next;
+}
+
 // A sample of a finger position: the time in milliseconds and the vertical position in
 // CSS pixels.
 export interface Sample { time: number; y: number; }
@@ -55,7 +76,10 @@ export function rowSteps(rest: number, distance: number, cell: number): { rows: 
 // touchScroll makes a one-finger vertical drag in container scroll the terminal in it.
 // view returns the terminal that the container shows. The container keeps its place
 // across terminals, so one call is sufficient. The style sheet stops the vertical pan of
-// the browser in the terminal.
+// the browser in the terminal. A horizontal drag does nothing here.
+//
+// A container that is lower than its terminal shows a part of the rows. A drag first
+// moves that part. At its end, the drag continues as follows.
 //
 // A drag scrolls the history rows of the view. The frames of the server draw an
 // alternate screen on the screen rows of the normal buffer, so a view always has its
@@ -64,7 +88,7 @@ export function rowSteps(rest: number, distance: number, cell: number): { rows: 
 // row. Such a drag has no glide, so that the application gets reports only for the
 // rows that the finger passes.
 export function touchScroll(container: HTMLElement, view: () => Terminal | null): void {
-  let drag: { id: number; target: Element; x: number; y: number; rest: number; samples: Sample[] } | null = null;
+  let drag: { id: number; target: Element; x: number; y: number; vertical: boolean; rest: number; samples: Sample[] } | null = null;
   let frame = 0;
 
   // The mouse wheel of a terminal scrolls its history when no mouse reports are on.
@@ -76,6 +100,11 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
     const terminal = view();
     const screen = container.querySelector('.xterm-screen');
     if (!terminal || !screen) return 0;
+    const shown = clipDrag(container.scrollTop, container.scrollHeight - container.clientHeight, distance);
+    if (shown !== undefined) {
+      container.scrollTop = shown;
+      return 0;
+    }
     const step = rowSteps(rest, distance, screen.clientHeight / terminal.rows);
     if (!step.rows) return step.rest;
     if (scrollsHistory(terminal)) {
@@ -104,12 +133,19 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
       drag = null;
       return;
     }
-    drag = { id: touch.identifier, target, x: touch.clientX, y: touch.clientY, rest: 0, samples: [{ time: event.timeStamp, y: touch.clientY }] };
+    drag = { id: touch.identifier, target, x: touch.clientX, y: touch.clientY, vertical: false, rest: 0, samples: [{ time: event.timeStamp, y: touch.clientY }] };
   }, { passive: true });
 
   container.addEventListener('touchmove', event => {
     const touch = find(event.touches);
     if (!drag || !touch || event.touches.length !== 1) return;
+    if (!drag.vertical) {
+      // The first movement of the drag follows when the drag has its direction.
+      const axis = dragAxis(touch.clientX - drag.x, touch.clientY - drag.y);
+      if (axis === 'x') drag = null;
+      if (axis !== 'y' || !drag) return;
+      drag.vertical = true;
+    }
     drag.rest = scroll(drag.target, drag.x, touch.clientY, drag.rest, touch.clientY - drag.y);
     drag.y = touch.clientY;
     drag.samples = addSample(drag.samples, { time: event.timeStamp, y: touch.clientY });
@@ -119,6 +155,7 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
     const current = drag;
     if (!current || find(event.touches)) return;
     drag = null;
+    if (!current.vertical) return;
     let speed = event.type === 'touchend' ? releaseSpeed(current.samples, event.timeStamp) : 0;
     let time = performance.now();
     let rest = current.rest;

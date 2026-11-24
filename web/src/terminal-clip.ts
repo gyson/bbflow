@@ -13,6 +13,10 @@ export function clipTop(value: { cursorTop: number; cursorBottom: number; conten
   return value.cursorTop >= last ? last : Math.max(0, Math.round(value.cursorBottom - value.height));
 }
 
+// The scroll position that showCursor gave to each container. Another position comes
+// from a drag of the user.
+const positions = new WeakMap<HTMLElement, number>();
+
 // showCursor scrolls a container that is lower than its terminal to the part with the
 // cursor row. It has no effect on a container that shows all rows.
 export function showCursor(container: HTMLElement, view: Terminal): void {
@@ -22,4 +26,13 @@ export function showCursor(container: HTMLElement, view: Terminal): void {
   const top = screen.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
   const cursorTop = top + view.buffer.active.cursorY * cell;
   container.scrollTop = clipTop({ cursorTop, cursorBottom: cursorTop + cell, contentHeight: container.scrollHeight, height: container.clientHeight });
+  positions.set(container, container.scrollTop);
+}
+
+// followCursor does the work of showCursor after the cursor moved. It keeps the part
+// that a drag of the user shows. Many terminal applications move the cursor all the
+// time, and the user could not read other rows.
+export function followCursor(container: HTMLElement, view: Terminal): void {
+  const position = positions.get(container);
+  if (position === undefined || Math.abs(container.scrollTop - position) < 1) showCursor(container, view);
 }

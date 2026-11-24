@@ -745,8 +745,9 @@ the height of the window and shows one part at a time:
 - The toolbar has one row.
 - The message editor has the height of its text, and no divider. See
   [message editor in the mobile layout](#message-editor-in-the-mobile-layout).
-- Text fields have a font size of 16 pixels. iOS zooms the page when a text field with
-  a smaller font gets the focus, and it keeps that zoom.
+- Each text field has a font size of 16 pixels, also the search field of Changes and
+  Files. iOS zooms the page when a text field with a smaller font gets the focus, and
+  it keeps that zoom.
 - In Changes and Files, the rows of the file list are higher. A view narrower than 560
   pixels shows the list and the file view one at a time. See
   [file list in a narrow pane](#file-list-in-a-narrow-pane).
@@ -810,6 +811,9 @@ with the focus, and the toolbar leaves the window. Thus the page follows the key
 - The page hides the [view switch](#view-switch) and the bar above the session
   terminal while the keyboard shows. Their space goes to the shown view.
 - The session has no minimum height while the keyboard shows.
+- The [message editor](#message-editor) has the height of its text and no divider, as
+  in the [mobile layout](#message-editor-in-the-mobile-layout). This applies at each
+  window width. A phone in landscape orientation is wider than the mobile layout.
 - The sidebar drawer also ends above the keyboard.
 - When the keyboard goes away, the page uses the full window again.
 
@@ -827,12 +831,20 @@ the [side terminal](#side-terminal) both use these rules:
 - The view shows the last rows of the terminal. When the cursor is above them, the
   cursor row is the last shown row.
 - The shown part follows the cursor when the cursor moves.
+- A [finger drag](#touch-scroll-in-a-terminal) moves the shown part to other rows.
+  Then the shown part stays when the cursor moves, because many terminal applications
+  move the cursor all the time. Typed input in the terminal shows the cursor row
+  again. A change of the keyboard does this too.
 - When the keyboard goes away, the view shows all rows. Then it asks for the size that
   fits, as before.
 
 #### Limits
 
 - A draft has the height of its form, and the main area scrolls.
+- A window wider than 700 pixels keeps the higher toolbar and the font size of 14
+  pixels of the regular layout. On a phone in landscape orientation, the part above
+  the keyboard can be lower than the toolbar and the editor together. Then the main
+  area scrolls. iOS also zooms such a page when a text field gets the focus.
 - The mobile layout does not change the sizes of the buttons. Some buttons are smaller
   than a finger, for example the buttons of the bar above the terminal.
 - The editor grows with its text only in a browser with the CSS property
@@ -1147,10 +1159,19 @@ a finger drag. Thus the page handles a finger drag in the session terminal and i
 
 - A vertical drag with one finger scrolls the terminal by the rows that the finger
   passes. A finger that moves down shows earlier rows.
+- A drag gets its direction when the finger has moved 8 pixels. A drag that is then
+  more vertical than horizontal is a vertical drag. Each other drag is horizontal. A
+  drag keeps its direction until the finger leaves the screen.
+- A horizontal drag does not scroll the terminal and sends no report, also when it
+  drifts up or down.
 - After a fast release, the scroll continues and gets slower. A touch stops it.
 - The browser does not pan the page for a vertical drag that starts in a terminal. A
   horizontal drag and a pinch keep their browser behavior.
 - A drag on the scroll bar of the terminal moves the scroll bar, as before.
+- A view can be lower than its terminal and show a part of the rows, for example with
+  an [on-screen keyboard](#on-screen-keyboard). There, a drag first moves the shown
+  part, to the first or the last row of the terminal. When the shown part is at that
+  end, the drag continues with the history or the reports below.
 - A drag scrolls the history rows of the view, as the mouse wheel does. It sends no
   input. That includes a view of an alternate screen, because the frames draw an
   alternate screen below the history rows.
@@ -4692,7 +4713,9 @@ repository, and a folder outside Git, each with a shell session.
   mouse. It did not use a phone, touch input, or an on-screen keyboard.
 - Web fixtures check the parts of the touch scroll: the whole rows of a drag and the
   rest for the next movement, the release speed from the last 100 milliseconds, no
-  glide for a slow or rested finger, and the end of a glide. Other fixtures check the
+  glide for a slow or rested finger, and the end of a glide. They also check the
+  direction of a drag, with a horizontal swipe of 240 pixels that drifts 36 pixels
+  down, and the shown part of a lower view at each end. Other fixtures check the
   keyboard height from the visual viewport, with a low bar and a pinch zoom, and the
   shown part of a terminal that is higher than its view.
 - A simulator check of touch input and the on-screen keyboard used a demo instance in
@@ -4717,6 +4740,23 @@ repository, and a folder outside Git, each with a shell session.
   - With mouse tracking mode 1000 and the SGR encoding on in the side terminal, a fast
     drag of 100 points sent five wheel reports, one for each row that the finger
     passed. No report followed the release, and the size stayed 50 × 30.
+  - With the keyboard and 30 full rows in the side terminal, a slow drag of 140 points
+    down showed rows 6 to 22 in place of the last rows. The typed letter `x` showed the
+    prompt row again.
+- A browser check with a keyboard state that a script set used a demo instance and
+  touch events from the script.
+  - At a width of 390 pixels with 10 terminal rows in a lower view, a drag of 75 pixels
+    down from the first shown part scrolled 3 history rows. A drag of 400 pixels down
+    from the last shown part first showed the first screen row and then scrolled the
+    history. Two drags up went back to the prompt row.
+  - A touch that moved 240 pixels sideways and 36 pixels down changed no row and no
+    scroll position.
+  - At a width of 844 pixels with 300 pixels above the keyboard, the main area had a
+    height of 300 pixels and did not scroll. The toolbar ended at 96 pixels, the
+    terminal had 44 pixels, and **Send** ended at 273 pixels. The divider was hidden.
+  - At a width of 500 pixels, the search field of Changes and of Files and the message
+    editor had a font size of 16 pixels. At 1280 pixels, the search field had 12
+    pixels, and the session had its divider and its editor of 240 pixels.
 - That simulator check did not use a real phone, a Home Screen web app, Android,
   landscape orientation, dark Appearance, or a real agent CLI. A tap in the session
   terminal did not show the keyboard. A second tap in the side terminal showed it. The

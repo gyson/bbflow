@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addSample, glide, releaseSpeed, rowSteps } from './dist/terminal-touch.js';
+import { addSample, clipDrag, dragAxis, glide, releaseSpeed, rowSteps } from './dist/terminal-touch.js';
 
 test('a drag scrolls by the whole rows that the finger passes', () => {
   // A cell of 21 pixels, as on a phone.
@@ -57,4 +57,42 @@ test('a glide gets slower and ends', () => {
   // The whole distance is near the speed divided by the rate of the loss.
   assert.ok(distance < -950 && distance > -1000, `distance ${distance}`);
   assert.ok(frames > 100 && frames < 130, `frames ${frames}`);
+});
+
+test('a drag has no direction before the finger moved 8 pixels', () => {
+  assert.equal(dragAxis(0, 0), undefined);
+  assert.equal(dragAxis(7, -7), undefined);
+  assert.equal(dragAxis(0, 8), 'y');
+  assert.equal(dragAxis(0, -8), 'y');
+  assert.equal(dragAxis(8, 0), 'x');
+});
+
+test('a horizontal swipe with a vertical drift is not a vertical drag', () => {
+  // A swipe of 240 pixels sideways and 36 pixels down, in steps.
+  for (let step = 1; step <= 24; step++) {
+    assert.notEqual(dragAxis(10 * step, 1.5 * step), 'y', `step ${step}`);
+  }
+  assert.equal(dragAxis(-240, 36), 'x');
+  // A drag with the same movement on both axes is not vertical.
+  assert.equal(dragAxis(20, 20), 'x');
+  assert.equal(dragAxis(12, 30), 'y');
+});
+
+test('a drag first moves the shown part of a lower view', () => {
+  // The view shows the last rows: position 333 of 333.
+  assert.equal(clipDrag(333, 333, 75), 258);
+  assert.equal(clipDrag(258, 333, 400), 0);
+  assert.equal(clipDrag(100, 333, -50), 150);
+  assert.equal(clipDrag(300, 333, -50), 333);
+});
+
+test('a drag scrolls the history when the view is at its end in that direction', () => {
+  assert.equal(clipDrag(0, 333, 75), undefined);
+  assert.equal(clipDrag(333, 333, -75), undefined);
+  // A view that shows all rows has no other position.
+  assert.equal(clipDrag(0, 0, 75), undefined);
+  assert.equal(clipDrag(0, -12, -75), undefined);
+  // The page reads a rounded position.
+  assert.equal(clipDrag(333, 333.4, -75), undefined);
+  assert.equal(clipDrag(0, 333.4, 0), undefined);
 });

@@ -21,7 +21,7 @@ import { RowMenus } from './row-menu.js';
 import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
 import { followKeyboard, keyboardShown } from './keyboard.js';
-import { showCursor } from './terminal-clip.js';
+import { followCursor, showCursor } from './terminal-clip.js';
 import { touchScroll } from './terminal-touch.js';
 import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
@@ -932,9 +932,13 @@ function makeTerminal(): Terminal {
     view.resize(hidden.cols, hidden.rows);
   }
   hint();
-  onTerminalInput(terminal, input => !!connection?.ready && !!connection.peer?.active && connection.peer.send(input));
+  onTerminalInput(terminal, input => {
+    // Typed input shows the cursor row again, after a drag showed other rows.
+    if (!input.report && keyboardShown()) showCursor($('terminal'), view);
+    return !!connection?.ready && !!connection.peer?.active && connection.peer.send(input);
+  });
   messageNav.attach(view);
-  view.onCursorMove(() => { if (keyboardShown()) showCursor($('terminal'), view); });
+  view.onCursorMove(() => { if (keyboardShown()) followCursor($('terminal'), view); });
   return view;
 }
 

@@ -276,7 +276,7 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 #session-divider > span { width: 40px; height: 4px; border-radius: 2px; background: var(--inactive); }
 #session-divider:hover > span, #session-divider:focus-visible > span, .resizing-session #session-divider > span { background: var(--accent); }
 body.resizing-session, body.resizing-session * { cursor: row-resize !important; user-select: none !important; }
-#composer { flex: 0 0 240px; min-height: 220px; display: flex; flex-direction: column; overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 10px; background: var(--surface); box-shadow: 0 3px 12px var(--shadow-soft); }
+#composer { flex: 0 0 var(--editor-height, 240px); min-height: 220px; display: flex; flex-direction: column; overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 10px; background: var(--surface); box-shadow: 0 3px 12px var(--shadow-soft); }
 #composer > :not(textarea) { flex-shrink: 0; }
 #composer-text { flex: 1; border: 0; border-radius: 0; padding: 2px 0 10px; resize: none; min-height: 60px; line-height: 1.6; background: transparent; }
 #composer-text:focus-visible { outline-offset: 5px; }
@@ -810,19 +810,26 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
      lower window, the main area scrolls. A draft has the height of its form. */
   #session-row { min-height: 340px; }
   #session-row > #session-view { min-height: 0; padding: 10px 12px 12px; }
-  /* The message editor has the height of its text, from 2 to 6 lines. Then the text
-     scrolls. There is no divider. */
-  #composer { flex: none; min-height: 0; margin-top: 10px; padding: 10px 12px 8px; }
-  #composer-text { flex: none; height: 4.8em; min-height: 3.2em; max-height: 9.6em; padding: 2px 0 6px; }
-  @supports (field-sizing: content) { #composer-text { height: auto; field-sizing: content; } }
+  #composer { padding: 10px 12px 8px; }
+  #composer-text { padding: 2px 0 6px; }
   #composer-text:focus-visible { outline-offset: 2px; }
   .composer-actions { margin-top: 4px; }
-  /* iOS zooms the page when a text field with a smaller font gets the focus. */
-  :root :is(input, textarea, select) { font-size: 16px; }
+  /* iOS zooms the page when a text field with a smaller font gets the focus. The ID
+     gives this rule the specificity of the rule of that field. */
+  :is(#diff-filter, input, textarea, select) { font-size: 16px; }
   #session-row:has(#preparation:not([hidden])) { flex: none; }
   #preparation { flex: none; }
   #workspace-pane { margin: 0; border: 0; border-radius: 0; }
   .diff-file { padding: 10px 12px; font-size: 13px; }
+}
+/* The message editor of the mobile layout has the height of its text, from 2 to 6
+   lines. Then the text scrolls. There is no divider. Keep these rules the same as the
+   rules of the on-screen keyboard below. */
+@media (max-width: 700px) {
+  #session-divider { display: none; }
+  #composer { flex: none; min-height: 0; margin-top: 10px; }
+  #composer-text { flex: none; height: 4.8em; min-height: 3.2em; max-height: 9.6em; }
+  @supports (field-sizing: content) { #composer-text { height: auto; field-sizing: content; } }
 }
 @media (max-width: 700px) and (prefers-reduced-motion: no-preference) {
   .sidebar { transition: translate .2s ease-out; }
@@ -836,7 +843,13 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
    the terminal give their space to the view. */
 :root.keyboard body { height: var(--viewport-height); translate: 0 var(--viewport-top); }
 :root.keyboard :is(#view-switch, .view-heading) { display: none; }
-:root.keyboard :is(#session-row, #terminal-pane) { min-height: 0; }
+:root.keyboard :is(#session-row, #session-view, #terminal-pane) { min-height: 0; }
+/* The message editor has the height of its text at each window width, as in the mobile
+   layout. A landscape phone is wider than the mobile layout. */
+:root.keyboard #session-divider { display: none; }
+:root.keyboard #composer { flex: none; min-height: 0; margin-top: 10px; }
+:root.keyboard #composer-text { flex: none; height: 4.8em; min-height: 3.2em; max-height: 9.6em; }
+@supports (field-sizing: content) { :root.keyboard #composer-text { height: auto; field-sizing: content; } }
 /* A terminal keeps its rows and is higher than its view. Its host has the height of the
    rows, so that the view scrolls to the padding below the last row. */
 :root.keyboard .terminal-host { height: auto; }
