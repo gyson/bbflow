@@ -2902,7 +2902,7 @@ width that the user set. A drag cannot make the pane wider than the session allo
 When the main area is narrower than 1187 pixels, it cannot hold both minimum widths.
 Then the open pane takes the place of the session, and the divider is not available.
 See [view switch](#view-switch). With the sidebar at its default width, this applies
-below a window width of 1465 pixels. A hidden sidebar gives its width to the main area.
+below a window width of 1484 pixels. A hidden sidebar gives its width to the main area.
 
 #### View switch
 
