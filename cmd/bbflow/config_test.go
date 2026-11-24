@@ -128,7 +128,7 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	if output := cli("settings", "set", "default-tool", "Other"); output != "Saved default-tool: Other.\n" {
 		t.Fatalf("set default-tool: %q", output)
 	}
-	for key, want := range map[string]string{"appearance": "dark", "worktree": "true", "base": "main", "default-tool": "Other", "update-check": "true", "port": "0"} {
+	for key, want := range map[string]string{"appearance": "dark", "worktree": "true", "base": "main", "default-tool": "Other", "update-check": "true", "port": "0", "remote": "false"} {
 		if output := cli("settings", "get", key); output != want+"\n" {
 			t.Fatalf("get %s: %q", key, output)
 		}
@@ -157,6 +157,7 @@ func TestToolAndSettingsCommandsEditSavedSettings(t *testing.T) {
 	fails("worktree must be true or false", "settings", "set", "worktree", "maybe")
 	fails("worktree must be true or false", "settings", "set", "worktree", "1")
 	fails("update-check must be true or false", "settings", "set", "update-check", "daily")
+	fails("remote must be true or false", "settings", "set", "remote", "on")
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "80")
 	fails("port must be from 1024 to 65535", "settings", "set", "port", "auto")
 	fails("remote host must be a DNS name", "settings", "set", "remote-host", "localhost")

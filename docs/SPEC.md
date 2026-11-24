@@ -496,24 +496,34 @@ access is off by default, and the server still listens only on loopback.
 
 See [Remote host](PROTOCOL.md#remote-host) for the exact request checks. See
 [Remote access in Settings](#remote-access-in-settings) for the page, and
-[COMMANDS.md](COMMANDS.md#manage-settings) for the `remote-host` and `remote-login`
-keys.
+[COMMANDS.md](COMMANDS.md#manage-settings) for the `remote`, `remote-host`, and
+`remote-login` keys.
 
 #### Remote access settings
 
-Settings hold two values, `remoteHost` and `remoteLogin`. Remote access is on only while
-both are set. A new database and an upgraded database have neither.
+Settings hold a switch, `remoteOn`, and two values, `remoteHost` and `remoteLogin`.
+Remote access is on only while the switch is on and both values are set. The switch and
+the values are independent.
 
-| Value | Rules |
+| Setting | Rules |
 | --- | --- |
+| `remoteOn` | The switch of remote access. A new database starts with `false`. |
 | `remoteHost` | The Host of the remote requests, such as `my-mac.example.ts.net`. It is a DNS name with at least two labels and an optional port. The server saves it in lower case. The server rejects an IP address and a name that ends in `localhost`. |
 | `remoteLogin` | The Tailscale login that can use remote access, such as `user@example.com`. It has at most 254 printable ASCII characters, without spaces. |
 
-- A save of one value alone succeeds and keeps remote access off.
+- A save of the values never turns the switch on. Only a save of the switch does.
+- The switch saves without the values. While the values are incomplete, remote access
+  stays off.
+- When the switch turns off, the settings keep both values. Thus the switch turns remote
+  access on again without a new entry.
+- A save of one value alone succeeds.
+- An upgrade from format 17 turns the switch on only when both values are saved,
+  because remote access was on there before. See [Formats](#formats).
 - A change applies without a server restart. It is in effect before the server
   replies to the save. Thus a request after a successful save gets the new rules.
-- A change of either value closes each open WebSocket connection of a remote request.
-  The connections of local views stay open.
+- A change of the switch or of either value closes each open WebSocket connection of a
+  remote request. The connections of local views stay open. Thus a remote view that
+  turns the switch off loses its connection, and it cannot turn the switch on again.
 - The server applies the saved values in the order of the settings revisions. When two
   saves complete in the other order, the values of the later revision stay.
 - A save of another setting keeps the remote connections.
@@ -525,16 +535,26 @@ no header of a reverse proxy, such as `X-Forwarded-Host`. See
 [Host and Origin](PROTOCOL.md#host-and-origin) for the headers. Each other request is
 remote, and the server answers it only when all of these conditions are true:
 
-- Remote access is on.
 - The Host is exactly the saved `remoteHost`.
+- The switch is on.
 - The request has exactly one `Tailscale-User-Login` header, and its value is the saved
   `remoteLogin`. The comparison ignores letter case.
 
-The server answers each other remote request with status 403. A remote WebSocket
-upgrade also needs the Origin `https://` with the Host of the same request. Thus an HTTP
-page of the same host cannot connect. The content security policy of a remote page
-also takes its WebSocket origin from the Host of its request. A change of the settings
-during a request thus cannot admit the origin of another host.
+The server answers each other remote request with status 403. The body names the first
+check in the list that failed:
+
+| Failed check | Body |
+| --- | --- |
+| The Host, or no saved `remoteHost` | `invalid host` |
+| The switch | `remote access is off` |
+| The login, or no saved `remoteLogin` | `remote access needs the Tailscale login of Settings` |
+
+Thus a request for another host gets `invalid host`, whatever the switch is.
+
+A remote WebSocket upgrade also needs the Origin `https://` with the Host of the same
+request. Thus an HTTP page of the same host cannot connect. The content security policy
+of a remote page also takes its WebSocket origin from the Host of its request. A change
+of the settings during a request thus cannot admit the origin of another host.
 
 Tailscale Serve selects its backend by the TLS server name, and it keeps the Host that
 the client sent. A client in the tailnet can thus send a loopback Host through the
@@ -589,7 +609,7 @@ procedure, the Tailscale commands, and the solutions to problems.
   protection for a port that such a forwarder exposes.
 - The checks with a real Tailscale Serve proxy used one Mac with Tailscale 1.104.7 and
   one iPhone. No check used a real Funnel request, a device with a tag, or another
-  reverse proxy. See
+  reverse proxy. No check of the switch used a real Tailscale Serve proxy. See
   [Checks of the server and the menu bar](#checks-of-the-server-and-the-menu-bar).
 
 ### macOS menu bar
@@ -1297,16 +1317,16 @@ way:
 | Control | Save |
 | --- | --- |
 | Appearance, default tool, worktree default, update check | At once, on selection. |
-| Starting branch or commit, Port | On Enter, or when the field loses focus. Escape restores the saved value. |
+| Starting branch or commit, Port, Tailscale host name, Tailscale login | On Enter, or when the field loses focus. Escape restores the saved value. |
 | Tools | **Add tool** and **Save** in the tool editor. A switch and the move buttons save at once. **Remove** asks first. |
 | Title tool | After a passed test. See [Title controls in Settings](#title-controls-in-settings). |
-| Remote access | **Save** in the card saves both fields together. See [Remote access in Settings](#remote-access-in-settings). |
+| Remote access switch | At once, on a click. See [Remote access in Settings](#remote-access-in-settings). |
 
 The status shows **Saving…** during a save. It shows **All settings saved** when each
 entry is saved. Otherwise it names each entry that is not saved, for example
 **Not saved: Port, New tool**. The names are **Starting branch or commit**, **Port**,
-**Remote access**, **Custom title command**, **New tool**, **Edit of** with the tool
-name, and the name of a default that failed to save.
+**Tailscale host name**, **Tailscale login**, **Custom title command**, **New tool**,
+**Edit of** with the tool name, and the name of a default that failed to save.
 
 - When the user leaves Settings, the page discards the entries that are not saved. The
   fields then show the saved values. A default that the server rejected is such an
@@ -1314,9 +1334,9 @@ name, and the name of a default that failed to save.
 - A running save or title tool change continues after the user leaves.
 - A hidden Settings page shows no error, so an error toast tells about an entry that
   did not save:
-  - The Port text was not a valid port, or the page showed the error of a rejected port
-    or default. The click on **Done** first saves a text field, so the server can
-    reject the value before the page closes.
+  - The Port text was not a valid port, or the page showed the error of a rejected port,
+    remote access value, or default. The click on **Done** first saves a text field, so
+    the server can reject the value before the page closes.
   - The server rejected a port, a default, a title tool, or remote access after the user
     left. The page then also discards that entry.
   - A save of a new tool, an edit, a move, or a removal failed after the user left. The
@@ -1349,24 +1369,35 @@ name, and the name of a default that failed to save.
 
 #### Remote access in Settings
 
-- In **Remote access**, **Tailscale host name** and **Tailscale login** hold the two
-  values of [remote access](#remote-access). The card tells that a person who can use
-  remote access can run commands on the computer.
-- **Save** saves both fields together. Enter in a field does the same. The fields do
-  not save when they lose focus, so that remote access never turns on from a partial
-  entry.
-- The fields and **Save** take no input during the save. After the save, the fields show
-  the saved values, with the host name in lower case.
+- In **Remote access**, an On/Off switch next to the title holds the switch of
+  [remote access](#remote-access). **Tailscale host name** and **Tailscale login** hold
+  the two values. The card tells that a person who can use remote access can run
+  commands on the computer.
+- The switch saves at once. It shows and works also while the values are not saved. A
+  click saves only the switch, with the saved values. The switch takes no click during
+  its save.
+- Each field saves alone, as **Port** does: on Enter, or when the field loses focus.
+  Escape restores the saved value and hides the error. A save of a field does not change
+  the switch or the other field.
+- The fields take input during a save. A save clears the edit of its field only when no
+  input came after the save started. Then the field shows the saved value, with the host
+  name in lower case. Enter and the blur after it save the text once.
 - The status below the fields tells if remote access is on, and for which host name and
-  login. With one value only, it tells that remote access needs both.
-- To turn remote access off, the user empties a field and clicks **Save**.
+  login. When the switch is on without both values, the status tells that remote access
+  needs both.
+- To turn remote access off, the user clicks the switch. The fields keep their values.
 - A value that the server rejects stays in its field, with the server error below the
-  fields. New text in a field hides the error.
-- When another view changed remote access after the fields showed their values, **Save**
-  does not save. The error names the saved host name and login of that change, and the
-  text stays in the fields. A second **Save** replaces those values. Thus a view with
-  earlier values cannot restore a login that another view removed.
-- A text that is not saved shows as **Remote access** in the save status. The page
+  fields. New text in either field hides the error.
+- A save of a field applies to the latest settings after a revision conflict. Thus a
+  view with an earlier login cannot restore a login that another view removed.
+- The switch saves after a running save of a field. When another view changed the host
+  name or the login, a click that turns the switch on does not save. The fields show the
+  new values, and the error names them. A second click turns remote access on for those
+  values. Thus the switch never turns remote access on for values that the view did not
+  read or save. A click that turns the switch off saves without this check.
+- A failed save of the switch or a field after the user left Settings shows the toast
+  **Remote access did not save.**
+- A text that is not saved shows in the save status with the name of its field. The page
   discards it when the user leaves Settings.
 - A save of remote access does not join a save of another setting.
 
@@ -3599,7 +3630,7 @@ fork ancestry, or inherited history yet.
 ### Database upgrades
 
 The server upgrades the database by itself at start, in one transaction. A failed
-upgrade changes nothing and stops the start. The current format is 16. Formats from 3,
+upgrade changes nothing and stops the start. The current format is 18. Formats from 3,
 shipped in v0.0.1, are supported.
 
 #### Upgrade transaction
@@ -3616,7 +3647,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 17. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 18. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -3679,7 +3710,11 @@ WAL is enabled after the schema transaction commits.
     built-in tool, `custom` for other tools, and an empty type for Shell. Its `model`
     and `effort` start empty.
   - The upgrade keeps the settings revision and the preparation revisions.
-- Format 17 opens without running scripts or rewriting history, settings, or metadata.
+- Format 17 gains `remoteOn`, the switch of [remote access](#remote-access-settings), in
+  the settings JSON through migration 18. The switch starts on only when `remoteHost`
+  and `remoteLogin` are both saved, because remote access was on there before.
+  Elsewhere it starts off. The settings revision and the other values stay.
+- Format 18 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -3692,7 +3727,7 @@ steps.
 #### Rejected formats
 
 Formats 1 and 2 have no known migration path in this repository. They, nonempty
-unversioned databases, and formats newer than 15 are rejected without changing their
+unversioned databases, and formats newer than 18 are rejected without changing their
 schema or records. A newer format error asks for a newer executable. There is no
 downgrade path, external migration command, or automatic backup.
 
@@ -3881,11 +3916,14 @@ companion also launched and exited with its server.
 The automated checks of [remote access](#remote-access) use no Tailscale Serve proxy.
 Each check sends the requests of such a proxy to the loopback port:
 
-- A test of a real temporary server sets `remote-host` and `remote-login` with the CLI.
-  It verifies status 403 for a page request and a WebSocket upgrade while remote access
-  is off, and with one value only.
-- With both values, it verifies the page, the policy with the remote WebSocket origin,
-  and the unchanged policy of a local page.
+- A test of a real temporary server sets `remote`, `remote-host`, and `remote-login` with
+  the CLI, and it checks the printed status. It verifies status 403 for a page request
+  and a WebSocket upgrade while remote access is off, with one value only, and with both
+  values while the switch is off.
+- While the switch is off, it verifies the body `remote access is off` for the saved
+  host and `invalid host` for another host.
+- With the switch on and both values, it verifies the page, the policy with the remote
+  WebSocket origin, and the unchanged policy of a local page.
 - It verifies status 403 for no login, another login, two login headers, a request with
   only the Funnel header, another host, a longer host, and the remote host with a port.
 - It verifies status 403 for a remote upgrade with a foreign Origin, the HTTP origin of
@@ -3894,32 +3932,59 @@ Each check sends the requests of such a proxy to the loopback port:
   headers of a proxy. The cases are remote access off, the saved login, another login,
   no login, and the Funnel header. It verifies that each proxy header alone has this
   effect, and that a direct local request still gets the page.
-- It verifies that a change of remote access closes a remote status watch and keeps a
-  local one, and that a save of another setting keeps the remote one.
-- It verifies that the saved values apply again after a server restart.
+- It verifies that a change of a value closes a remote status watch and keeps a local
+  one, and that a save of another setting keeps the remote one. It verifies that the
+  switch closes a remote status watch too when it turns off, and that it keeps the login.
+- It verifies that the saved switch and values apply again after a server restart.
 - It verifies that a saved host with a port admits that Host and rejects the host
   without the port.
 - Server tests apply settings of revisions 3 and 2 in that order and verify that the
-  removed login of revision 3 stays removed. They also cover the proxy headers and the
-  remote Origin rule. One test changes the remote host between the check and the
-  upgrade of a request, and verifies that the Origin of the new host fails.
+  switch that revision 3 turned off stays off. A table test verifies the body of each
+  failed check, in the order of the Host, the switch, and the login. Other tests cover
+  the proxy headers and the remote Origin rule. One test changes the remote host between
+  the check and the upgrade of a request, and verifies that the Origin of the new host
+  fails.
 - Store fixtures cover the rules of the two values, a save of one value alone, and a
-  title tool change that keeps them.
+  title tool change that keeps them. They also cover a switch without the values, a
+  switch that keeps the values when it turns off, and a save of the values that keeps
+  the switch off.
 - Migration fixtures upgrade a frozen format 15 archive with a saved custom title
   command. The upgrade keeps it and adds the two empty values. A blocked settings update
   rolls back migration 16.
-- Web fixtures cover the **Remote access** card: a save of both fields, the saved lower
-  case host name, the status texts, a rejected value, and a failure after **Done**. A
-  protocol fixture verifies `wss://` on an HTTPS page and `ws://` on an HTTP page.
-- Web fixtures cover two views: one view removes the login, and a save of the other
-  view with its earlier values fails, shows the saved values, and sends no second save.
-  A second **Save** then replaces them.
-- A browser check of a demo instance saved a sample host name and login in the card. The
-  status changed from **Not saved: Remote access** to **All settings saved**, and the
-  card showed that remote access is on.
+- Migration fixtures upgrade a frozen format 17 archive with both values saved, and the
+  switch turns on. Fixtures with one value, the other value, and no value keep the switch
+  off, with the same values and revision. A blocked settings update rolls back migration
+  18. Four concurrent opens upgrade a format 17 archive once.
+- Web fixtures cover the **Remote access** card. A field saves alone on blur and on
+  Enter, and Enter with the blur after it sends one save. The fixtures also cover the
+  saved lower case host name, the status texts, a rejected value, Escape, and a
+  rejection before and after **Done**. A protocol fixture verifies `wss://` on an HTTPS
+  page and `ws://` on an HTTP page.
+- Web fixtures cover two views: one view removes the login, and a save of the host in
+  the other view applies to the latest settings. The login stays removed.
+- Web fixtures cover the switch: a save at once with the saved values, field saves that
+  keep it off, the status of a switch without both values, and a switch that keeps the
+  host name when it turns off. After another view changed the login, a click sends no
+  save, the field shows the new login, and a second click turns remote access on for
+  it. A failure after **Done** gives a toast.
+- Model fixtures verify that a field save before the switch in the queue is no conflict,
+  and that a click that turns the switch off needs no check.
 - `curl` requests to that demo server, with the Host and the login header of a proxy,
   gave status 200 for the page and 101 for the WebSocket upgrade. They gave 403 without
   the login, with another login, and after remote access went off.
+- A browser check of a demo instance clicked the switch before any value was saved. The
+  status told that remote access needs both values. After a save of a sample host name
+  and login, the card showed that remote access is on. `curl` requests with the headers
+  of a proxy then gave status 200.
+- After `bbflow settings set remote false`, the same request gave status 403 with
+  `remote access is off`. A request for another host gave `invalid host`. The login
+  stayed saved. In the page that still showed **On**, a click read the new settings,
+  sent no save, and showed **Off**. A second click turned remote access on. The card
+  also fit a view 375 pixels wide.
+- In the card without **Save**, Tab from **Tailscale host name** saved the host name in
+  lower case, and Enter in **Tailscale login** saved the login. The status then showed
+  **All settings saved**. A save of the host name while the switch was off kept it off.
+  Escape in the login field restored the saved login.
 
 A manual check used a real Tailscale Serve proxy of Tailscale 1.104.7 on macOS, with
 `tailscale serve --bg PORT` for a demo instance:
@@ -4904,10 +4969,12 @@ The final display kept its recorded layout. This check did not run a real agent 
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–16 to format 17
+- Frozen schemas from repository history test upgrades from formats 3–17 to format 18
   and verify that reopen preserves the upgraded data. The format 16 fixture has Codex
   and Code Puppy tools, and the upgrade gives them their types. A blocked preparation
-  update rolls back migration 17.
+  update rolls back migration 17. The format 17 fixture has both values of remote
+  access, and the upgrade turns its switch on. A blocked settings update rolls back
+  migration 18.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.
   They also cover repeated opens, concurrent upgrades, and unsupported formats.

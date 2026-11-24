@@ -3,14 +3,24 @@ import { fillToolMenu, sortedBuiltins } from './tool-menu.js';
 import { builtinCommand, forgetModelLists, launchCommand, modelSummary, ModelPicker, typed } from './model-choice.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, parsePort, PortField, portStatus, RemoteChanged, remoteStatus, fallbackTool, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval, toolSwitch } from './settings-model.js';
-import type { Defaults, SettingsChange } from './settings-model.js';
+import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, FieldEdit, parsePort, portStatus, portText, remoteStatus, fallbackTool, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval, toolSwitch } from './settings-model.js';
+import type { Defaults, RemoteKey, SettingsChange } from './settings-model.js';
 
 const portRange = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
 const portNotSaved = 'The port did not save.';
 const remoteNotSaved = 'Remote access did not save.';
 const defaultNotSaved = 'A setting did not save.';
 const titleToolNotSaved = 'The title tool did not save.';
+
+// A field of remote access. It saves alone, as Port does. sent is the text of a running
+// save, so that Enter and the blur after it save the text once.
+interface RemoteField {
+  key: RemoteKey;
+  label: string;
+  input: HTMLInputElement;
+  edit: FieldEdit<string>;
+  sent: string | null;
+}
 
 export class SettingsView {
   private readonly panel = element('settings-view', HTMLElement);
@@ -24,10 +34,7 @@ export class SettingsView {
   private readonly port = element('settings-port', HTMLInputElement);
   private readonly portError = element('settings-port-error', HTMLElement);
   private readonly portStatus = element('settings-port-status', HTMLElement);
-  private readonly remoteForm = element('settings-remote-form', HTMLFormElement);
-  private readonly remoteHost = element('settings-remote-host', HTMLInputElement);
-  private readonly remoteLogin = element('settings-remote-login', HTMLInputElement);
-  private readonly remoteSave = element('settings-remote-save', HTMLButtonElement);
+  private readonly remoteSwitch = element('settings-remote-switch', HTMLButtonElement);
   private readonly remoteError = element('settings-remote-error', HTMLElement);
   private readonly remoteStatus = element('settings-remote-status', HTMLElement);
   private readonly error = element('settings-error', HTMLElement);
@@ -91,11 +98,14 @@ export class SettingsView {
 
   private readonly saves: SettingsSaves;
   private renderedBase = '';
-  private readonly portField = new PortField();
-  // The saved remote access values that the fields showed last. Other text is an edit.
-  private renderedRemote = { host: '', login: '' };
-  // remoteBusy reports a running save of remote access. Its fields then take no edit.
-  private remoteBusy = false;
+  private readonly portField = new FieldEdit(portText);
+  private readonly remoteFields: RemoteField[] = [
+    { key: 'remoteHost', label: 'Tailscale host name', input: element('settings-remote-host', HTMLInputElement), edit: new FieldEdit((host: string) => host), sent: null },
+    { key: 'remoteLogin', label: 'Tailscale login', input: element('settings-remote-login', HTMLInputElement), edit: new FieldEdit((login: string) => login), sent: null },
+  ];
+  // switchBusy reports a running save of the switch of remote access. The switch then
+  // takes no click.
+  private switchBusy = false;
   // The title tools, their commands, and the sample message of a test come from the
   // server.
   private titleTools: TitleTool[] = [];
@@ -178,12 +188,24 @@ export class SettingsView {
       this.showStatus();
     };
     this.portForm.onsubmit = event => { event.preventDefault(); this.savePort(); };
-    this.remoteForm.onsubmit = event => { event.preventDefault(); this.saveRemote(); };
-    this.remoteForm.oninput = () => {
-      // The error is about the earlier text.
-      this.remoteError.hidden = true;
-      this.showStatus();
-    };
+    this.remoteSwitch.onclick = () => this.switchRemote();
+    for (const field of this.remoteFields) {
+      field.input.onchange = () => this.saveRemoteField(field);
+      field.input.oninput = () => {
+        field.edit.input(field.input.value, this.saved?.[field.key] ?? '');
+        // The error is about the earlier text.
+        this.remoteError.hidden = true;
+        this.showStatus();
+      };
+      // The card has two fields, so Enter does not submit a form. The field saves itself.
+      field.input.onkeydown = event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          this.saveRemoteField(field);
+        }
+        if (event.key === 'Escape' && field.edit.edited) this.restoreRemote(field);
+      };
+    }
     this.removeCancel.onclick = () => this.removeDialog.close();
     this.removeForm.onsubmit = event => { event.preventDefault(); this.removeTool(); };
     this.titleTool.onchange = () => this.selectTitleTool(this.titleTool.value);
@@ -274,10 +296,10 @@ export class SettingsView {
       if (reason) this.report(portNotSaved, reason);
     }
     this.restorePort();
-    // An edit of remote access does not save without a click on Save.
-    this.remoteHost.value = this.renderedRemote.host;
-    this.remoteLogin.value = this.renderedRemote.login;
-    this.remoteError.hidden = true;
+    // The click on Done also saves a remote access field. As for the port, the toast
+    // repeats an error that came before the click ended.
+    if (this.remoteFields.some(field => field.edit.edited) && !this.remoteError.hidden) this.report(remoteNotSaved, this.remoteError.textContent ?? '');
+    for (const field of this.remoteFields) this.restoreRemote(field);
     // A running title tool change continues. Its end discards the custom entry.
     if (!this.busy) {
       this.discardCustom();
@@ -294,7 +316,7 @@ export class SettingsView {
     for (const key of Object.keys(this.saves.defaults) as (keyof Defaults)[]) names.add(defaultLabels[key]);
     if (this.base.value !== this.renderedBase) names.add(defaultLabels.base);
     if (this.portField.edited) names.add('Port');
-    if (this.remoteEdited()) names.add('Remote access');
+    for (const field of this.remoteFields) if (field.edit.edited) names.add(field.label);
     if (this.customOpen || this.customCommand.value !== this.renderedCustom) names.add('Custom title command');
     if (this.titleModelEdited()) names.add('Title model');
     if (this.titlePending) names.add('Title tool');
@@ -339,8 +361,11 @@ export class SettingsView {
     this.render();
   }
 
-  private remoteEdited(): boolean {
-    return this.remoteHost.value !== this.renderedRemote.host || this.remoteLogin.value !== this.renderedRemote.login;
+  // Show the saved value of a remote access field again, and hide the error.
+  private restoreRemote(field: RemoteField): void {
+    field.edit.reset();
+    this.remoteError.hidden = true;
+    this.render();
   }
 
   private applyAppearance(appearance: string): void {
@@ -365,14 +390,14 @@ export class SettingsView {
     if (this.port.value !== port) this.port.value = port;
     const server = this.server();
     this.portStatus.textContent = server ? portStatus(saved.port, server.port) : '';
-    // Keep any text entered in the remote access fields since the last render.
-    if (!this.remoteEdited()) {
-      this.renderedRemote = { host: saved.remoteHost, login: saved.remoteLogin };
-      this.remoteHost.value = saved.remoteHost;
-      this.remoteLogin.value = saved.remoteLogin;
+    for (const field of this.remoteFields) {
+      const text = field.edit.render(saved[field.key]);
+      if (field.input.value !== text) field.input.value = text;
     }
-    this.remoteStatus.textContent = remoteStatus(saved.remoteHost, saved.remoteLogin);
-    this.remoteHost.disabled = this.remoteLogin.disabled = this.remoteSave.disabled = this.remoteBusy;
+    this.remoteSwitch.setAttribute('aria-checked', String(saved.remoteOn));
+    this.remoteSwitch.textContent = saved.remoteOn ? 'On' : 'Off';
+    this.remoteStatus.textContent = remoteStatus(saved.remoteOn, saved.remoteHost, saved.remoteLogin);
+    this.remoteSwitch.disabled = this.switchBusy;
     this.titleTool.value = this.settingTool ?? (this.customOpen ? 'custom' : this.titlePending ?? saved.titleTool ?? 'none');
     // Keep any text entered in the custom command field since the last render.
     if (this.customCommand.value === this.renderedCustom) {
@@ -426,7 +451,7 @@ export class SettingsView {
       const toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.id = `tool-switch-${tool.id || 'shell'}`;
-      toggle.className = 'tool-switch';
+      toggle.className = 'switch';
       toggle.setAttribute('role', 'switch');
       toggle.setAttribute('aria-checked', String(tool.enabled));
       toggle.setAttribute('aria-label', `${tool.name} on`);
@@ -950,33 +975,52 @@ export class SettingsView {
     });
   }
 
-  // Save the two fields of remote access together. The server checks them and saves the
-  // host name in lower case. The fields take no edit during the save, so the reply can
-  // show the saved values. A failed save keeps the text, with the error below the fields.
-  // After a change of remote access in another view, the save fails and the error shows
-  // the saved values. A second Save then replaces them.
-  private saveRemote(): void {
-    if (!this.saved || this.remoteBusy) return;
+  // A field of remote access saves alone, as Port does. The server checks the value and
+  // saves the host name in lower case. A failed save keeps the text, with the error below
+  // the fields. Only a current save changes the error. See FieldEdit.
+  private saveRemoteField(field: RemoteField): void {
+    const text = field.input.value.trim();
+    if (!this.saved || !field.edit.edited || field.sent === text) return;
     const visit = this.visits;
-    this.remoteBusy = true;
-    this.remoteError.hidden = true;
-    this.render();
-    const done = (error?: unknown) => {
-      this.remoteBusy = false;
-      if (error === undefined) {
-        // The text is saved, so it is not an edit. The render then shows the saved values.
-        this.renderedRemote = { host: this.remoteHost.value, login: this.remoteLogin.value };
-      } else if (visit !== this.visits) {
-        this.report(remoteNotSaved, errorMessage(error));
+    const token = field.edit.begin();
+    field.sent = text;
+    const finish = (error?: unknown) => {
+      if (field.sent === text) field.sent = null;
+      if (!field.edit.done(token, error === undefined)) {
+        if (error !== undefined && visit !== this.visits) this.report(remoteNotSaved, errorMessage(error));
+      } else if (error === undefined) {
+        this.remoteError.hidden = true;
       } else {
-        // The text stays an edit of the values that the other view saved.
-        if (error instanceof RemoteChanged) this.renderedRemote = error.saved;
         this.remoteError.textContent = errorMessage(error);
         this.remoteError.hidden = false;
       }
       this.render();
     };
-    void this.saves.saveRemote(this.renderedRemote, this.remoteHost.value.trim(), this.remoteLogin.value.trim()).then(() => done(), (error: unknown) => done(error ?? new Error('Unknown error')));
+    void this.saves.saveRemoteValue(field.key, text).then(() => finish(), (error: unknown) => finish(error ?? new Error('Unknown error')));
+  }
+
+  // The switch of remote access saves at once and alone. It keeps the saved host name and
+  // login. A running save of a field completes first. Turning the switch on fails when
+  // another view changed the host name or the login. The fields then show the new values,
+  // and the error names them. A second click turns remote access on for them.
+  private switchRemote(): void {
+    if (!this.saved || this.switchBusy) return;
+    const visit = this.visits;
+    const on = !this.saved.remoteOn;
+    this.switchBusy = true;
+    this.remoteError.hidden = true;
+    this.render();
+    const finish = (error?: unknown) => {
+      this.switchBusy = false;
+      if (error !== undefined && visit !== this.visits) {
+        this.report(remoteNotSaved, errorMessage(error));
+      } else if (error !== undefined) {
+        this.remoteError.textContent = errorMessage(error);
+        this.remoteError.hidden = false;
+      }
+      this.render();
+    };
+    void this.saves.saveRemoteSwitch(on).then(() => finish(), (error: unknown) => finish(error ?? new Error('Unknown error')));
   }
 
   private saveDefault<K extends keyof Defaults>(key: K, value: Defaults[K]): void {

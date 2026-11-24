@@ -51,6 +51,10 @@ INSERT INTO worktrees VALUES('saved','/missing/worktree','/missing/repo','main',
 	if version >= 6 {
 		execSQL(t, db, "UPDATE sessions SET archived=1 WHERE id='saved'")
 	}
+	if version >= 17 {
+		// From format 17, a preparation has a tool type, a model, and an effort.
+		execSQL(t, db, "UPDATE preparations SET data=json_set(data,'$.toolType','custom','$.model','','$.effort','')")
+	}
 	return path, db
 }
 
@@ -135,6 +139,9 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 			}
 			if _, exists := original["remoteHost"]; !exists {
 				original["remoteHost"], original["remoteLogin"] = "", ""
+			}
+			if _, exists := original["remoteOn"]; !exists {
+				original["remoteOn"] = original["remoteHost"] != "" && original["remoteLogin"] != ""
 			}
 			for _, tool := range original["tools"].([]any) {
 				delete(tool.(map[string]any), "continueCommand")
@@ -254,7 +261,7 @@ func inferredType(command string) string {
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -277,15 +284,21 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			// it on. Upgrades before format 14 select the automatic port. The fixtures from
 			// format 14 saved a port and the Codex title tool, and the upgrade keeps them. The
 			// format 15 fixture saved a custom title command, and the upgrade keeps it. No
-			// upgrade saves a custom title command or turns remote access on.
+			// upgrade saves a custom title command. The format 17 fixture saved both values
+			// of remote access, so the upgrade turns the switch of remote access on. No
+			// other upgrade turns remote access on.
 			titleTool, titleCommand, port := "none", "", 0
+			remoteHost, remoteLogin := "", ""
 			if version >= 14 {
 				titleTool, port = "codex", 50000
 			}
 			if version >= 15 {
 				titleCommand = "example-title --fast"
 			}
-			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != "" || settings.RemoteLogin != "" || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: presetTools(), TitleTool: "none", CheckTools: true, UpdateCheck: true})) {
+			if version >= 17 {
+				remoteHost, remoteLogin = "my-mac.example.ts.net", "user@example.com"
+			}
+			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != remoteHost || settings.RemoteLogin != remoteLogin || settings.RemoteOn != (version >= 17) || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: presetTools(), TitleTool: "none", CheckTools: true, UpdateCheck: true})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
@@ -512,6 +525,51 @@ func TestToolTypeUpgradeRollsBack(t *testing.T) {
 	assertSnapshot(t, rawDatabase(t, path), before, true)
 }
 
+func TestRemoteSwitchUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 17)
+	execSQL(t, db, "CREATE TRIGGER reject_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted blocked remote switch update")
+	} else if !strings.Contains(err.Error(), "apply history migration 18") {
+		t.Fatal(err)
+	}
+	assertSnapshot(t, rawDatabase(t, path), before, true)
+}
+
+// Migration 18 turns the switch of remote access on only where both values are saved,
+// because only there remote access was on. It keeps the values and the revision.
+func TestRemoteSwitchUpgrade(t *testing.T) {
+	for _, test := range []struct {
+		host, login string
+		on          bool
+	}{
+		{"my-mac.example.ts.net", "user@example.com", true},
+		{"my-mac.example.ts.net", "", false},
+		{"", "user@example.com", false},
+		{"", "", false},
+	} {
+		t.Run(fmt.Sprintf("%q %q", test.host, test.login), func(t *testing.T) {
+			path, db := oldDatabase(t, 17)
+			if _, err := db.Exec("UPDATE settings SET data=json_set(data,'$.remoteHost',?,'$.remoteLogin',?) WHERE id=1", test.host, test.login); err != nil {
+				t.Fatal(err)
+			}
+			db.Close()
+			store, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			settings, err := store.Settings()
+			if err != nil || settings.RemoteOn != test.on || settings.RemoteAccess() != test.on || settings.RemoteHost != test.host || settings.RemoteLogin != test.login || settings.Revision != 9 {
+				t.Fatal("wrong remote access after the upgrade", settings, err)
+			}
+		})
+	}
+}
+
 func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 	for _, test := range []struct {
 		name, schema, message string
@@ -541,7 +599,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6, 7, 8, 9, 11, 12} {
+	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }

@@ -615,12 +615,13 @@ bbflow settings set update-check false
 bbflow settings set port 50000
 bbflow settings set remote-host my-mac.example.ts.net
 bbflow settings set remote-login user@example.com
+bbflow settings set remote true
 ```
 
 `settings get` prints the saved settings as JSON, including the revision and the tools.
 The JSON uses the field names of the protocol. Thus `default-tool` is `defaultTool`,
-`update-check` is `updateCheck`, `remote-host` is `remoteHost`, and `remote-login` is
-`remoteLogin`. `shell` is the opposite of `shellOff`.
+`update-check` is `updateCheck`, `remote` is `remoteOn`, `remote-host` is `remoteHost`,
+and `remote-login` is `remoteLogin`. `shell` is the opposite of `shellOff`.
 
 `settings get KEY` prints one value as text, in the form that `settings set` accepts.
 For `default-tool`, it prints the tool name, or an empty line for the built-in Shell.
@@ -640,6 +641,7 @@ the command prints the result.
 | `shell` | `true` or `false`. `false` turns off the built-in Shell, so it is not a choice for new sessions. If Shell is the default tool, the first tool that is on becomes the default tool. |
 | `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
 | `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port, or when browsers refuse the port, such as 6000 and 10080. See [Instance directory](#instance-directory). |
+| `remote` | `true` or `false`. The switch of remote access. `true` turns remote access on while `remote-host` and `remote-login` are set. `false` turns it off and keeps both values. A new installation starts with `false`. See [remote access](SPEC.md#remote-access). |
 | `remote-host` | The host name of this computer in Tailscale Serve, such as `my-mac.example.ts.net`, with an optional port. An empty value, `""`, removes it. The server saves the name in lower case. See [remote access](SPEC.md#remote-access). |
 | `remote-login` | The Tailscale login that can use remote access, such as `user@example.com`. An empty value, `""`, removes it. |
 
@@ -647,10 +649,20 @@ the command prints the result.
 does not move the running server. After a changed port, the command tells you that the
 port applies at the next server start. A restart stops all sessions.
 
-Remote access is on only while `remote-host` and `remote-login` are both set. A new
-installation and an upgrade start with neither. After a save of one of these keys, the
-command prints `Remote access is on.` or tells that remote access needs both keys. An
-empty saved value prints as `none`. A change applies at once and closes the open remote
+Remote access is on only while `remote` is `true` and `remote-host` and `remote-login`
+are both set. A save of `remote-host` or `remote-login` does not change `remote`. A new
+installation starts with none of them. An upgrade turns `remote` on only when both
+values were saved. An empty saved value prints as `none`.
+
+After a save of one of the three keys, the command prints the status of remote access:
+
+| Saved settings | Status |
+| --- | --- |
+| `remote` is `true`, and both values are set. | `Remote access is on.` |
+| `remote` is `true`, and a value is missing. | `The remote switch is on, but remote access needs both remote-host and remote-login.` |
+| `remote` is `false`. | `Remote access is off. Turn it on with: bbflow settings set remote true` |
+
+A change of one of the three keys applies at once and closes the open remote
 connections. While remote access is on, each device where that Tailscale user is signed
 in can run commands on this computer as you.
 
