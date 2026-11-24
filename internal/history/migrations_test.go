@@ -155,6 +155,9 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 			if _, exists := original["checkTools"]; !exists {
 				original["tools"], original["checkTools"], original["shellOff"] = upgradedTools(original["tools"].([]any)), true, false
 			}
+			if _, exists := original["sidebarWidth"]; !exists {
+				original["sidebarWidth"] = "normal"
+			}
 			if !reflect.DeepEqual(saved, original) {
 				t.Fatal("migration changed existing settings", saved, original)
 			}
@@ -261,7 +264,7 @@ func inferredType(command string) string {
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -298,7 +301,8 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			if version >= 17 {
 				remoteHost, remoteLogin = "my-mac.example.ts.net", "user@example.com"
 			}
-			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != remoteHost || settings.RemoteLogin != remoteLogin || settings.RemoteOn != (version >= 17) || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: presetTools(), TitleTool: "none", CheckTools: true, UpdateCheck: true})) {
+			// Every upgrade selects the normal sidebar width.
+			if err != nil || settings.Appearance != appearance || settings.SidebarWidth != "normal" || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != remoteHost || settings.RemoteLogin != remoteLogin || settings.RemoteOn != (version >= 17) || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", SidebarWidth: "normal", Base: "HEAD", Tools: presetTools(), TitleTool: "none", CheckTools: true, UpdateCheck: true})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
@@ -574,6 +578,20 @@ func TestRemoteSwitchUpgrade(t *testing.T) {
 	}
 }
 
+func TestSidebarWidthUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 19)
+	execSQL(t, db, "CREATE TRIGGER reject_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted blocked sidebar width update")
+	} else if !strings.Contains(err.Error(), "apply history migration 20") {
+		t.Fatal(err)
+	}
+	assertSnapshot(t, rawDatabase(t, path), before, true)
+}
+
 func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 	for _, test := range []struct {
 		name, schema, message string
@@ -603,7 +621,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17, 18} {
+	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17, 18, 19} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }

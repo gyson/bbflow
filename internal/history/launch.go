@@ -42,9 +42,12 @@ type Tool struct {
 }
 
 type Settings struct {
-	Revision    int64  `json:"revision"`
-	Appearance  string `json:"appearance"`
-	DefaultTool string `json:"defaultTool"`
+	Revision   int64  `json:"revision"`
+	Appearance string `json:"appearance"`
+	// SidebarWidth is the default width of the web UI sidebar: narrow, normal, or wide.
+	// The style sheet of the page sets the width of each value.
+	SidebarWidth string `json:"sidebarWidth"`
+	DefaultTool  string `json:"defaultTool"`
 	// ShellOff turns off the built-in Shell, the tool with the empty ID. Shell is then not
 	// a choice for new drafts and new terminals, and it cannot be the default tool. A
 	// saved settings row without the value has Shell on.
@@ -187,6 +190,13 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	case "system", "light", "dark":
 	default:
 		return settings, errors.New("appearance must be system, light, or dark")
+	}
+	switch settings.SidebarWidth {
+	case "":
+		settings.SidebarWidth = "normal"
+	case "narrow", "normal", "wide":
+	default:
+		return settings, errors.New("sidebar width must be narrow, normal, or wide")
 	}
 	saved, err := s.Settings()
 	if err != nil {

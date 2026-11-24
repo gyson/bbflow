@@ -791,7 +791,8 @@ once and keeps the selected session and the shown view.
 - The drawer is open on the welcome view, and closed in each other view, after a page
   load and after a change to the mobile layout.
 - The drawer has a width of 86% of the window, at most 330 pixels. The sidebar divider
-  is not available.
+  is not available. The [sidebar width](#sidebar-width) setting does not change the
+  drawer.
 - The state of the drawer is separate from the visibility of the sidebar in the regular
   layout.
 
@@ -915,17 +916,28 @@ sidebar also has a search box, and a bottom row with **＋ Project**, **Archived
 
 #### Sidebar width
 
-A vertical divider on the right edge of the sidebar changes its width. Drag it with a
-mouse or touch. Or focus it and use Left/Right to resize. Use Home/End to reach the
-limits. A double-click restores the default width. The default width is 278 pixels, or
-240 pixels below a window width of 950 pixels. The width stays from 240 to 480 pixels,
-and the main area keeps at least 400 pixels.
+The **Sidebar width** setting selects the default width of the sidebar. It is saved for
+the instance, so every device and view uses it. Normal and Wide follow the window width
+between their limits. Thus one saved choice fits small and large windows.
+
+| Preset | Default width |
+| --- | --- |
+| Narrow | 240 pixels. |
+| Normal | 20% of the window width, from 260 to 360 pixels. Normal is the default. |
+| Wide | 28% of the window width, from 300 to 480 pixels. |
+
+A vertical divider on the right edge of the sidebar changes the width in one view. Drag
+it with a mouse or touch. Or focus it and use Left/Right to resize. Use Home/End to
+reach the limits. A double-click restores the width of the preset. The width stays from
+240 to 480 pixels, and the main area keeps at least 400 pixels. Each preset stays inside
+these limits in every window that does not use the mobile layout.
 
 The toolbar button at the left of the session title hides or shows the sidebar.
-Command-B does the same on macOS. Ctrl+B stays available to terminal programs. Width
-and visibility stay with the browser view across session switches and reset on reload.
-In the [mobile layout](#mobile-layout), the sidebar is a drawer and the divider is not
-available.
+Command-B does the same on macOS. Ctrl+B stays available to terminal programs. The
+width of a drag and the visibility stay with the browser view across session switches.
+They reset on reload. A preset that the view applies from Settings replaces the width
+of a drag in that view. In the [mobile layout](#mobile-layout), the sidebar is a drawer
+and the divider is not available.
 
 #### Sidebar search
 
@@ -1342,9 +1354,9 @@ is no semantic chat transcript.
 
 This section has three related parts:
 
-- **Settings** is one page for the instance. It has the appearance, the server port,
-  remote access, the tools with their startup commands, types, and default models, and
-  the session defaults.
+- **Settings** is one page for the instance. It has the appearance, the sidebar width,
+  the server port, remote access, the tools with their startup commands, types, and
+  default models, and the session defaults.
 - A **preparation** holds the launch choices of a session that did not start: the
   project, the tool, its model and thinking effort, and the worktree choices. The message draft saves separately.
   Start does not send it. It stays in the editor for the user to send.
@@ -1358,11 +1370,17 @@ are **Appearance**, **Tools**, **Session defaults**, **Automatic titles**, **Upd
 **Server**, and **Remote access**. Tools come before the session defaults, because the
 default tool is one of them.
 
-**Appearance** offers **System**, **Light**, and **Dark**. System is the default and
-follows the device appearance. A selection applies to the current view at once. Other
-views read the saved appearance on reload or when they open Settings. The server
-includes the appearance in each page so it applies before the first render. If the
-server cannot read the settings, the page uses System.
+The **Appearance** card has two choices:
+
+- **Theme** offers **System**, **Light**, and **Dark**. System is the default and
+  follows the device appearance.
+- **Sidebar width** offers **Narrow**, **Normal**, and **Wide**. Normal is the default.
+  See [Sidebar width](#sidebar-width) for the width of each preset.
+
+A selection applies to the current view at once. Other views read the saved values on
+reload or when they open Settings. The server includes both values in each page, so
+they apply before the first render. If the server cannot read the settings, the page
+uses System and Normal.
 
 The toolbar title of Settings is **Settings**. A bar at the top of the page holds the
 save status and **Done**. The bar stays in view while the page scrolls. **Done** leaves
@@ -1375,7 +1393,7 @@ way:
 
 | Control | Save |
 | --- | --- |
-| Appearance, default tool, worktree default, update check | At once, on selection. |
+| Theme, sidebar width, default tool, worktree default, update check | At once, on selection. |
 | Starting branch or commit, Port, Tailscale host name, Tailscale login | On Enter, or when the field loses focus. Escape restores the saved value. |
 | Tools | **Add tool** and **Save** in the tool editor. A switch and the move buttons save at once. **Remove** asks first. |
 | Title tool | After a passed test. See [Title controls in Settings](#title-controls-in-settings). |
@@ -3724,7 +3742,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 19. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 20. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -3794,7 +3812,9 @@ WAL is enabled after the schema transaction commits.
 - Format 18 gains the nullable `sessions.pinned_at` column through migration 19. It
   keeps the time of a [pin](#pinned-sessions). Its check allows a pin only on a
   top-level session that is not archived. Existing sessions start without a pin.
-- Format 19 opens without running scripts or rewriting history, settings, or metadata.
+- Format 19 gains `sidebarWidth: "normal"` in the settings JSON through migration 20.
+  The settings revision and the other values stay.
+- Format 20 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -4110,6 +4130,23 @@ A manual check used a real Tailscale Serve proxy of Tailscale 1.104.7 on macOS, 
 - The same address for a port with no server gave status 502.
 
 ### Checks of the sidebar and archive
+
+Sidebar width fixtures cover each part of the setting:
+
+- Go fixtures verify that Settings rejects an unknown sidebar width and saves a valid
+  one. They verify that each page carries the saved appearance and sidebar width, and
+  that a failed settings read gives System and Normal.
+- Web fixtures verify that a new preset replaces the width of a drag, and that the same
+  preset keeps it.
+- Settings view fixtures verify that a sidebar width applies at once and saves. After a
+  failed save, the view shows the saved width again.
+
+A browser check with the demo instance selected **Wide** in Settings. The sidebar
+changed at once, and the setting saved. A reload kept it. A double-click on the divider
+restored the preset width after a keyboard resize. At a window width of 1920 pixels, the
+presets gave 240, 360, and 480 pixels. At 720 pixels, they gave 240, 260, and 300
+pixels, and the main area kept at least 420 pixels. The phone drawer kept 86% of the
+window. No browser errors were reported.
 
 Archive fixtures cover more than 100 saved drafts, search before pagination, and literal
 wildcard characters. They cover restoration after project removal and preservation of
@@ -5111,14 +5148,15 @@ The final display kept its recorded layout. This check did not run a real agent 
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–18 to format 19
+- Frozen schemas from repository history test upgrades from formats 3–19 to format 20
   and verify that reopen preserves the upgraded data. The format 16 fixture has Codex
   and Code Puppy tools, and the upgrade gives them their types. A blocked preparation
   update rolls back migration 17. The format 17 fixture has both values of remote
   access, and the upgrade turns its switch on. A blocked settings update rolls back
   migration 18. No upgrade pins a session. A `pinned_at` column that exists before the
-  upgrade rolls back migration 19. Four concurrent opens upgrade a format 18 archive
-  once.
+  upgrade rolls back migration 19. Every upgrade selects the normal sidebar width. A
+  blocked settings update rolls back migration 20. Four concurrent opens upgrade a
+  format 19 archive once.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.
   They also cover repeated opens, concurrent upgrades, and unsupported formats.

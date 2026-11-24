@@ -24,12 +24,13 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
 }
 
 // The title tool is not a default. It saves alone, after its test.
-export type Defaults = Pick<Settings, 'appearance' | 'defaultTool' | 'worktree' | 'base' | 'updateCheck'>;
+export type Defaults = Pick<Settings, 'appearance' | 'sidebarWidth' | 'defaultTool' | 'worktree' | 'base' | 'updateCheck'>;
 export type SettingsChange = (settings: Settings) => Settings;
 
 // The names of the defaults in the status of the Settings view.
 export const defaultLabels: Record<keyof Defaults, string> = {
-  appearance: 'Appearance',
+  appearance: 'Theme',
+  sidebarWidth: 'Sidebar width',
   defaultTool: 'Default tool',
   worktree: 'Worktree default',
   base: 'Starting branch or commit',
@@ -286,7 +287,7 @@ export function failedTitleChange(tool: string, before: TitleChoice, after: Titl
 // settings save keeps the saved title tool and custom title command, so they are not
 // among them.
 export function sameSettings(a: Settings, b: Settings): boolean {
-  return a.appearance === b.appearance && a.defaultTool === b.defaultTool && !!a.shellOff === !!b.shellOff &&
+  return a.appearance === b.appearance && a.sidebarWidth === b.sidebarWidth && a.defaultTool === b.defaultTool && !!a.shellOff === !!b.shellOff &&
     a.worktree === b.worktree && a.base === b.base &&
     a.updateCheck === b.updateCheck && a.port === b.port &&
     a.remoteOn === b.remoteOn && a.remoteHost === b.remoteHost && a.remoteLogin === b.remoteLogin && sameTools(a.tools, b.tools);

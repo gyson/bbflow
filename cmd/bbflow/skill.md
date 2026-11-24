@@ -155,14 +155,14 @@ One row for each session that has launch choices.
 
 ### `settings`
 
-One row with the appearance, tool list, launch defaults, update check, port, and remote
-access of the instance.
+One row with the appearance, sidebar width, tool list, launch defaults, update check, port,
+and remote access of the instance.
 
 | Column | Meaning |
 | --- | --- |
 | `id` | Always `1`. |
 | `revision` | Revision of the settings. |
-| `data` | JSON with the appearance, launch defaults, tools, `titleTool`, `titleCommand`, `updateCheck`, `port`, `remoteOn`, `remoteHost`, and `remoteLogin`. Each tool has an ID, name, startup command, `type`, a default `model` and `effort`, `builtin` for the built-in tool of an agent type, `enabled`, which is false for a tool that is off, and `path`, the optional CLI path of a built-in tool. `shellOff` is true when the built-in Shell is off. `titleTool` is `none`, a built-in title tool ID, or `custom`. `titleCommand` is the command of the custom title tool, or empty. `titleModel` and `titleEffort` are the model and the effort of the Claude, Codex, or Code Puppy title tool. `port` is the port of the next server start, or `0` for the automatic port. `remoteOn` is the switch of remote access, and `remoteHost` and `remoteLogin` are its host name and Tailscale login. Remote access is on only while `remoteOn` is true and both values are set. |
+| `data` | JSON with the appearance, `sidebarWidth`, launch defaults, tools, `titleTool`, `titleCommand`, `updateCheck`, `port`, `remoteOn`, `remoteHost`, and `remoteLogin`. Each tool has an ID, name, startup command, `type`, a default `model` and `effort`, `builtin` for the built-in tool of an agent type, `enabled`, which is false for a tool that is off, and `path`, the optional CLI path of a built-in tool. `shellOff` is true when the built-in Shell is off. `titleTool` is `none`, a built-in title tool ID, or `custom`. `titleCommand` is the command of the custom title tool, or empty. `titleModel` and `titleEffort` are the model and the effort of the Claude, Codex, or Code Puppy title tool. `sidebarWidth` is `narrow`, `normal`, or `wide`, the default sidebar width of the web UI. `port` is the port of the next server start, or `0` for the automatic port. `remoteOn` is the switch of remote access, and `remoteHost` and `remoteLogin` are its host name and Tailscale login. Remote access is on only while `remoteOn` is true and both values are set. |
 
 ### `server`
 

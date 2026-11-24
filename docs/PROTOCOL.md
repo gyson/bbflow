@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/42`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/43`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/42",
+    "protocol": "bbflow/43",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/42",
+    "protocol": "bbflow/43",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -740,6 +740,9 @@ current revision.
   input, separate from the composer draft.
 - Settings include `appearance` with a value of `system`, `light`, or `dark`. A save
   with an empty or omitted value uses `system`.
+- Settings include `sidebarWidth` with a value of `narrow`, `normal`, or `wide`. A save
+  with an empty or omitted value uses `normal`. See
+  [Sidebar width](SPEC.md#sidebar-width).
 - updateCheck turns the daily [release check](SPEC.md#release-check) on or off.
 - port is the loopback port of the next server start, from 1024 to 65535. Port 0
   selects the automatic port. A save of a new port fails when another program holds it
@@ -1271,13 +1274,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/42") {
+    if (message.server.protocol !== "bbflow/43") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/42", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/43", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1403,6 +1406,8 @@ versions.
 - Protocol 42 adds [`session-pin`](#session-pins), the `pinned` field of a session and
   of a session summary, and the `pinned` group of `session-list`. SQLite format 19 adds
   `sessions.pinned_at`. No session has a pin after the upgrade.
+- Protocol 43 adds `sidebarWidth` to settings. No operation is new. SQLite format 20
+  adds `sidebarWidth: "normal"`.
 
 ## Source files
 

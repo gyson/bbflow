@@ -61,7 +61,7 @@ class Node {
   close() { this.open = false; }
 }
 
-const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-tool', 'settings-worktree', 'settings-base',
+const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-sidebar-width', 'settings-tool', 'settings-worktree', 'settings-base',
   'settings-update-check', 'settings-port-form', 'settings-port', 'settings-port-error', 'settings-port-status',
   'settings-remote-switch', 'settings-remote-host', 'settings-remote-host-error', 'settings-remote-login', 'settings-remote-login-error', 'settings-remote-error',
   'settings-remote-status',
@@ -75,7 +75,7 @@ const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-
   'title-model', 'title-model-other', 'title-model-help', 'title-model-refresh', 'title-effort', 'title-effort-help'];
 const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', builtin: false, enabled: true, path: '' };
 const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', builtin: false, enabled: true, path: '' };
-const saved = { revision: 4, appearance: 'system', defaultTool: '', worktree: false, base: 'HEAD', tools: [agent, other],
+const saved = { revision: 4, appearance: 'system', sidebarWidth: 'normal', defaultTool: '', worktree: false, base: 'HEAD', tools: [agent, other],
   titleTool: 'none', titleCommand: '', titleModel: '', titleEffort: '', updateCheck: true, port: 0, remoteOn: false, remoteHost: '', remoteLogin: '' };
 const server = { protocol: 'test', instance: 'test', port: 50000, dataDir: '/fixture' };
 const event = { preventDefault() {} };
@@ -124,7 +124,10 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
     await tick();
   };
   const toasts = [];
-  const view = new SettingsView(() => server, () => {}, (title, detail) => toasts.push([title, detail]), send);
+  // presets records each sidebar width that the view applies to the page.
+  const presets = [];
+  const look = { appearance() {}, sidebarWidth: preset => presets.push(preset) };
+  const view = new SettingsView(() => server, look, (title, detail) => toasts.push([title, detail]), send);
   const opening = view.open();
   await tick();
   await reply('title-tools', { tools: titleTools, sample: 'Sample' });
@@ -144,7 +147,7 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
     await opened;
     if (pending.some(call => call.request.operation === 'tool-check')) await reply('tool-check', { installed: {} });
   };
-  return { nodes, pending, view, toasts, reply, fail, type, reopen };
+  return { nodes, pending, view, toasts, presets, reply, fail, type, reopen };
 }
 
 // addTool opens the editor with Add tool and enters a name and a command.
@@ -329,6 +332,28 @@ test('a default that the server rejects does not stay after Escape or Done', asy
   const request = await reply('settings-save');
   assert.equal(request.settings.base, 'HEAD');
   assert.equal(request.settings.appearance, 'dark');
+});
+
+test('a sidebar width applies at once, saves, and returns to the saved width when the save fails', async () => {
+  const { nodes, view, presets, reply, fail } = await setup();
+  assert.equal(nodes['settings-sidebar-width'].value, 'normal');
+  assert.equal(presets.at(-1), 'normal');
+  nodes['settings-sidebar-width'].value = 'wide';
+  nodes['settings-sidebar-width'].onchange();
+  assert.equal(presets.at(-1), 'wide', 'the page uses the selection before the reply');
+  assert.equal(nodes['settings-status'].textContent, 'Saving…');
+  await tick();
+  const request = await reply('settings-save');
+  assert.equal(request.settings.sidebarWidth, 'wide');
+  assert.equal(view.saves.saved.sidebarWidth, 'wide');
+
+  nodes['settings-sidebar-width'].value = 'narrow';
+  nodes['settings-sidebar-width'].onchange();
+  await tick();
+  view.close();
+  await fail('settings-save', 'database is locked');
+  assert.equal(nodes['settings-sidebar-width'].value, 'wide', 'the saved width shows again');
+  assert.equal(presets.at(-1), 'wide');
 });
 
 test('a custom title command that fails after Done leaves no entry', async () => {

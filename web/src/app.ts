@@ -226,7 +226,10 @@ const mobileLayout = matchMedia(mobileQuery);
 new FileListWidth();
 
 let showingSettings = false;
-const settingsView = new SettingsView(() => server, updateTerminalTheme, (title, detail) => toasts.show(title, detail));
+const settingsView = new SettingsView(() => server, {
+  appearance: updateTerminalTheme,
+  sidebarWidth: preset => sidebar.setPreset(preset),
+}, (title, detail) => toasts.show(title, detail));
 const preparation = new PreparationEditor({
   server: () => server,
   changed(session) {

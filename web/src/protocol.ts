@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/42';
+export const VERSION = 'bbflow/43';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -46,7 +46,7 @@ export interface ToolModels { type: string; source: string; models: ToolModel[];
 // titleCommand is the command of the custom title tool. It stays saved when another title
 // tool is selected.
 // shellOff turns off the built-in Shell, the tool with the empty ID.
-export interface Settings { revision: number; appearance: string; defaultTool: string; shellOff: boolean; worktree: boolean; base: string; tools: Tool[]; titleTool: string; titleCommand: string; titleModel: string; titleEffort: string; updateCheck: boolean; port: number; remoteOn: boolean; remoteHost: string; remoteLogin: string }
+export interface Settings { revision: number; appearance: string; sidebarWidth: string; defaultTool: string; shellOff: boolean; worktree: boolean; base: string; tools: Tool[]; titleTool: string; titleCommand: string; titleModel: string; titleEffort: string; updateCheck: boolean; port: number; remoteOn: boolean; remoteHost: string; remoteLogin: string }
 // The server owns the command of each built-in title tool. Settings.titleTool is none, a
 // built-in tool ID, or custom.
 // command is the command with the default model and effort. For a title tool with a

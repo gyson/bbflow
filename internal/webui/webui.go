@@ -11,15 +11,23 @@ import (
 //go:embed dist
 var files embed.FS
 
-func Register(mux *http.ServeMux, appearance func() (string, error)) {
+// Look holds the saved settings that the page applies before its first render.
+type Look struct {
+	Appearance   string
+	SidebarWidth string
+}
+
+// Register serves the UI page and its assets. look reads the saved settings of each page.
+// When it fails, the page uses System and the normal sidebar width.
+func Register(mux *http.ServeMux, look func() (Look, error)) {
 	index := template.Must(template.ParseFS(files, "dist/index.html"))
 	page := func(w http.ResponseWriter, r *http.Request) {
-		mode, err := appearance()
+		saved, err := look()
 		if err != nil {
-			mode = "system"
+			saved = Look{Appearance: "system", SidebarWidth: "normal"}
 		}
 		var body bytes.Buffer
-		if err := index.Execute(&body, mode); err != nil {
+		if err := index.Execute(&body, saved); err != nil {
 			http.Error(w, "Cannot render the UI page.", http.StatusInternalServerError)
 			return
 		}

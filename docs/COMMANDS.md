@@ -420,7 +420,7 @@ The tables are:
 | `projects` | `id`, `name`, `workspace`, `created` |
 | `sessions` | `id`, `title` (user title, or empty), `auto_title` (derived title), `workspace`, `created`, `project_id` (NULL for standalone), `archived` (0 or 1) |
 | `runs` | `id`, `session_id`, `status`, `started`, `ended`, `pid`, `detail` |
-| `settings` | `id`, `revision`, `data` (JSON appearance, defaults, tool presets, port, and remote access) |
+| `settings` | `id`, `revision`, `data` (JSON appearance, sidebar width, defaults, tool presets, port, and remote access) |
 | `preparations` | `session_id`, `revision`, `state`, `data` (JSON launch choices) |
 | `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |

@@ -118,7 +118,13 @@ button.text-button { padding: 4px 8px; border-color: transparent; background: tr
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1; }
 input, textarea, select { width: 100%; border: 1px solid var(--border); background: var(--surface); border-radius: 7px; padding: 10px 11px; color: inherit; }
-.sidebar { width: var(--sidebar-width, 278px); flex-shrink: 0; padding: 26px 16px 16px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 19px; }
+/* The saved sidebar width sets the default width: narrow, normal, or wide. Normal and wide
+   follow the window width between their limits. A drag in a view replaces the default
+   width until reload. Each preset stays inside the drag limits in sidebar.ts. */
+:root { --sidebar-default: clamp(260px, 20vw, 360px); }
+:root[data-sidebar-width="narrow"] { --sidebar-default: 240px; }
+:root[data-sidebar-width="wide"] { --sidebar-default: clamp(300px, 28vw, 480px); }
+.sidebar { width: var(--sidebar-width, var(--sidebar-default)); flex-shrink: 0; padding: 26px 16px 16px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 19px; }
 /* The open drawer takes the focus when no row can take it. It is not a control. */
 .sidebar:focus { outline: none; }
 .brand { padding: 0 6px 10px; color: inherit; text-decoration: none; font-size: 23px; font-weight: 650; letter-spacing: -.7px; }
@@ -327,7 +333,7 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .form-error { color: var(--danger); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
-@media (max-width: 950px) { .sidebar { width: var(--sidebar-width, 240px); } .toolbar { padding: 18px; flex-wrap: wrap; } #page-bar { padding: 10px 18px; } #session-view { padding: 16px; } .actions { flex-wrap: wrap; } }
+@media (max-width: 950px) { .toolbar { padding: 18px; flex-wrap: wrap; } #page-bar { padding: 10px 18px; } #session-view { padding: 16px; } .actions { flex-wrap: wrap; } }
 @media (max-width: 620px) { .welcome { padding: 36px 24px; } }
 
 .project-group { margin-bottom: 16px; }
@@ -412,9 +418,9 @@ button.link-button { padding: 0; border: 0; background: none; color: var(--link)
 .title-notes { padding-left: 18px; }
 .title-notes li + li { margin-top: 6px; }
 .title-notes strong { font-weight: 600; }
-/* The title tool list is outside a form. Give it the field style of a form. The spinner
-   shows after Test while a title test runs. */
-#title-tool { margin-top: 8px; font-weight: 400; }
+/* The Appearance lists and the title tool list are outside a form. Give them the field
+   style of a form. The spinner shows after Test while a title test runs. */
+#settings-appearance, #settings-sidebar-width, #title-tool { margin-top: 8px; font-weight: 400; }
 .spinner { flex: none; box-sizing: border-box; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spinner-turn .8s linear infinite; }
 @keyframes spinner-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-color: var(--accent); } }

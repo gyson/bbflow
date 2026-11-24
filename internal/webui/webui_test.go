@@ -15,8 +15,8 @@ import (
 
 func TestPagePaths(t *testing.T) {
 	mux := http.NewServeMux()
-	appearance := "dark"
-	Register(mux, func() (string, error) { return appearance, nil })
+	look := Look{Appearance: "dark", SidebarWidth: "wide"}
+	Register(mux, func() (Look, error) { return look, nil })
 	for path, want := range map[string]int{
 		"/":                    http.StatusOK,
 		"/sessions/31a54e53":   http.StatusOK,
@@ -34,32 +34,32 @@ func TestPagePaths(t *testing.T) {
 			continue
 		}
 		if want == http.StatusOK && (!strings.Contains(recorder.Body.String(), "<title>bbflow</title>") ||
-			!strings.Contains(recorder.Body.String(), `data-appearance="dark"`)) {
-			t.Errorf("GET %s did not serve the dark UI page", path)
+			!strings.Contains(recorder.Body.String(), `data-appearance="dark" data-sidebar-width="wide"`)) {
+			t.Errorf("GET %s did not serve the dark UI page with the wide sidebar", path)
 		}
 	}
-	appearance = "light"
+	look = Look{Appearance: "light", SidebarWidth: "narrow"}
 	recorder := httptest.NewRecorder()
 	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
-	if !strings.Contains(recorder.Body.String(), `data-appearance="light"`) {
-		t.Fatal("UI did not use the updated appearance")
+	if !strings.Contains(recorder.Body.String(), `data-appearance="light" data-sidebar-width="narrow"`) {
+		t.Fatal("UI did not use the updated appearance and sidebar width")
 	}
 }
 
-func TestPageUsesSystemWhenAppearanceReadFails(t *testing.T) {
+func TestPageUsesDefaultsWhenSettingsReadFails(t *testing.T) {
 	mux := http.NewServeMux()
-	Register(mux, func() (string, error) { return "", errors.New("cannot read settings") })
+	Register(mux, func() (Look, error) { return Look{}, errors.New("cannot read settings") })
 	recorder := httptest.NewRecorder()
 	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `data-appearance="system"`) {
-		t.Fatalf("cannot load the UI with System appearance: %d", recorder.Code)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `data-appearance="system" data-sidebar-width="normal"`) {
+		t.Fatalf("cannot load the UI with System appearance and the normal sidebar width: %d", recorder.Code)
 	}
 }
 
 // iOS shows transparent pixels of a home screen icon as black, and it ignores SVG icons.
 func TestPageLinksOpaqueAppleTouchIcon(t *testing.T) {
 	mux := http.NewServeMux()
-	Register(mux, func() (string, error) { return "system", nil })
+	Register(mux, func() (Look, error) { return Look{Appearance: "system", SidebarWidth: "normal"}, nil })
 	recorder := httptest.NewRecorder()
 	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 	if !strings.Contains(recorder.Body.String(), `<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">`) {

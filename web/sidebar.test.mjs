@@ -38,7 +38,9 @@ class Node {
   tabIndex = 0;
   isConnected = true;
   dataset = {};
-  style = { removeProperty() {}, setProperty() {} };
+  // The style holds the custom properties that the sidebar sets.
+  properties = new Map();
+  style = { removeProperty: key => this.properties.delete(key), setProperty: (key, value) => this.properties.set(key, value) };
   attributes = new Map();
   parent = null;
   children = [];
@@ -68,13 +70,13 @@ function setup({ narrow = true, home = false } = {}) {
   globalThis.document = {
     activeElement: null,
     body: { classList: { add() {}, remove() {} } },
-    documentElement: { clientWidth: narrow ? 390 : 1400 },
+    documentElement: { clientWidth: narrow ? 390 : 1400, dataset: { sidebarWidth: 'normal' } },
     getElementById: id => nodes[id],
     querySelector: selector => selector === 'main' ? main : null,
     addEventListener(type, listener) { listeners.document.push([type, listener]); },
   };
   globalThis.matchMedia = () => ({ matches: narrow, addEventListener() {} });
-  new Sidebar(() => home);
+  const sidebar = new Sidebar(() => home);
   // Send a keydown event to the listeners of the window or the document.
   const key = (target, init) => {
     const event = { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, repeat: false, defaultPrevented: false, ...init };
@@ -82,7 +84,7 @@ function setup({ narrow = true, home = false } = {}) {
     for (const [type, listener] of listeners[target]) if (type === 'keydown') listener(event);
   };
   const commandB = () => key('window', { metaKey: true, key: 'b' });
-  return { nodes, main, terminal, row, key, commandB };
+  return { nodes, main, terminal, row, key, commandB, sidebar };
 }
 
 test('the open drawer takes the focus, and the main area under it takes no input', () => {
@@ -136,4 +138,16 @@ test('the sidebar of the regular layout leaves the main area available', () => {
   assert.equal(nodes.sidebar.hidden, true);
   assert.equal(main.inert, false);
   assert.equal(document.activeElement, nodes['sidebar-toggle'], 'the focus goes to the toolbar button');
+});
+
+test('a new preset replaces the width of a drag, and the same preset keeps it', () => {
+  const { nodes, sidebar } = setup({ narrow: false });
+  const end = { key: 'End', preventDefault() {} };
+  nodes['sidebar-divider'].onkeydown(end);
+  assert.equal(nodes.sidebar.properties.get('--sidebar-width'), '480px');
+  sidebar.setPreset('normal');
+  assert.equal(nodes.sidebar.properties.get('--sidebar-width'), '480px', 'the saved preset did not change');
+  sidebar.setPreset('wide');
+  assert.equal(document.documentElement.dataset.sidebarWidth, 'wide');
+  assert.ok(!nodes.sidebar.properties.has('--sidebar-width'), 'the sidebar uses the width of the preset');
 });

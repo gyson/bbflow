@@ -167,6 +167,11 @@ Tailscale Serve. See [Remote access with Tailscale Serve](REMOTE.md) for the set
   A long session can still exceed the scrollback of its terminal. The handoff transcript
   then omits the oldest rows. The original recording keeps them. See the limits of
   [Continue in a new terminal](SPEC.md#continue-in-a-new-terminal).
+- **Show more of each session name.** In **Settings**, under **Appearance**, set
+  **Sidebar width** to **Wide**. Normal and Wide grow with the window, so one choice
+  fits a laptop and a large monitor. To change the width in one tab, drag the right
+  edge of the sidebar. A reload restores the saved width. See
+  [Sidebar width](SPEC.md#sidebar-width).
 - **Share a tool set.** To share a tool set with a team, write a setup script with
   `bbflow tool add` and `bbflow settings set`. See
   [Manage tools](COMMANDS.md#manage-tools).

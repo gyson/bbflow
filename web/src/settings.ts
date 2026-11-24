@@ -13,6 +13,14 @@ const remoteFieldNotSaved = 'Remote access stays off, because a field did not sa
 const defaultNotSaved = 'A setting did not save.';
 const titleToolNotSaved = 'The title tool did not save.';
 
+// PageLook applies the saved settings that change the look of the page.
+export interface PageLook {
+  // Apply the appearance that data-appearance of the page now has.
+  appearance(): void;
+  // Use a sidebar width preset: narrow, normal, or wide.
+  sidebarWidth(preset: string): void;
+}
+
 // A field of remote access. It saves alone, as Port does, and it shows its own error.
 // sending is the running save of the current text, so that Enter and the blur after it
 // save the text once. Its result tells if the text saved. An input or a reset ends it,
@@ -30,6 +38,7 @@ export class SettingsView {
   private readonly panel = element('settings-view', HTMLElement);
   private readonly form = element('settings-form', HTMLFormElement);
   private readonly appearance = element('settings-appearance', HTMLSelectElement);
+  private readonly sidebarWidth = element('settings-sidebar-width', HTMLSelectElement);
   private readonly tool = element('settings-tool', HTMLSelectElement);
   private readonly worktree = element('settings-worktree', HTMLInputElement);
   private readonly base = element('settings-base', HTMLInputElement);
@@ -145,7 +154,7 @@ export class SettingsView {
   // report shows an error toast. It tells about an entry that did not save when the user
   // left Settings, because the view keeps no entry and no error of it. send is the server
   // call. A fixture replaces it to control the time of each reply.
-  constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void,
+  constructor(private readonly server: () => ServerInfo | null, private readonly look: PageLook,
     private readonly report: (title: string, detail: string) => void, private readonly send: typeof call = call) {
     this.toolModels = new ModelPicker('tool', { server: () => this.server(), changed: () => this.editorChanged(), send: this.send });
     this.toolName.oninput = this.toolCommand.oninput = this.toolPath.oninput = () => this.editorChanged();
@@ -170,6 +179,10 @@ export class SettingsView {
     this.appearance.onchange = () => {
       this.applyAppearance(this.appearance.value);
       this.saveDefault('appearance', this.appearance.value);
+    };
+    this.sidebarWidth.onchange = () => {
+      this.applySidebarWidth(this.sidebarWidth.value);
+      this.saveDefault('sidebarWidth', this.sidebarWidth.value);
     };
     this.tool.onchange = () => this.saveDefault('defaultTool', this.tool.value);
     this.worktree.onchange = () => this.saveDefault('worktree', this.worktree.checked);
@@ -384,7 +397,12 @@ export class SettingsView {
   private applyAppearance(appearance: string): void {
     this.appearance.value = appearance;
     document.documentElement.dataset.appearance = appearance;
-    this.updateAppearance();
+    this.look.appearance();
+  }
+
+  private applySidebarWidth(preset: string): void {
+    this.sidebarWidth.value = preset;
+    this.look.sidebarWidth(preset);
   }
 
   private render(): void {
@@ -392,6 +410,7 @@ export class SettingsView {
     if (!saved) return;
     const defaults = this.saves.defaults;
     this.applyAppearance(defaults.appearance ?? saved.appearance);
+    this.applySidebarWidth(defaults.sidebarWidth ?? saved.sidebarWidth);
     this.worktree.checked = defaults.worktree ?? saved.worktree;
     this.updateCheck.checked = defaults.updateCheck ?? saved.updateCheck;
     // Keep any text entered since the last blur or submit.

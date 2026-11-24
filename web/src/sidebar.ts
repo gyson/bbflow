@@ -39,7 +39,7 @@ export class Sidebar {
   private readonly toggle = element('sidebar-toggle', HTMLButtonElement);
   private readonly main = mainArea();
   // These preferences belong to the view. Session changes preserve them. Reload resets them.
-  // A null width uses the default width from the style sheet.
+  // A null width uses the default width of the saved preset, from the style sheet.
   private width: number | null = null;
   private visible = true;
   private drawer: boolean;
@@ -98,6 +98,16 @@ export class Sidebar {
     });
     window.addEventListener('resize', () => this.layout());
     this.apply();
+  }
+
+  // Use a saved width preset: narrow, normal, or wide. The style sheet sets the default
+  // width of each preset. A new preset replaces the width of a drag in this view.
+  setPreset(preset: string): void {
+    const root = document.documentElement;
+    if (root.dataset.sidebarWidth === preset) return;
+    root.dataset.sidebarWidth = preset;
+    this.width = null;
+    this.layout();
   }
 
   // Open or close the drawer of the mobile layout. The sidebar of a wider window stays

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-appearance="{{.}}">
+<html lang="en" data-appearance="{{.Appearance}}" data-sidebar-width="{{.SidebarWidth}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -161,8 +161,10 @@
       <div class="settings-content">
         <p id="settings-error" class="form-error" role="alert" hidden></p>
         <section class="settings-card"><h3>Appearance</h3>
-          <select id="settings-appearance" aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+          <label>Theme<select id="settings-appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
           <p class="form-help">System follows the appearance of your device.</p>
+          <label>Sidebar width<select id="settings-sidebar-width"><option value="narrow">Narrow</option><option value="normal">Normal</option><option value="wide">Wide</option></select></label>
+          <p class="form-help">Normal and Wide grow with the window. To change the width in one tab until you reload it, drag the right edge of the sidebar.</p>
         </section>
         <section class="settings-card">
           <div class="settings-heading"><h3>Tools</h3></div>

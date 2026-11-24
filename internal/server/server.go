@@ -99,9 +99,9 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		return !forwarded(r) && (r.Host == listener.Addr().String() || r.Host == fmt.Sprintf("localhost:%d", s.info.Port))
 	}
 	mux := http.NewServeMux()
-	webui.Register(mux, func() (string, error) {
+	webui.Register(mux, func() (webui.Look, error) {
 		settings, err := s.store.Settings()
-		return settings.Appearance, err
+		return webui.Look{Appearance: settings.Appearance, SidebarWidth: settings.SidebarWidth}, err
 	})
 	mux.HandleFunc("GET /client-config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
