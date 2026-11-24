@@ -517,8 +517,8 @@ the values are independent.
 - When the switch turns off, the settings keep both values. Thus the switch turns remote
   access on again without a new entry.
 - A save of one value alone succeeds.
-- An upgrade from format 17 turns the switch on only when both values are saved,
-  because remote access was on there before. See [Formats](#formats).
+- An upgrade turns the switch on only when both values are saved, because remote access
+  was on there before. See [Formats](#formats).
 - A change applies without a server restart. It is in effect before the server
   replies to the save. Thus a request after a successful save gets the new rules.
 - A change of the switch or of either value closes each open WebSocket connection of a
@@ -1381,7 +1381,8 @@ entry is saved. Otherwise it names each entry that is not saved, for example
   the switch or the other field.
 - The fields take input during a save. A save clears the edit of its field only when no
   input came after the save started. Then the field shows the saved value, with the host
-  name in lower case. Enter and the blur after it save the text once.
+  name in lower case. Enter and the blur after it save the text once. An input or Escape
+  during a save makes the next Enter or blur save again.
 - The status below the fields tells if remote access is on, and for which host name and
   login. When the switch is on without both values, the status tells that remote access
   needs both.
@@ -1390,11 +1391,17 @@ entry is saved. Otherwise it names each entry that is not saved, for example
   fields. New text in either field hides the error.
 - A save of a field applies to the latest settings after a revision conflict. Thus a
   view with an earlier login cannot restore a login that another view removed.
-- The switch saves after a running save of a field. When another view changed the host
-  name or the login, a click that turns the switch on does not save. The fields show the
-  new values, and the error names them. A second click turns remote access on for those
-  values. Thus the switch never turns remote access on for values that the view did not
-  read or save. A click that turns the switch off saves without this check.
+- A click that turns the switch on first saves each field with an edit, and it waits for
+  a running save of a field. Safari does not move the focus to a button at a click, so
+  the field gets no blur first.
+- When a field keeps an edit that did not save, the switch stays off. The error of the
+  field stays in view, or an error tells that a field did not save. Thus the switch never
+  turns remote access on for a value that differs from the text in a field.
+- When another view changed the host name or the login, a click that turns the switch on
+  does not save. The fields show the new values, and the error names them. A second
+  click turns remote access on for those values. Thus the switch never turns remote
+  access on for values that the view did not read or save.
+- A click that turns the switch off saves at once, without these steps.
 - A failed save of the switch or a field after the user left Settings shows the toast
   **Remote access did not save.**
 - A text that is not saved shows in the save status with the name of its field. The page
@@ -3956,7 +3963,8 @@ Each check sends the requests of such a proxy to the loopback port:
   off, with the same values and revision. A blocked settings update rolls back migration
   18. Four concurrent opens upgrade a format 17 archive once.
 - Web fixtures cover the **Remote access** card. A field saves alone on blur and on
-  Enter, and Enter with the blur after it sends one save. The fixtures also cover the
+  Enter, and Enter with the blur after it sends one save. An input during the save makes
+  the blur save again, for a saved value and for a rejected value. The fixtures also cover the
   saved lower case host name, the status texts, a rejected value, Escape, and a
   rejection before and after **Done**. A protocol fixture verifies `wss://` on an HTTPS
   page and `ws://` on an HTTP page.
@@ -3967,6 +3975,10 @@ Each check sends the requests of such a proxy to the loopback port:
   host name when it turns off. After another view changed the login, a click sends no
   save, the field shows the new login, and a second click turns remote access on for
   it. A failure after **Done** gives a toast.
+- Web fixtures cover a click on the switch while a field still has focus: the field saves
+  first, then the switch. With a rejected login, two clicks send no save of the switch,
+  and the error of the field stays. After Escape, the click turns remote access on for
+  the saved login.
 - Model fixtures verify that a field save before the switch in the queue is no conflict,
   and that a click that turns the switch off needs no check.
 - `curl` requests to that demo server, with the Host and the login header of a proxy,

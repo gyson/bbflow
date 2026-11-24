@@ -158,8 +158,9 @@ instance includes the HTTPS port, unless that port is 443.
 | Server port 50000 | `tailscale serve --bg 50000` | `https://my-mac.example.ts.net/` | `my-mac.example.ts.net` |
 | Server port 50001 | `tailscale serve --bg --https=8443 50001` | `https://my-mac.example.ts.net:8443/` | `my-mac.example.ts.net:8443` |
 
-- Save `remote-host` and `remote-login` in each instance. Select the instance with
-  `--dir` or `BBFLOW_DIR`.
+- Save `remote-host` and `remote-login` in each instance. Then turn remote access on in
+  each instance with `remote true` or the switch. Select the instance with `--dir` or
+  `BBFLOW_DIR`.
 - The server compares the complete Host, with its port. Thus the address of one
   instance does not open another instance.
 - Do not put an instance below a path, such as `--set-path=/dev`. The web UI loads its
