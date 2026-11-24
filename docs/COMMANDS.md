@@ -520,8 +520,9 @@ and day are estimates. See [storage report](SPEC.md#storage-report) for the meth
 
 The report shows project names, session titles, tool names, and the first 8 characters
 of session IDs. It never shows terminal content or workspace paths. Use `--redact` to
-replace project names and session titles with short IDs. The Standalone label stays.
-The report escapes Markdown characters in names, so each name shows as saved.
+replace project names and session titles with short IDs. Sessions without a project
+keep the `(no project)` label. The report escapes Markdown characters in names, so each
+name shows as saved.
 
 ### Read time and limits
 

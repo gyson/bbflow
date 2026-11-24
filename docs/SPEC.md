@@ -4046,7 +4046,7 @@ wildcard characters. They cover restoration after project removal and preservati
 draft revisions and original attachment bytes. They also verify rejection of active runs
 and unfinished launch claims.
 
-A real temporary server test creates two drafts in General and saves independent
+A real temporary server test creates two drafts in a project and saves independent
 messages. It archives one draft, restarts the server, then finds and restores that
 draft. It starts a synthetic shell and verifies rejection of an archive request while
 the shell is active. Then it stops the shell, archives the session, and replays its
