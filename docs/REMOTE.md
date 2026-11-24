@@ -67,12 +67,18 @@ is `user@example.com`.
 4. Find your Tailscale login. The menu of the Tailscale app shows it, and so does the
    **Users** page of the Tailscale admin console.
 
-5. Save the host name and the login. Use the **Remote access** card of Settings, or
-   these commands. The second command prints `Remote access is on.`
+5. Save the host name and the login, and turn remote access on. A save of the two
+   values does not turn remote access on. Do one of these:
+
+   - In the **Remote access** card of Settings, enter both values. Each field saves when
+     you press Enter or leave it. Then click the switch next to the title, so that it
+     shows **On**.
+   - Run these commands. The last command prints `Remote access is on.`
 
    ```sh
    bbflow settings set remote-host my-mac.example.ts.net
    bbflow settings set remote-login user@example.com
+   bbflow settings set remote true
    ```
 
 6. Request the address. The command prints `200` when remote access works. The first
@@ -101,14 +107,20 @@ holds that port.
 
 ## Turn remote access off
 
-To turn remote access off, save an empty value for one of the two settings. To remove
-the address too, turn off its HTTPS port in Tailscale Serve. The address without a port
-has the HTTPS port 443.
+To turn remote access off, click the switch of the **Remote access** card in Settings.
+You can also run the first command below. bbflow keeps the host name and the login, so
+the switch turns remote access on again later.
+
+To remove the address too, turn off its HTTPS port in Tailscale Serve. The address
+without a port has the HTTPS port 443.
 
 ```sh
-bbflow settings set remote-host ""
+bbflow settings set remote false
 tailscale serve --https=443 off
 ```
+
+A remote view that turns the switch off loses its connection at once. Turn remote
+access on again on the computer of the server.
 
 Do not use `tailscale serve reset` for this. It removes all addresses, also the
 addresses of other bbflow instances and of other applications.
@@ -146,8 +158,9 @@ instance includes the HTTPS port, unless that port is 443.
 | Server port 50000 | `tailscale serve --bg 50000` | `https://my-mac.example.ts.net/` | `my-mac.example.ts.net` |
 | Server port 50001 | `tailscale serve --bg --https=8443 50001` | `https://my-mac.example.ts.net:8443/` | `my-mac.example.ts.net:8443` |
 
-- Save `remote-host` and `remote-login` in each instance. Select the instance with
-  `--dir` or `BBFLOW_DIR`.
+- Save `remote-host` and `remote-login` in each instance. Then turn remote access on in
+  each instance with `remote true` or the switch. Select the instance with `--dir` or
+  `BBFLOW_DIR`.
 - The server compares the complete Host, with its port. Thus the address of one
   instance does not open another instance.
 - Do not put an instance below a path, such as `--set-path=/dev`. The web UI loads its
@@ -160,9 +173,10 @@ instance includes the HTTPS port, unless that port is 443.
 | Result | Cause | Action |
 | --- | --- | --- |
 | The command prints `Serve is not enabled on your tailnet`. | The tailnet does not permit Serve yet. | Open the link that the command prints, and approve. Then run the command again. |
-| The page shows `invalid host`. | Remote access is off, or the address is not the saved `remote-host`. | Save both values. Include the HTTPS port in `remote-host`, unless it is 443. |
-| The page shows `remote access needs the Tailscale login of Settings`. | The device is signed in as another Tailscale user, or it has a Tailscale tag. | Save the login of the device as `remote-login`, or sign in as the saved user. |
+| The page shows `invalid host`. | No host name is saved, or the address is not the saved `remote-host`. | Save the host name. Include the HTTPS port in `remote-host`, unless it is 443. |
+| The page shows `remote access is off`. | The switch of remote access is off. | Click the switch in Settings, or run `bbflow settings set remote true`. |
+| The page shows `remote access needs the Tailscale login of Settings`. | No login is saved, the device is signed in as another Tailscale user, or it has a Tailscale tag. | Save the login of the device as `remote-login`, or sign in as the saved user. |
 | The browser cannot find or open the address. | Tailscale is not connected on the remote device, or on the computer of the server. | Connect Tailscale on both. `tailscale status` shows the state. |
 | The browser shows status 502. | The bbflow server does not run, or it has another port than the Serve address. | Start the server. Compare its port with `tailscale serve status`. |
 | The address shows another application. | Another program holds the port of the Serve address. | Remove the address with `tailscale serve --https=443 off`, or with its HTTPS port. Then start Serve for the port that bbflow uses. |
-| The page opens, then the connection closes. | A save changed `remote-host` or `remote-login`. | Reload the page. |
+| The page opens, then the connection closes. | A save changed the switch, `remote-host`, or `remote-login`. | Reload the page. |

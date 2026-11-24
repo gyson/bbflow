@@ -89,8 +89,13 @@ func TestRemoteAccessSettings(t *testing.T) {
 	}
 	defer store.Close()
 	settings, err := store.Settings()
-	if err != nil || settings.RemoteHost != "" || settings.RemoteLogin != "" || settings.RemoteAccess() {
+	if err != nil || settings.RemoteOn || settings.RemoteHost != "" || settings.RemoteLogin != "" || settings.RemoteAccess() {
 		t.Fatal("a new database turned remote access on", settings, err)
+	}
+	// The switch saves without the two values, and remote access stays off.
+	settings.RemoteOn = true
+	if settings, err = store.SaveSettings(settings); err != nil || !settings.RemoteOn || settings.RemoteAccess() {
+		t.Fatal("the switch alone turned remote access on", settings, err)
 	}
 	for _, host := range []string{"localhost", "my-mac", "127.0.0.1", "100.64.0.1:443", "my-mac.localhost", "my-mac.example.ts.net:0", "my-mac.example.ts.net:65536", "my-mac.example.ts.net:08", "my-mac.example.ts.net:", "https://my-mac.example.ts.net", "my-mac.example.ts.net/", "my mac.example.ts.net", "-mac.example.ts.net", "my-mac..ts.net", "*.ts.net", strings.Repeat("a", 64) + ".ts.net", strings.Repeat("a.", 127) + "net"} {
 		settings.RemoteHost = host
@@ -114,8 +119,22 @@ func TestRemoteAccessSettings(t *testing.T) {
 	if settings, err = store.SaveSettings(settings); err != nil || settings.RemoteHost != "my-mac.example.ts.net:8443" || settings.RemoteLogin != "User@Example.com" || !settings.RemoteAccess() {
 		t.Fatal(settings, err)
 	}
-	if saved, err := store.Settings(); err != nil || saved.RemoteHost != settings.RemoteHost || saved.RemoteLogin != settings.RemoteLogin {
+	if saved, err := store.Settings(); err != nil || saved.RemoteHost != settings.RemoteHost || saved.RemoteLogin != settings.RemoteLogin || !saved.RemoteOn {
 		t.Fatal(saved, err)
+	}
+	// The switch turns remote access off and keeps the two values.
+	settings.RemoteOn = false
+	if settings, err = store.SaveSettings(settings); err != nil || settings.RemoteAccess() || settings.RemoteHost != "my-mac.example.ts.net:8443" || settings.RemoteLogin != "User@Example.com" {
+		t.Fatal("the switch did not turn remote access off", settings, err)
+	}
+	// A save of both values does not turn the switch on.
+	settings.RemoteHost = "other.example.ts.net"
+	if settings, err = store.SaveSettings(settings); err != nil || settings.RemoteOn || settings.RemoteAccess() {
+		t.Fatal("a save of the values turned remote access on", settings, err)
+	}
+	settings.RemoteOn = true
+	if settings, err = store.SaveSettings(settings); err != nil || !settings.RemoteAccess() {
+		t.Fatal(settings, err)
 	}
 	// A title tool change keeps remote access.
 	if settings, err = store.SetTitleTool(TitleChoice{Tool: "codex"}, settings.Choice()); err != nil || !settings.RemoteAccess() {

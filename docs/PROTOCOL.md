@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/40`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/41`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/40",
+    "protocol": "bbflow/41",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/40",
+    "protocol": "bbflow/41",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -729,12 +729,14 @@ current revision.
   selects the automatic port. A save of a new port fails when another program holds it
   at `127.0.0.1` or `::1`. A save also fails for a bad port of the Fetch Standard, such
   as 6000. A saved port does not move the running server.
-- remoteHost and remoteLogin are the two values of
-  [remote access](SPEC.md#remote-access). Remote access is on only while both are set.
-  remoteHost is a DNS name with at least two labels and an optional port, and the
+- remoteOn is the switch of [remote access](SPEC.md#remote-access), and remoteHost and
+  remoteLogin are its two values. Remote access is on only while remoteOn is true and
+  both values are set. The server does not change remoteOn when a save changes a value.
+- remoteHost is a DNS name with at least two labels and an optional port, and the
   server saves it in lower case. remoteLogin has at most 254 printable ASCII characters,
-  without spaces. A save with another value fails. A save that changes either value
-  closes the open connections of remote requests, after its reply.
+  without spaces. A save with another value fails. A save that changes remoteOn or
+  either value closes the open connections of remote requests before its reply. Only
+  the connection of the save stays open for its reply. See [Remote host](#remote-host).
 - Saving requires the current revision. Removing a default tool requires selecting
   another default in the same save.
 - These operations do not install or authenticate tools.
@@ -1213,12 +1215,14 @@ computer of the server forwards to the loopback port. The supported proxy is Tai
 Serve. The server answers a request that is not [local](#host-and-origin) only when all
 of these conditions are true:
 
-- The settings have a `remoteHost` and a `remoteLogin`.
 - The Host is exactly `remoteHost`, with the same port or no port.
+- `remoteOn` is true.
 - The request has exactly one `Tailscale-User-Login` header. Its value is `remoteLogin`,
-  compared without letter case.
+  compared without letter case. An empty `remoteLogin` admits no request.
 
-Each other request gets status 403. A remote WebSocket upgrade also needs exactly one
+Each other request gets status 403. The body is `invalid host`, `remote access is off`,
+or `remote access needs the Tailscale login of Settings`. It names the first check of
+the list that failed. A remote WebSocket upgrade also needs exactly one
 Origin header with the value `https://` and the Host of the same request. An HTTP origin of the same
 host, another port, and a missing Origin get status 403.
 
@@ -1236,9 +1240,9 @@ host, another port, and a missing Origin get status 403.
   page. For a local page, it names the two loopback addresses.
 - The greeting and `GET /client-config` are the same as for a local request. They name
   the loopback port of the server, not the remote host.
-- A change of `remoteHost` or `remoteLogin` is in effect before the reply of its
-  `settings-save`. It closes each open connection of a remote request. The connection
-  of the save itself closes after its reply.
+- A change of `remoteOn`, `remoteHost`, or `remoteLogin` is in effect before the reply
+  of its `settings-save`. It closes each open connection of a remote request. The
+  connection of the save itself closes after its reply.
 - The server applies the saved values in the order of the settings revisions. A save
   with an earlier revision does not replace the values of a later one.
 
@@ -1251,13 +1255,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/40") {
+    if (message.server.protocol !== "bbflow/41") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/40", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/41", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1375,6 +1379,11 @@ versions.
   `title-tools` adds `type`, `prefix`, `suffix`, `model`, and `effort`. SQLite format 17
   gives each tool the type of its command, an empty model and effort, and the built-in
   tools.
+- Protocol 41 adds `remoteOn`, the switch of remote access, to settings. A save of
+  `remoteHost` and `remoteLogin` no longer turns remote access on. A rejected
+  [remote host](#remote-host) request for the saved host can get the body
+  `remote access is off`. No operation is new. SQLite format 18 adds `remoteOn`, which
+  is true only where both values were saved.
 
 ## Source files
 

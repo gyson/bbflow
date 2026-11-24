@@ -41,9 +41,11 @@ func forwarded(r *http.Request) bool {
 // which can already use the loopback host names without the headers of a proxy.
 type remoteAccess struct {
 	mu sync.Mutex
-	// host and login are the saved values. Remote access is on while both are set.
+	// on is the saved switch, and host and login are the saved values. Remote access
+	// admits requests only while the switch is on and both values are set.
+	on          bool
 	host, login string
-	// revision is the settings revision of host and login.
+	// revision is the settings revision of on, host, and login.
 	revision int64
 	// conns holds the open WebSocket connections of remote requests. A change of the
 	// remote access settings closes them.
@@ -59,11 +61,17 @@ func (a *remoteAccess) check(r *http.Request) error {
 	return a.checkLocked(r)
 }
 
+// The checks go in this order: the Host, the switch, and the login. Thus a request for
+// the saved host tells that the switch is off. Each request for another host gets the
+// same error, whatever the switch is.
 func (a *remoteAccess) checkLocked(r *http.Request) error {
-	if a.host == "" || a.login == "" || r.Host != a.host {
+	if a.host == "" || r.Host != a.host {
 		return errors.New("invalid host")
 	}
-	if logins := r.Header.Values(loginHeader); len(logins) != 1 || !strings.EqualFold(logins[0], a.login) {
+	if !a.on {
+		return errors.New("remote access is off")
+	}
+	if logins := r.Header.Values(loginHeader); a.login == "" || len(logins) != 1 || !strings.EqualFold(logins[0], a.login) {
 		return errors.New("remote access needs the Tailscale login of Settings")
 	}
 	return nil
@@ -112,10 +120,10 @@ func (a *remoteAccess) saved(settings history.Settings, keep *protocol.Conn) {
 		return
 	}
 	a.revision = settings.Revision
-	if a.host == settings.RemoteHost && a.login == settings.RemoteLogin {
+	if a.on == settings.RemoteOn && a.host == settings.RemoteHost && a.login == settings.RemoteLogin {
 		return
 	}
-	a.host, a.login = settings.RemoteHost, settings.RemoteLogin
+	a.on, a.host, a.login = settings.RemoteOn, settings.RemoteHost, settings.RemoteLogin
 	for conn := range a.conns {
 		if conn != keep {
 			conn.Close()

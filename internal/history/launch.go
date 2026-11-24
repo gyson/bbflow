@@ -70,15 +70,19 @@ type Settings struct {
 	// Port is the loopback port that the server uses at its next start. 0 selects the
 	// automatic port. A change applies only after a server restart.
 	Port int `json:"port"`
-	// RemoteHost is the Host of the requests that a reverse proxy on this computer, such
-	// as Tailscale Serve, forwards to the server. RemoteLogin is the Tailscale login that
-	// each of these requests must carry. Remote access is on only while both are set.
+	// RemoteOn is the switch of remote access. RemoteHost is the Host of the requests that
+	// a reverse proxy on this computer, such as Tailscale Serve, forwards to the server.
+	// RemoteLogin is the Tailscale login that each of these requests must carry. The
+	// switch and the two values are independent. A save of the values does not turn the
+	// switch on, and the switch keeps the values when it turns off.
+	RemoteOn    bool   `json:"remoteOn"`
 	RemoteHost  string `json:"remoteHost"`
 	RemoteLogin string `json:"remoteLogin"`
 }
 
-// RemoteAccess tells if the settings turn remote access on.
-func (s Settings) RemoteAccess() bool { return s.RemoteHost != "" && s.RemoteLogin != "" }
+// RemoteAccess tells if the settings admit remote requests. The switch must be on, and
+// both values must be set.
+func (s Settings) RemoteAccess() bool { return s.RemoteOn && s.RemoteHost != "" && s.RemoteLogin != "" }
 
 // maxCustomTools is the most tools that the user can add.
 const maxCustomTools = 100

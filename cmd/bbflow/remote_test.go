@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -59,6 +60,23 @@ func TestRemoteAccess(t *testing.T) {
 		t.Helper()
 		return send(requestHost, proxy(requestHost, requestLogin))
 	}
+	// failure returns the error text of a rejected page request.
+	failure := func(requestHost, requestLogin string) string {
+		t.Helper()
+		request, _ := http.NewRequest("GET", "http://"+address+"/", nil)
+		request.Host = requestHost
+		request.Header = proxy(requestHost, requestLogin)
+		response, err := (&http.Client{Timeout: 3 * time.Second}).Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		text, err := io.ReadAll(response.Body)
+		if err != nil || response.StatusCode != http.StatusForbidden {
+			t.Fatalf("page request for %s got %d: %v", requestHost, response.StatusCode, err)
+		}
+		return strings.TrimSpace(string(text))
+	}
 	// upgrade opens a WebSocket connection with a Host, an Origin, and headers.
 	upgrade := func(requestHost, origin string, headers http.Header) (*websocket.Conn, int) {
 		t.Helper()
@@ -103,19 +121,35 @@ func TestRemoteAccess(t *testing.T) {
 		}
 	}
 
+	const off = "Remote access is off. Turn it on with: bbflow settings set remote true\n"
+	const incomplete = "The remote switch is on, but remote access needs both remote-host and remote-login.\n"
 	// Remote access starts off. One saved value alone keeps it off.
 	rejected("off", host, login)
 	loopbackRejected("off", http.Header{"Tailscale-User-Login": {login}})
-	if output := cli("settings", "set", "remote-host", "My-Mac.Example.ts.net"); output != "Saved remote-host: "+host+".\nRemote access is off. It needs both remote-host and remote-login.\n" {
+	if output := cli("settings", "set", "remote-host", "My-Mac.Example.ts.net"); output != "Saved remote-host: "+host+".\n"+off {
 		t.Fatalf("set remote-host: %q", output)
 	}
 	rejected("host alone", host, login)
 	rejected("host alone, no login", host, "")
-	if output := cli("settings", "set", "remote-login", login); output != "Saved remote-login: "+login+".\nRemote access is on.\n" {
+	// Both values keep remote access off until the switch turns on.
+	if output := cli("settings", "set", "remote-login", login); output != "Saved remote-login: "+login+".\n"+off {
 		t.Fatalf("set remote-login: %q", output)
+	}
+	rejected("switch off", host, login)
+	if text := failure(host, login); text != "remote access is off" {
+		t.Fatalf("the error does not tell that the switch is off: %q", text)
+	}
+	if text := failure("other.example.ts.net", login); text != "invalid host" {
+		t.Fatalf("another host while the switch is off: %q", text)
+	}
+	if output := cli("settings", "set", "remote", "true"); output != "Saved remote: true.\nRemote access is on.\n" {
+		t.Fatalf("set remote: %q", output)
 	}
 	if output := cli("settings", "get", "remote-host"); output != host+"\n" {
 		t.Fatalf("get remote-host: %q", output)
+	}
+	if output := cli("settings", "get", "remote"); output != "true\n" {
+		t.Fatalf("get remote: %q", output)
 	}
 
 	// The remote page gets a policy for its own WebSocket origin.
@@ -223,7 +257,7 @@ func TestRemoteAccess(t *testing.T) {
 	}
 	// A change of remote access closes the remote connection, and only that one.
 	remote = watch(host, "https://"+host, login)
-	if output := cli("settings", "set", "remote-login", ""); output != "Saved remote-login: none.\nRemote access is off. It needs both remote-host and remote-login.\n" {
+	if output := cli("settings", "set", "remote-login", ""); output != "Saved remote-login: none.\n"+incomplete {
 		t.Fatalf("clear remote-login: %q", output)
 	}
 	if !closed(remote, 3*time.Second) {
@@ -232,10 +266,25 @@ func TestRemoteAccess(t *testing.T) {
 	if closed(local, 300*time.Millisecond) {
 		t.Fatal("the local connection closed with remote access")
 	}
-	rejected("off again", host, login)
+	rejected("no login again", host, login)
+	cli("settings", "set", "remote-login", login)
+
+	// The switch turns remote access off and keeps both values. It closes the remote
+	// connection too.
+	remote = watch(host, "https://"+host, login)
+	if output := cli("settings", "set", "remote", "false"); output != "Saved remote: false.\n"+off {
+		t.Fatalf("set remote false: %q", output)
+	}
+	if !closed(remote, 3*time.Second) {
+		t.Fatal("the remote connection stayed open after the switch turned off")
+	}
+	rejected("switched off", host, login)
+	if output := cli("settings", "get", "remote-login"); output != login+"\n" {
+		t.Fatalf("the switch removed the login: %q", output)
+	}
 
 	// Saved remote access applies again after a server restart.
-	cli("settings", "set", "remote-login", login)
+	cli("settings", "set", "remote", "true")
 	cli("--dir", directory, "server", "restart")
 	if response = get(host, login); response.StatusCode != http.StatusOK {
 		t.Fatalf("remote page after a restart: %d", response.StatusCode)
