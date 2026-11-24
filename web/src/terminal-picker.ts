@@ -22,6 +22,11 @@ export function stepRun(terminals: readonly TerminalInfo[], run: string, offset:
   return target ? requestRun(terminals, target) : null;
 }
 
+// A live terminal has a process that a view can join.
+export function isLive(terminal: TerminalInfo): boolean {
+  return liveStatuses.includes(terminal.status);
+}
+
 export function terminalLabel(terminal: TerminalInfo, count: number): string {
   return `Terminal ${terminal.number} of ${count} · ${terminal.tool || 'Unknown tool'} · ${terminal.status}`;
 }
@@ -103,6 +108,8 @@ export class TerminalPicker {
 
   // An empty run shows the latest terminal.
   get shownRun(): string { return this.run; }
+  // The terminals of the selected session in start order.
+  get all(): readonly TerminalInfo[] { return this.terminals; }
   shown(): TerminalInfo | undefined { return shownTerminal(this.terminals, this.run); }
   // The latest terminal can still be starting. The host then reads the list again.
   starting(): boolean { return this.terminals.at(-1)?.status === 'starting'; }

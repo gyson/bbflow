@@ -181,3 +181,49 @@ test('a detached view hides the bar, stops its search, and reads nothing more', 
   await new Promise(resolve => setTimeout(resolve, 400));
   assert.equal(requests.length, count, 'no request after the view left the session');
 });
+
+const earlier = { number: 1, run: 'a', tool: 'Demo agent', status: 'stopped', started: '2026-11-23T10:00:00Z', ended: '2026-11-23T10:30:00Z' };
+
+test('a seek waits for the first frame of the opened terminal, then jumps to its message', async t => {
+  const { nav, view, nodes } = fixture(t, () => ({ messages: [sent(2, 'later question', '2026-11-23T11:00:00Z'), sent(1, 'first question')], more: false }));
+  nav.select('one');
+  nav.window(earlier);
+  let result;
+  const seek = nav.seek(1).then(value => { result = value; });
+  await settle();
+  assert.equal(result, undefined, 'the terminal has drawn no frame yet');
+  await write(view, lines(6) + '> first question\r\n' + lines(17));
+  nav.rendered();
+  await seek;
+  assert.equal(result, 'found');
+  assert.equal(top(view), 6);
+  assert.match(nodes['message-open'].textContent, /^Message 1 of 1 · /);
+});
+
+test('a seek ends without a jump when the opened terminal does not show the message', async t => {
+  const { nav, view } = fixture(t, () => ({ messages: [sent(1, 'first question')], more: false }));
+  await write(view, lines(30));
+  nav.select('one');
+  nav.window(earlier);
+  nav.rendered();
+  view.scrollToLine(3);
+  assert.equal(await nav.seek(1), 'missing');
+  assert.equal(top(view), 3, 'the view stays where it was');
+});
+
+test('a change of the terminal or a step cancels a seek', async t => {
+  const { nav, view } = fixture(t, () => ({ messages: [sent(1, 'first question')], more: false }));
+  nav.select('one');
+  nav.window(earlier);
+  const first = nav.seek(1);
+  nav.window({ ...earlier, number: 2, run: 'b', started: '2026-11-23T10:40:00Z', ended: '' });
+  assert.equal(await first, 'cancelled');
+  const second = nav.seek(1);
+  nav.step(-1);
+  assert.equal(await second, 'cancelled');
+  // A later frame does not jump.
+  await write(view, '> first question\r\n' + lines(20));
+  nav.rendered();
+  await settle();
+  assert.notEqual(top(view), 0);
+});

@@ -70,6 +70,11 @@ func (d *demo) addData() {
 	refactorCommits(stopped.Worktree.Path)
 	t = open(d.target, protocol.Request{Operation: "session-continue", Session: refactor, LatestRun: stopped.Run.ID, Tool: demoAgent})
 	d.output(t, prompt, 4)
+	// The Messages view then lists messages of both terminals.
+	d.send(t, "Check kepler.go after the move.")
+	d.output(t, prompt, 5)
+	d.send(t, "Add a test for the Minutes helper.")
+	d.output(t, prompt, 6)
 	t.close()
 
 	// A sub-session draft of the worktree session: a reviewer in a new worktree from the

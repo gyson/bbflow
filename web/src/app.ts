@@ -36,7 +36,7 @@ import { SettingsView } from './settings.js';
 import { UpdateNotice } from './update.js';
 import { ErrorToasts } from './toasts.js';
 import { pageBar } from './page-bar.js';
-import { TerminalPicker, earlierHint } from './terminal-picker.js';
+import { TerminalPicker, earlierHint, requestRun } from './terminal-picker.js';
 import { MessageNav } from './message-nav.js';
 import { stepShortcut } from './message-marks.js';
 import { SentHistory } from './sent-history.js';
@@ -219,7 +219,13 @@ const messageNav: MessageNav = new MessageNav({
   changed: () => sentHistory.mark(),
   sent: () => sentHistory.refresh(),
 });
-const sentHistory: SentHistory = new SentHistory(() => server, messageNav);
+const sentHistory: SentHistory = new SentHistory(() => server, {
+  state: revision => messageNav.state(revision),
+  go: revision => messageNav.go(revision),
+  terminals: () => terminalPicker.all,
+  shown: () => terminalPicker.shown(),
+  open: (revision, target) => { void showMessageIn(revision, target); },
+});
 const workspacePane = new WorkspacePane(diffPane, sideTerminal, sentHistory);
 // The address tells the view before a session of the address is open.
 const sidebar = new Sidebar(() => parseRoute(location.pathname).page === 'home');
@@ -1212,6 +1218,26 @@ async function showSession(session: SessionView, launch?: Launch, run = ''): Pro
   }
 }
 
+// Open another terminal of the selected session, then scroll it to a sent message. A
+// narrow main area first shows the session in place of the workspace pane. Thus the
+// terminal opens at its shown size, and a later fit does not move it from the message.
+async function showMessageIn(revision: number, target: TerminalInfo): Promise<void> {
+  const session = selected;
+  if (!session?.id || busy) return;
+  const run = requestRun(terminalPicker.all, target);
+  if (!terminalShown()) workspacePane.close();
+  let opened = false as boolean;
+  await action(async () => {
+    await openSession(session, undefined, run);
+    opened = true;
+  }, failed('show the terminal of', session));
+  if (!opened || selected?.id !== session.id || terminalPicker.shownRun !== run) return;
+  if (await messageNav.seek(revision) === 'missing') {
+    toasts.show(failed(`show the message in terminal ${target.number} of`, session),
+      'The terminal does not show this message. The terminal can have dropped its rows from the scrollback, or the application can show the message in another form.');
+  }
+}
+
 // A missing handoff only hides the button. It does not block the session view.
 async function loadHandoff(id: string): Promise<void> {
   if (!server) return;
@@ -1231,6 +1257,8 @@ async function loadTerminals(id: string): Promise<void> {
   if (generation !== terminalsGeneration || selected?.id !== id) return;
   terminalPicker.update(terminals);
   messageNav.window(terminalPicker.shown());
+  // The Messages view names the terminal of each message.
+  sentHistory.mark();
   if (terminalPicker.shownRun && connection?.ready) hint(earlierHint(terminalPicker.shown()));
   // The tool on the workspace line comes from the shown terminal.
   if (selected && !showingSettings && !preparation.visible) showWorkspace(selected.workspace, selected.worktree);

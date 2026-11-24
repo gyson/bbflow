@@ -10,6 +10,8 @@ const searchDelay = 300, searchShare = 10;
 const flashTime = 1200;
 
 export type MarkState = 'current' | 'found' | 'missing';
+// The result of a seek. cancelled means that the view changed before the seek ended.
+export type SeekResult = 'found' | 'missing' | 'cancelled';
 
 interface Mark { message: SentMessage; row: number; marker?: IMarker; decoration?: IDecoration | undefined }
 
@@ -34,6 +36,10 @@ export class MessageNav {
   private terminal: TerminalInfo | undefined;
   private cache = emptyCache(); // The sent messages of the shown terminal.
   private loading = false;
+  private loaded = false; // The view read the newest page for the shown terminal.
+  private drawn = false; // The terminal of the view drew a frame.
+  // A jump that waits until the view can find its message. See seek.
+  private seeking: { revision: number; done(result: SeekResult): void } | null = null;
   // The newest page of sent messages that the view read last, as text. A reload with a
   // different page tells the host that the sent messages changed.
   private newest: string | null = null;
@@ -73,6 +79,7 @@ export class MessageNav {
   attach(view: Terminal): void {
     for (const listener of this.listeners) listener.dispose();
     this.view = view;
+    this.drawn = false;
     view.element?.style.setProperty('--message-mark', this.host.color());
     this.marks = [];
     this.pinned = null;
@@ -104,15 +111,20 @@ export class MessageNav {
   // terminal could show the position of a message from a later terminal.
   window(terminal: TerminalInfo | undefined): void {
     if (terminal?.run === this.terminal?.run && terminal?.started === this.terminal?.started && terminal?.ended === this.terminal?.ended) return;
+    if (terminal?.run !== this.terminal?.run) this.finish('cancelled');
     this.terminal = terminal;
+    this.loaded = false;
     // The cache keeps only the messages of one terminal. Read them again. The marks stay
     // until the next search.
     this.cache = emptyCache();
     if (this.session) void this.load(false);
   }
 
-  // The terminal drew a frame.
-  rendered(): void { this.schedule(); }
+  // The terminal drew a frame. A seek searches at once.
+  rendered(): void {
+    this.drawn = true;
+    this.schedule(this.seeking ? 0 : undefined);
+  }
 
   // The sent messages can have changed. Read the newest page again. Calls during a read
   // cause one more read after it.
@@ -136,6 +148,7 @@ export class MessageNav {
 
   // Scroll the terminal to a message. Return false when the terminal does not show it.
   go(revision: number): boolean {
+    this.finish('cancelled');
     // The rows can be older than the output. Search again before the jump.
     this.search();
     const index = this.marks.findIndex(mark => mark.message.revision === revision);
@@ -144,11 +157,25 @@ export class MessageNav {
     return true;
   }
 
+  // Scroll to a message after the view opened another terminal. The view jumps when a
+  // search finds the message. The seek ends without a jump when the terminal drew its
+  // first frame, and the view read every message that it can find, without the message.
+  // Another jump, a step, and a change of the session or the terminal cancel the seek.
+  seek(revision: number): Promise<SeekResult> {
+    this.finish('cancelled');
+    if (!this.session || !this.view) return Promise.resolve('cancelled');
+    return new Promise(done => {
+      this.seeking = { revision, done };
+      this.schedule(0);
+    });
+  }
+
   // Step to the earlier (-1) or the later (1) message. A step after the last message
   // shows the latest output.
   step(direction: -1 | 1): void {
     const view = this.view;
     if (!view) return;
+    this.finish('cancelled');
     this.search();
     const target = stepMark(this.rows(), view.buffer.active.viewportY, this.pin(), direction);
     if (target === 'end') this.end();
@@ -157,17 +184,19 @@ export class MessageNav {
 
   // Show the latest output.
   private end(): void {
+    this.finish('cancelled');
     this.host.reveal();
     this.view?.scrollToBottom();
     this.focus();
   }
 
   private reset(): void {
+    this.finish('cancelled');
     this.request++;
     clearTimeout(this.timer);
     this.timer = undefined;
     this.cache = emptyCache();
-    this.loading = this.reading = this.again = false;
+    this.loading = this.reading = this.again = this.loaded = false;
     this.pinned = null;
     this.clear();
     this.marks = [];
@@ -189,6 +218,7 @@ export class MessageNav {
       this.cache = addPage(this.cache, page, older, this.terminal);
       this.schedule(0);
       if (older) return;
+      this.loaded = true;
       const newest = page.messages.map(message => `${message.revision}:${message.confirmed}`).join(' ');
       const changed = this.newest !== null && this.newest !== newest;
       this.newest = newest;
@@ -233,6 +263,26 @@ export class MessageNav {
     this.cost = performance.now() - started;
     const oldest = candidates[0];
     if (!this.loading && wantsOlder(this.cache, !!oldest && found[0]?.message === oldest, this.terminal)) void this.load(true);
+    this.settle();
+  }
+
+  // Jump to the message of the seek, or end the seek when the view cannot find it.
+  private settle(): void {
+    const seeking = this.seeking;
+    if (!seeking) return;
+    const index = this.marks.findIndex(mark => mark.message.revision === seeking.revision);
+    if (index >= 0) {
+      this.finish('found');
+      this.jump(index);
+    } else if (this.drawn && this.loaded && !this.loading) {
+      this.finish('missing');
+    }
+  }
+
+  private finish(result: SeekResult): void {
+    const seeking = this.seeking;
+    this.seeking = null;
+    seeking?.done(result);
   }
 
   // The row of each mark. A marker moves when the scrollback drops its oldest rows, so

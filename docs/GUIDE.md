@@ -106,6 +106,15 @@ terminal names the message that you read.
 - The marks in the scroll bar of the terminal show where each message is.
 - Click **Latest output** in the bar to go back to the end of the terminal.
 
+A session with several terminals has a heading for each terminal in the list. The
+heading of the terminal that you see has the label **Shown**.
+
+- To go to a message of another terminal, click **Show in terminal 1** on the message.
+  The number names the terminal of the message.
+- An earlier terminal shows its saved final screen. Input and **Send** are off there.
+- To return, click **Back to live terminal** below the terminal. When the latest
+  terminal has ended, the button is **Back to latest terminal**.
+
 Text that you type directly in the terminal is not in the list. See
 [Sent messages in the terminal](SPEC.md#sent-messages-in-the-terminal) for the rules
 and limits.
