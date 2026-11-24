@@ -134,6 +134,9 @@ export function forgetModelLists(): void {
 
 const listKey = (server: ServerInfo, type: string) => `${server.instance} ${type}`;
 
+// The pickers of this page. A refresh in one picker updates the others of its type.
+const pickers = new Set<ModelPicker>();
+
 function loadList(server: ServerInfo, type: string, refresh: boolean, send: typeof call): Promise<ToolModels> {
   const key = listKey(server, type);
   let list = lists.get(key);
@@ -195,6 +198,7 @@ export class ModelPicker {
     this.otherInput.oninput = () => { this.chosen = this.otherInput.value.trim(); this.render(); this.host.changed(); };
     this.effortSelect.onchange = () => { this.chosenEffort = this.effortSelect.value; this.render(); this.host.changed(); };
     this.refresh.onclick = () => void this.load(true);
+    pickers.add(this);
   }
 
   get model(): string { return this.chosen; }
@@ -229,10 +233,24 @@ export class ModelPicker {
       const list = await from;
       if (token !== this.token) return;
       this.list = list;
+      if (refresh) for (const other of pickers) if (other !== this) other.adopt(server, type, from, list);
     } catch (error) {
       if (token !== this.token) return;
       this.error = errorMessage(error);
     }
+    this.loading = false;
+    this.render();
+  }
+
+  // adopt shows a list that another picker refreshed, when this picker shows the same
+  // type. The chosen model and effort stay, also a model that the new list does not have.
+  private adopt(server: ServerInfo, type: string, from: Promise<ToolModels>, list: ToolModels): void {
+    const current = this.host.server();
+    if (this.type !== type || !current || listKey(current, type) !== listKey(server, type) || this.from === from) return;
+    this.token++;
+    this.from = from;
+    this.list = list;
+    this.error = '';
     this.loading = false;
     this.render();
   }

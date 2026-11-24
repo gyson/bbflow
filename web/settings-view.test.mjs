@@ -617,6 +617,9 @@ test('Refresh list in one picker reaches the other pickers of the same type', as
   nodes['title-tool'].onchange();
   await reply('tool-models', list('model-a'));
   assert.ok(models('title-model').includes('model-a'));
+  // The user chooses model A in the title picker, which stays in view.
+  nodes['title-model'].value = 'model-a';
+  nodes['title-model'].onchange();
   // The tool editor refreshes the list of the same type.
   document.getElementById('tool-edit-builtin-codex').onclick();
   await tick();
@@ -626,10 +629,34 @@ test('Refresh list in one picker reaches the other pickers of the same type', as
   assert.equal(refresh.refresh, true);
   assert.ok(models('tool-model').includes('model-b'));
   nodes['tool-cancel'].onclick();
-  // The title picker reads the refreshed list at its next selection.
-  nodes['title-tool'].value = 'codex';
-  nodes['title-tool'].onchange();
-  await tick();
+  // The visible title picker shows the refreshed list at once, and keeps the chosen
+  // model, which the new list does not have.
   assert.ok(models('title-model').includes('model-b'));
-  assert.ok(!models('title-model').includes('model-a'));
+  assert.equal(nodes['title-model'].value, 'model-a');
+  assert.ok(!pending.some(call => call.request.operation === 'tool-models'));
+});
+
+test('an unsaved title model goes after a close, and a newer model from another view is no edit', async () => {
+  const codex = { id: 'codex', name: 'Codex', command: 'codex exec --model gpt-6-luna -', type: 'codex', prefix: 'codex exec', suffix: ' -', model: 'gpt-6-luna', effort: '' };
+  const { nodes, reply, fail, toasts, view } = await setup([codex]);
+  view.saves.update({ ...view.saves.saved, revision: 9, titleTool: 'codex', titleModel: 'gpt-6-luna', titleEffort: '' });
+  assert.equal(nodes['title-model'].value, 'gpt-6-luna');
+  // Another view saves model B. This view has no edit, so it shows B.
+  view.saves.update({ ...view.saves.saved, revision: 10, titleModel: 'gpt-6-sol' });
+  assert.equal(nodes['title-model'].value, 'gpt-6-sol');
+  assert.equal(nodes['settings-status'].textContent, 'All settings saved');
+  assert.ok(!view.unsaved);
+  // A model edit fails its test after the user left Settings. The edit goes, so it does
+  // not block a reload, and the controls show the saved model again.
+  nodes['title-model'].value = 'gpt-6-luna';
+  nodes['title-model'].onchange();
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Title model');
+  nodes['title-model-save'].onclick();
+  await tick();
+  view.close();
+  await fail('title-tool-set', 'model not found');
+  await reply('settings-get', structuredClone(view.saves.saved));
+  assert.deepEqual(toasts.at(-1), ['The title tool did not save.', 'model not found']);
+  assert.ok(!view.unsaved, 'the failed edit stayed after Settings closed');
+  assert.equal(nodes['title-model'].value, 'gpt-6-sol');
 });

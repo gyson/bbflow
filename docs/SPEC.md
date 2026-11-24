@@ -1491,7 +1491,9 @@ folder:
 The server keeps each list in memory until **Refresh list** or a server restart. A failed
 command keeps no list, and its error shows below the menu. **Other…** still works then.
 The tool editor in Settings also tells where each list comes from, and it has **Refresh
-list**. A draft shows only the error of a failed list.
+list**. A draft shows only the error of a failed list. A refresh also updates each other
+model menu of the type that is in view. A chosen model stays, also when the new list does
+not have it.
 
 The **Thinking effort** menus follow the type. For Codex, they list the efforts of the
 chosen model and show its default, for example **Model default (Medium)**. Claude Code
@@ -1930,7 +1932,11 @@ tool list. They use the menus and model lists of
   are Haiku for Claude, Luna with low effort for Codex, and `codex-gpt-6-luna` for Code
   Puppy.
 - A failed test of a selection keeps the selection, its model, and the error, so the
-  user can choose another model and test again. The saved title tool stays.
+  user can choose another model and test again. The saved title tool stays. A selection
+  or a model edit that is not saved goes when the user leaves Settings, also when its
+  test ends later.
+- A newer title model from another view replaces the shown model when this view has no
+  edit of it.
 - A change of the model or the effort does not save at once. **Save and test** shows,
   and the status shows **Not saved: Title model**. **Test** waits, because it runs the
   saved model.
@@ -3918,13 +3924,14 @@ the CLI path of Claude Code during a title test and verifies that the title tool
 not save. CLI fixtures cover `title-tool set --model` and its errors. Web fixtures
 verify that a selection of an agent title tool waits for **Save and test** with its
 default model, that a failed test keeps the selection and the model, and that a model
-change waits for **Save and test**.
+change waits for **Save and test**. They verify that a model edit goes when its test
+fails after a close, and that a newer model from another view is no edit.
 
 Upgrade fixtures verify that 100 custom tools still save after the upgrade adds the
 built-in tools, and that a 101st fails. They give new built-in tools free IDs and names
 when a saved tool has `builtin-codex` or `Codex (built-in)`. They leave a relative or
 an overlong program a custom tool. Web fixtures verify that a refresh in one model
-picker reaches the other pickers of the type, and that the browser waits 35 seconds
+picker updates a picker of the type that is in view, with its chosen model, and that the browser waits 35 seconds
 for a model list.
 
 Tool menu fixtures verify the order of the menus: the built-in tools and Shell by name,

@@ -380,7 +380,8 @@ export class SettingsView {
       this.customCommand.value = this.renderedCustom;
     }
     // Keep a model choice that is not saved. Otherwise show the saved model of the tool.
-    const title = `${saved.titleTool}\n${saved.titleModel}\n${saved.titleEffort}`;
+    // renderedTitle holds the tool, the model, and the effort that the controls show.
+    const title = `${saved.titleTool}\n${saved.titleModel ?? ''}\n${saved.titleEffort ?? ''}`;
     if (!this.busy && !this.titlePending && title !== this.renderedTitle && !this.titleModelEdited()) {
       this.renderedTitle = title;
       this.titleModels.set(this.titleType(saved.titleTool), saved.titleModel ?? '', saved.titleEffort ?? '');
@@ -756,10 +757,13 @@ export class SettingsView {
 
   // titleModelEdited reports a model or an effort of the saved title tool that is not
   // saved.
+  // It compares the controls with the saved values that they showed last, not with the
+  // newest settings. Thus a newer model from another view is no edit of this view.
   private titleModelEdited(): boolean {
-    const saved = this.saved;
-    if (!saved || !this.titleType(saved.titleTool) || this.titleTool.value !== saved.titleTool || !this.renderedTitle) return false;
-    return this.titleModels.model !== (saved.titleModel ?? '') || this.titleModels.effort !== (saved.titleEffort ?? '');
+    if (!this.renderedTitle) return false;
+    const [tool = '', model = '', effort = ''] = this.renderedTitle.split('\n');
+    if (!this.titleType(tool) || this.titleTool.value !== tool) return false;
+    return this.titleModels.model !== model || this.titleModels.effort !== effort;
   }
 
   // The name of a title tool for a message.
@@ -863,8 +867,12 @@ export class SettingsView {
       this.busy = false;
       this.settingTool = null;
       // The result stays below the tool that the list shows after the change. A pending
-      // tool that failed its test stays selected with its model.
-      if (visit !== this.visits) this.titlePending = null;
+      // tool or a model edit that failed its test stays for another try, but only while
+      // Settings is open. After a close, the controls show the saved values again.
+      if (visit !== this.visits) {
+        this.titlePending = null;
+        this.renderedTitle = '';
+      }
       this.testedTool = this.customOpen ? 'custom' : this.titlePending ?? this.saved?.titleTool ?? 'none';
       this.render();
       this.focusTitle(this.customOpen ? this.customCommand : this.titleTool);
