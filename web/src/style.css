@@ -234,8 +234,10 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 #session-view { flex: 1; min-height: 480px; display: flex; flex-direction: column; padding: 20px 26px 18px; }
 #terminal-pane { flex: 1; min-height: 180px; display: flex; flex-direction: column; }
 /* The row above the terminal holds the terminal selector. Without it, the row does not show. */
-.view-heading { position: relative; display: flex; align-items: center; min-height: 26px; padding: 0 0 12px; }
-.view-heading:not(:has(> #terminal-picker:not([hidden]))) { display: none; }
+/* The terminal selector and the message bar share one row. In a narrow session, the bar
+   goes to a second row below the selector. */
+.view-heading { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 26px; padding: 0 0 12px; }
+.view-heading:not(:has(> :is(#terminal-picker, #message-bar):not([hidden]))) { display: none; }
 #terminal-picker { display: flex; align-items: center; gap: 4px; min-width: 0; }
 #terminal-picker button { padding: 3px 9px; font-size: 11px; }
 #terminal-menu { display: flex; align-items: center; gap: 7px; min-width: 0; }
@@ -247,6 +249,17 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 .terminal-item .terminal-tool { overflow: hidden; text-overflow: ellipsis; }
 .terminal-item .terminal-status, .terminal-item .terminal-times { color: var(--text-muted); font-size: 11px; }
 .terminal-item .terminal-status.warning { color: var(--warning); }
+/* The bar of the sent messages. It names the message that the view reads. */
+#message-bar { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+#message-bar[hidden] { display: none; }
+#message-open { flex: 0 1 auto; min-width: 0; margin-right: 4px; padding: 3px 9px; border-color: transparent; background: transparent; color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+.message-step { flex: none; display: flex; padding: 4px; }
+.message-step svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+/* The mark of a sent message on its terminal row, and the row of a jump for a moment. */
+.message-mark { box-sizing: border-box; margin-left: -9px; border-left: 3px solid var(--message-mark); pointer-events: none; }
+.message-flash { background: var(--message-mark); opacity: 0; pointer-events: none; animation: message-flash 1.2s ease-out; }
+@keyframes message-flash { from { opacity: .45; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .message-flash { animation: none; opacity: .25; } }
 #reconnect, #terminal-latest { flex: none; padding: 4px 10px; font-size: 11px; }
 #terminal { flex: 1; min-height: 0; background: var(--terminal-background); border-radius: 9px; padding: 16px; overflow: auto; }
 .terminal-host { height: 100%; }
@@ -268,7 +281,7 @@ body.resizing-session, body.resizing-session * { cursor: row-resize !important; 
    editor narrow. Send stays at the right end of its line. */
 .composer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
 .composer-actions button { font-size: 12px; }
-#composer-attach, #handoff-open, #composer-history { padding: 6px 8px; border-color: transparent; background: transparent; }
+#composer-attach, #handoff-open { padding: 6px 8px; border-color: transparent; background: transparent; }
 #composer-status { flex: 1; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
 #composer-submit { margin-left: auto; }
 #composer-status.form-error { color: var(--danger); }
@@ -276,12 +289,11 @@ body.resizing-session, body.resizing-session * { cursor: row-resize !important; 
 .composer-file { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid var(--border); border-radius: 6px; padding-left: 9px; background: var(--inset); font-size: 11px; }
 .composer-file > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-file > button { padding: 3px 8px; background: transparent; border: 0; font-size: 17px; }
-.sent-dialog { width: 680px; }
-.sent-dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 40px); }
-.sent-dialog .dialog-heading { margin-bottom: 4px; }
-.sent-dialog .form-help { margin: 0 0 14px; }
-.sent-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; list-style: none; margin: 0; padding: 0 8px 0 0; }
-.sent-item { border-top: 1px solid var(--divider); padding: 14px 0; }
+/* The Messages view of the workspace pane. */
+#sent-help { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sent-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; list-style: none; margin: 0; padding: 0; }
+.sent-item { border-bottom: 1px solid var(--divider); border-left: 3px solid transparent; padding: 14px 14px 14px 13px; }
+.sent-item.current { border-left-color: var(--accent); background: var(--selected); }
 .sent-meta { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted); }
 .sent-meta time { flex: 1; }
 .sent-meta button { font-size: 12px; padding: 6px 10px; }
@@ -293,10 +305,10 @@ body.resizing-session, body.resizing-session * { cursor: row-resize !important; 
 .sent-text.empty { color: var(--text-muted); font-style: italic; }
 .sent-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .sent-files .composer-file { padding: 3px 9px; }
-#sent-status { margin: 10px 0 0; font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+#sent-status { margin: 10px 16px; font-size: 12px; color: var(--text-muted); line-height: 1.6; }
 #sent-status:empty { display: none; }
 #sent-status.form-error { color: var(--danger); }
-#sent-more { align-self: center; margin-bottom: 12px; font-size: 12px; }
+#sent-more { align-self: center; margin: 12px 0; font-size: 12px; }
 .muted { color: var(--text-muted); font-size: 12px; padding: 12px; line-height: 1.7; }
 dialog { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 30px; width: 510px; max-width: calc(100vw - 30px); box-shadow: 0 18px 80px var(--shadow-overlay); color: inherit; }
 dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(3px); }
@@ -495,12 +507,12 @@ form.tool-row .tool-actions button { grid-column: span 2; }
 #workspace-divider:focus-visible { outline: none; }
 body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-select: none !important; }
 #workspace-pane { flex: 0 1 var(--pane-width, 46%); min-width: 420px; display: flex; flex-direction: column; margin: 20px 26px 18px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
-#workspace-pane[hidden], #workspace-divider[hidden], #diff-pane[hidden], #side-terminal[hidden] { display: none; }
+#workspace-pane[hidden], #workspace-divider[hidden], #diff-pane[hidden], #side-terminal[hidden], #messages-pane[hidden] { display: none; }
 .pane-title { flex: none; color: var(--text-muted); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
 #diff-controls { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #diff-controls[hidden] { display: none; }
 #diff-refresh { margin-left: auto; }
-#diff-pane, #side-terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#diff-pane, #side-terminal, #messages-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* A container query on the width of Changes and Files shows the file list and the file
    view one at a time. */
 #diff-pane { container: diff-pane / inline-size; }
@@ -650,7 +662,7 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
 #view-switch button { flex: 0 1 130px; min-width: 0; padding: 6px 4px; overflow: hidden; text-overflow: ellipsis; }
 @container main (width < 1187px) {
   #view-switch { display: flex; }
-  #pane-changes, #pane-files, #pane-terminal, #diff-close, #side-close { display: none; }
+  #pane-changes, #pane-files, #pane-terminal, #pane-messages, #diff-close, #side-close, #sent-close { display: none; }
   #session-row > #session-view { min-width: 0; }
   #session-row:has(> #workspace-pane:not([hidden])) > #session-view { display: none; }
   #workspace-divider { display: none; }

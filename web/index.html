@@ -34,6 +34,7 @@
         </div>
         <button id="stop" class="danger" hidden data-tip="Stop the terminal of this session for every view.">Stop session</button>
         <button id="history-open" class="toolbar-icon" disabled aria-label="Search history" data-tip="Search history (⌘⇧F or Ctrl+Shift+F)"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.75" cy="8.75" r="5.25"/><path d="M12.75 12.75l4 4"/></svg></button>
+        <button id="pane-messages" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show messages" data-tip="Show messages" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.75 3.75h10.5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9.75L6.5 16.5v-2.75H4.75a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z"/><path d="M6.5 7.5h7M6.5 10.25h4.5"/></svg></button>
         <button id="pane-changes" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show changes" data-tip="Show changes" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6.5 6.5h7M10 3v7M6.5 14.5h7"/><rect x="2.75" y="2.75" width="14.5" height="14.5" rx="2.5"/></svg></button>
         <button id="pane-files" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show files" data-tip="Show files" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.75 6a2 2 0 0 1 2-2h3.2l1.8 2h5.5a2 2 0 0 1 2 2v6.25a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2z"/></svg></button>
         <button id="pane-terminal" class="toolbar-icon" aria-controls="workspace-pane" aria-pressed="false" aria-label="Show terminal" data-tip="Show terminal" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M6 8l2.5 2L6 12"/><path d="M10.5 12.5h3.5"/></svg></button>
@@ -41,7 +42,7 @@
           <div id="session-menu" class="action-menu" role="menu" aria-label="More actions" hidden><button id="menu-stop" role="menuitem" class="danger" hidden>Stop session</button><button id="menu-continue" role="menuitem" aria-describedby="menu-continue-problem" hidden>Continue in new terminal</button><p id="menu-continue-problem" class="menu-note" hidden></p><button id="rename-session" role="menuitem" hidden>Rename</button><button id="copy-session-id" role="menuitem" hidden>Copy session ID</button><button id="new-sub-session" role="menuitem" hidden>New sub-session</button><button id="archive-session" role="menuitem" hidden>Archive</button><button id="remove-worktree" role="menuitem" class="danger" hidden>Remove worktree</button></div></span>
       </div>
     </header>
-    <div id="view-switch" class="segmented" role="group" aria-label="View" hidden><button id="view-session" type="button" aria-pressed="true">Session</button><button id="view-changes" type="button" aria-pressed="false">Changes</button><button id="view-files" type="button" aria-pressed="false">Files</button><button id="view-terminal" type="button" aria-pressed="false">Terminal</button></div>
+    <div id="view-switch" class="segmented" role="group" aria-label="View" hidden><button id="view-session" type="button" aria-pressed="true">Session</button><button id="view-messages" type="button" aria-pressed="false">Messages</button><button id="view-changes" type="button" aria-pressed="false">Changes</button><button id="view-files" type="button" aria-pressed="false">Files</button><button id="view-terminal" type="button" aria-pressed="false">Terminal</button></div>
     <div id="toasts" aria-label="Errors"></div>
     <section id="welcome" class="welcome">
       <p>Select a session in the sidebar, or click ＋ beside a project to start one.</p>
@@ -75,6 +76,12 @@
         <div class="view-heading">
           <span id="terminal-picker" hidden><button id="terminal-previous" aria-label="Earlier terminal" title="Earlier terminal">‹</button><button id="terminal-menu" aria-haspopup="true" aria-expanded="false" aria-controls="terminal-list"><span id="terminal-label">Terminal</span><span aria-hidden="true">▾</span></button><button id="terminal-next" aria-label="Later terminal" title="Later terminal">›</button></span>
           <div id="terminal-list" role="group" aria-label="Terminals of this session" hidden></div>
+          <div id="message-bar" role="group" aria-label="Sent messages in the terminal" hidden>
+            <button id="message-open" aria-controls="workspace-pane"></button>
+            <button id="message-previous" class="message-step" aria-label="Earlier message" title="Earlier message (⌘↑ or Ctrl+Shift+↑ in the terminal)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 10l4.5-4.5 4.5 4.5"/></svg></button>
+            <button id="message-next" class="message-step" aria-label="Later message" title="Later message (⌘↓ or Ctrl+Shift+↓ in the terminal)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6l4.5 4.5 4.5-4.5"/></svg></button>
+            <button id="message-latest" class="message-step" aria-label="Latest output" title="Latest output"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5l4.5 4.5 4.5-4.5M3.5 12.5h9"/></svg></button>
+          </div>
         </div>
         <div id="terminal" aria-label="Session terminal"></div>
         <span id="terminal-announce" class="sr-only" role="status"></span>
@@ -85,7 +92,7 @@
         <textarea id="composer-text" rows="4" placeholder="Write a message…" spellcheck="true" aria-label="Message" aria-describedby="composer-help" disabled></textarea>
         <p id="composer-help" class="sr-only">Enter adds a line. Command+Enter or Ctrl+Enter sends the message.</p>
         <div id="composer-files" aria-label="Attached files"></div>
-        <div class="composer-actions"><button id="composer-attach" disabled title="Attach files. You can also paste or drop files in the message editor.">＋ Attach files</button><input id="composer-picker" type="file" multiple hidden><button id="handoff-open" hidden title="Show the prompt that points an agent to the earlier terminals of this session.">Handoff prompt</button><button id="composer-history" disabled title="Show the messages that Send sent in this session.">Sent messages</button><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled title="Paste the message into the terminal prompt and press Enter (⌘Enter or Ctrl+Enter)">Send ⌘↵</button></div>
+        <div class="composer-actions"><button id="composer-attach" disabled title="Attach files. You can also paste or drop files in the message editor.">＋ Attach files</button><input id="composer-picker" type="file" multiple hidden><button id="handoff-open" hidden title="Show the prompt that points an agent to the earlier terminals of this session.">Handoff prompt</button><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled title="Paste the message into the terminal prompt and press Enter (⌘Enter or Ctrl+Enter)">Send ⌘↵</button></div>
       </section>
     </section>
     <div id="workspace-divider" role="separator" tabindex="0" aria-label="Workspace pane width" aria-orientation="vertical" aria-controls="workspace-pane" title="Drag to resize. Use Left and Right arrow keys when focused." hidden></div>
@@ -127,6 +134,16 @@
           <button id="side-close" type="button" class="icon-button" title="Close the pane. The shell continues." aria-label="Close the pane">×</button>
         </div>
         <div id="side-screen" aria-label="Side terminal screen"></div>
+      </section>
+      <section id="messages-pane" aria-label="Sent messages" hidden>
+        <div class="side-toolbar">
+          <span class="pane-title">Sent messages</span>
+          <span id="sent-help">Text typed directly in the terminal is not included.</span>
+          <button id="sent-close" type="button" class="icon-button" title="Close the pane" aria-label="Close the pane">×</button>
+        </div>
+        <button id="sent-more" hidden>Show older messages</button>
+        <ol id="sent-list" class="sent-list"></ol>
+        <p id="sent-status" role="status"></p>
       </section>
     </aside>
     </div>
@@ -283,13 +300,6 @@
     <textarea id="handoff-text" class="prompt-text" rows="6" readonly aria-label="Handoff prompt"></textarea>
     <p id="handoff-status" class="form-help" role="status"></p>
     <div class="dialog-actions"><button id="handoff-copy" type="button">Copy prompt</button><button id="handoff-insert" type="button" class="primary">Put in message editor</button></div>
-  </dialog>
-  <dialog id="sent-dialog" class="sent-dialog" aria-labelledby="sent-title">
-    <div class="dialog-heading"><h2 id="sent-title">Sent messages</h2><button type="button" id="sent-close" class="text-button" aria-label="Close sent messages">✕</button></div>
-    <p class="form-help">Text typed directly in the terminal is not included.</p>
-    <button id="sent-more" hidden>Show older messages</button>
-    <ol id="sent-list" class="sent-list"></ol>
-    <p id="sent-status" role="status"></p>
   </dialog>
   <dialog id="history-dialog" class="history-dialog" aria-labelledby="history-title" aria-describedby="history-help">
     <div class="dialog-heading"><h2 id="history-title">Search history</h2><button id="history-close" class="text-button" aria-label="Close history search">✕</button></div>

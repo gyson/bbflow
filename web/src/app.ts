@@ -32,6 +32,9 @@ import { UpdateNotice } from './update.js';
 import { ErrorToasts } from './toasts.js';
 import { pageBar } from './page-bar.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
+import { MessageNav } from './message-nav.js';
+import { stepShortcut } from './message-marks.js';
+import { SentHistory } from './sent-history.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
 import { DialogEdits, lastReload, onServerReplaced, recordReload, reloadPlan, restartedMessage } from './restart.js';
 
@@ -182,6 +185,7 @@ const composer = new Composer({
   peer: () => connection?.peer ?? null,
   bracketed: () => !!terminal?.modes.bracketedPasteMode,
   action,
+  sent: () => messageNav.reload(),
 });
 const sessionSplit = new SessionSplit();
 const sessionMenu = new ActionMenu('session-menu');
@@ -198,7 +202,18 @@ const diffPane = new DiffPane(() => server);
 // Copy path of the file menu joins this workspace and the relative path of the file.
 diffPane.workspace = session => selected?.id === session ? selected.workspace : '';
 const sideTerminal = new SideTerminal(() => server, terminalTheme);
-const workspacePane = new WorkspacePane(diffPane, sideTerminal);
+// The bar above the session terminal and the Messages view show the same positions.
+const messageNav: MessageNav = new MessageNav({
+  server: () => server,
+  color: markColor,
+  // A narrow main area shows the workspace pane in place of the session.
+  reveal: () => { if (!terminalShown()) workspacePane.close(); },
+  list: () => workspacePane.show('messages'),
+  changed: () => sentHistory.mark(),
+  sent: () => sentHistory.refresh(),
+});
+const sentHistory: SentHistory = new SentHistory(() => server, messageNav);
+const workspacePane = new WorkspacePane(diffPane, sideTerminal, sentHistory);
 // The address tells the view before a session of the address is open.
 const sidebar = new Sidebar(() => parseRoute(location.pathname).page === 'home');
 const mobileLayout = matchMedia(mobileQuery);
@@ -842,13 +857,23 @@ function requestFit() {
   }
 }
 
+function darkScheme(): boolean {
+  const scheme = getComputedStyle(document.documentElement).colorScheme;
+  return scheme === 'dark' || (scheme === 'light dark' && systemDark.matches);
+}
+
+// The color of the marks of the sent messages, on the terminal background.
+function markColor(): string {
+  return darkScheme() ? '#8bbcff' : '#8fd6ac';
+}
+
 function terminalTheme() {
   const background = getComputedStyle($('terminal')).backgroundColor;
-  const scheme = getComputedStyle(document.documentElement).colorScheme;
-  const dark = scheme === 'dark' || (scheme === 'light dark' && systemDark.matches);
-  return dark
-    ? { background, foreground: '#efeff1', cursor: '#d6d6dc', selectionBackground: '#46536b' }
-    : { background, foreground: '#d7e4dc', cursor: '#b8dcc3', selectionBackground: '#486e59' };
+  // The scroll bar has no border line beside the marks of the sent messages.
+  const shared = { background, overviewRulerBorder: background };
+  return darkScheme()
+    ? { ...shared, foreground: '#efeff1', cursor: '#d6d6dc', selectionBackground: '#46536b' }
+    : { ...shared, foreground: '#d7e4dc', cursor: '#b8dcc3', selectionBackground: '#486e59' };
 }
 
 function updateTerminalTheme(): void {
@@ -857,6 +882,7 @@ function updateTerminalTheme(): void {
   const theme = terminalTheme();
   if (terminal.options.theme?.background !== theme.background) {
     terminal.options.theme = theme;
+    messageNav.restyle();
   }
 }
 
@@ -869,6 +895,21 @@ function makeTerminal(): Terminal {
     theme: terminalTheme(),
     // Terminal output must not open links, read the browser clipboard, or write to it.
     linkHandler: { activate() {} },
+    // The scroll bar shows the marks of the sent messages. This width is the default
+    // width of the scroll bar, so the terminal keeps its columns.
+    overviewRuler: { width: 14 },
+    // xterm.js names its decoration interface a proposed interface. The marks use it.
+    // The option changes no handling of terminal output.
+    allowProposedApi: true,
+  });
+  // The step keys go to the earlier or the later sent message. They are not terminal
+  // input.
+  view.attachCustomKeyEventHandler(event => {
+    const direction = stepShortcut(event);
+    if (!direction) return true;
+    event.preventDefault();
+    if (event.type === 'keydown') messageNav.step(direction);
+    return false;
   });
   fit = new FitAddon();
   terminal.loadAddon(fit);
@@ -885,6 +926,7 @@ function makeTerminal(): Terminal {
   }
   hint();
   onTerminalInput(terminal, input => !!connection?.ready && !!connection.peer?.active && connection.peer.send(input));
+  messageNav.attach(view);
   return view;
 }
 
@@ -914,6 +956,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   }
   endReason = null;
   await composer.select('');
+  messageNav.select('');
   // A start or a continue adds a terminal, so the list of the session is stale. Until the
   // new list arrives, the view shows no terminal selector and no tool.
   if (start || selected?.id !== session.id) terminalPicker.update([]);
@@ -958,6 +1001,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
     size: () => size(view),
     ready() {
       view.options.disableStdin = !connection?.peer?.active;
+      messageNav.rendered();
       showStatus();
       requestFit();
       controls();
@@ -1029,6 +1073,11 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
     throw error;
   } finally {
     if (selected?.id) {
+      // A start that failed shows the draft form again. A draft has no terminal.
+      if (!preparation.visible) {
+        messageNav.select(selected.id);
+        messageNav.window(terminalPicker.shown());
+      }
       await composer.select(selected.id);
       await loadHandoff(selected.id);
     }
@@ -1053,6 +1102,7 @@ async function loadTerminals(id: string): Promise<void> {
   try { terminals = await call(server, { operation: 'session-terminals', session: id }); } catch { /* Hide the selector. */ }
   if (generation !== terminalsGeneration || selected?.id !== id) return;
   terminalPicker.update(terminals);
+  messageNav.window(terminalPicker.shown());
   if (terminalPicker.shownRun && connection?.ready) hint(earlierHint(terminalPicker.shown()));
   // The tool on the workspace line comes from the shown terminal.
   if (selected && !showingSettings && !preparation.visible) showWorkspace(selected.workspace, selected.worktree);
@@ -1117,6 +1167,7 @@ async function showWelcome(): Promise<void> {
   selected = null;
   workspacePane.select('');
   terminalPicker.update([]); terminalPicker.show('');
+  messageNav.detach();
   terminal?.dispose(); terminal = null; fit = null;
   sessionSplit.setEnabled(false);
   $('session-view').hidden = true;

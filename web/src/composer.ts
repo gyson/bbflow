@@ -2,7 +2,6 @@ import { element } from './dom.js';
 import { DraftWatch } from './draft-watch.js';
 import { call, encodeBytes, errorMessage } from './protocol.js';
 import type { Attachment, ComposerState, Draft, Peer, ServerInfo } from './protocol.js';
-import { SentHistory } from './sent-history.js';
 
 const encoder = new TextEncoder();
 const empty = (): ComposerState => ({ draft: { revision: 0, text: '', attachments: [], pending: false }, attachments: [] });
@@ -52,6 +51,9 @@ interface Host {
   peer(): Peer | null;
   bracketed(): boolean;
   action(work: () => Promise<void>): Promise<void>;
+  // The sent messages of the session can have changed: this view sent a message, or
+  // another view saved a draft.
+  sent(): void;
 }
 
 export class Composer {
@@ -63,8 +65,6 @@ export class Composer {
   private readonly attach = element('composer-attach', HTMLButtonElement);
   private readonly submit = element('composer-submit', HTMLButtonElement);
   private readonly review = element('composer-review', HTMLButtonElement);
-  private readonly history = element('composer-history', HTMLButtonElement);
-  private readonly sent = new SentHistory(() => this.host.server());
   private session = '';
   private state = empty();
   private edits = 0;
@@ -114,7 +114,6 @@ export class Composer {
       this.addFiles(Array.from(event.dataTransfer?.files || []));
     };
     this.submit.onclick = () => this.host.action(() => this.send());
-    this.history.onclick = () => this.sent.open(this.session);
     this.review.onclick = () => {
       this.state.draft.pending = false;
       this.changed();
@@ -136,7 +135,6 @@ export class Composer {
     this.submit.disabled = unavailable || !active || this.state.draft.pending || (!this.text.value.trim() && !this.state.attachments.length);
     this.review.hidden = !this.state.draft.pending;
     this.review.disabled = unavailable;
-    this.history.disabled = unavailable || !this.session;
     for (const button of this.files.querySelectorAll('button')) button.disabled = unavailable || this.state.draft.pending;
   }
 
@@ -191,7 +189,10 @@ export class Composer {
         const result = await call(server, { operation: 'composer-draft', session: this.session,
           draft: { ...this.state.draft, attachments: [...this.state.draft.attachments] } });
         if (result.rejected) {
+          // The server rejects a save only after a send from another view. The watch
+          // gives the same draft later, so report the send here.
           this.apply(result, sentElsewhere);
+          this.host.sent();
           return;
         }
         this.state.draft.revision = result.draft.revision;
@@ -210,7 +211,6 @@ export class Composer {
   // Each selected session has one draft watch. The first pushed draft loads the editor.
   async select(session: string): Promise<void> {
     await this.flush();
-    this.sent.close();
     this.finishLoading();
     this.watch?.close();
     this.watch = null;
@@ -258,6 +258,10 @@ export class Composer {
     }
     if (!this.loaded) { this.apply(next); return; }
     if (next.draft.revision <= this.state.draft.revision) return;
+    // A send from another view saves a pending draft and then a clear draft. The watch
+    // keeps only the latest draft, also for a connected view, so a newer draft of any
+    // kind can follow a send. The host reads the sent messages to find out.
+    this.host.sent();
     if (!this.remote || next.draft.revision > this.remote.draft.revision) this.remote = next;
     this.reconcile();
   }
@@ -345,6 +349,9 @@ export class Composer {
     if (!this.loaded || !this.active || !peer?.active || this.state.draft.pending) return;
     const generation = this.generation;
     this.sending = true;
+    // The archive has the pending revision of this send. The list of the sent messages
+    // then has the message, also when its receipt is lost.
+    let recorded = false;
     try {
       await this.flush();
       if (generation !== this.generation) return;
@@ -354,6 +361,7 @@ export class Composer {
       this.changed();
       await this.flush();
       if (generation !== this.generation) return;
+      recorded = true;
       this.message('Submitting to terminal…');
       // The input ID names the pending revision. Its receipt can start the title job.
       await peer.writeInput(encodeBytes(encoder.encode(input)), `draft-${this.state.draft.revision}`);
@@ -374,6 +382,9 @@ export class Composer {
     finally {
       this.sending = false;
       this.reconcile();
+      // Report the send after the draft is clear, so that the list shows its receipt.
+      // After a lost receipt, the list shows the message as not confirmed.
+      if (recorded) this.host.sent();
     }
   }
 }

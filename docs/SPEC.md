@@ -39,10 +39,11 @@ The Web client section has these features:
 | [Session status](#session-status) | The four statuses, the sidebar icon, the session toolbar, and the More actions menu. |
 | [Session titles](#session-titles) | User titles, derived titles, and the title tools. |
 | [Message editor](#message-editor) | Send, the shared draft, sent messages, and attachments. |
+| [Sent messages in the terminal](#sent-messages-in-the-terminal) | The positions of the sent messages in the terminal: the message bar, the marks, and the steps. |
 | [Continue in a new terminal](#continue-in-a-new-terminal) | A new terminal in an ended session, with the handoff folder and prompt. |
 | [Earlier terminals](#earlier-terminals) | The terminal selector and the read-only view of an earlier terminal. |
 | [History search](#history-search) | Search of the recorded terminal output. |
-| [Workspace pane](#workspace-pane) | The pane that shows Changes, Files, or Terminal. |
+| [Workspace pane](#workspace-pane) | The pane that shows Messages, Changes, Files, or Terminal. |
 | [Changes pane](#changes-pane) | The Changes and Files views, images, the Markdown preview, and the file menu. |
 | [Side terminal](#side-terminal) | An ad hoc shell in the session workspace, without a recording. |
 
@@ -1524,8 +1525,8 @@ later terminal, each view shows the stored status of the later run.
   list with the new terminal arrives.
 - The toolbar does not show the startup command. The shell usually echoes it at the top
   of the terminal, and the start event records it.
-- At the right, a search icon opens **Search history**. Three icons show the Changes,
-  Files, and Terminal views of the workspace pane.
+- At the right, a search icon opens **Search history**. Four icons show the Messages,
+  Changes, Files, and Terminal views of the workspace pane.
 - The session toolbar shows **Stop session** to the left of the icons when you view the
   live terminal.
 - During worktree creation, the session shows `running` before a terminal exists.
@@ -1894,8 +1895,8 @@ select Code Puppy.
 
 The message editor is a multiline editor below the terminal. **Send** writes the
 message to the session terminal as one input. Each session has one saved draft, and all
-views of the session show it. The editor also attaches files and lists the sent
-messages.
+views of the session show it. The editor also attaches files. The **Messages** view of
+the workspace pane lists the sent messages.
 
 #### Layout and size
 
@@ -1913,7 +1914,7 @@ interaction remains available.
 #### Action row
 
 The editor has no visible label or help text. Its action row holds **＋ Attach files**,
-**Handoff prompt**, **Sent messages**, the draft status, and **Send ⌘↵**. The tooltips
+**Handoff prompt**, the draft status, and **Send ⌘↵**. The tooltips
 of these buttons explain them. The row wraps when the editor is narrow, for example
 while the workspace pane is open. **Send** stays at the right end of its line.
 
@@ -1967,12 +1968,17 @@ process ends. Send is disabled in these states.
 
 #### Sent messages
 
-**Sent messages** in the editor action row opens a list of the session's sent messages.
-The oldest message is at the top and the newest is at the bottom. The list opens
-scrolled to the bottom and shows the newest 20 messages. **Show older messages** at the
-top loads 20 more and keeps the visible messages in place. The `composer-sent` operation
-derives this list from the existing pending draft revisions, so the list also includes
-sends from before this feature. Direct terminal input is not listed.
+The **Messages** view of the [workspace pane](#workspace-pane) lists the sent messages
+of the session. The oldest message is at the top and the newest is at the bottom. The
+list opens scrolled to the bottom and shows the newest 20 messages. **Show older
+messages** at the top loads 20 more and keeps the visible messages in place.
+
+The `composer-sent` operation derives this list from the existing pending draft
+revisions, so the list also includes sends from before this feature. Direct terminal
+input is not listed. When the newest sent messages change, the list reads them again.
+This applies to a send from any view and to the receipt of a send. It also applies to
+a send with a lost receipt, because the archive then has the pending revision. The
+list shows that message as **Not confirmed**.
 
 Each message shows its time, text, and attached file names. **Sent** means that the
 editor got an input receipt and then cleared the draft. **Not confirmed** means that
@@ -1985,6 +1991,11 @@ the previous click. The button shows the number of hidden lines. When fewer than
 would stay hidden, all of the text shows. **Show less** returns to the first 8 lines.
 When a click hides its button, the other button gets the keyboard focus. The line count
 follows the current text wrap.
+
+**Show in terminal** scrolls the session terminal to the message. See
+[Sent messages in the terminal](#sent-messages-in-the-terminal). The button is off for
+a message that the shown terminal does not show. The list marks the message that the
+terminal view reads. When that message changes, the list scrolls it into view.
 
 **Copy** puts the message text on the system clipboard. Users can then paste it into
 any session. Copy does not include attachments or their file paths. It is not available
@@ -2018,6 +2029,132 @@ permissions for the agent.
 - When two views edit at the same time, the latest save wins. The earlier text then
   stays only in archived draft revisions. The draft does not merge edits from two
   views.
+
+### Sent messages in the terminal
+
+The view finds each sent message in the text of the session terminal. A bar above the
+terminal names the message that the view reads. Buttons, keys, and the list of the sent
+messages scroll the terminal to a message. The browser derives the positions. The
+server, the protocol, and the archive do not change.
+
+#### Search of the terminal rows
+
+The view reads the text rows of its terminal: the screen and the scrollback rows that
+the view keeps. It searches these rows for the text that Send wrote for each message.
+That text is the message, then each attached file path in single quotes.
+
+- The search ignores spaces and line breaks. Thus it finds a message that the
+  application wraps or indents.
+- A message must start its row, after at most a prompt. A short prompt has at most 6
+  characters without spaces, such as `> ` or `demo> `. A longer prompt must end with
+  one of the characters `$ % # > ❯ › ➜ »`.
+- A message must also end its row. At most 2 characters that are not letters or digits
+  can follow it, such as a frame character.
+- The search first looks for all of the text. Then it looks for the first line alone,
+  because an application can show a long message in a shorter form. Last, it looks for
+  the first 32 characters of the first line, without the rule for the row end. This
+  last form needs at least 12 characters. Each count is without spaces.
+- The search takes the messages from the newest to the oldest. It takes the last place
+  of each message, above the place of the message after it. An application that draws
+  its output again can leave earlier copies of a message in the scrollback, for example
+  after a change of the terminal width. The last copy has the current output below it.
+- The rules for the row start and the row end keep a quote of a message in running
+  text from the search.
+- A view of an [earlier terminal](#earlier-terminals) searches only the messages that
+  were sent while that terminal ran.
+
+The view searches again after new output, at most each 300 milliseconds. A search that
+takes longer waits 10 times its own duration. A jump or a step searches first. Thus the
+positions follow an application that draws its output again.
+
+The view reads the sent messages in pages of 20, from the newest message. It keeps only
+the messages of the terminal that it shows, at most 200. After the limit, a new message
+replaces the oldest one.
+
+- While the terminal shows the oldest message that the view keeps, the view reads the
+  next older page.
+- Messages of a later terminal can fill the newest pages. The view of an earlier
+  terminal then reads older pages until it reaches the messages of its terminal. It
+  reads at most 1,000 messages of the session for this.
+- A message from before the start of the terminal ends the read.
+- A send from this view, and a change of the shown terminal, read the newest page
+  again.
+- Each newer draft that the editor gets from another view also causes this read. A
+  send saves a pending draft and then a clear draft, and the server gives a view only
+  the latest draft. Thus a newer draft of any kind can follow a send. This also covers
+  a draft watch that connects again. A save that the server rejects, because another
+  view sent a message, causes the same read.
+- A read that gives a different newest page tells the Messages view to read its list
+  again. A read that arrives during another read causes one more read after it.
+- The newest page continues the kept messages only when it reaches a message that the
+  view read before. Otherwise the view starts again from that page and reads the older
+  pages again. Thus more than 20 new messages leave no gap.
+
+#### Message bar
+
+The row above the terminal shows the message bar at its right end. The bar shows for
+each session terminal, also for an ended session and an earlier terminal. Thus the
+terminal keeps its height when the first message is sent. When the row cannot hold the
+[terminal selector](#terminal-selector) and the bar, the bar goes to a second row below
+the selector.
+
+- The bar names the message that the view reads: the last found message at or above
+  the top row of the view. Its label has the number of the message among the found
+  messages, the count of the found messages, and the send time, for example
+  `Message 3 of 9 · 14:02`. The tooltip of the label has the text of the message.
+- When the top row is above the first found message, the label gives the count of the
+  messages below. Without a found message, the label is **No sent message in this
+  terminal**.
+- A click on the label opens the **Messages** view of the workspace pane.
+- **Earlier message** scrolls to the start of the message that the view reads. When
+  the view is at that start, it scrolls to the message before it.
+- **Later message** scrolls to the next message. After the last message, it scrolls to
+  the latest output.
+- **Latest output** scrolls to the end of the terminal.
+
+A jump puts the row of the message at the top of the view. The row has a highlight for
+1.2 seconds. Near the end of the output, the row cannot reach the top. The bar then
+names the jump target until the view scrolls. After a scroll, the bar again names the
+last found message at or above the top row.
+
+In a narrow main area, the workspace pane can take the place of the session. A jump
+from the **Messages** view then closes the pane and shows the session. A jump gives the
+keyboard focus to the terminal, except on a device without a mouse or a trackpad.
+
+#### Marks
+
+Each found message has a mark at the left end of its first row and a mark in the scroll
+bar of the terminal. The mark color follows the appearance. The scroll bar keeps its
+width of 14 pixels, so the terminal keeps its columns.
+
+#### Step keys
+
+While the session terminal has the keyboard focus, Command+Up and Command+Down step to
+the earlier and the later message. Ctrl+Shift+Up and Ctrl+Shift+Down do the same. The
+view does not send these keys to the terminal. Ctrl+Up and Ctrl+Down remain available
+to terminal programs.
+
+#### Limits
+
+- A position is derived from the terminal text. An application that shows a message in
+  a different form can give no position, or a position on a row with the same text.
+- A response can repeat a message on a row of its own after a prompt character, for
+  example as a quote with `>`. That row is below the message, so it takes the position.
+- Text typed directly in the terminal has no position, because the list has only the
+  messages from Send.
+- A message whose rows are no longer in the scrollback of the view has no position. See
+  [Terminal scrollback](#terminal-scrollback).
+- The frames draw an alternate screen on the screen rows of the view, below the normal
+  scrollback. The search reads these rows as it reads the other rows. An application
+  that uses the alternate screen keeps its earlier output itself. Thus one of its
+  messages has a position only while that screen shows the message.
+- The message numbers count only the found messages. They change when the oldest
+  message leaves the scrollback.
+- A full frame scrolls the view to the latest output, for example after a change of the
+  terminal width. The view does not keep its message.
+- The view keeps at most 200 sent messages of the terminal that it shows. For an
+  earlier terminal, it reads at most 1,000 messages of the session. A message beyond
+  these limits has no position.
 
 ### Continue in a new terminal
 
@@ -2123,8 +2260,8 @@ When a session has more than one terminal, a row above the terminal shows a sele
 Its label names the shown terminal, for example `Terminal 2 of 3 · Codex · exited`.
 Click the label to see every terminal in start order. Each row has the number, tool,
 status, and start and end times. A live terminal has a green dot. ‹ and › step to the
-earlier or the later terminal. A session with one terminal shows no selector and no row,
-so the terminal starts at the top of the pane.
+earlier or the later terminal. A session with one terminal shows no selector. The row
+stays, because it also holds the [message bar](#message-bar).
 
 #### View of an earlier terminal
 
@@ -2280,8 +2417,9 @@ search.
 ### Workspace pane
 
 The workspace pane is to the right of the terminal and the message editor. It shows one
-of three views:
+of four views:
 
+- **Messages** lists the [sent messages](#sent-messages) of the session.
 - **Changes** lists the changed files and shows their diffs.
 - **Files** shows the workspace folder as a tree and the current files.
 - **Terminal** shows the [side terminal](#side-terminal).
@@ -2289,11 +2427,11 @@ of three views:
 #### Pane controls
 
 Each view has an icon in the session toolbar, after the search icon. The tooltips are
-**Show changes**, **Show files**, and **Show terminal**. A click on an icon opens the
-pane with its view, or changes to its view. The icon of the shown view is pressed. A
-click on it closes the pane. **×** in the header of each view also closes the pane.
-Each view has a header with its name and only its own controls. In a narrow main
-area, the [view switch](#view-switch) replaces the icons and **×**.
+**Show messages**, **Show changes**, **Show files**, and **Show terminal**. A click on
+an icon opens the pane with its view, or changes to its view. The icon of the shown
+view is pressed. A click on it closes the pane. **×** in the header of each view also
+closes the pane. Each view has a header with its name and only its own controls. In a
+narrow main area, the [view switch](#view-switch) replaces the icons and **×**.
 
 Drafts have no workspace pane. Ended sessions keep it while their workspace exists. A
 drag on the divider or the Left and Right arrow keys change the pane width.
@@ -2313,9 +2451,9 @@ below a window width of 1465 pixels. A hidden sidebar gives its width to the mai
 #### View switch
 
 When the main area cannot hold the session and the pane, a view switch shows below the
-toolbar. It has four buttons: **Session**, **Changes**, **Files**, and **Terminal**. The
-button of the shown view is pressed. The switch is in the center of the main area. In
-the [mobile layout](#mobile-layout), it uses the full width.
+toolbar. It has five buttons: **Session**, **Messages**, **Changes**, **Files**, and
+**Terminal**. The button of the shown view is pressed. The switch is in the center of
+the main area. In the [mobile layout](#mobile-layout), it uses the full width.
 
 - **Session** shows the terminal and the message editor of the session.
 - The other buttons show a view of the pane in the full main area. A hidden session
@@ -2324,7 +2462,7 @@ the [mobile layout](#mobile-layout), it uses the full width.
   its last shown size in the browser tab. Without that size, it uses the last shown size
   of another session terminal. Without any such size, it joins with 80 columns and 24
   rows.
-- The switch replaces the three pane icons of the toolbar and **×** in the header of
+- The switch replaces the four pane icons of the toolbar and **×** in the header of
   each view. The switch and the icons use the same [pane state](#pane-state). Thus a
   change of the window width keeps the shown view.
 - The sidebar stays, except in the [mobile layout](#mobile-layout).
@@ -3766,6 +3904,71 @@ Text typed in either tab appeared in the other tab within two seconds, with no r
 After a synthetic zsh session started, Send from one tab ran the message. The editor in
 the other tab cleared at the same time. The archive held four draft revisions: two
 edits, the pending send, and the cleared draft. No browser errors were reported.
+
+### Checks of sent messages in the terminal
+
+- Fixtures in `web/message-marks.test.mjs` cover the search of the terminal rows: a
+  prompt before a message, the prompt characters of Claude Code and Codex CLI, wrapped
+  and indented text, several lines, a frame character, a later quote, a message that
+  the rows do not show, short messages, a shortened message, a long shell prompt, and
+  attached file paths.
+- The same fixtures cover the message that the view reads, the steps to the earlier and
+  the later message, the step keys, the terminal of a message, and the time label.
+- The same fixtures cover the pages of the sent messages: the read past the messages
+  of a later terminal, the end of the read before the start of the terminal, the limit
+  of 200 messages after a reload, and the limit of 1,000 read messages.
+- The fixtures also cover an earlier copy of a message after the application draws its
+  output again, a message that starts at the first character of the terminal text, and
+  a newest page that does not reach the read messages.
+- `web/message-nav.test.mjs` uses a real xterm.js terminal without a page. A step uses
+  the new row of a message after the scrollback drops rows. **Earlier message** turns
+  on when the view moves from the first message into its response. An earlier terminal
+  gets its message when a later terminal fills the newest page. A jump target near the
+  end does not return after the view scrolls away and back. A reload reports a change
+  only when the newest sent messages differ. A view that leaves its session hides the
+  bar, stops its search, and reads nothing more.
+- `web/composer.test.mjs` covers the report of a send to the list: one report after a
+  send with a receipt, one report after a lost receipt with the draft still pending,
+  and no report for a message that the editor rejects. A newer draft from another view
+  gives one report, from a connected watch and from a watch that connects again, also
+  while this view has an edit that is not saved. A save that the server rejects gives
+  one report.
+- `web/workspace-pane.test.mjs` covers the **Messages** view: its panel, its switch
+  button, and the close of the pane for a jump.
+- A second browser check verified the order of the view switch and the toolbar icons,
+  the label of the bar without the message text, and the editor without a **Sent
+  messages** button.
+- A browser check used the demo session **Tune the orbit solver** with the simulated
+  Detail agent at 1500 x 900 pixels. The bar named message 8 of 8. **Earlier message**
+  and **Later message** stepped between the messages, and each jump put the message row
+  at the top. The second of two messages with the same text was found on its own row. A
+  message of two terminal rows was found on its first row.
+- In the same check, **Show in terminal** in the **Messages** view scrolled to its
+  message, and the list marked the message that the view read. Command+Down and
+  Ctrl+Shift+Up in the terminal stepped between messages. A new message from Send got
+  the position 9 of 9, and the list showed it.
+- The mark of a message row and the marks in the scroll bar showed in the dark and the
+  light appearance. After a full frame, the marks showed again.
+- At 375 x 812 pixels, the view switch showed **Messages**. **Show in terminal** closed
+  the pane, showed the session, and scrolled to the message. The terminal did not take
+  the keyboard focus.
+- At 375 x 812 pixels, the demo session with two terminals showed the terminal selector
+  on one row and the message bar on a second row, with no overlap. The terminal list
+  opened below both rows.
+- In the demo session with two terminals, the latest terminal showed **No sent message
+  in this terminal**. The earlier terminal showed the one message that was sent in it.
+  The ended demo session showed its two messages.
+- A timing run in Node.js searched 10,000 rows of 100 columns for 20 messages in about
+  21 milliseconds: 12 milliseconds to read the rows and 10 milliseconds to search.
+- Recordings of Claude Code 2.1.330 and Codex CLI 0.171.0 showed the characters `❯ `
+  and `› ` before a sent message.
+- A browser check with a real Claude Code 2.1.330 session in a demo instance sent one
+  message from the editor. The bar showed `Message 1 of 1`, and **Earlier message** put
+  the row of the message at the top. A second view with a different terminal width made
+  Claude Code draw its output again and leave an earlier copy of the message. The
+  search then took the earlier copy. The search now takes the last copy.
+- A session with Codex CLI was not used for these checks, so the positions in its
+  output are not verified in a browser.
 
 ### Checks of continuation and earlier terminals
 
