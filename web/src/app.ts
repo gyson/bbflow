@@ -20,6 +20,9 @@ import { ActionMenu } from './action-menu.js';
 import { RowMenus } from './row-menu.js';
 import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
+import { followKeyboard, keyboardShown } from './keyboard.js';
+import { followCursor, showCursor } from './terminal-clip.js';
+import { touchScroll } from './terminal-touch.js';
 import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
@@ -846,9 +849,14 @@ function hiddenSize(): Size | undefined {
   return (selected?.id ? shownSizes.get(selected.id) : undefined) ?? [...shownSizes.values()].at(-1);
 }
 
-function requestFit() {
+// resized tells that the size of the terminal view changed. Each frame also calls this
+// function.
+function requestFit(resized = false) {
   if (!terminal || !connection?.ready || !connection?.peer?.active || connection?.resizing) return;
   if (!terminalShown()) return;
+  // The terminal keeps its PTY size while the on-screen keyboard shows. The lower view
+  // shows the part with the cursor row. A frame keeps the part that a drag shows.
+  if (keyboardShown()) return resized ? showCursor($('terminal'), terminal) : followCursor($('terminal'), terminal);
   const proposed = fit?.proposeDimensions();
   const dimensions = proposed && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows) ? terminalSize(proposed) : undefined;
   if (dimensions) rememberSize(dimensions);
@@ -886,6 +894,9 @@ function updateTerminalTheme(): void {
     messageNav.restyle();
   }
 }
+
+// Stop the glide of a finger drag in the session terminal.
+let stopGlide = () => {};
 
 function makeTerminal(): Terminal {
   terminal?.dispose();
@@ -926,8 +937,19 @@ function makeTerminal(): Terminal {
     view.resize(hidden.cols, hidden.rows);
   }
   hint();
-  onTerminalInput(terminal, input => !!connection?.ready && !!connection.peer?.active && connection.peer.send(input));
+  onTerminalInput(terminal, input => {
+    // Typed input shows the cursor row again, after a drag showed other rows. xterm.js
+    // shows the last rows for typed input. A glide must not move the view after that.
+    if (!input.report) {
+      stopGlide();
+      if (keyboardShown()) showCursor($('terminal'), view);
+    }
+    return !!connection?.ready && !!connection.peer?.active && connection.peer.send(input);
+  });
   messageNav.attach(view);
+  view.onCursorMove(() => { if (keyboardShown()) followCursor($('terminal'), view); });
+  // Another view can change the PTY size. Then the rows of this view change.
+  view.onResize(() => { if (keyboardShown()) showCursor($('terminal'), view); });
   return view;
 }
 
@@ -1494,7 +1516,9 @@ async function initialize() {
     if (stopped) showStatus();
     await loadTerminals(selected.id);
   }, failed('stop', selected));
-  new ResizeObserver(requestFit).observe($('terminal'));
+  new ResizeObserver(() => requestFit(true)).observe($('terminal'));
+  stopGlide = touchScroll($('terminal'), () => terminal);
+  followKeyboard();
   window.addEventListener('pagehide', () => connection?.close());
   try {
     const response = await fetch('/client-config', { cache: 'no-store' });

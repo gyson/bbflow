@@ -38,7 +38,7 @@ export class SessionSplit {
     this.stopDrag();
     this.divider.hidden = !enabled;
     if (enabled) this.layout();
-    else this.composer.style.removeProperty('flex-basis');
+    else this.composer.style.removeProperty('--editor-height');
   }
 
   private bounds(): { total: number; min: number; max: number } | null {
@@ -62,7 +62,9 @@ export class SessionSplit {
     if (!bounds) return;
     // Limit the displayed height to the smaller window. Keep the preferred height.
     const height = Math.max(bounds.min, Math.min(bounds.max, this.height));
-    this.composer.style.flexBasis = `${height}px`;
+    // The style sheet uses this height, except for the editor of the mobile layout and
+    // of a page with an on-screen keyboard. That editor has the height of its text.
+    this.composer.style.setProperty('--editor-height', `${height}px`);
     const percent = (value: number) => Math.round(100 * (bounds.total - value) / bounds.total);
     const value = percent(height);
     this.divider.setAttribute('aria-valuemin', String(percent(bounds.max)));

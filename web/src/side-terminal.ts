@@ -7,6 +7,9 @@ import { SessionConnection } from './session-connection.js';
 import { element } from './dom.js';
 import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
+import { keyboardShown } from './keyboard.js';
+import { followCursor, showCursor } from './terminal-clip.js';
+import { touchScroll } from './terminal-touch.js';
 
 // SideTerminal is the Terminal view of the workspace pane. It shows an interactive
 // shell in the workspace of the selected session, for ad hoc commands. The server owns
@@ -27,11 +30,13 @@ export class SideTerminal {
   private view: Terminal | null = null;
   private fit: FitAddon | null = null;
   private connection: SessionConnection | null = null;
+  private readonly stopGlide: () => void; // Stop the glide of a finger drag.
 
   constructor(private readonly server: () => ServerInfo | null, private readonly theme: () => ITheme) {
     this.startButton.onclick = () => this.connect(true);
     this.stopButton.onclick = () => void this.stop();
-    new ResizeObserver(() => this.requestFit()).observe(this.screen);
+    new ResizeObserver(() => this.requestFit(true)).observe(this.screen);
+    this.stopGlide = touchScroll(this.screen, () => this.view);
     window.addEventListener('pagehide', () => this.connection?.close());
     this.show();
   }
@@ -176,8 +181,19 @@ export class SideTerminal {
     view.open(host);
     fit.fit();
     this.dimensions.textContent = `${view.cols} × ${view.rows}`;
-    view.onResize(({ rows, cols }) => { this.dimensions.textContent = `${cols} × ${rows}`; });
+    view.onResize(({ rows, cols }) => {
+      this.dimensions.textContent = `${cols} × ${rows}`;
+      // Another view can change the PTY size. Then the rows of this view change.
+      if (keyboardShown()) showCursor(this.screen, view);
+    });
+    view.onCursorMove(() => { if (keyboardShown()) followCursor(this.screen, view); });
     onTerminalInput(view, input => {
+      // Typed input shows the cursor row again, after a drag showed other rows. xterm.js
+      // shows the last rows for typed input. A glide must not move the view after that.
+      if (!input.report) {
+        this.stopGlide();
+        if (keyboardShown()) showCursor(this.screen, view);
+      }
       const peer = this.connection?.ready ? this.connection.peer : null;
       return !!peer?.active && peer.send(input);
     });
@@ -185,12 +201,16 @@ export class SideTerminal {
   }
 
   // The server sets the terminal size in its frames. Send the size that fits the panel.
-  private requestFit(): void {
+  // resized tells that the size of the view changed. Each frame also calls this method.
+  private requestFit(resized = false): void {
     const connection = this.connection;
     const view = this.view;
     if (!view || !connection?.ready || !connection.peer?.active || connection.resizing) return;
     // A hidden view has no size. Keep the PTY size until the view shows again.
     if (!this.screen.clientWidth || !this.screen.clientHeight) return;
+    // The terminal keeps its PTY size while the on-screen keyboard shows. The lower view
+    // shows the part with the cursor row. A frame keeps the part that a drag shows.
+    if (keyboardShown()) return resized ? showCursor(this.screen, view) : followCursor(this.screen, view);
     const proposed = this.fit?.proposeDimensions();
     if (!proposed || !Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) return;
     const size = terminalSize(proposed);
