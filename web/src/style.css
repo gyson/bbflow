@@ -211,7 +211,7 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 /* The margin keeps the actions at the right when they wrap below the title. */
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; margin-left: auto; font-size: 12px; }
 #continue-action[data-tip] > button:disabled { pointer-events: none; }
-#continue-session, #stop { padding: 6px 10px; }
+#continue-session { padding: 6px 10px; }
 /* An action menu opens below its ⋯ button, at its right edge. */
 .action-menu-box { position: relative; display: flex; }
 .action-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; display: flex; flex-direction: column; min-width: 180px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px var(--shadow-overlay); }
