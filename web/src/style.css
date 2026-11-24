@@ -118,7 +118,7 @@ button.text-button { padding: 4px 8px; border-color: transparent; background: tr
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1; }
 input, textarea, select { width: 100%; border: 1px solid var(--border); background: var(--surface); border-radius: 7px; padding: 10px 11px; color: inherit; }
-.sidebar { width: var(--sidebar-width, 278px); flex-shrink: 0; padding: 26px 16px 16px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 19px; }
+.sidebar { width: var(--sidebar-width, clamp(278px, 20vw, 360px)); flex-shrink: 0; padding: 26px 16px 16px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 19px; }
 /* The open drawer takes the focus when no row can take it. It is not a control. */
 .sidebar:focus { outline: none; }
 .brand { padding: 0 6px 10px; color: inherit; text-decoration: none; font-size: 23px; font-weight: 650; letter-spacing: -.7px; }
