@@ -1332,16 +1332,21 @@ that width, because the server rendered the rows at that width. The browser sets
 number of rows to fill the terminal area, and again after each size change.
 
 The last row with text becomes the last row of the view, also at the saved number of
-rows. A taller view shows history rows above it. Blank rows fill the bottom when the
-history has too few rows. A lower view moves the top rows into the scrollback. The
-cursor returns to its recorded row when that row is on the screen again. A live view
-applies these rules when its process ends.
+rows. When the cursor row is lower, the cursor row becomes the last row, and the blank
+rows above it stay. A row with a background color counts as a row with text, because the
+server renders its cells as spaces. A taller view shows history rows above the last row.
+Blank rows fill the bottom when the history has too few rows. A lower view moves the top
+rows into the scrollback and keeps all history rows.
+
+The cursor returns to its recorded row when that row is on the screen again. A live view
+applies these rules when its process ends. A live view of another size than the terminal
+shows a crop or a padding of the screen. Thus its last frame is the saved screen, as a
+reload shows it.
 
 Large interrupted recordings can take longer to reconstruct. This restores a display,
 not a process or native agent context. Terminal dimensions are limited to 2–512 columns
 and 1–256 rows to bound emulator memory. When a lower view moves the cursor row into the
-scrollback, the cursor shows on the first row. A row with only a background color and
-no text counts as blank.
+scrollback, the cursor shows on the first row.
 
 #### Contents of a session view
 
@@ -5035,16 +5040,28 @@ repository, and a folder outside Git, each with a shell session.
 - Fixtures with the xterm.js engine check the rows of an ended terminal. A taller view
   shows history rows above the last row with text. Blank rows fill the bottom when the
   history has too few rows. Blank rows below the last row with text do not hide the
-  history, also at the saved number of rows. A lower view keeps the last row with text.
-  The cursor returns to its recorded row after a lower and then a taller view. Each fit
-  ends with a cursor move, so that xterm.js moves its input element to the cursor.
-  Requests during a fit end with the rows of the last request.
+  history, also at the saved number of rows. A cursor row below the last row with text
+  stays the last row. A row with a background color, in the format of the server, counts
+  as a row with text. A lower view keeps the last row with text. A full scrollback keeps
+  all history rows after a lower and then a taller view. The cursor returns to its
+  recorded row after a lower and then a taller view. Each fit ends with a cursor move,
+  so that xterm.js moves its input element to the cursor. Requests during a fit end with
+  the rows of the last request.
+- A terminal test checks that the server renders a row with only a background color as
+  styled spaces, and a blank row with no cells.
+- A Go test ends a process with two views. The narrower view gets the saved screen at
+  the terminal size as its last full frame before `exit`. The view of the terminal size
+  gets no extra frame.
 - A browser check used a demo instance. A session stopped while its view had 6 rows,
   so its saved screen had 90 columns and 6 rows. After the stop, the view had 20 rows in
   a window 900 pixels high. After a reload, it had 25, 6, and 34 rows in windows 1000,
   650, and 1150 pixels high. Each count was the number of rows that fit. The terminal
   area did not scroll, and the last recorded rows stayed the last rows. The view of an
   earlier terminal had the same results in windows 700, 1000, and 1150 pixels high.
+- A browser check showed one demo session in two tabs, 92 and 61 columns wide. The
+  wider tab owned the PTY size. After Stop in that tab, the narrower tab showed the full
+  rows of 92 columns, as after a reload, and it had as many rows as fit. No event
+  followed the saved screen in the recording.
 - Cross-engine fixtures compare the input modes of a view with xterm.js after each
   frame: cursor keys, keypad, bracketed paste, focus reporting, each mouse tracking
   mode, and each mouse encoding. A Go test checks nine mode sets in two views. One

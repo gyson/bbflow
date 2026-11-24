@@ -51,6 +51,43 @@ test('the first fit applies the rule also at the same number of rows', async () 
   assert.deepEqual(cursor(view), [8, 4]);
 });
 
+test('a full scrollback keeps all history rows after a lower and then a taller terminal', async () => {
+  // A saved screen at the row limit of 100 columns, as TerminalStream sets it.
+  const view = new xterm.Terminal({ cols: 100, rows: 24, scrollback: 10000, allowProposedApi: true });
+  await write(view, Array.from({ length: 10024 }, (_, i) => `line ${i}`).join('\r\n'));
+  const oldest = () => view.buffer.active.getLine(0).translateToString(true);
+  assert.equal(oldest(), 'line 0');
+  await fitEndedRows(view, 5, always);
+  assert.equal(oldest(), 'line 0');
+  assert.equal(shown(view).at(-1), 'line 10023');
+  await fitEndedRows(view, 24, always);
+  assert.equal(oldest(), 'line 0');
+  assert.equal(shown(view).at(-1), 'line 10023');
+});
+
+test('a row with only a background color counts as a row with text', async () => {
+  // The row as the server renders it. Keep it the same as the row in
+  // TestBackgroundRowRendersAsSpaces in internal/terminal/state_test.go.
+  const background = '\x1b[0;48;5;5m' + ' '.repeat(20) + '\x1b[0m';
+  const view = await ended(4, `h1\r\nh2\r\nh3\r\na\r\n${background}\r\n\x1b[2;2H`);
+  assert.deepEqual(shown(view), ['h3', 'a', ' '.repeat(20), '']);
+  await fitEndedRows(view, 4, always);
+  assert.deepEqual(shown(view), ['h2', 'h3', 'a', ' '.repeat(20)]);
+  assert.deepEqual(cursor(view), [1, 2]);
+});
+
+test('the cursor row stays on the screen when it is below the last row with text', async () => {
+  // The cursor is two rows below the last row with text, as after a shell prompt ends.
+  const view = await ended(4, 'h1\r\nh2\r\nh3\r\nh4\r\na\r\n\r\n');
+  assert.deepEqual(shown(view), ['h4', 'a', '', '']);
+  await fitEndedRows(view, 4, always);
+  assert.deepEqual(shown(view), ['h4', 'a', '', '']);
+  assert.deepEqual(cursor(view), [0, 3]);
+  await fitEndedRows(view, 6, always);
+  assert.deepEqual(shown(view), ['h2', 'h3', 'h4', 'a', '', '']);
+  assert.deepEqual(cursor(view), [0, 5]);
+});
+
 test('a lower ended terminal keeps the last row with text', async () => {
   const view = await ended(6, 'top\r\nx\r\ny\r\nlast\x1b[1;3H');
   await fitEndedRows(view, 3, always);

@@ -24,10 +24,10 @@ const cursors = new WeakMap<Terminal, Cursor>();
 
 const write = (view: Terminal, data: string) => new Promise<void>(resolve => view.write(data, resolve));
 
-// fitEndedRows gives an ended terminal this number of rows. The last row with text stays
-// the last row, and a taller terminal shows the history rows above it. The first fit
-// applies this rule also when the number of rows does not change. current tells that
-// the page still shows this terminal.
+// fitEndedRows gives an ended terminal this number of rows. The last row with text, or
+// the cursor row when it is lower, stays the last row. A taller terminal shows the
+// history rows above it. The first fit applies this rule also when the number of rows
+// does not change. current tells that the page still shows this terminal.
 export function fitEndedRows(view: Terminal, rows: number, current: () => boolean): Promise<void> {
   const pending = fits.get(view);
   if (pending) {
@@ -52,6 +52,11 @@ async function run(view: Terminal, fit: Fit, current: () => boolean): Promise<vo
     await write(view, `\x1b[${last + 1};1H`);
     if (!current()) return;
     view.resize(view.cols, last + 1);
+    // xterm.js keeps at most the scrollback rows and the screen rows. A lower terminal
+    // moves screen rows into the scrollback. Make room for them, so that no history row
+    // goes.
+    const room = view.buffer.active.length - fit.rows;
+    if (room > (view.options.scrollback ?? 0)) view.options.scrollback = room;
     view.resize(view.cols, fit.rows);
     // A lower terminal can move the cursor row into the scrollback.
     const row = Math.max(0, Math.min(view.rows - 1, cursor.marker.line - view.buffer.active.baseY));
@@ -68,7 +73,9 @@ async function moveCursor(view: Terminal, row: number, column: number): Promise<
   await write(view, `\x1b[${row + 1};${column + 1}H`);
 }
 
-// lastRow returns the last screen row with text, or the cursor row when it is lower.
+// lastRow returns the last screen row with text, or the cursor row when it is lower. The
+// server writes the cells of a background color as spaces, so a row with a background
+// color counts as a row with text.
 function lastRow(view: Terminal): number {
   const buffer = view.buffer.active;
   for (let y = view.rows - 1; y > buffer.cursorY; y--) {

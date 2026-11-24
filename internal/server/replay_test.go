@@ -192,6 +192,56 @@ func TestSharedViewsSizeOwnerAndIndependentFlow(t *testing.T) {
 	}
 }
 
+// When the process ends, a view of another size gets the saved screen as its last frame,
+// as a reload shows it. A view of the terminal size gets no extra frame.
+func TestEndedViewOfAnotherSizeGetsTheSavedScreen(t *testing.T) {
+	size := protocol.Size{Cols: 80, Rows: 24}
+	narrow := protocol.Size{Cols: 40, Rows: 10}
+	r := &runningSession{id: "fixture", controls: make(chan agent.Control, 16), done: make(chan struct{}), terminal: terminal.New(size), revision: 1}
+	wide := "wide row " + strings.Repeat("x", 60)
+	if _, err := r.terminal.Apply(history.Event{Kind: "output", Data: []byte(wide + "\r\n")}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{}
+	same := openTestView(t, s, r, size)
+	other := openTestView(t, s, r, narrow)
+	// frames returns the frames of a view until its exit message, and acknowledges each.
+	frames := func(v *testView) []protocol.Message {
+		t.Helper()
+		var received []protocol.Message
+		for {
+			v.peer.SetReadDeadline(time.Now().Add(5 * time.Second))
+			var m protocol.Message
+			if err := v.peer.ReadJSON(&m); err != nil {
+				t.Fatal(err)
+			}
+			switch m.Type {
+			case "frame":
+				received = append(received, m)
+				v.ack(m)
+			case "exit":
+				return received
+			case "error":
+				t.Fatal(m.Error)
+			}
+		}
+	}
+	r.finish(0, "exited", nil)
+	r.mu.Lock()
+	final := r.revision
+	r.mu.Unlock()
+	for _, m := range frames(same) {
+		if m.Revision > final {
+			t.Fatalf("a view of the terminal size got an extra frame: %+v", m.Size)
+		}
+	}
+	got := frames(other)
+	last := got[len(got)-1]
+	if last.Size != size || !last.Full || last.Revision != final+1 || !strings.Contains(string(last.Data), wide) {
+		t.Fatalf("last frame of a narrower view: size %+v, full %v, revision %d", last.Size, last.Full, last.Revision)
+	}
+}
+
 // A focus report or a mouse report reaches the process, but only user input moves the
 // PTY size to its view. The server uses the frames of a view to identify its reports,
 // and a mouse report names the terminal cell that the view shows.
