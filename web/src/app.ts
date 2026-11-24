@@ -22,6 +22,7 @@ import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
 import { followKeyboard, keyboardShown } from './keyboard.js';
 import { followCursor, showCursor } from './terminal-clip.js';
+import { fitEndedRows } from './ended-fit.js';
 import { touchScroll } from './terminal-touch.js';
 import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
@@ -916,17 +917,28 @@ function hiddenSize(): Size | undefined {
 // resized tells that the size of the terminal view changed. Each frame also calls this
 // function.
 function requestFit(resized = false) {
-  if (!terminal || !connection?.ready || !connection?.peer?.active || connection?.resizing) return;
+  if (!terminal || !connection?.ready || connection.resizing) return;
   if (!terminalShown()) return;
+  const peer = connection.peer;
   // The terminal keeps its PTY size while the on-screen keyboard shows. The lower view
   // shows the part with the cursor row. A frame keeps the part that a drag shows.
-  if (keyboardShown()) return resized ? showCursor($('terminal'), terminal) : followCursor($('terminal'), terminal);
+  if (keyboardShown()) {
+    if (!peer?.active) return;
+    return resized ? showCursor($('terminal'), terminal) : followCursor($('terminal'), terminal);
+  }
   const proposed = fit?.proposeDimensions();
   const dimensions = proposed && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows) ? terminalSize(proposed) : undefined;
-  if (dimensions) rememberSize(dimensions);
-  if (dimensions && (dimensions.cols !== terminal.cols || dimensions.rows !== terminal.rows)) {
+  if (!dimensions) return;
+  // An ended terminal has no PTY and gets no more frames. The view sets its rows itself.
+  if (!peer?.active) {
+    const view = terminal;
+    void fitEndedRows(view, dimensions.rows, () => terminal === view);
+    return;
+  }
+  rememberSize(dimensions);
+  if (dimensions.cols !== terminal.cols || dimensions.rows !== terminal.rows) {
     // Apply the server's size event in stream order, after output at the old size.
-    connection.peer.send({ type: 'resize', size: dimensions });
+    peer.send({ type: 'resize', size: dimensions });
   }
 }
 
@@ -1132,6 +1144,9 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           showStatus();
           if (message.error) hint(`Process ended with an error: ${message.error}`, 'error');
           else hint('Process ended. Showing saved terminal output.');
+          // The view now sets its own rows. The first fit applies at once, also when the
+          // size does not change.
+          requestFit();
           refreshSessions();
           void loadTerminals(selected.id ?? '');
           break;

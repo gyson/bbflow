@@ -1114,8 +1114,9 @@ process and capture continue.
 - Normal completion stores a derived final view in a versioned `terminal-screen` SQLite
   event. Without that cache, the server emulates the original recording in bounded
   pages.
-- Opening history never starts a process or sends recorded input. The browser retains
-  the recorded dimensions and styles.
+- Opening history never starts a process or sends recorded input.
+- The frame has the recorded dimensions and styles. For the display in the browser, see
+  [Display of an ended session](SPEC.md#display-of-an-ended-session).
 
 ### Input receipts
 
