@@ -1,6 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { Sidebar, nearestRow, sidebarBounds } from './dist/sidebar.js';
+
+test('the default sidebar width grows with the window inside the divider limits', () => {
+  const css = readFileSync(new URL('./src/style.css', import.meta.url), 'utf8');
+  const match = css.match(/^\.sidebar \{ width: var\(--sidebar-width, clamp\((\d+)px, (\d+)vw, (\d+)px\)\);/m);
+  assert.ok(match, 'style.css sets the default sidebar width with clamp()');
+  const [low, percent, high] = match.slice(1).map(Number);
+  const width = windowWidth => Math.min(high, Math.max(low, windowWidth * percent / 100));
+  assert.equal(width(1200), 278);
+  assert.equal(width(1600), 320);
+  assert.equal(width(1920), 360);
+  // Below 951 pixels, the mobile and narrow window rules set other widths.
+  for (let windowWidth = 951; windowWidth <= 3000; windowWidth++) {
+    const { min, max } = sidebarBounds(windowWidth);
+    const value = width(windowWidth);
+    assert.ok(value >= min && value <= max, `window ${windowWidth}: ${value} outside ${min} to ${max}`);
+  }
+});
 
 test('a wide window allows sidebar widths from 240 to 480 pixels', () => {
   assert.deepEqual(sidebarBounds(1600), { min: 240, max: 480 });

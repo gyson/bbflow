@@ -917,9 +917,18 @@ sidebar also has a search box, and a bottom row with **＋ Project**, **Archived
 
 A vertical divider on the right edge of the sidebar changes its width. Drag it with a
 mouse or touch. Or focus it and use Left/Right to resize. Use Home/End to reach the
-limits. A double-click restores the default width. The default width is 278 pixels, or
-240 pixels below a window width of 950 pixels. The width stays from 240 to 480 pixels,
-and the main area keeps at least 400 pixels.
+limits. A double-click restores the default width. The width stays from 240 to 480
+pixels, and the main area keeps at least 400 pixels.
+
+The default width grows with the window, so a large monitor shows more of each session
+title:
+
+| Window width | Default sidebar width |
+| --- | --- |
+| 701 to 950 pixels | 240 pixels |
+| 951 to 1390 pixels | 278 pixels |
+| 1391 to 1799 pixels | 20 percent of the window width |
+| 1800 pixels or more | 360 pixels |
 
 The toolbar button at the left of the session title hides or shows the sidebar.
 Command-B does the same on macOS. Ctrl+B stays available to terminal programs. Width
@@ -2911,7 +2920,7 @@ width that the user set. A drag cannot make the pane wider than the session allo
 When the main area is narrower than 1187 pixels, it cannot hold both minimum widths.
 Then the open pane takes the place of the session, and the divider is not available.
 See [view switch](#view-switch). With the sidebar at its default width, this applies
-below a window width of 1465 pixels. A hidden sidebar gives its width to the main area.
+below a window width of 1484 pixels. A hidden sidebar gives its width to the main area.
 
 #### View switch
 
@@ -4139,6 +4148,10 @@ messages. It archives one draft, restarts the server, then finds and restores th
 draft. It starts a synthetic shell and verifies rejection of an archive request while
 the shell is active. Then it stops the shell, archives the session, and replays its
 output. Restoration starts no process.
+
+Web fixtures check that the default sidebar width in `style.css` stays inside the divider
+limits for every window width from 951 to 3000 pixels. They also check the default width
+at window widths of 1200, 1600, and 1920 pixels.
 
 - Browser checks with a temporary instance verified separate sidebar drafts and saved
   session names and multiline messages before launch. They verified session changes,
