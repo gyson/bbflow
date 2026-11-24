@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scrollbackRows, terminalSize } from './dist/terminal-size.js';
+import { scrollbackRows, smallestSize, terminalSize } from './dist/terminal-size.js';
 
 test('a view asks for a PTY size of at least 20 columns and 5 rows', () => {
   // The size of a terminal that a narrow session column squeezed.
@@ -8,6 +8,10 @@ test('a view asks for a PTY size of at least 20 columns and 5 rows', () => {
   assert.deepEqual(terminalSize({ rows: 2, cols: 2 }), { rows: 5, cols: 20 });
   assert.deepEqual(terminalSize({ rows: 5, cols: 20 }), { rows: 5, cols: 20 });
   assert.deepEqual(terminalSize({ rows: 45, cols: 110 }), { rows: 45, cols: 110 });
+});
+
+test('a new terminal starts at the smallest size that a view asks for', () => {
+  assert.deepEqual(smallestSize, terminalSize({ rows: 1, cols: 1 }));
 });
 
 test('a view asks for no more than the server limits', () => {

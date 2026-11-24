@@ -262,6 +262,10 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 @media (prefers-reduced-motion: reduce) { .message-flash { animation: none; opacity: .25; } }
 #reconnect, #terminal-latest { flex: none; padding: 4px 10px; font-size: 11px; }
 #terminal { flex: 1; min-height: 0; background: var(--terminal-background); border-radius: 9px; padding: 16px; overflow: auto; }
+/* A live terminal fits its area, except for a moment after a size change. Its area still
+   scrolls, but a scroll bar takes no space, so the fit gets the same size. See
+   requestFit in app.ts. The on-screen keyboard keeps the scroll bar. */
+:root:not(.keyboard) #terminal.live { scrollbar-width: none; }
 /* A vertical finger drag scrolls the terminal. See terminal-touch.ts. Thus the browser
    does not pan the page for it. */
 #terminal .xterm, #side-screen .xterm { touch-action: pan-x pinch-zoom; }

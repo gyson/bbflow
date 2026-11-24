@@ -5,6 +5,11 @@ import type { Size } from './protocol.js';
 // recording keeps that output. When the view is smaller, the terminal scrolls in it.
 const minCols = 20, maxCols = 512, minRows = 5, maxRows = 256;
 
+// The smallest size that a view asks for. A new terminal starts at this size, so that it
+// does not overflow its area before its first fit. A scroll bar of the area would make
+// that fit smaller.
+export const smallestSize: Size = { rows: minRows, cols: minCols };
+
 // Return the PTY size that a view asks for.
 export function terminalSize(value: Size): Size {
   return {

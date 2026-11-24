@@ -24,7 +24,7 @@ import { followKeyboard, keyboardShown } from './keyboard.js';
 import { followCursor, showCursor } from './terminal-clip.js';
 import { fitEndedRows } from './ended-fit.js';
 import { touchScroll } from './terminal-touch.js';
-import { terminalSize } from './terminal-size.js';
+import { smallestSize, terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
@@ -914,9 +914,18 @@ function hiddenSize(): Size | undefined {
   return (selected?.id ? shownSizes.get(selected.id) : undefined) ?? [...shownSizes.values()].at(-1);
 }
 
+// A view sends no resize while it opens. The terminal selector, the draft, and Handoff
+// prompt load after the request, and they can change the height of the terminal area.
+// At the end of the open, one fit corrects the size of the request.
+let opening = false;
+
 // resized tells that the size of the terminal view changed. Each frame also calls this
 // function.
 function requestFit(resized = false) {
+  // A live view gets each frame at its own size. After a size change, the terminal is
+  // larger than its area until the frame of the new size arrives. A scroll bar in that
+  // time must not take space from the area, or the fit asks for a smaller size.
+  $('terminal').classList.toggle('live', !!connection?.ready && !!connection.peer?.active);
   if (!terminal || !connection?.ready || connection.resizing) return;
   if (!terminalShown()) return;
   const peer = connection.peer;
@@ -936,6 +945,7 @@ function requestFit(resized = false) {
     return;
   }
   rememberSize(dimensions);
+  if (opening) return;
   if (dimensions.cols !== terminal.cols || dimensions.rows !== terminal.rows) {
     // Apply the server's size event in stream order, after output at the old size.
     peer.send({ type: 'resize', size: dimensions });
@@ -978,6 +988,7 @@ function makeTerminal(): Terminal {
   terminal?.dispose();
   $('terminal').replaceChildren();
   const view = terminal = new Terminal({
+    ...smallestSize,
     cursorBlink: true, fontSize: 13, lineHeight: 1.25,
     fontFamily: 'Menlo, Monaco, Consolas, monospace', disableStdin: true, screenReaderMode: true,
     theme: terminalTheme(),
@@ -1005,14 +1016,21 @@ function makeTerminal(): Terminal {
   host.className = 'terminal-host';
   $('terminal').append(host);
   terminal.open(host);
+  // The hint of the earlier view goes before the fit. Its row would make the fit lower.
+  hint();
   const hidden = terminalShown() ? undefined : hiddenSize();
   if (!hidden) {
-    fit.fit();
+    // xterm.js rounds the cell width for the current number of columns. The later fits
+    // measure at the size of the request. Thus fit again until the size stays.
+    let cols = 0, rows = 0;
+    for (let i = 0; i < 3 && (view.cols !== cols || view.rows !== rows); i++) {
+      cols = view.cols; rows = view.rows;
+      fit.fit();
+    }
     if (terminalShown()) rememberSize(size(view));
   } else {
     view.resize(hidden.cols, hidden.rows);
   }
-  hint();
   onTerminalInput(terminal, input => {
     // Typed input shows the cursor row again, after a drag showed other rows. xterm.js
     // shows the last rows for typed input. A glide must not move the view after that.
@@ -1037,9 +1055,24 @@ async function leaveView() {
   if (terminal) terminal.options.disableStdin = true;
 }
 
+// The terminal list that the latest session message asked for. An open waits for it,
+// because the terminal selector can change the height of the terminal area.
+let terminalsLoad: Promise<void> = Promise.resolve();
+
 // run shows an earlier terminal of the session. Without run, the view shows the latest
 // terminal.
 async function openSession(session: SessionView, launch?: Launch, run = ''): Promise<void> {
+  opening = true;
+  try {
+    await showSession(session, launch, run);
+    await terminalsLoad;
+  } finally {
+    opening = false;
+    requestFit();
+  }
+}
+
+async function showSession(session: SessionView, launch?: Launch, run = ''): Promise<void> {
   if (!server) throw new Error('The server is unavailable. Reload this page.');
   const start = !!launch;
   sidebar.setDrawer(false);
@@ -1084,6 +1117,10 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
   }
   await preparation.close();
   sessionSplit.setEnabled(true);
+  // The row above the terminal holds the message bar of each session terminal. Show it
+  // before the first fit, so that the size in the request is already the final size.
+  messageNav.select(session.id ?? '');
+  messageNav.window(terminalPicker.shown());
   const view = makeTerminal();
   let request: StreamRequest;
   if (launch?.kind === 'start' && session.id && session.preparation) {
@@ -1119,7 +1156,7 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
           $('status').textContent = 'Restoring';
           hint(message.active ? '' : terminalPicker.shownRun ? earlierHint(terminalPicker.shown()) :
             'Recorded output of the latest terminal. No process was started.');
-          void loadTerminals(message.session);
+          terminalsLoad = loadTerminals(message.session);
           view.options.disableStdin = true;
           history.replaceState(null, '', sessionURL(message.session));
           if (message.notice) {
@@ -1175,11 +1212,6 @@ async function openSession(session: SessionView, launch?: Launch, run = ''): Pro
     throw error;
   } finally {
     if (selected?.id) {
-      // A start that failed shows the draft form again. A draft has no terminal.
-      if (!preparation.visible) {
-        messageNav.select(selected.id);
-        messageNav.window(terminalPicker.shown());
-      }
       await composer.select(selected.id);
       await loadHandoff(selected.id);
     }
