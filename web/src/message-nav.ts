@@ -64,6 +64,9 @@ export class MessageNav {
     reveal(): void;
     // Open the list of the sent messages.
     list(): void;
+    // The user moved the view to a message or to the latest output: a jump, a step, or
+    // Latest output.
+    moved(): void;
     // The state of a message changed.
     changed(): void;
     // The newest sent messages of the session changed.
@@ -151,6 +154,7 @@ export class MessageNav {
 
   // Scroll the terminal to a message. Return false when the terminal does not show it.
   go(revision: number): boolean {
+    this.host.moved();
     this.finish('cancelled');
     // The rows can be older than the output. Search again before the jump.
     this.search();
@@ -184,6 +188,7 @@ export class MessageNav {
   step(direction: -1 | 1): void {
     const view = this.view;
     if (!view) return;
+    this.host.moved();
     this.finish('cancelled');
     this.search();
     const target = stepMark(this.rows(), view.buffer.active.viewportY, this.pin(), direction);
@@ -193,6 +198,7 @@ export class MessageNav {
 
   // Show the latest output.
   private end(): void {
+    this.host.moved();
     this.finish('cancelled');
     this.host.reveal();
     this.view?.scrollToBottom();

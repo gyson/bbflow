@@ -217,13 +217,15 @@ const messageNav: MessageNav = new MessageNav({
   // A narrow main area shows the workspace pane in place of the session.
   reveal: () => { if (!terminalShown()) workspacePane.close(); },
   list: () => workspacePane.show('messages'),
+  // A move in the shown terminal stops a jump to another terminal that did not seek yet.
+  moved: () => messageJump.cancel(),
   changed: () => sentHistory.mark(),
   sent: () => sentHistory.refresh(),
 });
 // A jump from the Messages view to a message in another terminal of the session.
 const messageJump = new MessageJump({
-  // No jump starts while another action runs.
-  session: () => busy || !selected?.id ? '' : selected.id,
+  session: () => selected?.id ?? '',
+  busy: () => busy,
   opens: () => opens,
   loadTerminals: id => loadTerminals(id, true),
   terminals: () => terminalPicker.all,

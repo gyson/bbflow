@@ -2649,8 +2649,11 @@ view then scrolls to the message as it does for a jump in the shown terminal.
 - A change of the session or of the shown terminal cancels the wait. Another jump and a
   step also cancel it.
 - A newer click stops an older click, also when the reply for the older click arrives
-  later. Another open of the session view, for example from the terminal selector,
-  also stops an older click.
+  later. A click during the open of an older click waits until that open ends. Then
+  the older click stops before its scroll, and the newer click opens its terminal.
+- A move in the shown terminal also stops an older click: **Show in terminal** on a
+  message of the shown terminal, a bar button, or a step key. Another open of the
+  session view, for example from the terminal selector, also stops it.
 
 The bar buttons and the step keys stay in the shown terminal. They do not open another
 terminal, because an earlier terminal turns off input and Send.
@@ -4721,9 +4724,15 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
 - `web/message-jump.test.mjs` uses a fake page with replies that the test releases.
   A jump reads the list again, then opens the run of the message, also for the latest
   terminal. An older click stops when a newer click opened its terminal first, or when
-  another open came during its list read. A newer click during the open stops the seek
-  of the older click. A jump without a terminal list reports it and opens nothing. The
-  fixtures also cover the error toasts and a change of the session.
+  another open came during its list read. A newer click during the open of an older
+  click waits for that open, and only the newer click scrolls. A move stops a click
+  that did not open its terminal yet. A jump without a terminal list reports it and
+  opens nothing. The fixtures also cover the error toasts, another action of the page,
+  and a change of the session.
+- `web/message-nav.test.mjs` reports a jump, a step, and **Latest output** as moves of
+  the user, and a seek as no move. A real `MessageNav` and a `MessageJump`, wired as in
+  the page, show that a jump in the shown terminal stops a pending jump to another
+  terminal.
 - `web/sent-history.test.mjs` covers the **Show in terminal** button: the label for the
   shown terminal, the label and the tooltip for another terminal and for the live
   terminal, and an off button. It also covers the text of a terminal heading.

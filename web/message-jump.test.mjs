@@ -14,9 +14,10 @@ const turns = async () => { for (let turn = 0; turn < 5; turn++) await Promise.r
 // A fake host. Each list read waits until the test resolves it. A read can change the
 // list first. An open opens the run at once, unless the test holds it.
 function fixture(terminals = [terminal(1, 'stopped'), terminal(2, 'stopped'), terminal(3, 'running', '')]) {
-  const state = { session: 'one', opens: 0, shown: 'run-3', terminals, reads: [], opened: [], seeks: [], toasts: [], reveals: 0, hold: null, result: 'found' };
+  const state = { session: 'one', busy: false, opens: 0, shown: 'run-3', terminals, reads: [], opened: [], seeks: [], toasts: [], reveals: 0, hold: null, result: 'found' };
   const jump = new MessageJump({
     session: () => state.session,
+    busy: () => state.busy,
     opens: () => state.opens,
     loadTerminals() {
       const read = deferred();
@@ -26,9 +27,14 @@ function fixture(terminals = [terminal(1, 'stopped'), terminal(2, 'stopped'), te
     terminals: () => state.terminals,
     shownRun: () => state.shown,
     reveal() { state.reveals++; },
+    // As in the page, an open is an action. The page refuses an action while another
+    // one runs.
     async open(session, run) {
+      if (state.busy) return null;
       const open = ++state.opens;
+      state.busy = true;
       if (state.hold) await state.hold.promise;
+      state.busy = false;
       state.opened.push(run);
       state.shown = run;
       return open;
@@ -80,17 +86,34 @@ test('a click stops when another open came during its list read', async () => {
   assert.equal(state.reveals, 0);
 });
 
-test('a newer click during the open stops the seek of the older click', async () => {
+test('a newer click during the open of an older click waits for it, and only the newer click seeks', async () => {
   const { jump, state } = fixture();
   state.hold = deferred();
   const older = jump.show(2, terminal(2, 'stopped'));
   state.reads[0].resolve();
   await turns();
   assert.equal(state.opens, 1, 'the open of the older click runs');
-  void jump.show(1, terminal(1, 'stopped'));
-  state.hold.resolve();
-  await older;
-  assert.deepEqual(state.seeks, [], 'the older click does not seek');
+  const newer = jump.show(1, terminal(1, 'stopped'));
+  state.reads[1].resolve();
+  await turns();
+  assert.deepEqual(state.opened, [], 'the newer click waits for the open of the older click');
+  const hold = state.hold;
+  state.hold = null;
+  hold.resolve();
+  await Promise.all([older, newer]);
+  assert.deepEqual(state.opened, ['run-2', 'run-1']);
+  assert.deepEqual(state.seeks, [1], 'the older click does not seek');
+});
+
+test('a move in the shown terminal stops a click that did not open its terminal yet', async () => {
+  const { jump, state } = fixture();
+  const shown = jump.show(2, terminal(2, 'stopped'));
+  // A jump in the shown terminal, a step, or Latest output.
+  jump.cancel();
+  state.reads[0].resolve();
+  await shown;
+  assert.deepEqual(state.opened, []);
+  assert.equal(state.reveals, 0);
 });
 
 test('a failed list read keeps the target, and the jump completes', async () => {
@@ -126,15 +149,23 @@ test('a jump reports a message that the terminal does not show, and a failed rea
   }
 });
 
-test('no jump starts while another action runs, and a jump stops when the session changes', async () => {
+test('a jump stops while another action runs, and when the session changes', async () => {
   const { jump, state } = fixture();
   state.session = '';
   await jump.show(2, terminal(2, 'stopped'));
-  assert.equal(state.reads.length, 0);
+  assert.equal(state.reads.length, 0, 'without a session, nothing starts');
   state.session = 'one';
+  // Another action of the page, for example an archive, runs during the list read.
+  const busy = jump.show(2, terminal(2, 'stopped'));
+  state.busy = true;
+  state.reads[0].resolve();
+  await busy;
+  state.busy = false;
+  assert.deepEqual(state.opened, []);
+  assert.equal(state.reveals, 0);
   const shown = jump.show(2, terminal(2, 'stopped'));
   state.session = 'two';
-  state.reads[0].resolve();
+  state.reads[1].resolve();
   await shown;
   assert.deepEqual(state.opened, []);
 });

@@ -3,8 +3,10 @@ import type { TerminalInfo } from './protocol.js';
 
 // The parts of the page that a jump to another terminal uses. app.ts supplies them.
 export interface JumpHost {
-  // The selected session, or empty. It is empty while another action runs.
+  // The selected session, or empty.
   session(): string;
+  // Whether an action of the page runs, other than the open of a jump.
+  busy(): boolean;
   // The number of opens of a session view. Each open adds one.
   opens(): number;
   // Read the terminal list of the session again. A failed read keeps the known list.
@@ -31,30 +33,41 @@ export interface JumpHost {
 // the jump reads the list again, and it opens the run of the message. An empty run would
 // give the latest terminal at the time of the request.
 //
-// A newer click stops an older one. Another open of the session view, for example from
-// the terminal selector, also stops it. Thus an older click cannot act after a newer
-// choice of the user.
+// A newer click stops an older one, also a click during the open of the older click. The
+// newer click waits until that open ends. A move in the shown terminal also stops an
+// older click: a jump there, a step, or Latest output. See cancel. Another open of the
+// session view, for example from the terminal selector, also stops it. Thus an older
+// click cannot act after a newer choice of the user.
 export class MessageJump {
   private clicks = 0;
+  private opening: Promise<unknown> = Promise.resolve(); // The open of the last click.
 
   constructor(private readonly host: JumpHost) {}
 
+  // Stop each click that did not seek yet. Call it when the user moves the shown
+  // terminal to a message or to the latest output.
+  cancel(): void { this.clicks++; }
+
   async show(revision: number, target: TerminalInfo): Promise<void> {
+    const click = ++this.clicks;
     const session = this.host.session();
     if (!session) return;
-    const click = ++this.clicks;
     const opens = this.host.opens();
-    // Stop when a newer click or another open came, or the session changed.
+    // Stop when a newer click, a move, or another open came, or the session changed.
     const stale = () => click !== this.clicks || this.host.session() !== session;
     await this.host.loadTerminals(session);
-    if (stale() || this.host.opens() !== opens) return;
+    // The open of an older click can still run. Wait for it, so that the page does not
+    // refuse this open. The older click then stops before its seek.
+    await this.opening;
+    if (stale() || this.host.opens() !== opens || this.host.busy()) return;
     const terminal = this.host.terminals().find(item => !!item.run && item.run === target.run);
     if (!terminal) {
       this.host.failed(target.number, 'The list of the terminals of this session is not available.');
       return;
     }
     this.host.reveal();
-    const open = await this.host.open(session, terminal.run);
+    const opening = this.opening = this.host.open(session, terminal.run);
+    const open = await opening;
     if (open === null || click !== this.clicks || this.host.opens() !== open || this.host.shownRun() !== terminal.run) return;
     const result = await this.host.seek(revision);
     if (result === 'missing') {

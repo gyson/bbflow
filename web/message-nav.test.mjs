@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import xterm from '@xterm/xterm';
 import { MessageNav } from './dist/message-nav.js';
+import { MessageJump } from './dist/message-jump.js';
 import { VERSION } from './dist/protocol.js';
 
 const server = { protocol: VERSION, instance: 'fixture', dataDir: '/fixture', port: 1234 };
@@ -44,9 +45,12 @@ function fixture(t, pages) {
   const view = new xterm.Terminal({ cols: 40, rows: 5, scrollback: 20, allowProposedApi: true });
   t.after(() => view.dispose());
   let changes = 0;
-  const nav = new MessageNav({ server: () => server, color: () => '#8bbcff', reveal() {}, list() {}, changed() {}, sent() { changes++; } });
+  // moves counts the moves of the user. A test can set hooks.moved.
+  const hooks = { moves: 0, moved() {} };
+  const nav = new MessageNav({ server: () => server, color: () => '#8bbcff', reveal() {}, list() {}, changed() {}, sent() { changes++; },
+    moved() { hooks.moves++; hooks.moved(); } });
   nav.attach(view);
-  return { nav, view, nodes, requests, changes: () => changes };
+  return { nav, view, nodes, requests, hooks, changes: () => changes };
 }
 
 const lines = (count, name = 'output') => Array.from({ length: count }, (_, index) => `${name} ${index}\r\n`).join('');
@@ -267,4 +271,50 @@ test('a seek ends with failed when an older page of sent messages cannot be read
   assert.equal(await nav.seek(1), 'failed');
   assert.match(nav.readError, /older page failed/);
   assert.equal(requests.at(-1).revision, 2);
+});
+
+test('a jump, a step, and Latest output report a move of the user', async t => {
+  const { nav, view, nodes, hooks } = fixture(t, () => ({ messages: [sent(2, 'second question'), sent(1, 'first question')], more: false }));
+  await write(view, lines(3) + '> first question\r\n' + lines(8) + '> second question\r\n' + lines(12));
+  nav.select('one');
+  await settle();
+  nav.go(1);
+  nav.step(1);
+  nodes['message-latest'].onclick();
+  assert.ok(hooks.moves >= 3);
+  // A seek jumps without a report, because the jump is not a move of the user.
+  const moves = hooks.moves;
+  view.scrollToBottom();
+  assert.equal(await nav.seek(1), 'found');
+  assert.equal(hooks.moves, moves);
+});
+
+test('a jump in the shown terminal stops a pending jump to another terminal', async t => {
+  // A real MessageNav and a MessageJump, wired as app.ts wires them. The terminal list
+  // read of the jump waits until the test releases it.
+  const { nav, view, hooks } = fixture(t, () => ({ messages: [sent(1, 'first question')], more: false }));
+  await write(view, lines(3) + '> first question\r\n' + lines(20));
+  nav.select('one');
+  nav.rendered();
+  await settle();
+  let release;
+  const opened = [];
+  const jump = new MessageJump({
+    session: () => 'one', busy: () => false, opens: () => 0,
+    loadTerminals: () => new Promise(done => { release = done; }),
+    terminals: () => [{ number: 2, run: 'run-2', tool: 'Demo agent', status: 'stopped', started: '2026-11-23T11:00:00Z', ended: '2026-11-23T11:30:00Z' }],
+    shownRun: () => 'run-1', reveal() {},
+    async open(session, run) { opened.push(run); return 0; },
+    seek: revision => nav.seek(revision), readError: () => nav.readError, failed() {},
+  });
+  hooks.moved = () => jump.cancel();
+  // Show in terminal 2 on a message of terminal 2, then Show in terminal on a message of
+  // the shown terminal.
+  const remote = jump.show(9, { number: 2, run: 'run-2', tool: 'Demo agent', status: 'stopped', started: '2026-11-23T11:00:00Z', ended: '2026-11-23T11:30:00Z' });
+  assert.equal(nav.go(1), true);
+  assert.equal(top(view), 3);
+  release();
+  await remote;
+  assert.deepEqual(opened, [], 'the older click does not open terminal 2');
+  assert.equal(top(view), 3);
 });
