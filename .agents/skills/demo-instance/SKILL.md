@@ -102,12 +102,12 @@ error of the shell.
 | Session | Project | State |
 | --- | --- | --- |
 | Add orbit period endpoint | Orbit API | Ended. It has two sent messages. |
-| Refactor orbit in a worktree | Orbit API | Live. It has a managed worktree with three commits after its base and one uncommitted new file. Thus the scope menu offers **All changes**, **Uncommitted changes**, and three commits. It has two terminals. The first terminal is stopped. The second terminal started from Continue in new terminal. |
+| Refactor orbit in a worktree | Orbit API | Live and pinned. It has a managed worktree with three commits after its base and one uncommitted new file. Thus the scope menu offers **All changes**, **Uncommitted changes**, and three commits. It has two terminals. The first terminal is stopped. The second terminal started from Continue in new terminal. |
 | Review the refactor | Orbit API | A sub-session draft of **Refactor orbit in a worktree**. It has **New worktree**, the base `demo/refactor-orbit`, and a saved message. |
 | Review test failures | Orbit API | Live, with no new output. It has one sent message and one saved message that is not sent. |
 | Tune the orbit solver | Orbit API | Live, with the Detail agent. It has eight sent messages for the message bar and the Messages view. One message is longer than a terminal row. Two messages have the same text. |
 | Build tide chart | Tide Web | Live, with continuous output. |
-| Plan release notes | Tide Web | A draft that did not start. It has a saved message, **Use worktree**, and the base `feature/tide-chart`. |
+| Plan release notes | Tide Web | A draft that did not start, pinned after **Refactor orbit in a worktree**. Thus it comes first in **Pinned**. It has a saved message, **Use worktree**, and the base `feature/tide-chart`. |
 | Old layout spike | Tide Web | Ended and archived. A Shell session. |
 | Scratch shell | Tide Web | Ended. A Shell session. |
 

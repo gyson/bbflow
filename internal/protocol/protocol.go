@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/41"
+const Version = "bbflow/42"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -45,6 +45,7 @@ type PreparationConfig struct {
 
 type Request struct {
 	Archived    bool               `json:"archived,omitempty"`
+	Pinned      bool               `json:"pinned,omitempty"` // session-pin pins the session, or else unpins it.
 	Query       string             `json:"query,omitempty"`
 	Settings    *history.Settings  `json:"settings,omitempty"`
 	Preparation *PreparationConfig `json:"preparation,omitempty"`
@@ -68,7 +69,7 @@ type Request struct {
 	ToolType  string   `json:"toolType,omitempty"`  // The tool type of tool-models.
 	Refresh   bool     `json:"refresh,omitempty"`   // tool-models runs the list command again.
 	Limit     int      `json:"limit,omitempty"`
-	Groups    []string `json:"groups,omitempty"` // Session list group keys. "" is Standalone.
+	Groups    []string `json:"groups,omitempty"` // Session list group keys. "" is Standalone, and "pinned" is Pinned.
 	Offset    int      `json:"offset,omitempty"` // The sessions of the group to skip.
 	Size      Size     `json:"size,omitempty"`
 	Draft     *Draft   `json:"draft,omitempty"`
@@ -296,9 +297,11 @@ type SessionPage struct {
 // SessionInfo is a session summary. Status is draft, running, idle, or ended. The
 // server derives it. Running means that a live terminal had application output in the
 // last seconds, or that the session starts. Idle means a live terminal without recent
-// output. It does not mean that the application is ready for input.
+// output. It does not mean that the application is ready for input. Pinned is true for
+// a pinned top-level session, also in Archived, which ignores pins.
 type SessionInfo struct {
 	Archived    bool                 `json:"archived"`
+	Pinned      bool                 `json:"pinned"`
 	ParentID    string               `json:"parentId"`
 	Context     bool                 `json:"context,omitempty"`
 	Preparation *history.Preparation `json:"preparation,omitempty"`

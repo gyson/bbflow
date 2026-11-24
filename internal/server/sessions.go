@@ -529,7 +529,7 @@ func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPag
 	result := protocol.SessionPage{Sessions: make([]protocol.SessionInfo, 0, len(page.Sessions)), More: page.More}
 	now := time.Now()
 	for _, session := range page.Sessions {
-		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, ParentID: session.ParentID, Context: session.Context, Archived: session.Archived, Title: session.Title, AutoTitle: session.AutoTitle, Workspace: session.Workspace, Updated: session.Updated, Status: s.sessionStatus(session.Session, now), Preparation: session.Preparation, Worktree: session.Worktree}
+		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, ParentID: session.ParentID, Context: session.Context, Archived: session.Archived, Pinned: session.Pinned, Title: session.Title, AutoTitle: session.AutoTitle, Workspace: session.Workspace, Updated: session.Updated, Status: s.sessionStatus(session.Session, now), Preparation: session.Preparation, Worktree: session.Worktree}
 		if session.Run != nil {
 			info.RunStatus = session.Run.Status
 		}

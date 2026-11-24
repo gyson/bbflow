@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	sessionColumns = "id,title,auto_title,workspace,created,COALESCE(project_id,''),archived,COALESCE(parent_id,'')"
+	sessionColumns = "id,title,auto_title,workspace,created,COALESCE(project_id,''),archived,COALESCE(parent_id,''),pinned_at IS NOT NULL"
 	runColumns     = "id,session_id,status,started,ended,pid,detail"
 	eventColumns   = "seq,session_id,run_id,kind,data,text,created"
 )
@@ -27,9 +27,11 @@ var ErrRunNotFound = errors.New("terminal not found in this session")
 // Title is the title that the user set, or empty. AutoTitle is derived: the tool name
 // and folder at launch, then a summary from the title tool. It is empty for a session
 // from before format 10. Use DisplayTitle to show. ParentID is the top-level session of
-// a sub-session, or empty for a top-level session.
+// a sub-session, or empty for a top-level session. Pinned is true for a pinned top-level
+// session.
 type Session struct {
 	Archived    bool         `json:"archived"`
+	Pinned      bool         `json:"pinned"`
 	ProjectID   string       `json:"projectId"`
 	ParentID    string       `json:"parentId"`
 	ID          string       `json:"id"`
@@ -179,7 +181,7 @@ type scanner interface{ Scan(...any) error }
 
 func scanSession(row scanner) (Session, error) {
 	var s Session
-	err := row.Scan(&s.ID, &s.Title, &s.AutoTitle, &s.Workspace, &s.Created, &s.ProjectID, &s.Archived, &s.ParentID)
+	err := row.Scan(&s.ID, &s.Title, &s.AutoTitle, &s.Workspace, &s.Created, &s.ProjectID, &s.Archived, &s.ParentID, &s.Pinned)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}

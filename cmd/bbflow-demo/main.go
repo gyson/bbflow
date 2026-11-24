@@ -222,14 +222,18 @@ func (d *demo) requireNew() {
 func (d *demo) sessions(port int) {
 	address := fmt.Sprintf("http://localhost:%d", port)
 	fmt.Printf("URL: %s/\n", address)
-	// One request lists 100 sessions at most, so each group gets its own request.
-	groups := []string{""}
+	// One request lists 100 sessions at most, so each group gets its own request. The
+	// pinned sessions are in their own group. Archived has no pinned group.
+	groups := []string{history.PinnedGroup, ""}
 	for _, project := range call[[]history.Project](d.target, protocol.Request{Operation: "project-list"}) {
 		groups = append(groups, project.ID)
 	}
 	var sessions []protocol.SessionInfo
 	for _, archived := range []bool{false, true} {
 		for _, group := range groups {
+			if archived && group == history.PinnedGroup {
+				continue
+			}
 			request := protocol.Request{Operation: "session-list", Limit: history.MaxSessionLimit, Groups: []string{group}, Archived: archived}
 			sessions = append(sessions, call[protocol.SessionPage](d.target, request).Sessions...)
 		}

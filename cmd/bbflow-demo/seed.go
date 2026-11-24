@@ -99,6 +99,10 @@ func (d *demo) addData() {
 	})
 	d.saveDraft(plan.ID, "List the changes since the last release.")
 
+	// Two pinned sessions of different projects. The newest pin comes first in Pinned.
+	call[json.RawMessage](d.target, protocol.Request{Operation: "session-pin", Session: refactor, Pinned: true})
+	call[json.RawMessage](d.target, protocol.Request{Operation: "session-pin", Session: plan.ID, Pinned: true})
+
 	// An ended shell session.
 	d.runShell(d.launch(d.draft(tide, "Scratch shell", "", nil)))
 

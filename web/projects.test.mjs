@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { familyStep, families, mergeSessions, placeText, sessionGroups, shownChildren, welcomeText } from './dist/projects.js';
+import { familyGroup, familyStep, families, mergeSessions, pinLimit, pinnedGroup, placeText, sessionGroups, shownChildren, welcomeText } from './dist/projects.js';
 
 const projects = [
   { id: 'notes', name: 'Notes', workspace: '/work/notes' },
@@ -78,6 +78,47 @@ test('the recent page and the group windows join in order without a repeated fam
   // The last window decides more for its group. Other groups keep the recent page value.
   assert.deepEqual(merged.more, ['']);
   assert.deepEqual(ids(sessionGroups(projects, merged.sessions, '')), [[['g1']], [['r1', 'r1a'], ['r2'], ['r3'], ['r4', 'r4a'], ['r5'], ['r9']], [['x1']]]);
+});
+
+test('pinned families form the first group and leave the group of their project', () => {
+  assert.equal(pinnedGroup, 'pinned');
+  assert.equal(pinLimit, 20);
+  const list = [
+    session('p2', 'notes', { pinned: true, title: 'Pinned research' }),
+    session('p1', 'repo', { pinned: true, title: 'Pinned work' }),
+    session('p1a', 'repo', { parentId: 'p1', title: 'Reviewer' }),
+    session('ps', 'gone', { pinned: true, title: 'Pinned scratch' }),
+    session('a', 'repo', { title: 'Authentication' }),
+    session('c', '', { title: 'Scratch' }),
+  ];
+  const groups = sessionGroups(projects, list, '');
+  assert.deepEqual(groups.map(g => g.pinned ? 'Pinned' : g.project?.name ?? 'Standalone'), ['Pinned', 'Notes', 'bbflow', 'Standalone']);
+  // Pinned keeps the order of the server. A pinned family keeps its sub-sessions. A pin
+  // of a session without a saved project is in Pinned too.
+  assert.deepEqual(ids(groups), [[['p2'], ['p1', 'p1a'], ['ps']], [], [['a']], [['c']]]);
+  // A search filters Pinned like a project group. A project name matches its families.
+  assert.deepEqual(ids(sessionGroups(projects, list, 'reviewer')), [[['p1', 'p1a']]]);
+  assert.equal(sessionGroups(projects, list, 'reviewer')[0].families[0].context, true);
+  assert.deepEqual(ids(sessionGroups(projects, list, 'notes')), [[['p2']], []]);
+  // Without a pinned family, Pinned does not show.
+  assert.equal(sessionGroups(projects, list.filter(item => !item.pinned && item.parentId !== 'p1'), '').some(g => g.pinned), false);
+  // Archived ignores pins.
+  assert.deepEqual(sessionGroups(projects, list, '', true).map(g => g.pinned ? 'Pinned' : g.project?.name ?? 'Standalone'), ['Notes', 'bbflow', 'Standalone']);
+  const known = new Set(projects.map(project => project.id));
+  assert.equal(familyGroup(list[0], known, false), 'pinned');
+  assert.equal(familyGroup(list[0], known, true), 'notes');
+  assert.equal(familyGroup(list[3], known, true), '');
+});
+
+test('a merge keeps the pinned families out of the group step of their project', () => {
+  // The Pinned page comes first. The repo group shows 2 recent families and a window at
+  // offset 2. The pinned families do not count against the step of repo.
+  const recent = { sessions: [session('p1', 'repo', { pinned: true }), session('p2', 'repo', { pinned: true }), session('p3', 'repo', { pinned: true }), session('r1', 'repo'), session('r2', 'repo')], more: ['repo'] };
+  const windows = [{ group: 'repo', offset: 2, page: { sessions: [session('r3', 'repo')], more: [] } }];
+  const merged = mergeSessions(projects, recent, windows, 2);
+  assert.deepEqual(merged.sessions.map(s => s.id), ['p1', 'p2', 'p3', 'r1', 'r2', 'r3']);
+  assert.deepEqual(merged.more, []);
+  assert.deepEqual(ids(sessionGroups(projects, merged.sessions, '')), [[['p1'], ['p2'], ['p3']], [], [['r1'], ['r2'], ['r3']]]);
 });
 
 test('a family shows its first sub-sessions, a selected one, and all of them on request', () => {

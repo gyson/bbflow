@@ -104,3 +104,70 @@ func TestIndependentDraftsArchiveAndRestoreAcrossRestart(t *testing.T) {
 		t.Fatal("restore changed finished status", restored)
 	}
 }
+
+// A pin moves a family to the Pinned group of every view and stays after a restart.
+// Archive removes the pin.
+func TestPinnedSessionsListInTheirOwnGroupAcrossRestart(t *testing.T) {
+	directory := t.TempDir()
+	startTestServer(t, directory)
+	target := client.Target{Dir: directory}
+	rpc := func(request protocol.Request, result any) {
+		t.Helper()
+		data, err := target.Call(request)
+		if err != nil {
+			t.Fatal(request.Operation, err)
+		}
+		if result != nil {
+			if err = json.Unmarshal(data, result); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	list := func(group string) []string {
+		t.Helper()
+		var page protocol.SessionPage
+		rpc(protocol.Request{Operation: "session-list", Limit: history.MaxPinned, Groups: []string{group}}, &page)
+		ids := []string{}
+		for _, session := range page.Sessions {
+			if session.Pinned != (group == history.PinnedGroup && session.ParentID == "") {
+				t.Fatal("wrong pin in a summary", session)
+			}
+			ids = append(ids, session.ID)
+		}
+		return ids
+	}
+	var project history.Project
+	rpc(protocol.Request{Operation: "project-add", Workspace: t.TempDir()}, &project)
+	var first, second, child history.Session
+	rpc(protocol.Request{Operation: "project-draft", Project: project.ID}, &first)
+	rpc(protocol.Request{Operation: "project-draft", Project: project.ID}, &second)
+	rpc(protocol.Request{Operation: "project-draft", Parent: first.ID}, &child)
+	if _, err := target.Call(protocol.Request{Operation: "session-pin", Session: child.ID, Pinned: true}); err == nil || !strings.Contains(err.Error(), "top-level session") {
+		t.Fatal("pinned a sub-session", err)
+	}
+	var reply map[string]bool
+	rpc(protocol.Request{Operation: "session-pin", Session: first.ID, Pinned: true}, &reply)
+	if !reply["pinned"] {
+		t.Fatal("wrong reply", reply)
+	}
+	if got := list(history.PinnedGroup); strings.Join(got, ",") != first.ID+","+child.ID {
+		t.Fatal("wrong Pinned group", got)
+	}
+	if got := list(project.ID); strings.Join(got, ",") != second.ID {
+		t.Fatal("a pinned family stayed in its project group", got)
+	}
+	if output, err := testCommand("server", "restart").CombinedOutput(); err != nil {
+		t.Fatalf("restart: %s %v", output, err)
+	}
+	var detail history.Session
+	rpc(protocol.Request{Operation: "session-config", Session: first.ID}, &detail)
+	if !detail.Pinned {
+		t.Fatal("lost the pin after a restart", detail)
+	}
+	rpc(protocol.Request{Operation: "session-archive", Session: first.ID, Archived: true, Members: []string{child.ID}}, nil)
+	rpc(protocol.Request{Operation: "session-archive", Session: first.ID, Archived: false}, nil)
+	rpc(protocol.Request{Operation: "session-config", Session: first.ID}, &detail)
+	if detail.Pinned || len(list(history.PinnedGroup)) != 0 {
+		t.Fatal("kept the pin of an archived session", detail)
+	}
+}

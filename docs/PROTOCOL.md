@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/41`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/42`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/41",
+    "protocol": "bbflow/42",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/41",
+    "protocol": "bbflow/42",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -180,8 +180,9 @@ replies.
 | `session-resume` | `session` ID, `size`, and optional `run` (an earlier run of the session) | `session`, then a terminal stream or recorded history. With `run`, the recorded history of that run. |
 | `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed`. An empty `name` removes the user title. |
-| `session-list` | See [Session list](#session-list). | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status), `parentId`, an optional `context` flag, and an optional `runStatus`, the stored status of the latest run. |
+| `session-list` | See [Session list](#session-list). | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status), `parentId`, `pinned`, an optional `context` flag, and an optional `runStatus`, the stored status of the latest run. |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed; missing confirms none) | `result`, containing `archived`. Applies to the family. See [Session archive](#session-archive). Rejects active runs and unfinished launch claims. |
+| `session-pin` | `session` ID, `pinned` boolean (true to pin, false to unpin) | `result`, containing `pinned`. See [Session pins](#session-pins). |
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
 | `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, `status`, `started`, and `ended`. |
 | `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
@@ -312,6 +313,9 @@ Groups, families, and windows have these rules:
   ordering, and group limits.
 - A group holds the sessions of one saved project. Its key is the project ID. Sessions
   without a saved project form the Standalone group, with the key `""`.
+- Outside the archive collection, pinned families form the Pinned group, with the key
+  `pinned`. A pinned family is not in the group of its project. The archive collection
+  ignores pins. See [Session pins](#session-pins).
 - A family is a top-level session and its sub-sessions. It counts as one entry of its
   group.
 - Each listed group gives its `limit` most recent families.
@@ -347,7 +351,8 @@ The query has these rules:
 ### Session order
 
 `session-list` orders by the latest `start`, `run`, `input`, `output`, or interruption
-`notice` event, newest first, falling back to session creation time. `updated` carries
+`notice` event, newest first, falling back to session creation time. The Pinned group
+orders by the time of the pin, newest first, and activity does not change that order. `updated` carries
 that timestamp. Timestamps compare in whole milliseconds. Event sequence determines the
 order when timestamps are equal. Creation order, newest first, breaks remaining ties.
 
@@ -371,6 +376,20 @@ application redraw.
 - Archived drafts remain editable, but session-start rejects them until restored.
   Restoration starts no process.
 - Direct reads, composer operations, and read-only SQL can still access archived data.
+- Archive removes the pin of each archived session. Restore does not pin it again.
+
+### Session pins
+
+- `session-pin` with `pinned: true` pins a top-level session that is not archived. It
+  rejects a sub-session and an archived session.
+- A pin puts the family first in the Pinned group. A pin of a pinned session keeps its
+  time, and an unpin of a session without a pin changes nothing.
+- At most 20 sessions have a pin. A further pin fails with no change. Thus a
+  `session-list` request with the group `pinned` and `limit` 20 lists the whole group.
+- `session-config` and each session summary have `pinned`. It is true for a pinned
+  top-level session, also in a summary of the archive collection.
+- The server does not notify other views. They see the change at their next
+  `session-list`.
 
 ## Recorded-output search
 
@@ -1252,13 +1271,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/41") {
+    if (message.server.protocol !== "bbflow/42") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/41", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/42", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1381,6 +1400,9 @@ versions.
   [remote host](#remote-host) request for the saved host can get the body
   `remote access is off`. No operation is new. SQLite format 18 adds `remoteOn`, which
   is true only where both values were saved.
+- Protocol 42 adds [`session-pin`](#session-pins), the `pinned` field of a session and
+  of a session summary, and the `pinned` group of `session-list`. SQLite format 19 adds
+  `sessions.pinned_at`. No session has a pin after the upgrade.
 
 ## Source files
 

@@ -261,7 +261,7 @@ func inferredType(command string) string {
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -319,6 +319,9 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			}
 			if session.ParentID != "" {
 				t.Fatal("assigned an invented parent", session)
+			}
+			if session.Pinned || sqlRows(t, store.db, "SELECT count(*) FROM sessions WHERE pinned_at IS NOT NULL")[0][0] != int64(0) {
+				t.Fatal("pinned an old session", session)
 			}
 			if version == 5 && (session.Preparation.Command != "old-tool --interactive" || session.Worktree.Commit != "abcdef") {
 				t.Fatal("lost launch metadata", session)
@@ -382,6 +385,7 @@ func TestMigrationFailureRollsBackEntireUpgrade(t *testing.T) {
 		{"run-index-script", "CREATE TABLE events_start_run (original TEXT); INSERT INTO events_start_run VALUES('keep')", "apply history migration 7"},
 		{"server-script", "CREATE TABLE server (original TEXT); INSERT INTO server VALUES('keep')", "apply history migration 11"},
 		{"parent-script", "CREATE INDEX sessions_parent ON sessions(title)", "apply history migration 13"},
+		{"pin-script", "ALTER TABLE sessions ADD COLUMN pinned_at TEXT", "apply history migration 19"},
 		{"schema-validation", "ALTER TABLE events RENAME COLUMN data TO evidence", "validate history schema"},
 		{"foreign-keys", "PRAGMA foreign_keys=OFF; UPDATE runs SET session_id='missing' WHERE id='finished'", "invalid foreign keys"},
 	} {
@@ -599,7 +603,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17} {
+	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17, 18} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }

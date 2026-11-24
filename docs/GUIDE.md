@@ -110,6 +110,21 @@ Text that you type directly in the terminal is not in the list. See
 [Sent messages in the terminal](SPEC.md#sent-messages-in-the-terminal) for the rules
 and limits.
 
+### Pin a session
+
+Pin the sessions that you use often. **Pinned** at the top of the sidebar lists them
+for all projects, so you do not need to look for them in each project.
+
+1. In the sidebar, point to the session and click its ⋯ button. On a touch screen, the
+   button always shows.
+2. Click **Pin**.
+
+The session and its sub-sessions move to **Pinned**. Each pinned session shows the name
+of its project below its title. The newest pin comes first. To return a session to its
+project, click **Unpin** in the same menu. **Pin** and **Unpin** are also in the
+**More actions** (⋯) menu of the toolbar. Archive removes the pin. See
+[Pinned sessions](SPEC.md#pinned-sessions) for the rules and limits.
+
 ## Continue with a different agent
 
 Use this procedure after a session ends, for example when an agent reaches a quota
