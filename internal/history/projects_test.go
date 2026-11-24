@@ -72,11 +72,11 @@ func TestProjectOrderAndValidation(t *testing.T) {
 	if err != nil || len(projects) != 0 {
 		t.Fatalf("new archive has projects: %+v %v", projects, err)
 	}
-	beta, err := s.CreateProject("beta", "/work/beta")
+	beta, err := s.CreateProject("Beta", "/work/beta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	alpha, err := s.CreateProject("Alpha", "/work/alpha")
+	alpha, err := s.CreateProject("alpha", "/work/alpha")
 	if err != nil {
 		t.Fatal(err)
 	}

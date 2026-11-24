@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { familyStep, families, mergeSessions, placeText, sessionGroups, shownChildren } from './dist/projects.js';
+import { familyStep, families, mergeSessions, placeText, sessionGroups, shownChildren, welcomeText } from './dist/projects.js';
 
 const projects = [
   { id: 'notes', name: 'Notes', workspace: '/work/notes' },
@@ -88,4 +88,9 @@ test('a family shows its first sub-sessions, a selected one, and all of them on 
   assert.deepEqual(ids(shownChildren(children, false, 'k6')), [['k0', 'k1', 'k2', 'k3', 'k4', 'k6'], 1]);
   assert.deepEqual(ids(shownChildren(children, true)), [children.map(child => child.id), 0]);
   assert.deepEqual(ids(shownChildren(children.slice(0, 3), false)), [['k0', 'k1', 'k2'], 0]);
+});
+
+test('the welcome text tells how to add the first project, and then how to start a session', () => {
+  assert.equal(welcomeText([]), 'Click ＋ Project to add a folder. Then click ＋ beside the project to start a session.');
+  assert.equal(welcomeText(projects), 'Select a session in the sidebar, or click ＋ beside a project to start one.');
 });

@@ -27,7 +27,7 @@ import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
-import { mergeSessions, placeText, sessionGroups, sessionWindow, shownChildren } from './projects.js';
+import { mergeSessions, placeText, sessionGroups, sessionWindow, shownChildren, welcomeText } from './projects.js';
 import type { Family } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
@@ -117,6 +117,7 @@ const elements = {
   'terminal-hint': element('terminal-hint', HTMLElement),
   'terminal-announce': element('terminal-announce', HTMLElement),
   'welcome': element('welcome', HTMLElement),
+  'welcome-text': element('welcome-text', HTMLElement),
   'session-view': element('session-view', HTMLElement),
   'instance-dir': element('instance-dir', HTMLElement),
 };
@@ -629,6 +630,7 @@ function renderSessions() {
   // An open row menu keeps the buttons of the list. Its close renders the list again.
   if (fingerprint === renderedSidebar || rowMenus.open) { showListStatuses(); controls(); return; }
   renderedSidebar = fingerprint;
+  $('welcome-text').textContent = welcomeText(projects);
   // New buttons replace the list. Give the keyboard focus to the new button of the same item.
   const focused = document.activeElement instanceof HTMLElement && $('sessions').contains(document.activeElement) ? document.activeElement.dataset.focus : undefined;
   statusMarks.length = 0;

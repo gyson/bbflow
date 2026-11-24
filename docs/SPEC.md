@@ -891,8 +891,9 @@ sessions in groups. It also has a search box, and a bottom row with **＋ Projec
 
 - The sidebar lists saved projects and groups sessions, including drafts, through
   `project-list` and `session-list`.
-- Projects appear in name order. Case does not change the order. Groups can be
-  collapsed in each view.
+- Projects appear in name order. The order ignores the case of ASCII letters only. For
+  example, **alpha** comes before **Beta**, but **Étoile** comes before **éclair**.
+  Groups can be collapsed in each view.
 - With no projects and no sessions, the sidebar shows **No projects yet. Click ＋
   Project to add a folder.**
 - A group lists [session families](#session-families): a top-level session and its
@@ -943,7 +944,8 @@ move a session into or out of the shown part of a group.
   entry reopens it by session ID. The URL keeps that ID as `/sessions/<id>` through
   reload and launch.
 - The welcome view is the home page at `/`. Its toolbar title is **Home**, and it shows
-  one line that tells how to start a session.
+  one line that tells how to start a session. Without a project, the line tells how to
+  add the first project with **＋ Project**.
 - The bbflow name in the sidebar returns to the welcome view. It also opens when no
   session is selected, for example after the archive of the selected session.
 
