@@ -2648,6 +2648,9 @@ view then scrolls to the message as it does for a jump in the shown terminal.
   the jump that ended.
 - A change of the session or of the shown terminal cancels the wait. Another jump and a
   step also cancel it.
+- A newer click stops an older click, also when the reply for the older click arrives
+  later. Another open of the session view, for example from the terminal selector,
+  also stops an older click.
 
 The bar buttons and the step keys stay in the shown terminal. They do not open another
 terminal, because an earlier terminal turns off input and Send.
@@ -2810,6 +2813,9 @@ starts or exits, and when the selector opens. It also reads the list when the
 for example in another view. A start or a continue first clears the list of the view,
 because the list then lacks the new terminal. The selector hides until the new list
 arrives.
+
+A failed read keeps the list that the view has. Thus the selector and the buttons of
+the **Messages** view stay. A view without a list shows no selector.
 
 The tool name comes from the start event of each run. Start events from bbflow 0.0.4
 and earlier have no tool, so the first run uses the tool of the preparation. A new
@@ -4712,6 +4718,12 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
   a jump that ended.
 - `web/terminal-picker.test.mjs` covers a view that names the latest terminal by its
   run. It is a view of the latest terminal until a newer terminal starts.
+- `web/message-jump.test.mjs` uses a fake page with replies that the test releases.
+  A jump reads the list again, then opens the run of the message, also for the latest
+  terminal. An older click stops when a newer click opened its terminal first, or when
+  another open came during its list read. A newer click during the open stops the seek
+  of the older click. A jump without a terminal list reports it and opens nothing. The
+  fixtures also cover the error toasts and a change of the session.
 - `web/sent-history.test.mjs` covers the **Show in terminal** button: the label for the
   shown terminal, the label and the tooltip for another terminal and for the live
   terminal, and an off button. It also covers the text of a terminal heading.
