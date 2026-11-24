@@ -1036,7 +1036,7 @@ everyone.
 | Server → client | `frame` | Base64 rendered ANSI in `data`, `size`, `revision`, and optional `full` |
 | Server → client | `status` | The session `status` of a live process: `running` or `idle` |
 | Server → client | `input-ack` | Matching `id`. An optional `error` indicates uncertain delivery. A message editor send uses the `id` `draft-REVISION`, with its pending draft revision. A receipt without `error` for such an `id` can start the [automatic title](SPEC.md#session-titles), when the accepted bytes are exactly the editor input for that revision. |
-| Server → client | `exit` | Exit `code`, the recorded run `status` (`exited`, `stopped`, or `failed`), the `run` ID, and optional `error`. `status` and `run` are absent when the terminal failed before its run started. Each view gets the same message. Follows the final frame acknowledgment. |
+| Server → client | `exit` | Exit `code`, the recorded run `status` (`exited`, `stopped`, or `failed`), the `run` ID, and optional `error`. `status` and `run` are absent when the terminal failed before its run started. Each view gets the same message. Follows the final frame acknowledgment. A session view whose last frame had another size than the terminal first gets the saved screen as one full `frame`. |
 | Server → client | `history-end` | End of a read-only ended-session view |
 | Server → client | `error` | Error description in `error` |
 
@@ -1114,8 +1114,9 @@ process and capture continue.
 - Normal completion stores a derived final view in a versioned `terminal-screen` SQLite
   event. Without that cache, the server emulates the original recording in bounded
   pages.
-- Opening history never starts a process or sends recorded input. The browser retains
-  the recorded dimensions and styles.
+- Opening history never starts a process or sends recorded input.
+- The frame has the recorded dimensions and styles. For the display in the browser, see
+  [Display of an ended session](SPEC.md#display-of-an-ended-session).
 
 ### Input receipts
 

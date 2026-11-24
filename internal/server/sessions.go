@@ -436,13 +436,24 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 	var sent, acked int64
 	var sentAt time.Time
 	dirty := true
+	// saved tells that the view got the saved screen of the ended terminal.
+	saved := false
 	for {
 		if dirty && sent == acked && (previous == nil || time.Since(sentAt) >= 50*time.Millisecond) {
 			r.mu.Lock()
 			revision, ended, exit := r.revision, r.ended, r.exit
 			var next *terminal.View
-			if revision != sent || previous == nil {
+			switch {
+			case saved:
+			case revision != sent || previous == nil:
 				next = r.terminal.ViewFor(a.size, &a.history)
+			case ended && !r.side:
+				// A view of another size shows a crop or a padding of the screen. Its last
+				// frame is the saved screen, as a reload shows it.
+				if screen := r.terminal.View(); screen.Size != previous.Size {
+					screen.TrimHistory()
+					next, revision, saved = screen, sent+1, true
+				}
 			}
 			r.mu.Unlock()
 			if next != nil {

@@ -89,6 +89,23 @@ func TestSizeLimits(t *testing.T) {
 	}
 }
 
+// A row with only a background color has its cells as styled spaces. The browser then
+// counts it as a row with text. Keep this row the same as the background row in
+// web/ended-fit.test.mjs.
+func TestBackgroundRowRendersAsSpaces(t *testing.T) {
+	state := New(protocol.Size{Cols: 20, Rows: 3})
+	if _, err := state.Apply(history.Event{Kind: "output", Data: []byte("a\r\n\x1b[45m\x1b[K\x1b[0m\r\n")}); err != nil {
+		t.Fatal(err)
+	}
+	want := "\x1b[0;48;5;5m" + strings.Repeat(" ", 20) + "\x1b[0m"
+	if got := state.View().Lines[1]; got != want {
+		t.Fatalf("background row %q, want %q", got, want)
+	}
+	if got := state.View().Lines[2]; got != "\x1b[0m\x1b[K" {
+		t.Fatalf("blank row %q", got)
+	}
+}
+
 // Keep these values the same as the scrollbackRows test in web/terminal-size.test.mjs.
 func TestScrollbackRowsByWidth(t *testing.T) {
 	for cols, want := range map[int]int{2: 50000, 20: 50000, 30: 33333, 40: 25000, 80: 12500, 100: 10000, 120: 10000, 512: 10000} {
