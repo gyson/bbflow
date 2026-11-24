@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/39';
+export const VERSION = 'bbflow/40';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -27,18 +27,35 @@ export interface Update { revision: number; version: string; available: string; 
 
 export interface Project { id: string; name: string; workspace: string; created: string }
 
-export interface Tool { id: string; name: string; command: string }
+// type is codex, claude, agy, code-puppy, or custom. model and effort are the defaults of
+// new drafts. An empty value selects the default of the CLI. builtin marks the preset of
+// an agent type, which the server owns. enabled is false for a built-in tool that is off.
+// A tool that is off is not a choice for new sessions. path is the optional CLI path of a
+// built-in tool. The server runs it for the model list, the check for the CLI, and the
+// title tool. An empty path selects the plain CLI name.
+export interface Tool { id: string; name: string; command: string; type: string; model: string; effort: string; builtin: boolean; enabled: boolean; path: string }
+// One choice of a model list. efforts lists its thinking efforts. default is the effort of
+// the CLI when bbflow adds no effort option.
+export interface ToolModel { id: string; name: string; efforts: string[]; default?: string }
+// The model list of a tool type. source is the command that printed it, or empty for a
+// built-in list. efforts lists the efforts for any model. loaded is the time of the list.
+export interface ToolModels { type: string; source: string; models: ToolModel[]; efforts: string[]; loaded: string }
 // port 0 selects the automatic port. A saved port applies at the next server start.
 // remoteHost and remoteLogin turn remote access on while both are set.
 // titleCommand is the command of the custom title tool. It stays saved when another title
 // tool is selected.
-export interface Settings { revision: number; appearance: string; defaultTool: string; worktree: boolean; base: string; tools: Tool[]; titleTool: string; titleCommand: string; updateCheck: boolean; port: number; remoteHost: string; remoteLogin: string }
+// shellOff turns off the built-in Shell, the tool with the empty ID.
+export interface Settings { revision: number; appearance: string; defaultTool: string; shellOff: boolean; worktree: boolean; base: string; tools: Tool[]; titleTool: string; titleCommand: string; titleModel: string; titleEffort: string; updateCheck: boolean; port: number; remoteHost: string; remoteLogin: string }
 // The server owns the command of each built-in title tool. Settings.titleTool is none, a
 // built-in tool ID, or custom.
-export interface TitleTool { id: string; name: string; command: string }
+// command is the command with the default model and effort. For a title tool with a
+// type, the command with another model is prefix, the model and effort options, then
+// suffix. model and effort are the defaults.
+export interface TitleTool { id: string; name: string; command: string; type?: string; prefix?: string; suffix?: string; model?: string; effort?: string }
 // sample is the message that a title test sends to the title tool.
 export interface TitleTools { tools: TitleTool[]; sample: string }
-export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }
+// toolType is empty for Shell. The launch adds the options of model and effort to command.
+export interface Preparation { revision: number; state: string; toolId: string; toolName: string; toolType: string; command: string; model: string; effort: string; worktree: boolean; base: string; branch: string }
 export interface Worktree { path: string; repository: string; base: string; commit: string; branch: string; state: string }
 export interface Run { id: string; status: string }
 // One terminal of a session. number counts from 1 in start order. A new terminal has an
@@ -159,25 +176,27 @@ type SettingsRequest = { operation: 'settings-get' } | { operation: 'settings-sa
 // The title tool of a test or a change. Only custom takes titleCommand, and it needs
 // one. The server does not use the saved custom command in its place. The client sends
 // the custom command that it shows.
-type TitleChoice = Pick<Settings, 'titleTool'> & Partial<Pick<Settings, 'titleCommand'>>;
+type TitleChoice = Pick<Settings, 'titleTool'> & Partial<Pick<Settings, 'titleCommand' | 'titleModel' | 'titleEffort'>>;
 // title-test runs a title tool once with the sample message and saves nothing.
 type TitleTestRequest = { operation: 'title-test'; settings: TitleChoice };
 // title-tool-set saves a title tool after it passes the same test. None has no test.
 type TitleToolSetRequest = { operation: 'title-tool-set'; settings: TitleChoice };
 type TitleToolsRequest = { operation: 'title-tools' };
+type ToolModelsRequest = { operation: 'tool-models'; toolType: string; refresh?: boolean };
+type ToolCheckRequest = { operation: 'tool-check' };
 type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
 // The server does what the offer with this version and revision says, then restarts.
 // The restart ends all sessions.
 type UpdateRequest = { operation: 'update-start'; version: string; revision: number };
 // A parent creates a sub-session draft in the family and project of that session.
 type PrepareRequest = { operation: 'project-draft'; project: string } | { operation: 'project-draft'; parent: string };
-type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'worktree' | 'base' | 'branch'>; name?: string };
+type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'model' | 'effort' | 'worktree' | 'base' | 'branch'>; name?: string };
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
 type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
 // shell stops only that shell. Without shell, the request stops the live shell.
 type StopSideRequest = { operation: 'side-terminal-stop'; session: string; shell?: string };
-type RPCRequest = UpdateRequest | DiffRPC | TitleTestRequest | TitleToolSetRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = ToolCheckRequest | ToolModelsRequest | UpdateRequest | DiffRPC | TitleTestRequest | TitleToolSetRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -407,6 +426,9 @@ export function call(server: ServerInfo, request: SettingsRequest): Promise<Sett
 export function call(server: ServerInfo, request: TitleTestRequest, signal?: AbortSignal): Promise<{ title: string }>;
 export function call(server: ServerInfo, request: TitleToolSetRequest): Promise<{ settings: Settings; title: string }>;
 export function call(server: ServerInfo, request: TitleToolsRequest): Promise<TitleTools>;
+export function call(server: ServerInfo, request: ToolModelsRequest): Promise<ToolModels>;
+// installed holds the agent types whose CLI is on the PATH of the server.
+export function call(server: ServerInfo, request: ToolCheckRequest): Promise<{ installed: Record<string, boolean> | null }>;
 export function call(server: ServerInfo, request: InspectRequest): Promise<RepositoryInfo>;
 export function call(server: ServerInfo, request: UpdateRequest): Promise<{ updating: boolean }>;
 export function call(server: ServerInfo, request: PrepareRequest | ConfigRequest): Promise<PreparedSession>;

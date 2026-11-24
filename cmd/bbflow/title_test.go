@@ -76,13 +76,21 @@ func TestTitleToolCommandTestsBeforeItSaves(t *testing.T) {
 		stdout != "Code Puppy is configured. Its test made the title \"Fix login redirect\" from a sample message.\n" {
 		t.Fatalf("set code-puppy:\n%s%s", stdout, stderr)
 	}
-	if stdout, _ = passes("show"); stdout != "Title tool: Code Puppy (built-in)\nCommand: code-puppy --no-tools --model codex-gpt-6-luna -p \"$(cat)\"\n" {
+	if stdout, _ = passes("show"); stdout != "Title tool: Code Puppy (built-in)\nModel: codex-gpt-6-luna\nEffort: CLI default\nCommand: code-puppy --no-tools --model codex-gpt-6-luna -p \"$(cat)\"\n" {
 		t.Fatal(stdout)
 	}
+	// --model selects another model. The test runs the command with it.
+	stdout, stderr = passes("set", "code-puppy", "--model", "codex-gpt-6-sol")
+	if !strings.Contains(stderr, "  code-puppy --no-tools --model codex-gpt-6-sol -p \"$(cat)\"\n") || !strings.HasPrefix(stdout, "Code Puppy is configured.") {
+		t.Fatalf("set code-puppy --model:\n%s%s", stdout, stderr)
+	}
 	before := saved()
-	if before.TitleTool != "code-puppy" {
+	if before.TitleTool != "code-puppy" || before.TitleModel != "codex-gpt-6-sol" || before.TitleEffort != "" {
 		t.Fatalf("saved: %+v", before)
 	}
+	fails("Code Puppy has no effort option", "set", "code-puppy", "--effort", "high")
+	fails("after TOOL, give --model MODEL", "set", "code-puppy", "--model")
+	fails("after TOOL, give --model MODEL", "set", "code-puppy", "--model", "a", "--model", "b")
 
 	// A failed test, a wrong argument, and an unknown tool save nothing.
 	fails("bbflow: Codex is not configured. The title tool is still Code Puppy. The test failed: the command ended with exit status 1: not signed in", "set", "codex")

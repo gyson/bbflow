@@ -45,6 +45,8 @@ type Server struct {
 	updates  updates
 	// remote admits the requests for the remote host of Settings.
 	remote remoteAccess
+	// models keeps the model lists of the tool types.
+	models modelLists
 	// open opens a file in the default browser of the user. Tests replace it. A nil
 	// open rejects workspace-open.
 	open func(ctx context.Context, path string) error
@@ -74,6 +76,9 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		s.remote.saved(settings, nil)
 	}
 	if err := s.ensureGeneral(); err != nil {
+		return protocol.ServerInfo{}, err
+	}
+	if err := s.checkTools(ctx); err != nil {
 		return protocol.ServerInfo{}, err
 	}
 	if err := instance.Publish(s.info); err != nil {
@@ -267,8 +272,18 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 			s.titles.Add(1)
 		}
 		s.reply(conn, map[string]bool{"renamed": err == nil}, err)
+	case "tool-check":
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) {
+			installed, err := InstalledTools(ctx, s.programs())
+			return map[string]any{"installed": installed}, err
+		})
+	case "tool-models":
+		// A disconnect stops the list command.
+		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) {
+			return s.toolModels(ctx, request.ToolType, request.Refresh)
+		})
 	case "title-tools":
-		s.reply(conn, protocol.TitleTools{Tools: titleTools, Sample: titleSample}, nil)
+		s.reply(conn, protocol.TitleTools{Tools: titleToolsWith(s.programs()), Sample: titleSample}, nil)
 	case "title-test", "title-tool-set":
 		if request.Settings == nil {
 			s.reply(conn, nil, errors.New("missing title tool"))
@@ -277,9 +292,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		// A disconnect cancels the test. Then title-tool-set saves nothing.
 		s.cancelableRead(ctx, conn, func(ctx context.Context) (any, error) {
 			if request.Operation == "title-test" {
-				return s.testTitleTool(ctx, request.Settings.TitleTool, request.Settings.TitleCommand)
+				return s.testTitleTool(ctx, request.Settings.Choice())
 			}
-			return s.setTitleTool(ctx, request.Settings.TitleTool, request.Settings.TitleCommand)
+			return s.setTitleTool(ctx, request.Settings.Choice())
 		})
 	case "session-resume":
 		s.resumeSession(conn, request.Session, request.Run, request.Size)

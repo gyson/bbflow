@@ -1,6 +1,8 @@
 import { element } from './dom.js';
+import { draftCommand, ModelPicker } from './model-choice.js';
 import { call, errorMessage } from './protocol.js';
-import type { PreparedSession, ServerInfo } from './protocol.js';
+import { fillToolMenu } from './tool-menu.js';
+import type { PreparedSession, ServerInfo, Tool } from './protocol.js';
 
 export class PreparationEditor {
   private readonly panel = element('preparation', HTMLElement);
@@ -23,6 +25,10 @@ export class PreparationEditor {
   private readonly error = element('launch-error', HTMLElement);
   private readonly status = element('launch-saved', HTMLElement);
   private readonly submit = element('launch-submit', HTMLButtonElement);
+  private readonly command = element('launch-command', HTMLElement);
+  private readonly models: ModelPicker;
+  // The tools of Settings when the draft opened.
+  private tools: Tool[] = [];
   private session: PreparedSession | null = null;
   private edits = 0;
   private saved = 0;
@@ -43,6 +49,8 @@ export class PreparationEditor {
     changed(session: PreparedSession): void;
     start(session: PreparedSession): Promise<void>;
   }) {
+    // The draft shows no notes about the model list. Settings shows them.
+    this.models = new ModelPicker('launch', { server: () => this.host.server(), changed: () => this.changed(), quiet: true });
     this.form.oninput = () => this.changed();
     this.worktree.onchange = () => { this.options.hidden = !this.worktree.checked; this.changed(); };
     this.placeParent.onchange = this.placeWorktree.onchange = () => {
@@ -76,14 +84,28 @@ export class PreparationEditor {
     this.error.hidden = true; this.status.textContent = 'Draft saved to project';
     const p = session.preparation;
     this.name.value = session.title;
-    this.tool.replaceChildren(new Option('Shell', ''), ...settings.tools.map(tool => new Option(tool.name, tool.id)));
-    if (p.toolId && !settings.tools.some(tool => tool.id === p.toolId)) {
+    // A tool that is off is not a choice. A draft that chose it before keeps its copy. The
+    // built-in tools come first, then a line, then the custom tools.
+    const tools = settings.tools.filter(tool => tool.enabled);
+    fillToolMenu(this.tool, settings.tools, !settings.shellOff);
+    if (p.toolId && !tools.some(tool => tool.id === p.toolId)) {
       const saved = new Option(`${p.toolName} (saved command)`, p.toolId);
       saved.disabled = true;
       this.tool.add(saved);
+    } else if (!p.toolId && settings.shellOff) {
+      const shell = new Option('Shell (off)', '');
+      shell.disabled = true;
+      this.tool.add(shell);
     }
     this.tool.value = p.toolId;
-    this.tool.onchange = () => this.changed();
+    this.tools = tools;
+    this.models.set(p.toolType, p.model, p.effort);
+    // A newly selected tool brings its default model and effort.
+    this.tool.onchange = () => {
+      const tool = this.selectedTool();
+      this.models.set(tool?.type ?? '', tool?.model ?? '', tool?.effort ?? '');
+      this.changed();
+    };
     this.worktree.checked = p.worktree;
     const sub = !!session.parentId;
     this.heading.textContent = sub ? 'Prepare a sub-session.' : 'Prepare a session.';
@@ -103,6 +125,7 @@ export class PreparationEditor {
     this.branch.value = p.branch;
     this.options.hidden = !p.worktree;
     this.panel.hidden = false;
+    this.preview();
     await this.inspect();
     this.controls();
   }
@@ -115,6 +138,7 @@ export class PreparationEditor {
     this.blocked = blocked;
     this.archived = archived;
     for (const field of this.form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input,select')) field.disabled = blocked;
+    this.models.disabled = blocked;
     this.worktree.disabled = this.placeWorktree.disabled = blocked || !this.available;
     this.placeParent.disabled = blocked || !this.parentReady;
     this.submit.disabled = blocked || archived || this.checking || !this.session || (this.worktree.checked && !this.available) ||
@@ -140,7 +164,20 @@ export class PreparationEditor {
     if (token === this.inspecting) { this.checking = false; this.controls(); }
   }
 
+  // The tool of the tool menu. A removed tool has only the snapshot of the draft.
+  private selectedTool(): Tool | undefined {
+    return this.tools.find(tool => tool.id === this.tool.value);
+  }
+
+  // preview shows the command that the launch submits.
+  private preview(): void {
+    const p = this.session?.preparation;
+    if (!p) return;
+    this.command.textContent = draftCommand(p, this.tool.value, this.tools, this.models.model, this.models.effort) || '(no startup command)';
+  }
+
   private changed(): void {
+    this.preview();
     this.edits++; this.status.textContent = 'Saving project draft…';
     clearTimeout(this.timer);
     this.timer = setTimeout(() => { void this.flush().catch(() => {}); }, 400);
@@ -162,6 +199,7 @@ export class PreparationEditor {
       while (this.edits !== this.saved) {
         const version = this.edits;
         const preparation = { revision: session.preparation!.revision, toolId: this.tool.value,
+          model: this.models.model, effort: this.models.effort,
           worktree: this.worktree.checked, base: this.base.value, branch: this.branch.value };
         const updated = await call(server, { operation: 'session-config', session: session.id,
           preparation, name: this.name.value });

@@ -26,13 +26,38 @@ environment, restart the server from a shell that has the new values.
 A tool is an agent command-line interface (CLI) that bbflow can start, such as Codex or
 Claude Code.
 
-1. Install the CLI of the agent on PATH.
+1. Install the CLI of the agent. bbflow finds a CLI on the PATH of the server.
 2. Sign in to the agent in a terminal, as you do without bbflow.
 3. In bbflow, click **Settings** at the bottom of the sidebar.
-4. Enter a name and a startup command for the tool, for example **Codex** with `codex`.
-5. Click **Add tool**. bbflow does not save the tool before this step.
+4. Find the agent in **Tools**. bbflow has a built-in tool for **Codex**, **Claude
+   Code**, **Antigravity**, and **Code Puppy**. At its first start, bbflow turns on the
+   tools whose CLI it finds.
+5. To use an agent, set its switch to **On**. To hide an agent that you do not have,
+   set it to **Off**. A tool that is off is not a choice for new sessions. **NOT
+   FOUND** tells that bbflow cannot find the CLI.
+6. Optional: click **Edit** to set the **Default model** or the **Default thinking
+   effort**. **CLI default** uses the configuration of the CLI. Then click **Save**.
 
-**Shell** is always available. It starts the shell without a command.
+bbflow keeps the name and the command of a built-in tool. If **NOT FOUND** shows for a
+CLI that you have, click **Edit** and enter its full path in **CLI path**, for example
+`/opt/homebrew/bin/codex`. bbflow then uses this path for sessions, the model list, and
+automatic titles. For other options, such as `codex --search`, add a custom tool.
+
+Your own tools are custom tools. They have their own table, **Custom tools**, below the
+built-in tools. To add one, such as a script or a Codex command with other options,
+click **＋ Add custom tool** below that table. In the dialog, enter a name and a startup
+command. bbflow submits the command unchanged, so put all options in it. Check the
+command in **New sessions submit**, then click **Add tool**. To keep a tool but hide it
+for a time, set its switch to **Off**.
+
+For the built-in tools of Codex, Claude Code, Antigravity, and Code Puppy, bbflow adds
+the model and the effort as options at the end of the command. bbflow gets the models
+from the CLI, for example with `agy models`. If the list does not have a model, select
+**Other…** and type its name. After you install a new CLI version, click **Refresh
+list** in the tool editor of Settings.
+
+**Shell** is a built-in tool too. It starts the shell without a command. Turn it off if
+you do not want it in the menus of new sessions.
 
 ## Add a project
 
@@ -51,9 +76,11 @@ that folder.
 <img src="images/draft.png" alt="The Prepare a session form of a draft, with the session name, the tool, Use worktree, the starting branch, and the Start session button. The message editor is below the form.">
 
 1. Click **＋** beside a project to create a draft.
-2. Select a tool.
-3. To give the session independent files, select **Use worktree**.
-4. Click **Start session**.
+2. Select a tool. The draft selects the default model and effort of the tool.
+3. Optional: select another **Model** or **Thinking effort** for this session.
+   **bbflow submits** shows the command that starts the agent.
+4. To give the session independent files, select **Use worktree**.
+5. Click **Start session**.
 
 You can write the first message in the editor below the form before you start. bbflow
 saves the message as a draft. Click **Send** after the agent is ready.

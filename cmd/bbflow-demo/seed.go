@@ -137,7 +137,8 @@ func (d *demo) output(t *terminal, text string, count int) {
 }
 
 // addTools saves the tools in Settings and returns the IDs of the simulated tools. The
-// Claude and Codex tools run the real CLIs of the user. The seed never starts them.
+// built-in Claude Code and Codex tools run the real CLIs of the user. The seed never
+// starts them.
 func (d *demo) addTools() (demoAgent, detailAgent, busyAgent string) {
 	check(os.MkdirAll(filepath.Dir(d.agent), 0o755))
 	// The copy keeps the tools usable after a checkout of a different commit.
@@ -147,9 +148,13 @@ func (d *demo) addTools() (demoAgent, detailAgent, busyAgent string) {
 	detail := history.Tool{ID: history.ID(), Name: "Detail agent", Command: command + " --detail"}
 	busy := history.Tool{ID: history.ID(), Name: "Busy agent", Command: command + " --busy"}
 	settings := call[history.Settings](d.target, protocol.Request{Operation: "settings-get"})
-	claude := history.Tool{ID: history.ID(), Name: "Claude", Command: "claude"}
-	codex := history.Tool{ID: history.ID(), Name: "Codex", Command: "codex --no-alt-screen"}
-	settings.Tools = append(settings.Tools, agent, detail, busy, claude, codex)
+	// The built-in Claude Code and Codex tools are on, and Antigravity and Code Puppy are
+	// off, whatever CLIs this computer has. The simulated tools follow the built-in tools.
+	for i := range settings.Tools {
+		tool := &settings.Tools[i]
+		tool.Enabled = tool.Type == "claude" || tool.Type == "codex"
+	}
+	settings.Tools = append(settings.Tools, agent, detail, busy)
 	settings.DefaultTool = agent.ID
 	// New drafts in Git folders select Use worktree.
 	settings.Worktree = true

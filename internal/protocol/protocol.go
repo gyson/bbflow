@@ -3,6 +3,7 @@ package protocol
 
 import (
 	"bbflow/internal/history"
+	"bbflow/internal/models"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -11,7 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/39"
+const Version = "bbflow/40"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -30,9 +31,13 @@ type Run struct {
 }
 
 // The server owns command and workspace snapshots. Forms cannot supply these fields.
+// Model and Effort are the choices of the draft. An empty value selects the default of
+// the CLI.
 type PreparationConfig struct {
 	Revision int64  `json:"revision"`
 	ToolID   string `json:"toolId"`
+	Model    string `json:"model"`
+	Effort   string `json:"effort"`
 	Worktree bool   `json:"worktree"`
 	Base     string `json:"base"`
 	Branch   string `json:"branch"`
@@ -60,6 +65,8 @@ type Request struct {
 	Run       string   `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
 	Shell     string   `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
 	Tool      string   `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
+	ToolType  string   `json:"toolType,omitempty"`  // The tool type of tool-models.
+	Refresh   bool     `json:"refresh,omitempty"`   // tool-models runs the list command again.
 	Limit     int      `json:"limit,omitempty"`
 	Groups    []string `json:"groups,omitempty"` // Session list group keys. "" is Standalone.
 	Offset    int      `json:"offset,omitempty"` // The sessions of the group to skip.
@@ -307,12 +314,26 @@ type SessionInfo struct {
 	Viewers     int                  `json:"viewers"`
 }
 
+// ToolModels is the model list of a tool type. Loaded is the time of the list command
+// in RFC 3339 format. It is empty for a built-in list.
+type ToolModels struct {
+	models.Catalog
+	Loaded string `json:"loaded"`
+}
+
 // TitleTool is an agent CLI that can make automatic session titles. The server owns its
-// command.
+// command. Command is the command with the default model and effort. For a tool with a
+// Type, the command with another model is Prefix, then the options of models.Command for
+// the model and the effort, then Suffix. Model and Effort are the defaults.
 type TitleTool struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Command string `json:"command"`
+	Type    string `json:"type,omitempty"`
+	Prefix  string `json:"prefix,omitempty"`
+	Suffix  string `json:"suffix,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Effort  string `json:"effort,omitempty"`
 }
 
 // TitleTools lists the built-in title tools. Sample is the message that a title test

@@ -1,7 +1,9 @@
 import { element } from './dom.js';
+import { fillToolMenu, sortedBuiltins } from './tool-menu.js';
+import { builtinCommand, forgetModelLists, launchCommand, modelSummary, ModelPicker, typed } from './model-choice.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
 import type { ServerInfo, Settings, TitleTool, Tool } from './protocol.js';
-import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, parsePort, PortField, portStatus, RemoteChanged, remoteStatus, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './settings-model.js';
+import { defaultLabels, duplicateName, duplicateNameError, failedTitleChange, parsePort, PortField, portStatus, RemoteChanged, remoteStatus, fallbackTool, sameTools, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval, toolSwitch } from './settings-model.js';
 import type { Defaults, SettingsChange } from './settings-model.js';
 
 const portRange = 'Enter a port from 1024 to 65535, or leave the field empty for an automatic port.';
@@ -9,19 +11,6 @@ const portNotSaved = 'The port did not save.';
 const remoteNotSaved = 'Remote access did not save.';
 const defaultNotSaved = 'A setting did not save.';
 const titleToolNotSaved = 'The title tool did not save.';
-
-function toolEditor(prefix: string) {
-  return {
-    form: element(`${prefix}-editor`, HTMLFormElement),
-    name: element(`${prefix}-name`, HTMLInputElement),
-    command: element(`${prefix}-command`, HTMLInputElement),
-    submit: element(`${prefix}-submit`, HTMLButtonElement),
-    cancel: element(`${prefix}-cancel`, HTMLButtonElement),
-    error: element(`${prefix}-error`, HTMLElement),
-  };
-}
-
-type ToolEditor = ReturnType<typeof toolEditor>;
 
 export class SettingsView {
   private readonly panel = element('settings-view', HTMLElement);
@@ -43,9 +32,35 @@ export class SettingsView {
   private readonly remoteStatus = element('settings-remote-status', HTMLElement);
   private readonly error = element('settings-error', HTMLElement);
   private readonly status = element('settings-status', HTMLElement);
+  // The built-in tools and the custom tools have a table each.
+  private readonly builtinTools = element('settings-builtin-tools', HTMLElement);
   private readonly tools = element('settings-tools', HTMLElement);
-  private readonly addTool = toolEditor('add-tool');
-  private readonly editTool = toolEditor('edit-tool');
+  // One editor dialog adds a tool or edits a saved tool.
+  private readonly toolAdd = element('tool-add', HTMLButtonElement);
+  private readonly editorDialog = element('tool-editor-dialog', HTMLDialogElement);
+  private readonly editor = element('tool-editor', HTMLFormElement);
+  private readonly toolClose = element('tool-close', HTMLButtonElement);
+  private readonly editorTitle = element('tool-editor-title', HTMLElement);
+  private readonly toolName = element('tool-name', HTMLInputElement);
+  private readonly toolCommand = element('tool-command', HTMLInputElement);
+  private readonly toolCommandHelp = element('tool-command-help', HTMLElement);
+  // The CLI path shows only for a built-in tool.
+  private readonly toolPathField = element('tool-path-field', HTMLElement);
+  private readonly toolPath = element('tool-path', HTMLInputElement);
+  private readonly toolPathHelp = element('tool-path-help', HTMLElement);
+  // A built-in tool shows a note in place of its name, type, and command, which bbflow
+  // keeps.
+  private readonly toolBuiltinNote = element('tool-builtin-note', HTMLElement);
+  private readonly toolIdentity = element('tool-identity', HTMLElement);
+  private readonly toolCommandField = element('tool-command-field', HTMLElement);
+  private readonly toolPreview = element('tool-preview', HTMLElement);
+  private readonly toolSubmit = element('tool-submit', HTMLButtonElement);
+  private readonly toolCancel = element('tool-cancel', HTMLButtonElement);
+  private readonly editorError = element('tool-editor-error', HTMLElement);
+  private readonly toolHelp = element('settings-tool-help', HTMLElement);
+  private readonly toolModels: ModelPicker;
+  // adding reports that the editor holds a new custom tool.
+  private adding = false;
   private readonly toolError = element('tool-error', HTMLElement);
   private readonly removeDialog = element('tool-remove-dialog', HTMLDialogElement);
   private readonly removeForm = element('tool-remove-form', HTMLFormElement);
@@ -61,6 +76,11 @@ export class SettingsView {
   private readonly customCommand = element('title-custom-command', HTMLInputElement);
   private readonly customSave = element('title-custom-save', HTMLButtonElement);
   private readonly titleTest = element('title-test', HTMLButtonElement);
+  private readonly titleModelSave = element('title-model-save', HTMLButtonElement);
+  private readonly titleModels: ModelPicker;
+  // The saved title tool, model, and effort that the model controls showed last. Other
+  // values are an edit.
+  private renderedTitle = '';
   private readonly testResult = element('title-test-result', HTMLElement);
   private readonly testSample = element('title-test-sample', HTMLElement);
   private readonly testOutcome = element('title-test-outcome', HTMLElement);
@@ -96,6 +116,10 @@ export class SettingsView {
   private newToolId = '';
   private toolBusy = false;
   private renderedTools: Tool[] | null = null;
+  private renderedDefault = '';
+  private renderedShellOff = false;
+  // The agent types whose CLI the server found on PATH, or null before the check.
+  private installed: Record<string, boolean> | null = null;
 
   // The number of times that the user left Settings. A request that started before the
   // latest close has no entry in the view any more, and no place for its error.
@@ -106,6 +130,16 @@ export class SettingsView {
   // call. A fixture replaces it to control the time of each reply.
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void,
     private readonly report: (title: string, detail: string) => void, private readonly send: typeof call = call) {
+    this.toolModels = new ModelPicker('tool', { server: () => this.server(), changed: () => this.editorChanged(), send: this.send });
+    this.toolName.oninput = this.toolCommand.oninput = this.toolPath.oninput = () => this.editorChanged();
+    this.toolAdd.onclick = () => this.openEditor(null);
+    this.toolCancel.onclick = this.toolClose.onclick = () => this.closeEditor();
+    this.editor.onsubmit = event => { event.preventDefault(); this.saveTool(); };
+    // Escape is Cancel. The dialog stays open while a save runs.
+    this.editorDialog.oncancel = event => {
+      event.preventDefault();
+      if (!this.toolBusy) this.closeEditor();
+    };
     const connected = (): ServerInfo => {
       const server = this.server();
       if (!server) throw new Error('Settings are unavailable.');
@@ -147,9 +181,6 @@ export class SettingsView {
       this.remoteError.hidden = true;
       this.showStatus();
     };
-    this.addTool.cancel.onclick = () => this.resetAddTool();
-    this.editTool.cancel.onclick = () => this.closeEditor();
-    this.addTool.form.oninput = this.editTool.form.oninput = () => this.showStatus();
     this.removeCancel.onclick = () => this.removeDialog.close();
     this.removeForm.onsubmit = event => { event.preventDefault(); this.removeTool(); };
     this.titleTool.onchange = () => this.selectTitleTool(this.titleTool.value);
@@ -162,11 +193,9 @@ export class SettingsView {
       this.showStatus();
     };
     this.titleTest.onclick = () => void this.testTitleTool();
-    this.addTool.form.onsubmit = event => { event.preventDefault(); this.saveTool(this.addTool, null); };
-    this.editTool.form.onsubmit = event => {
-      event.preventDefault();
-      if (this.editing) this.saveTool(this.editTool, this.editing);
-    };
+    this.titleModels = new ModelPicker('title', { server: () => this.server(), changed: () => { this.showTitleTool(); this.showStatus(); }, send: this.send });
+    // A change of the model or the effort saves only after a passed test.
+    this.titleModelSave.onclick = () => void this.setTitleTool(this.titleTool.value, '', this.titleModels.model, this.titleModels.effort);
     window.addEventListener('beforeunload', event => { if (this.unsaved) event.preventDefault(); });
   }
 
@@ -180,16 +209,42 @@ export class SettingsView {
     if (!this.titleTools.length) {
       ({ tools: this.titleTools, sample: this.titleSample } = await this.send(server, { operation: 'title-tools' }));
       this.titleTool.replaceChildren(new Option('None', 'none'), ...this.titleTools.map(tool => new Option(tool.name, tool.id)), new Option('Custom', 'custom'));
-    }
-    if (!this.pending() && !this.editing) {
+    } else void this.refreshTitleTools(server);
+    if (!this.pending() && !this.editorOpen()) {
       const settings = await this.send(server, { operation: 'settings-get' });
-      if (!this.pending() && !this.editing) {
+      if (!this.pending() && !this.editorOpen()) {
         // A title tool change can save while this read runs. Keep the newer settings.
         this.saves.update(settings);
         this.render();
       }
     }
     this.panel.hidden = false;
+    void this.checkInstalled(server);
+  }
+
+  // refreshTitleTools reads the title commands again. The CLI path of a built-in tool is
+  // the program of its title tool, so a change of that path changes them.
+  private async refreshTitleTools(server: ServerInfo): Promise<void> {
+    try {
+      this.titleTools = (await this.send(server, { operation: 'title-tools' })).tools;
+      this.showTitleTool();
+    } catch { /* The earlier commands stay. */ }
+  }
+
+  // checkInstalled asks the server which agent CLIs it finds. A built-in tool then tells
+  // when its CLI is missing. A failed check shows nothing.
+  private async checkInstalled(server: ServerInfo): Promise<void> {
+    try {
+      this.installed = (await this.send(server, { operation: 'tool-check' })).installed ?? {};
+    } catch {
+      this.installed = null;
+    }
+    this.renderTools();
+    // A title tool of an agent CLI tells when its CLI is missing.
+    for (const option of Array.from(this.titleTool.options ?? [])) {
+      const tool = this.titleTools.find(candidate => candidate.id === option.value);
+      if (tool?.type) option.text = this.installed && !this.installed[tool.type] ? `${tool.name} (not found)` : tool.name;
+    }
   }
 
   // Leave Settings. Entries that are not saved do not stay in the hidden view. There
@@ -221,15 +276,11 @@ export class SettingsView {
     this.remoteLogin.value = this.renderedRemote.login;
     this.remoteError.hidden = true;
     // A running title tool change continues. Its end discards the custom entry.
-    if (!this.busy) this.discardCustom();
-    this.newToolId = '';
-    this.addTool.form.reset();
-    this.addTool.error.hidden = true;
-    if (this.editing) {
-      this.editing = null;
-      this.editTool.form.hidden = true;
-      this.renderTools();
+    if (!this.busy) {
+      this.discardCustom();
+      this.renderedTitle = '';
     }
+    if (this.editorOpen()) this.discardEditor();
     this.render();
   }
 
@@ -241,8 +292,11 @@ export class SettingsView {
     if (this.portField.edited) names.add('Port');
     if (this.remoteEdited()) names.add('Remote access');
     if (this.customOpen || this.customCommand.value !== this.renderedCustom) names.add('Custom title command');
-    if (this.addTool.name.value || this.addTool.command.value) names.add('New tool');
-    if (this.editing && (this.editTool.name.value !== this.editing.name || this.editTool.command.value !== this.editing.command)) {
+    if (this.titleModelEdited()) names.add('Title model');
+    if (this.adding && (this.toolName.value || this.toolCommand.value)) names.add('New tool');
+    if (this.editing && (this.toolName.value !== this.editing.name || this.toolCommand.value !== this.editing.command ||
+      this.toolModels.model !== this.editing.model || this.toolModels.effort !== this.editing.effort ||
+      this.toolPath.value.trim() !== this.editing.path)) {
       names.add(`Edit of ${this.editing.name}`);
     }
     return [...names];
@@ -252,10 +306,8 @@ export class SettingsView {
 
   private pending(): boolean { return this.saving() || this.unsavedNames().length > 0; }
 
-  // Clear shows only while the add row has text.
   private showStatus(): void {
     this.status.textContent = statusText(this.saving(), this.unsavedNames());
-    this.addTool.cancel.hidden = !(this.addTool.name.value || this.addTool.command.value);
   }
 
   // Show the saved starting branch or commit again. A rejected value does not stay
@@ -322,39 +374,78 @@ export class SettingsView {
       this.renderedCustom = saved.titleCommand ?? '';
       this.customCommand.value = this.renderedCustom;
     }
-    this.showTitleTool();
-    if (!this.renderedTools || !sameTools(saved.tools, this.renderedTools)) {
-      this.tool.replaceChildren(new Option('Shell', ''), ...saved.tools.map(tool => new Option(tool.name, tool.id)));
-      this.renderTools();
+    // Keep a model choice that is not saved. Otherwise show the saved model of the tool.
+    const title = `${saved.titleTool}\n${saved.titleModel}\n${saved.titleEffort}`;
+    if (!this.busy && title !== this.renderedTitle && !this.titleModelEdited()) {
+      this.renderedTitle = title;
+      this.titleModels.set(this.titleType(saved.titleTool), saved.titleModel ?? '', saved.titleEffort ?? '');
     }
+    this.showTitleTool();
+    if (!this.renderedTools || !sameTools(saved.tools, this.renderedTools) || !!saved.shellOff !== this.renderedShellOff) {
+      // A tool that is off cannot be the default tool. Shell too.
+      fillToolMenu(this.tool, saved.tools, !saved.shellOff);
+      this.renderTools();
+    } else if (saved.defaultTool !== this.renderedDefault) this.renderTools();
     const defaultTool = defaults.defaultTool ?? saved.defaultTool;
     this.tool.value = !defaultTool || saved.tools.some(tool => tool.id === defaultTool) ? defaultTool : saved.defaultTool;
+    const shown = saved.tools.find(tool => tool.id === this.tool.value);
+    this.toolHelp.textContent = shown && typed(shown.type)
+      ? `New drafts select this tool with its default model and effort: ${modelSummary(shown.type, shown.model, shown.effort)}.` : '';
     this.showStatus();
   }
 
+  // renderTools shows the saved tools in two tables: the built-in tools, and the custom
+  // tools that the user added. Each row starts with its switch. The buttons of
+  // the rows wait while the editor dialog is open or a change saves.
   private renderTools(): void {
     const tools = this.saved?.tools ?? [];
     this.renderedTools = tools;
-    const locked = this.toolBusy || !!this.editing;
+    this.renderedDefault = this.saved?.defaultTool ?? '';
+    this.renderedShellOff = !!this.saved?.shellOff;
+    const locked = this.toolBusy || this.editorOpen();
     const focused = document.activeElement;
-    const focusedRowButton = focused instanceof HTMLButtonElement && this.tools.contains(focused) && !focused.form ? focused : null;
-    const before: HTMLDivElement[] = [];
-    const after: HTMLDivElement[] = [];
-    let rows = before;
-    for (const [index, tool] of tools.entries()) {
-      if (tool.id === this.editing?.id) {
-        rows = after;
-        continue;
-      }
-      const row = document.createElement('div');
-      row.className = 'tool-row';
+    const focusedRowButton = focused instanceof HTMLButtonElement && (this.tools.contains(focused) || this.builtinTools.contains(focused)) ? focused : null;
+    const own = tools.filter(tool => !tool.builtin);
+    const toolRow = (tool: Tool) => {
+      const row = document.createElement('tr');
       row.dataset.toolId = tool.id;
-      const name = document.createElement('span');
-      name.textContent = tool.name;
-      const command = document.createElement('code');
-      command.textContent = tool.command;
-      const actions = document.createElement('div');
-      actions.className = 'tool-actions';
+      row.className = [tool.id === this.editing?.id ? 'editing' : '', tool.enabled ? '' : 'off'].filter(Boolean).join(' ');
+      const cell = (className: string, text = '') => {
+        const td = document.createElement('td');
+        td.className = className;
+        td.textContent = text;
+        row.append(td);
+        return td;
+      };
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.id = `tool-switch-${tool.id || 'shell'}`;
+      toggle.className = 'tool-switch';
+      toggle.setAttribute('role', 'switch');
+      toggle.setAttribute('aria-checked', String(tool.enabled));
+      toggle.setAttribute('aria-label', `${tool.name} on`);
+      toggle.textContent = tool.enabled ? 'On' : 'Off';
+      toggle.disabled = locked;
+      toggle.onclick = () => this.switchTool(tool.id, tool.name, tool.enabled);
+      cell('tool-on').append(toggle);
+      const name = cell('tool-name', tool.name);
+      const chip = (text: string, className = 'tool-chip') => {
+        const span = document.createElement('span');
+        span.className = className;
+        span.textContent = text;
+        name.append(span);
+      };
+      if (tool.id === this.renderedDefault) chip('DEFAULT');
+      if (tool.builtin && tool.id && this.installed && !this.installed[tool.type]) chip('NOT FOUND', 'tool-chip missing');
+      if (tool.id) {
+        const command = document.createElement('code');
+        command.textContent = tool.command;
+        cell('tool-command-cell').append(command);
+      } else cell('tool-command-cell muted-cell', 'Your shell, with no command');
+      // Only a built-in tool has a default model. Shell has none.
+      if (tool.builtin) cell(typed(tool.type) ? 'tool-default' : 'tool-default muted-cell', typed(tool.type) ? modelSummary(tool.type, tool.model, tool.effort) : 'None');
+      const actions = cell('tool-actions');
+      if (!tool.id) return row;
       const action = (label: string, text: string, click: () => void, disabled = false) => {
         const button = document.createElement('button');
         button.type = 'button';
@@ -366,16 +457,31 @@ export class SettingsView {
         actions.append(button);
       };
       action('Edit', 'Edit', () => this.openEditor(tool));
-      action('Move up', '↑', () => this.moveTool(tool.id, -1), index === 0);
-      action('Move down', '↓', () => this.moveTool(tool.id, 1), index === tools.length - 1);
-      action('Remove', 'Remove', () => this.confirmRemove(tool));
-      row.append(name, command, actions);
+      // The built-in tools keep their order and cannot be removed.
+      if (!tool.builtin) {
+        const index = own.indexOf(tool);
+        action('Move up', '↑', () => this.moveTool(tool.id, -1), index === 0);
+        action('Move down', '↓', () => this.moveTool(tool.id, 1), index === own.length - 1);
+        action('Remove', 'Remove', () => this.confirmRemove(tool));
+      }
+      return row;
+    };
+    // Shell is a built-in tool without a command. Its row has only its switch.
+    const shell: Tool = { id: '', name: 'Shell', command: '', type: 'shell', model: '', effort: '', builtin: true, enabled: !this.saved?.shellOff, path: '' };
+    // The built-in tools are sorted by name, as in the tool menus.
+    this.builtinTools.replaceChildren(...sortedBuiltins([shell, ...tools.filter(tool => tool.builtin)]).map(toolRow));
+    const rows = own.map(toolRow);
+    if (!rows.length) {
+      const row = document.createElement('tr');
+      const empty = document.createElement('td');
+      empty.className = 'tool-empty';
+      empty.colSpan = 4;
+      empty.textContent = 'No custom tools yet. Click ＋ Add custom tool to add one.';
+      row.append(empty);
       rows.push(row);
     }
-    // Keep the forms mounted so a settings refresh cannot interrupt an edit.
-    this.tools.querySelectorAll(':scope > div.tool-row').forEach(row => row.remove());
-    this.editTool.form.before(...before);
-    this.addTool.form.before(...after);
+    this.tools.replaceChildren(...rows);
+    this.toolAdd.disabled = locked;
     if (focusedRowButton) document.getElementById(focusedRowButton.id)?.focus({ preventScroll: true });
   }
 
@@ -386,7 +492,11 @@ export class SettingsView {
     this.removing = tool;
     this.toolError.hidden = true;
     this.removeSummary.textContent = `“${tool.name}” leaves the tool list. Drafts and sessions that use it keep their own copy of the command. A removal has no undo.`;
-    this.removeDefault.textContent = `“${tool.name}” is the default tool. After the removal, Shell is the default tool.`;
+    const fallback = fallbackTool(this.saved, tool.id);
+    const next = fallback === '' ? 'Shell' : this.saved.tools.find(candidate => candidate.id === fallback)?.name;
+    this.removeDefault.textContent = next
+      ? `“${tool.name}” is the default tool. After the removal, ${next} is the default tool.`
+      : `“${tool.name}” is the default tool and the only tool that is on. Turn on another tool before the removal.`;
     this.removeDefault.hidden = this.saved.defaultTool !== tool.id;
     this.removeDialog.showModal();
   }
@@ -408,43 +518,80 @@ export class SettingsView {
     });
   }
 
-  private openEditor(original: Tool): void {
-    if (!this.saved || this.editing || this.toolBusy) return;
+  private editorOpen(): boolean { return this.adding || !!this.editing; }
+
+  // openEditor shows the editor with a saved tool, or empty for a new tool.
+  private openEditor(original: Tool | null): void {
+    if (!this.saved || this.editorOpen() || this.toolBusy) return;
     this.editing = original;
-    this.editTool.name.value = original.name;
-    this.editTool.command.value = original.command;
-    this.editTool.error.hidden = true;
-    this.editTool.form.hidden = false;
+    this.adding = !original;
+    if (!original) this.newToolId = '';
+    this.editorTitle.textContent = original ? `Edit of ${original.name}` : 'New custom tool';
+    this.toolSubmit.textContent = original ? 'Save' : 'Add tool';
+    this.toolName.value = original?.name ?? '';
+    this.toolCommand.value = original?.command ?? '';
+    const type = this.editorType();
+    const builtin = !!original?.builtin;
+    this.toolPathField.hidden = !builtin;
+    this.toolIdentity.hidden = this.toolCommandField.hidden = builtin;
+    this.toolBuiltinNote.hidden = !builtin;
+    this.toolBuiltinNote.textContent = 'bbflow keeps the name and the command of this built-in tool. For other options, add a custom tool.';
+    this.toolPath.value = original?.path ?? '';
+    this.toolPath.placeholder = type;
+    this.toolPathHelp.textContent = `Leave it empty to run ${type} from the PATH of the server. bbflow runs this program for sessions, the model list, the check for the CLI, and automatic titles.`;
+    this.toolModels.set(type, original?.model ?? '', original?.effort ?? '');
+    this.editorError.hidden = true;
+    if (!this.editorDialog.open) this.editorDialog.showModal();
     this.renderTools();
-    this.editTool.name.focus({ preventScroll: true });
+    this.editorChanged();
+    // A built-in tool shows no name field, so its first field is the CLI path.
+    (original?.builtin ? this.toolPath : this.toolName).focus({ preventScroll: true });
   }
 
-  private closeEditor(): void {
-    const id = this.editing?.id;
+  // editorType is the type of the tool in the editor. A built-in tool has the type of its
+  // agent. A tool that the user adds is a Custom tool.
+  private editorType(): string {
+    return this.editing?.builtin ? this.editing.type : 'custom';
+  }
+
+  // editorChanged shows the command that new sessions submit, and the status.
+  private editorChanged(): void {
+    const type = this.editorType();
+    const model = typed(type) ? this.toolModels.model : '', effort = typed(type) ? this.toolModels.effort : '';
+    const command = this.editing?.builtin ? builtinCommand(type, this.toolPath.value.trim()) : this.toolCommand.value;
+    this.toolPreview.textContent = launchCommand(type, command, model, effort) || '(no startup command)';
+    this.toolCommandHelp.textContent = 'bbflow submits this command unchanged. Put all options of the tool in it.';
+    this.showStatus();
+  }
+
+  // discardEditor hides the editor and forgets its entry.
+  private discardEditor(): void {
     this.editing = null;
-    this.editTool.form.hidden = true;
-    this.renderTools();
-    this.showStatus();
-    const edit = id ? document.getElementById(`tool-edit-${id}`) : null;
-    (edit ?? this.addTool.name).focus({ preventScroll: true });
-  }
-
-  private resetAddTool(): void {
+    this.adding = false;
     this.newToolId = '';
-    this.addTool.form.reset();
-    this.addTool.error.hidden = true;
-    this.showStatus();
-    this.addTool.name.focus();
+    if (this.editorDialog.open) this.editorDialog.close();
+    this.editorError.hidden = true;
+    this.renderTools();
   }
 
-  private saveTool(editor: ToolEditor, original: Tool | null): void {
-    if (!this.saved || this.toolBusy) return;
-    const name = editor.name.value.trim();
-    const command = editor.command.value;
+  // closeEditor hides the editor and moves focus to Edit of the tool, or to Add tool.
+  private closeEditor(focusId = this.editing?.id): void {
+    this.discardEditor();
+    this.showStatus();
+    const edit = focusId ? document.getElementById(`tool-edit-${focusId}`) : null;
+    (edit ?? this.toolAdd).focus({ preventScroll: true });
+  }
+
+  private saveTool(): void {
+    if (!this.saved || this.toolBusy || !this.editorOpen()) return;
+    const original = this.editing;
+    // The server keeps the name and builds the command of a built-in tool.
+    const name = original?.builtin ? original.name : this.toolName.value.trim();
+    const command = original?.builtin ? builtinCommand(original.type, this.toolPath.value.trim()) : this.toolCommand.value;
     if (!name || !command.trim()) {
-      editor.error.textContent = 'Enter a name and a command.';
-      editor.error.hidden = false;
-      (!name ? editor.name : editor.command).focus();
+      this.editorError.textContent = 'Enter a name and a command.';
+      this.editorError.hidden = false;
+      (!name ? this.toolName : this.toolCommand).focus();
       return;
     }
     const id = original?.id ?? (this.newToolId ||= crypto.randomUUID());
@@ -452,16 +599,33 @@ export class SettingsView {
     // This check gives the error without a request. The change checks the name again
     // against the latest settings, which can have a tool from another view or the CLI.
     if (name !== original?.name && duplicateName(this.saved.tools, name, id)) {
-      editor.error.textContent = duplicateNameError;
-      editor.error.hidden = false;
-      editor.name.focus();
+      this.editorError.textContent = duplicateNameError;
+      this.editorError.hidden = false;
+      this.toolName.focus();
       return;
     }
     const failure = original ? `The edit of “${original.name}” did not save.` : `The new tool “${name}” did not save.`;
-    void this.changeTool(toolEdit({ id, name, command }, original ?? undefined), failure, editor.error, () => {
-      if (original) this.closeEditor();
-      else this.resetAddTool();
+    const type = this.editorType(), model = typed(type) ? this.toolModels.model : '', effort = typed(type) ? this.toolModels.effort : '';
+    const path = original?.builtin ? this.toolPath.value.trim() : '';
+    void this.changeTool(toolEdit({ id, name, command, type, model, effort, builtin: original?.builtin ?? false, enabled: original?.enabled ?? true, path }, original ?? undefined), failure, this.editorError, () => {
+      this.closeEditor(id);
+      // The CLI path of a built-in tool is the program of its model list, the check for
+      // its CLI, and its title tool.
+      const server = this.server();
+      if (original?.builtin && path !== original.path && server) {
+        forgetModelLists();
+        this.renderedTitle = '';
+        void this.checkInstalled(server);
+        void this.refreshTitleTools(server);
+      }
     });
+  }
+
+  // switchTool turns a tool on or off. The empty ID is Shell. Turning off the default
+  // tool selects Shell, or the first other tool that is on.
+  private switchTool(id: string, name: string, enabled: boolean): void {
+    const failure = enabled ? `Turning off “${name}” did not save.` : `Turning on “${name}” did not save.`;
+    void this.changeTool(toolSwitch(id, !enabled), failure);
   }
 
   private moveTool(id: string, offset: number): void {
@@ -470,8 +634,9 @@ export class SettingsView {
       const tools = [...settings.tools];
       const index = tools.findIndex(tool => tool.id === id);
       if (index < 0) throw new Error('This tool was removed in another view.');
+      // A tool of the user moves only among the tools of the user.
       const destination = index + offset;
-      if (destination < 0 || destination >= tools.length) return settings;
+      if (destination < 0 || destination >= tools.length || tools[destination]!.builtin) return settings;
       const tool = tools[index]!;
       tools.splice(index, 1);
       tools.splice(destination, 0, tool);
@@ -481,9 +646,8 @@ export class SettingsView {
 
   private setToolBusy(busy: boolean): void {
     this.toolBusy = busy;
-    for (const editor of [this.addTool, this.editTool]) {
-      editor.name.disabled = editor.command.disabled = editor.submit.disabled = editor.cancel.disabled = busy;
-    }
+    this.toolName.disabled = this.toolCommand.disabled = this.toolPath.disabled = this.toolSubmit.disabled = this.toolCancel.disabled = this.toolClose.disabled = busy;
+    this.toolModels.disabled = busy;
   }
 
   // Save a change of the tools. failure names the action for the error toast. The toast
@@ -493,7 +657,7 @@ export class SettingsView {
     if (this.toolBusy) return;
     const visit = this.visits;
     const focused = document.activeElement;
-    const toolId = focused?.closest<HTMLElement>('#settings-tools > [data-tool-id]')?.dataset.toolId;
+    const toolId = focused?.closest<HTMLElement>('[data-tool-id]')?.dataset.toolId;
     const index = this.saved?.tools.findIndex(tool => tool.id === toolId) ?? -1;
     this.setToolBusy(true);
     error.hidden = true;
@@ -529,7 +693,7 @@ export class SettingsView {
     const tools = this.saved?.tools ?? [];
     const tool = tools.find(tool => tool.id === toolId) ?? tools[Math.min(index, tools.length - 1)];
     const edit = tool ? document.getElementById(`tool-edit-${tool.id}`) : null;
-    (edit ?? this.addTool.name).focus();
+    (edit ?? this.toolAdd).focus();
   }
 
   // Show the controls of the tool in the list. A built-in tool shows its exact command.
@@ -539,12 +703,27 @@ export class SettingsView {
     // Another view or a reload can change the saved tool. Hide a result of another tool.
     if (this.titleTool.value !== this.testedTool) this.testResult.hidden = true;
     const edited = this.customCommand.value !== this.renderedCustom;
+    const modelEdited = this.titleModelEdited();
     const controls = titleControls(this.titleTools, this.titleTool.value, this.saved?.titleTool ?? 'none', this.busy, edited);
-    this.titleCommand.textContent = controls.command;
+    // The model controls show only for the saved tool. A change of the tool saves at once.
+    const shown = this.titleTools.find(tool => tool.id === this.titleTool.value);
+    const modelsShown = !!shown?.type && shown.id === this.saved?.titleTool && !this.settingTool;
+    this.titleModels.disabled = this.busy;
+    // Hidden controls forget their values. The next render shows the saved model again.
+    if (!modelsShown && this.renderedTitle) {
+      this.titleModels.set('', '', '');
+      this.renderedTitle = '';
+    }
+    this.titleModelSave.hidden = !modelEdited;
+    this.titleModelSave.disabled = this.busy;
+    this.titleCommand.textContent = shown?.type && modelsShown
+      ? launchCommand(shown.type, shown.prefix ?? '', this.titleModels.model, this.titleModels.effort) + (shown.suffix ?? '')
+      : controls.command;
     this.titleBuiltin.hidden = !controls.command;
     this.customForm.hidden = this.customSave.hidden = !controls.custom;
     this.customCommand.disabled = this.customSave.disabled = !controls.select;
-    this.titleTest.disabled = !controls.test;
+    // Test runs the saved model, so it waits while the model has an edit.
+    this.titleTest.disabled = !controls.test || modelEdited;
     this.titleTest.hidden = !controls.testShown;
     this.titleTool.disabled = !controls.select;
     this.titleSpinner.hidden = !this.busy;
@@ -563,6 +742,20 @@ export class SettingsView {
     this.testResult.hidden = false;
   }
 
+  // titleType returns the agent type of a title tool, or empty for a title tool without
+  // a model choice.
+  private titleType(tool: string): string {
+    return this.titleTools.find(candidate => candidate.id === tool)?.type ?? '';
+  }
+
+  // titleModelEdited reports a model or an effort of the saved title tool that is not
+  // saved.
+  private titleModelEdited(): boolean {
+    const saved = this.saved;
+    if (!saved || !this.titleType(saved.titleTool) || this.titleTool.value !== saved.titleTool || !this.renderedTitle) return false;
+    return this.titleModels.model !== (saved.titleModel ?? '') || this.titleModels.effort !== (saved.titleEffort ?? '');
+  }
+
   // The name of a title tool for a message.
   private titleToolName(tool: string): string {
     if (tool === 'custom') return 'Custom';
@@ -577,7 +770,9 @@ export class SettingsView {
     if (tool !== 'custom') {
       this.customOpen = false;
       this.customCommand.value = this.renderedCustom;
-      void this.setTitleTool(tool);
+      // A newly selected tool starts with its default model and effort.
+      const defaults = this.titleTools.find(candidate => candidate.id === tool);
+      void this.setTitleTool(tool, '', defaults?.model ?? '', defaults?.effort ?? '');
       return;
     }
     if (this.saved?.titleCommand) {
@@ -606,7 +801,7 @@ export class SettingsView {
   // message. A failed test saves nothing. Then the list shows the saved tool again, with
   // the error below it. A custom command that failed stays in its field, so that the
   // user can fix it. The list keeps Custom only when Custom is not saved.
-  private async setTitleTool(tool: string, command = ''): Promise<void> {
+  private async setTitleTool(tool: string, command = '', model = '', effort = ''): Promise<void> {
     const server = this.server();
     if (!server || !this.saved || this.busy) {
       this.render();
@@ -621,7 +816,8 @@ export class SettingsView {
     if (tool !== 'none') this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`);
     else this.testResult.hidden = true;
     try {
-      const result = await this.send(server, { operation: 'title-tool-set', settings: { titleTool: tool, titleCommand: command } });
+      const result = await this.send(server, { operation: 'title-tool-set', settings: { titleTool: tool, titleCommand: command, titleModel: model, titleEffort: effort } });
+      this.renderedTitle = '';
       if (tool === 'custom') this.customCommand.value = this.renderedCustom = result.settings.titleCommand;
       this.customOpen = false;
       this.saves.update(result.settings);
@@ -672,7 +868,9 @@ export class SettingsView {
     this.showTest('running', `Testing ${name}. This can take up to 90 seconds.`);
     try {
       const titleCommand = tool === 'custom' ? this.customCommand.value : '';
-      const result = await this.send(server, { operation: 'title-test', settings: { titleTool: tool, titleCommand } });
+      // Test runs the saved model and effort. A changed model tests with Save and test.
+      const titleModel = this.saved?.titleModel ?? '', titleEffort = this.saved?.titleEffort ?? '';
+      const result = await this.send(server, { operation: 'title-test', settings: { titleTool: tool, titleCommand, titleModel, titleEffort } });
       if (runNumber === this.titleRun && tool === this.titleTool.value) {
         this.showTest('passed', `✓ Test passed. ${name} made the title “${result.title}” from the sample message.`);
       }

@@ -19,10 +19,15 @@ const toolUsage = `Usage:
   bbflow [--dir DIR] tool list
   bbflow [--dir DIR] tool add [--default] NAME COMMAND
   bbflow [--dir DIR] tool remove NAME
+  bbflow [--dir DIR] tool enable NAME
+  bbflow [--dir DIR] tool disable NAME
 
-list prints one tool on each line: the name, a tab, and the command.
-add creates a tool or replaces the command of the tool with this name.
-Put --default before NAME. Quote a command that contains spaces.`
+list prints one tool on each line: the name, the command, and on or off, divided by tabs.
+add creates a tool or replaces the command of the tool with this name. A built-in tool
+keeps its command.
+Put --default before NAME. Quote a command that contains spaces.
+enable and disable turn a tool on or off. A tool that is off stays saved, but it is not
+a choice for new sessions. remove does not remove a built-in tool.`
 
 const settingsUsage = `Usage:
   bbflow [--dir DIR] settings get [KEY]
@@ -36,6 +41,7 @@ Keys:
   worktree      true or false
   base          the default Git branch or commit, such as HEAD
   update-check  true or false: read the latest release from GitHub once a day
+  shell         true or false: Shell is a choice for new sessions
   port          1024 to 65535, or 0 for an automatic port; applies at the next server start
   remote-host   the host name of this computer in Tailscale Serve, or "" for none
   remote-login  the Tailscale login that can use remote access, or "" for none
@@ -64,14 +70,14 @@ func toolCommand(target client.Target, args []string) error {
 		if err != nil {
 			return err
 		}
-		if len(settings.Tools) == 0 {
-			fmt.Println("No tools are saved.")
-			return nil
-		}
 		// A name and a command have no control characters, so the tab divides each line.
 		// Padding to one column would need the display width of each character.
 		for _, tool := range settings.Tools {
-			fmt.Printf("%s\t%s\n", tool.Name, tool.Command)
+			state := "on"
+			if !tool.Enabled {
+				state = "off"
+			}
+			fmt.Printf("%s\t%s\t%s\n", tool.Name, tool.Command, state)
 		}
 		return nil
 	case "add":
@@ -97,14 +103,18 @@ func toolCommand(target client.Target, args []string) error {
 				return err
 			}
 			added = index < 0
+			if !added && settings.Tools[index].Builtin {
+				return fmt.Errorf("%q is a built-in tool, and bbflow keeps its command; add a tool with another name for another command", name)
+			}
 			if added {
 				settings.Tools = append(settings.Tools, history.Tool{ID: history.ID(), Name: name})
 				index = len(settings.Tools) - 1
 			}
 			tool := &settings.Tools[index]
 			tool.Command = command
+			// The default tool must be on.
 			if *makeDefault {
-				settings.DefaultTool = tool.ID
+				settings.DefaultTool, tool.Enabled = tool.ID, true
 			}
 			return nil
 		})
@@ -130,14 +140,61 @@ func toolCommand(target client.Target, args []string) error {
 			if index < 0 {
 				return fmt.Errorf("tool %q does not exist", name)
 			}
+			if settings.Tools[index].Builtin {
+				return fmt.Errorf("%q is a built-in tool; turn it off with: bbflow tool disable %q", name, name)
+			}
 			if settings.DefaultTool == settings.Tools[index].ID {
-				settings.DefaultTool = ""
+				fallback, found := history.FallbackTool(*settings, settings.DefaultTool)
+				if !found {
+					return fmt.Errorf("%q is the only tool that is on; turn on another tool or Shell first", name)
+				}
+				settings.DefaultTool = fallback
 			}
 			settings.Tools = append(settings.Tools[:index], settings.Tools[index+1:]...)
 			return nil
 		})
 		if err == nil {
 			fmt.Printf("Removed tool %q.\n", name)
+		}
+		return err
+	case "enable", "disable":
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 1 {
+			return fmt.Errorf("provide the name of one tool to %s", args[0])
+		}
+		name, enabled := strings.TrimSpace(flags.Arg(0)), args[0] == "enable"
+		wasDefault, newDefault := false, ""
+		saved, err := changeSettings(target, func(settings *history.Settings) error {
+			index, err := findTool(settings.Tools, name)
+			if err != nil {
+				return err
+			}
+			if index < 0 {
+				return fmt.Errorf("tool %q does not exist", name)
+			}
+			tool := &settings.Tools[index]
+			// A tool that is off cannot be the default tool. Shell, or the first other
+			// tool that is on, becomes the default.
+			wasDefault = !enabled && settings.DefaultTool == tool.ID
+			if wasDefault {
+				fallback, found := history.FallbackTool(*settings, tool.ID)
+				if !found {
+					return fmt.Errorf("%q is the only tool that is on; turn on another tool or Shell first", name)
+				}
+				settings.DefaultTool, newDefault = fallback, fallback
+			}
+			tool.Enabled = enabled
+			return nil
+		})
+		if err == nil && enabled {
+			fmt.Printf("Turned on tool %q.\n", name)
+		} else if err == nil {
+			fmt.Printf("Turned off tool %q.\n", name)
+			if wasDefault {
+				fmt.Printf("%s is now the default tool.\n", toolName(saved, newDefault))
+			}
 		}
 		return err
 	default:
@@ -206,6 +263,21 @@ func settingsCommand(target client.Target, args []string) error {
 					return err
 				}
 				settings.UpdateCheck = enabled
+			case "shell":
+				enabled, err := parseSwitch(key, value)
+				if err != nil {
+					return err
+				}
+				settings.ShellOff = !enabled
+				// Shell that is off cannot be the default tool. The first tool that is on
+				// becomes the default.
+				if !enabled && settings.DefaultTool == "" {
+					fallback, found := history.FallbackTool(*settings, "")
+					if !found {
+						return errors.New("Shell is the only tool that is on; turn on another tool first")
+					}
+					settings.DefaultTool = fallback
+				}
 			case "port":
 				number, err := strconv.Atoi(strings.TrimSpace(value))
 				if err != nil {
@@ -280,6 +352,8 @@ func settingValue(settings history.Settings, key, titleTool string) (string, err
 		return settings.Base, nil
 	case "update-check":
 		return strconv.FormatBool(settings.UpdateCheck), nil
+	case "shell":
+		return strconv.FormatBool(!settings.ShellOff), nil
 	case "port":
 		return strconv.Itoa(settings.Port), nil
 	case "remote-host":
@@ -289,7 +363,7 @@ func settingValue(settings history.Settings, key, titleTool string) (string, err
 	case "title-tool":
 		return "", fmt.Errorf("title-tool is not a settings key; use bbflow title-tool %s", titleTool)
 	}
-	return "", fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, update-check, port, remote-host, or remote-login", key)
+	return "", fmt.Errorf("unknown settings key %q; use appearance, default-tool, worktree, base, update-check, shell, port, remote-host, or remote-login", key)
 }
 
 // parseSwitch reads the value of a setting that is on or off. Only true and false are
@@ -364,4 +438,14 @@ func printJSON(value any) error {
 		_, err = fmt.Fprintln(os.Stdout, string(data))
 	}
 	return err
+}
+
+// toolName returns the name of a tool ID for a message. The empty ID is Shell.
+func toolName(settings history.Settings, id string) string {
+	for _, tool := range settings.Tools {
+		if tool.ID == id {
+			return tool.Name
+		}
+	}
+	return "Shell"
 }

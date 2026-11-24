@@ -86,6 +86,10 @@ test('the form prefers the original tool, then the default tool, then Shell', ()
   assert.equal(defaultContinueTool(tools, '', 'codex'), '', 'a session that started with Shell');
   assert.equal(defaultContinueTool(tools, 'removed', 'codex'), 'codex');
   assert.equal(defaultContinueTool(tools, undefined, 'removed'), '');
+  // When Shell is off, it is no choice, and the first tool takes its place.
+  assert.equal(defaultContinueTool(tools, '', '', false), tools[0].id);
+  assert.equal(defaultContinueTool(tools, '', 'plain', false), 'plain');
+  assert.equal(defaultContinueTool([], '', '', false), '');
 });
 
 test('the handoff prompt goes only into an empty editor without a pending send', () => {

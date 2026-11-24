@@ -101,7 +101,7 @@ screenshots use only the dark appearance.
 | File | View | Viewport |
 | --- | --- | --- |
 | `session.png` | A Claude Code session in the demo project **Orbit API** | 1200 x 836 |
-| `draft.png` | The demo draft **Plan release notes**, with the tool **Claude** | 1200 x 820 |
+| `draft.png` | The demo draft **Plan release notes**, with the tool **Claude Code** | 1200 x 820 |
 
 To capture the screenshots again, do these steps:
 
@@ -120,7 +120,7 @@ To capture the screenshots again, do these steps:
    `session.png`. Do steps 3 to 7 in this view. A second view with a different
    terminal width makes Claude Code draw its output again. An earlier copy of the
    message then stays in the terminal.
-3. In **Orbit API**, create a draft with the tool **Claude** and without **Use
+3. In **Orbit API**, create a draft with the tool **Claude Code** and without **Use
    worktree**. Name it **Explain the period formula**. Start the session.
 4. Accept the trust question of Claude Code. Claude Code saves this answer in
    `~/.claude.json`.
@@ -129,7 +129,7 @@ To capture the screenshots again, do these steps:
 6. Write a second message in the message editor. Do not send it.
 7. Click **Earlier message** above the terminal. The question is then at the top of
    the terminal. Wait two seconds, until the highlight of the row is gone.
-8. Open the draft **Plan release notes**. Select the tool **Claude**. The seed selects
+8. Open the draft **Plan release notes**. Select the tool **Claude Code**. The seed selects
    **Demo agent** for this draft.
 9. Capture each view with the viewport of the table. Use the dark color scheme and a
    device scale factor of 2.

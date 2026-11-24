@@ -81,11 +81,12 @@ The simulated data has these parts:
 | --- | --- |
 | Project **Orbit API** | A repository with three commits. Its working files have two modified, one deleted, one renamed, and two untracked files for the Changes pane. One modified file is six folders deep and has a long name, for the width of the file list. Image samples in `docs/` are for the image view: a modified PNG file, a modified SVG file with only a `viewBox`, an added PNG file of about 1.8 MiB, and an added SVG file `unsafe.svg` with a script, an `onload` attribute, and an external image. The image view must not run that script or load that image. Two more untracked files are `reports/test-report.html` and its style sheet, for **Open in browser**. The script of the report shows that it ran, and it shows the page origin. |
 | Project **Tide Web** | A repository with clean working files and a second branch, `feature/tide-chart`. |
-| Tool **Demo agent** | The default tool. It prints a fixed reply to each message. |
+| Tool **Demo agent** | The default tool. It prints a fixed reply to each message. The simulated tools follow the built-in tools in the list. |
 | Tool **Detail agent** | The Demo agent with a reply of 38 lines to each message, so that a reply is longer than one screen. |
 | Tool **Busy agent** | It prints one line each second until it stops. |
-| Tool **Claude** | The real `claude` CLI of the user. |
-| Tool **Codex** | The real `codex --no-alt-screen` CLI of the user. |
+| Tool **Codex** | The built-in tool. It runs the real `codex --no-alt-screen` CLI of the user. It is on. |
+| Tool **Claude Code** | The built-in tool. It runs the real `claude` CLI of the user. It is on. |
+| Tools **Antigravity** and **Code Puppy** | The built-in tools of these CLIs. They are off, whatever CLIs the computer has. |
 | Setting **Use worktree** | On. New drafts in Git folders select a managed worktree. The draft **Plan release notes** also has it. |
 | Setting **Title tool** | None. Each built-in title tool runs a real agent CLI, which calls a model. Custom runs a command that the user enters. |
 

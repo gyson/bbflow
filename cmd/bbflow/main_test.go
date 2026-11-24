@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"bbflow/internal/history"
+	"bbflow/internal/server"
 )
 
 func TestInstanceDirectorySelection(t *testing.T) {
@@ -114,6 +116,8 @@ func TestMain(m *testing.M) {
 		if os.Getenv("BBFLOW_TEST_MENU_HELPER") == "" {
 			menuBar = "off"
 		}
+		// The built-in tools stay off, whatever CLIs this computer has.
+		server.InstalledTools = func(context.Context, map[string]string) (map[string]bool, error) { return map[string]bool{}, nil }
 		if path := os.Getenv("BBFLOW_TEST_EXECUTABLE"); path != "" {
 			executablePath = func() (string, error) { return path, nil }
 		}

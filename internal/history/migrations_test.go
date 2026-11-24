@@ -139,10 +139,41 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 			for _, tool := range original["tools"].([]any) {
 				delete(tool.(map[string]any), "continueCommand")
 			}
+			if _, exists := original["titleModel"]; !exists {
+				original["titleModel"], original["titleEffort"] = map[any]string{"claude": "haiku", "codex": "gpt-6-luna", "code-puppy": "codex-gpt-6-luna"}[original["titleTool"]], ""
+				if original["titleTool"] == "codex" {
+					original["titleEffort"] = "low"
+				}
+			}
+			if _, exists := original["checkTools"]; !exists {
+				original["tools"], original["checkTools"], original["shellOff"] = upgradedTools(original["tools"].([]any)), true, false
+			}
 			if !reflect.DeepEqual(saved, original) {
 				t.Fatal("migration changed existing settings", saved, original)
 			}
 			got[0][2] = want[0][2]
+		}
+		if !includeSchema && query == "SELECT session_id,revision,state,data FROM preparations ORDER BY rowid" && len(got) == len(want) {
+			for i := range got {
+				var saved, original map[string]any
+				if err := json.Unmarshal([]byte(got[i][3].(string)), &saved); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal([]byte(want[i][3].(string)), &original); err != nil {
+					t.Fatal(err)
+				}
+				if _, exists := original["toolType"]; !exists {
+					// The fixture preparations name no built-in tool, so their type is custom.
+					original["toolType"], original["model"], original["effort"] = "custom", "", ""
+					if id, _ := original["toolId"].(string); id == "" {
+						original["toolType"] = ""
+					}
+				}
+				if !reflect.DeepEqual(saved, original) {
+					t.Fatal("migration changed an existing preparation", saved, original)
+				}
+				got[i][3] = want[i][3]
+			}
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("changed %s:\ngot  %#v\nwant %#v", query, got, want)
@@ -150,8 +181,79 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 	}
 }
 
+// presetTools are the built-in tools of a new database, before the tool check.
+func presetTools() []Tool {
+	return []Tool{
+		{ID: "builtin-codex", Name: "Codex", Command: "codex --no-alt-screen", Type: "codex", Builtin: true},
+		{ID: "builtin-claude", Name: "Claude Code", Command: "claude", Type: "claude", Builtin: true},
+		{ID: "builtin-agy", Name: "Antigravity", Command: "agy", Type: "agy", Builtin: true},
+		{ID: "builtin-code-puppy", Name: "Code Puppy", Command: "code-puppy", Type: "code-puppy", Builtin: true},
+	}
+}
+
+// upgradedTools is the tool list that migration 17 makes. The first tool whose command
+// is the command of a built-in tool, with the CLI name or a path of the CLI, becomes that
+// tool. Every saved tool stays on. A type without such a tool gets a built-in tool that is
+// off. The built-in tools come first: the saved ones, then the new ones. The other saved
+// tools follow.
+func upgradedTools(tools []any) []any {
+	result, others := []any{}, []any{}
+	types, names := map[string]bool{}, map[string]bool{}
+	args := map[string]string{"codex": "--no-alt-screen"}
+	for _, tool := range tools {
+		tool := tool.(map[string]any)
+		command := strings.TrimLeft(tool["command"].(string), " ")
+		kind := inferredType(command)
+		word, rest, _ := strings.Cut(command, " ")
+		rest = strings.TrimSpace(rest)
+		tool["type"], tool["model"], tool["effort"], tool["path"] = kind, "", "", ""
+		builtin := kind != "custom" && rest == args[kind] && !types[kind]
+		tool["builtin"], tool["enabled"] = builtin, true
+		names[tool["name"].(string)] = true
+		if builtin {
+			types[kind] = true
+			if word != kind {
+				tool["path"] = word
+			}
+			tool["command"] = strings.TrimSpace(word + " " + rest)
+			result = append(result, tool)
+		} else {
+			tool["type"] = "custom"
+			others = append(others, tool)
+		}
+	}
+	for _, preset := range [][3]string{{"codex", "Codex", "codex --no-alt-screen"}, {"claude", "Claude Code", "claude"}, {"agy", "Antigravity", "agy"}, {"code-puppy", "Code Puppy", "code-puppy"}} {
+		if types[preset[0]] {
+			continue
+		}
+		name := preset[1]
+		if names[name] {
+			name += " (built-in)"
+		}
+		result = append(result, map[string]any{"id": "builtin-" + preset[0], "name": name, "command": preset[2], "type": preset[0],
+			"model": "", "effort": "", "builtin": true, "enabled": false, "path": ""})
+	}
+	return append(result, others...)
+}
+
+// inferredType is the tool type that migration 17 gives a command. The test keeps its own
+// rule, so that a change of models.Infer cannot hide a change of the migration.
+func inferredType(command string) string {
+	word, _, _ := strings.Cut(strings.TrimLeft(command, " "), " ")
+	// A word that the shell interprets is no program name. The folder does not count.
+	if word == "" || strings.Trim(word, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./~+@-") != "" {
+		return "custom"
+	}
+	word = word[strings.LastIndex(word, "/")+1:]
+	switch word {
+	case "codex", "claude", "agy", "code-puppy":
+		return word
+	}
+	return "custom"
+}
+
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -179,10 +281,10 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			if version >= 14 {
 				titleTool, port = "codex", 50000
 			}
-			if version == 15 {
+			if version >= 15 {
 				titleCommand = "example-title --fast"
 			}
-			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != "" || settings.RemoteLogin != "" || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: []Tool{}, TitleTool: "none", UpdateCheck: true})) {
+			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != "" || settings.RemoteLogin != "" || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: presetTools(), TitleTool: "none", CheckTools: true, UpdateCheck: true})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
@@ -206,6 +308,35 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			}
 			if version == 5 && (session.Preparation.Command != "old-tool --interactive" || session.Worktree.Commit != "abcdef") {
 				t.Fatal("lost launch metadata", session)
+			}
+			if version >= 5 && (session.Preparation.ToolType != "custom" || session.Preparation.Model != "" || session.Preparation.Effort != "") {
+				t.Fatal("wrong tool type of an old preparation", session.Preparation)
+			}
+			if version == 16 {
+				// The saved Codex, Code Puppy, and Antigravity tools have the commands of
+				// the built-in tools, so they become those tools and stay on. The folder of
+				// the Antigravity command becomes its CLI path. Tools with other options
+				// stay tools of the user, which are custom. The saved Claude Code tool has another option, so
+				// a new built-in tool that is off gets another name. The built-in tools
+				// come first.
+				presets := presetTools()
+				claude := presets[1]
+				claude.Name = "Claude Code (built-in)"
+				want := []Tool{
+					{ID: "codex", Name: "Codex", Command: "codex --no-alt-screen", Type: "codex", Builtin: true, Enabled: true},
+					{ID: "puppy", Name: "Code Puppy", Command: "code-puppy", Type: "code-puppy", Builtin: true, Enabled: true},
+					{ID: "agy", Name: "Antigravity", Command: "/opt/tools/bin/agy", Type: "agy", Builtin: true, Enabled: true, Path: "/opt/tools/bin/agy"},
+					claude,
+					{ID: "example", Name: "Example", Command: "example --interactive", Type: "custom", Enabled: true},
+					{ID: "plain", Name: "Plain", Command: "plain", Type: "custom", Enabled: true},
+					{ID: "path", Name: "Path", Command: "/opt/tools/bin/other codex", Type: "custom", Enabled: true},
+					{ID: "search", Name: "Codex search", Command: "codex --no-alt-screen --search", Type: "custom", Enabled: true},
+					{ID: "claude", Name: "Claude Code", Command: "claude --model opus", Type: "custom", Enabled: true},
+					{ID: "quoted", Name: "Quoted", Command: "'/opt/my tools/claude'", Type: "custom", Enabled: true},
+				}
+				if !reflect.DeepEqual(settings.Tools, want) || settings.Revision != 9 || !settings.CheckTools {
+					t.Fatal("wrong tool types after the upgrade", settings.Tools, settings.Revision)
+				}
 			}
 			result, err := store.Query(context.Background(), "SELECT seq FROM events WHERE text LIKE '%café%'")
 			if err != nil || len(result.Rows) != 1 || result.Rows[0][0] != int64(43) {
@@ -361,6 +492,20 @@ func TestRemoteAccessUpgradeRollsBack(t *testing.T) {
 		store.Close()
 		t.Fatal("accepted blocked remote access settings update")
 	} else if !strings.Contains(err.Error(), "apply history migration 16") {
+		t.Fatal(err)
+	}
+	assertSnapshot(t, rawDatabase(t, path), before, true)
+}
+
+func TestToolTypeUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 16)
+	execSQL(t, db, "CREATE TRIGGER reject_preparation_update BEFORE UPDATE ON preparations BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted blocked tool type update")
+	} else if !strings.Contains(err.Error(), "apply history migration 17") {
 		t.Fatal(err)
 	}
 	assertSnapshot(t, rawDatabase(t, path), before, true)

@@ -375,6 +375,25 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .launch-grid label, .settings-card label { display: block; font-size: 12px; font-weight: 550; }
 .launch-grid .wide { grid-column: 1 / -1; }
 label.checkbox { display: flex; align-items: center; gap: 10px; }
+/* The model and effort controls of a draft or a tool. */
+.model-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; }
+.model-field { display: flex; flex-direction: column; min-width: 0; }
+.model-field > label { font-size: 12px; font-weight: 550; }
+.model-field > input { margin-top: 8px; }
+.model-help { margin: 6px 0 0; font-size: 11px; line-height: 1.6; color: var(--text-muted); overflow-wrap: anywhere; }
+.title-models { margin-bottom: 17px; }
+button.link-button { padding: 0; border: 0; background: none; color: var(--link); font-size: 11px; text-decoration: underline; }
+.launch-command { margin: 0; }
+/* The tool, its model, and its effort form one group of the draft. A line above and
+   below separates it from the other fields, on the background of the form. Tool, Model,
+   and Thinking effort share a row. The default of the tool and the command span it. */
+.launch-tool-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; align-items: start;
+  min-width: 0; margin: 0; padding: 18px 0; border: 0; border-block: 1px solid var(--divider); }
+.launch-tool-group .launch-command code { overflow-wrap: anywhere; }
+.launch-tool-group > .model-fields { display: contents; }
+.launch-tool-group > .launch-command { grid-column: 1 / -1; }
+.launch-command code { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--text); overflow-wrap: anywhere; }
+
 .checkbox input { width: 17px; height: 17px; margin: 0; accent-color: var(--primary); }
 .launch-actions { display: flex; justify-content: flex-end; align-items: center; gap: 20px; border-top: 1px solid var(--divider); padding-top: 12px; }
 #launch-submit { width: auto; }
@@ -405,43 +424,52 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
 #title-test-sample { margin: 0 0 2px; }
 #title-test-detail { margin: 2px 0 0; }
 .settings-card .settings-heading h3 { margin-bottom: 8px; }
-.tool-grid {
-  --tool-field-gap: 14px;
-  --tool-action-gap: 5px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) [actions] repeat(4, max-content);
-  column-gap: var(--tool-action-gap);
-}
-#settings-tools, .tool-columns, .tool-row, #tool-error { grid-column: 1 / -1; }
-#settings-tools, .tool-columns, .tool-row, .tool-actions { display: grid; grid-template-columns: subgrid; }
-.tool-columns { padding-bottom: 8px; font-size: 12px; font-weight: 550; }
-.tool-row { border-top: 1px solid var(--divider); row-gap: var(--tool-field-gap); padding: 14px 0; align-items: center; font-size: 12px; }
-.tool-row > :is(label, span, code) { margin-inline-end: calc(var(--tool-field-gap) - var(--tool-action-gap)); }
-.tool-row > span, .tool-row > code { overflow-wrap: anywhere; }
-.tool-row > code { white-space: pre-wrap; }
-form.tool-row { align-items: end; }
-form.tool-row > label, .tool-row > .form-error { margin-block: 0; }
-.tool-row > .form-error { grid-column: 1 / -1; }
-form.tool-row input, form.tool-row button { line-height: 1.25; padding-block: 10px; }
-.tool-command, .tool-row > code { font-family: ui-monospace, monospace; font-size: 12px; }
-.tool-actions { grid-column: actions / -1; }
-form.tool-row .tool-actions button { grid-column: span 2; }
-.tool-actions button { padding: 9px; font-size: 12px; }
+/* The saved tools are a table. One editor below it adds or edits a tool. */
+.tool-table-box { overflow-x: auto; border: 1px solid var(--divider); border-radius: 9px; }
+.tool-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; }
+.tool-table th { padding: 9px 12px; border-bottom: 1px solid var(--divider); color: var(--text-muted); font-weight: 550; text-align: left; white-space: nowrap; }
+.tool-table td { padding: 10px 12px; border-bottom: 1px solid var(--divider); vertical-align: middle; }
+.tool-table tr:last-child td { border-bottom: 0; }
+.tool-table tr.editing td { background: var(--selected); }
+.tool-table tr.off td:not(.tool-actions, .tool-on) { opacity: .55; }
+/* The built-in tools and the custom tools have a table each, with a title. */
+.tool-table-title { margin: 20px 0 8px; font-size: 13px; font-weight: 600; }
+.tool-table-title:first-of-type { margin-top: 4px; }
+.tool-table td.tool-on { width: 1%; white-space: nowrap; }
+.tool-chip.missing { background: var(--warning-surface); color: var(--warning-text); }
+/* The switch is a track with a knob, and the word On or Off. */
+button.tool-switch { display: inline-flex; align-items: center; gap: 8px; padding: 4px 2px; border: 0; background: none; font-size: 12px; font-weight: 550; color: var(--text-muted); }
+button.tool-switch:hover:not(:disabled) { background: none; border: 0; }
+.tool-switch::before { content: ""; flex: none; width: 30px; height: 18px; border-radius: 9px; background: radial-gradient(circle at 9px 9px, var(--surface) 6.5px, transparent 7px) var(--inactive); transition: background-color .15s; }
+.tool-switch[aria-checked="true"] { color: var(--text); }
+.tool-switch[aria-checked="true"]::before { background: radial-gradient(circle at 21px 9px, var(--surface) 6.5px, transparent 7px) var(--accent); }
+@media (prefers-reduced-motion: reduce) { .tool-switch::before { transition: none; } }
+.tool-table td.tool-name { min-width: 150px; font-weight: 550; overflow-wrap: anywhere; }
+.tool-table td.tool-default { white-space: nowrap; }
+.tool-table td.tool-default.muted-cell, .tool-table td.tool-empty { color: var(--text-muted); }
+.tool-table td code { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The actions start at the same place in each row, so that Edit lines up. */
+.tool-table td.tool-actions { width: 1%; white-space: nowrap; }
+.tool-table td.tool-actions button { padding: 7px 9px; font-size: 12px; margin-right: 4px; }
+.tool-chip { display: inline-block; white-space: nowrap; margin-left: 8px; padding: 2px 7px; border-radius: 6px; background: var(--info-surface); color: var(--info); font-size: 10px; font-weight: 600; letter-spacing: .5px; vertical-align: 1px; }
+button.tool-add { margin-top: 12px; font-size: 12px; }
+/* The tool editor is a dialog, so a long tool list needs no scroll to reach it. */
+.tool-editor-dialog { width: 640px; }
+.tool-editor { display: flex; flex-direction: column; gap: 16px; }
+.tool-editor .dialog-heading { margin-bottom: 4px; }
+.tool-editor .model-field > input, .tool-editor .model-field > select { margin-top: 8px; }
+.tool-editor .tool-command { font-family: ui-monospace, monospace; font-size: 12px; }
+.tool-preview { margin: 0; padding: 10px 12px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); font-size: 11px; color: var(--text-muted); }
+.tool-preview code { display: block; margin-top: 4px; font-family: ui-monospace, monospace; font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
+.tool-editor > .form-error { margin: 0; }
+.tool-editor-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.tool-default-help { margin: -8px 0 17px; }
 /* The status and Done stay in view while the page scrolls. */
 .settings-actions { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 16px 0 10px; background: var(--workspace); }
 #tool-remove-dialog .form-help { margin: 0 0 14px; overflow-wrap: anywhere; }
 .settings-content { padding-bottom: 30px; }
 #settings-error { margin: 16px 0 0; }
-@media (width > 950px) {
-  .tool-field-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  form.tool-row input { margin-top: 0; }
-}
-@media (max-width: 950px) {
-  .tool-grid { grid-template-columns: minmax(0, 1fr) [actions] repeat(4, max-content); }
-  .tool-columns { display: none; }
-  .tool-row > :is(label, span, code) { grid-column: 1 / -1; margin-inline-end: 0; }
-}
-@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid, .place-group { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 0 16px 16px; } }
+@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid, .place-group, .model-fields { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 0 16px 16px; } }
 .continue-dialog { width: 620px; }
 .continue-dialog .form-help { margin: 0 0 14px; }
 .continue-path { margin: 0 0 18px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent-text); overflow-wrap: anywhere; }
