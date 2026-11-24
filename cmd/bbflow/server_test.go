@@ -45,7 +45,7 @@ func TestServerMigratesArchiveBeforeServingAndRecovery(t *testing.T) {
  (SELECT text FROM events WHERE seq=43),
  (SELECT status FROM runs WHERE id='unfinished'),
  (SELECT count(*) FROM events WHERE kind='notice'),
- (SELECT count(*) FROM projects WHERE id='general'),
+ (SELECT count(*) FROM projects),
  (SELECT revision FROM settings WHERE id=1),
  (SELECT count(*) FROM preparations),
  (SELECT count(*) FROM worktrees),
@@ -57,7 +57,7 @@ func TestServerMigratesArchiveBeforeServingAndRecovery(t *testing.T) {
 		if err != nil || json.Unmarshal(output, &result) != nil {
 			t.Fatalf("query after upgrade: %s %v", output, err)
 		}
-		want := `[["68656C6C6F0D0300","café","interrupted",1,1,0,0,0,2]]`
+		want := `[["68656C6C6F0D0300","café","interrupted",1,0,0,0,0,2]]`
 		got, err := json.Marshal(result.Rows)
 		if err != nil || string(got) != want {
 			t.Fatalf("migration/recovery result: %s %v", got, err)

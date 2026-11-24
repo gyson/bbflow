@@ -8,8 +8,6 @@ import (
 	"unicode/utf8"
 )
 
-const GeneralProjectID = "general"
-
 type Project struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -25,16 +23,9 @@ func validName(name string) (string, error) {
 	return name, nil
 }
 
-// General follows the instance location. Existing sessions keep their launch path.
-func (s *Store) EnsureGeneral(workspace string) error {
-	_, err := s.db.Exec(`INSERT INTO projects(id,name,workspace,created) VALUES(?,'General',?,?)
- ON CONFLICT(id) DO UPDATE SET workspace=excluded.workspace`, GeneralProjectID, workspace, Now())
-	return err
-}
-
 func (s *Store) Projects() ([]Project, error) {
 	rows, err := s.db.Query(`SELECT id,name,workspace,created FROM projects
- ORDER BY id='general' DESC,name COLLATE NOCASE,id`)
+ ORDER BY name COLLATE NOCASE,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -81,9 +72,6 @@ func changedRow(result sql.Result, err error) error {
 }
 
 func (s *Store) RenameProject(id, name string) error {
-	if id == GeneralProjectID {
-		return errors.New("General is a built-in project and cannot be renamed")
-	}
 	name, err := validName(name)
 	if err != nil {
 		return err
@@ -93,9 +81,6 @@ func (s *Store) RenameProject(id, name string) error {
 
 // Foreign keys detach sessions without deleting their history or workspace paths.
 func (s *Store) RemoveProject(id string) error {
-	if id == GeneralProjectID {
-		return errors.New("General is a built-in project and cannot be removed")
-	}
 	return changedRow(s.db.Exec("DELETE FROM projects WHERE id=?", id))
 }
 

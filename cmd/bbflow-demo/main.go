@@ -186,17 +186,16 @@ func (d *demo) seed() {
 }
 
 // newInstanceFiles are the entries of an instance directory after the first server
-// start. The General folder is empty.
+// start.
 var newInstanceFiles = map[string]bool{
 	"history.sqlite": true, "history.sqlite-shm": true, "history.sqlite-wal": true,
 	"server.json": true, "server.log": true, "server.lock": true, "server-control.lock": true,
-	"workspaces": true,
 }
 
 // requireNew refuses an instance with data that a new server did not create. The
 // marker lets clean remove the directory, so it must go only on a new instance.
 func (d *demo) requireNew() {
-	const sql = "SELECT (SELECT count(*) FROM projects WHERE id<>'general'), (SELECT count(*) FROM sessions), (SELECT count(*) FROM events), (SELECT revision FROM settings WHERE id=1)"
+	const sql = "SELECT (SELECT count(*) FROM projects), (SELECT count(*) FROM sessions), (SELECT count(*) FROM events), (SELECT revision FROM settings WHERE id=1)"
 	if rows := call[history.QueryResult](d.target, protocol.Request{Operation: "query", SQL: sql}).Rows; fmt.Sprint(rows) != "[[0 0 0 0]]" {
 		fail("%s already has projects, sessions, events, or saved settings; seed only a new instance", d.dir)
 	}
@@ -213,18 +212,6 @@ func (d *demo) requireNew() {
 		if !newInstanceFiles[entry.Name()] {
 			other = append(other, entry.Name())
 		}
-	}
-	workspaces, err := os.ReadDir(filepath.Join(d.dir, "workspaces"))
-	check(err)
-	for _, entry := range workspaces {
-		if entry.Name() != "general" {
-			other = append(other, filepath.Join("workspaces", entry.Name()))
-		}
-	}
-	general, err := os.ReadDir(filepath.Join(d.dir, "workspaces", "general"))
-	check(err)
-	for _, entry := range general {
-		other = append(other, filepath.Join("workspaces", "general", entry.Name()))
 	}
 	if len(other) > 0 {
 		fail("%s has files that a new server does not create: %s; seed only a new instance", d.dir, strings.Join(other, ", "))

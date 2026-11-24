@@ -40,8 +40,7 @@ can be considered later.
 
 1. **Manage conversations.** View, select, and organize sessions under saved projects,
    and start a session from a project without selecting its folder again. History is
-   preserved even when a CLI does not store it. A built-in General project is there for
-   work and history searches that span projects.
+   preserved even when a CLI does not store it.
 2. **Compose comfortably.** Edit multiline prompts, copy and paste, attach files, paste
    images, and keep drafts while switching between conversations.
 3. **Switch agents manually.** The user decides when to switch and which CLI to use

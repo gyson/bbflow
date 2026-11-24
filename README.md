@@ -10,7 +10,7 @@ Codex and Claude Code, in one browser workspace. Sessions continue after you clo
 tab. bbflow records each session, so you can search it or continue it with a different
 agent.
 
-<img src="docs/images/session.png" alt="The bbflow web UI. The sidebar lists three projects and their sessions. The main area shows the terminal of one session, with the message editor below it.">
+<img src="docs/images/session.png" alt="The bbflow web UI. The sidebar lists two projects and their sessions. The main area shows the terminal of one session, with the message editor below it.">
 
 ## What you can do
 

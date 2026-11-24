@@ -48,7 +48,11 @@ and APIs may still change, but durable data needs a supported migration path.
 
 - Prefer clean, readable code for the current web workflow.
 - Remove obsolete code, fields, tests, dependencies, and documentation when the design
-  changes.
+  changes. When you remove a feature, also remove its references in comments, examples,
+  test fixtures, UI text, and other documents.
+- Keep a reference to a removed feature only where it is necessary. These places are
+  released migrations, frozen fixtures, earlier release notes, and the upgrade behavior
+  of durable data.
 - Do not retain obsolete runtime implementations or deprecated aliases. Keep released
   database migrations so users can skip releases without losing data.
 - Keep abstractions small and tied to current behavior. Implement planned features only
@@ -86,7 +90,7 @@ reference details, such as limits, format numbers, or UI behavior, into the READ
 | [docs/GUIDE.md](docs/GUIDE.md) | The user guide for the web UI: tools, projects, sessions, the handoff between agents, search, tips, and where the data is. `SPEC.md` owns the rules and limits. | The steps or the UI labels of these tasks change. |
 | [docs/GOAL.md](docs/GOAL.md) | Product intent: what the project is intended to become. | The intent changes. |
 | [docs/PLAN.md](docs/PLAN.md) | Planned implementation work, at a high level. | A plan starts, changes, or is completed. |
-| [docs/SPEC.md](docs/SPEC.md) | What is currently implemented: behavior, architecture, interfaces, and verified limitations. Do not put proposals or plans there. | The implementation changes. Update it alongside the change. Until code exists, a minimal statement of the current state is sufficient. |
+| [docs/SPEC.md](docs/SPEC.md) | What is currently implemented: behavior, architecture, interfaces, and verified limitations. Do not put proposals, plans, removed features, or earlier behavior there. Git history keeps earlier versions. | The implementation changes. Update it alongside the change. Until code exists, a minimal statement of the current state is sufficient. |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | The WebSocket messages between the clients and the server. | An operation, a message, or the protocol version changes. |
 | [docs/COMMANDS.md](docs/COMMANDS.md) | The `bbflow` commands only. Clearly identify unavailable commands. | bbflow commands, options, defaults, or their effects change. |
 | [docs/REMOTE.md](docs/REMOTE.md) | The user guide for remote access with Tailscale Serve: setup steps, Tailscale commands, and solutions to problems. `SPEC.md` owns the rules and limits. | The setup steps, the Tailscale commands, or the messages of remote access change. |
@@ -154,9 +158,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 - Preserve normal CLI arguments, terminal interaction, authentication, and permissions.
   Do not inject prompts into a new run. Let the user send the handoff prompt when the
   agent is ready.
-- Keep General and custom project metadata in SQLite. Projects supply launch defaults.
-  Sessions retain their actual workspace path. Project removal must preserve session
-  history, files, and processes.
+- Keep project metadata in SQLite. Projects supply launch defaults. Sessions retain
+  their actual workspace path. Project removal must preserve session history, files,
+  and processes.
 - Allow one live session terminal per session.
 - The Terminal view of the workspace pane is an ad hoc shell in the session workspace. Do
   not record it in SQLite. It must not change session status, order, or handoff.

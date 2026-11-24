@@ -166,7 +166,7 @@ func TestDemo(t *testing.T) {
 	if info, err := os.Stat(filepath.Join(orbit, "docs", "large.png")); err != nil || info.Size() <= 1<<20 || info.Size() > 5<<20 {
 		t.Fatalf("docs/large.png must be above 1 MiB and at most 5 MiB: %v, %v", info, err)
 	}
-	expect("SELECT name FROM projects ORDER BY name", "[[General] [Orbit API] [Tide Web]]")
+	expect("SELECT name FROM projects ORDER BY name", "[[Orbit API] [Tide Web]]")
 	expect("SELECT archived, count(*) FROM sessions GROUP BY archived ORDER BY archived", "[[0 8] [1 1]]")
 	// The reviewer draft is a sub-session of the worktree session. Its base is the branch
 	// of its parent.

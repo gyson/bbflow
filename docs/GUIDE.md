@@ -69,7 +69,7 @@ that folder.
 2. Enter the path of an existing folder in **Folder**. The project name is optional.
 3. Click **Add project**.
 
-**General** is always available for work across projects.
+A new instance has no projects. Add one before your first session.
 
 ## Start a session
 

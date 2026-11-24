@@ -25,18 +25,6 @@ func expandWorkspace(workspace string) (string, error) {
 	return workspace, nil
 }
 
-func (s *Server) ensureGeneral() error {
-	workspace := filepath.Join(s.info.DataDir, "workspaces", "general")
-	if err := os.MkdirAll(workspace, 0700); err != nil {
-		return err
-	}
-	canonical, err := agent.Canonical(workspace)
-	if err != nil {
-		return err
-	}
-	return s.store.EnsureGeneral(canonical)
-}
-
 func (s *Server) addProject(name, workspace string) (history.Project, error) {
 	path, err := expandWorkspace(workspace)
 	if err != nil {

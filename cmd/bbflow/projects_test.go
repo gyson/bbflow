@@ -30,18 +30,15 @@ func TestProjectsLaunchAndRemovalThroughServer(t *testing.T) {
 	}
 	var projects []history.Project
 	rpc(protocol.Request{Operation: "project-list"}, &projects)
-	if len(projects) != 1 || projects[0].ID != history.GeneralProjectID {
-		t.Fatalf("missing General: %+v", projects)
+	if len(projects) != 0 {
+		t.Fatalf("new instance has projects: %+v", projects)
 	}
-	general := projects[0]
-	if !strings.HasSuffix(general.Workspace, "/workspaces/general") {
-		t.Fatal(general)
-	}
-	var custom history.Project
+	var kept, custom history.Project
+	rpc(protocol.Request{Operation: "project-add", Name: "Kept", Workspace: t.TempDir()}, &kept)
 	rpc(protocol.Request{Operation: "project-add", Name: "Custom", Workspace: t.TempDir()}, &custom)
 	var views []*sessionView
 	var customID string
-	for _, project := range []history.Project{general, custom} {
+	for _, project := range []history.Project{kept, custom} {
 		view := openSessionView(t, projectStartRequest(t, project.ID, project.Name, protocol.Size{Rows: 24, Cols: 80}))
 		views = append(views, view)
 		waitFor(t, func() bool { return strings.Contains(view.text(), "BBFLOW_SHELL_PROMPT> ") })
@@ -108,7 +105,9 @@ func TestProjectsLaunchAndRemovalThroughServer(t *testing.T) {
 		t.Fatalf("restart: %s %v", output, err)
 	}
 	rpc(protocol.Request{Operation: "project-list"}, &projects)
-	if len(projects) != 2 || projects[0].ID != general.ID || projects[1].ID != replacement.ID {
+	if len(projects) != 2 || projects[0].ID == projects[1].ID ||
+		(projects[0].ID != kept.ID && projects[0].ID != replacement.ID) ||
+		(projects[1].ID != kept.ID && projects[1].ID != replacement.ID) {
 		t.Fatalf("projects lost across restart: %+v", projects)
 	}
 }

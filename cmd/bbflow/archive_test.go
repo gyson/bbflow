@@ -27,9 +27,11 @@ func TestIndependentDraftsArchiveAndRestoreAcrossRestart(t *testing.T) {
 			}
 		}
 	}
+	var project history.Project
+	rpc(protocol.Request{Operation: "project-add", Workspace: t.TempDir()}, &project)
 	var first, second history.Session
 	for _, draft := range []*history.Session{&first, &second} {
-		rpc(protocol.Request{Operation: "project-draft", Project: history.GeneralProjectID}, draft)
+		rpc(protocol.Request{Operation: "project-draft", Project: project.ID}, draft)
 	}
 	if first.ID == second.ID {
 		t.Fatal("plus reused another draft")
