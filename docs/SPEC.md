@@ -30,7 +30,7 @@ The Web client section has these features:
 | --- | --- |
 | [Page and connection](#page-and-connection) | The page URL, the server check, the favicon, and the home screen icon. |
 | [Page messages](#page-messages) | The place of each warning and error. |
-| [Mobile layout](#mobile-layout) | The layout of a very narrow window: the sidebar drawer, the short toolbar, and the file list. |
+| [Mobile layout](#mobile-layout) | The layout of a very narrow window: the sidebar drawer, the short toolbar, the message editor, the file list, and the on-screen keyboard. |
 | [Sidebar](#sidebar) | Projects, session groups, width, search, and refresh. |
 | [Session families](#session-families) | Sub-sessions and their parent. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
@@ -743,6 +743,10 @@ the height of the window and shows one part at a time:
   the workspace pane. A wider window that cannot hold the session and the pane has the
   same switch.
 - The toolbar has one row.
+- The message editor has the height of its text, and no divider. See
+  [message editor in the mobile layout](#message-editor-in-the-mobile-layout).
+- Text fields have a font size of 16 pixels. iOS zooms the page when a text field with
+  a smaller font gets the focus, and it keeps that zoom.
 - In Changes and Files, the rows of the file list are higher. A view narrower than 560
   pixels shows the list and the file view one at a time. See
   [file list in a narrow pane](#file-list-in-a-narrow-pane).
@@ -784,13 +788,60 @@ the session title stays sharp.
 A control that gets the focus scrolls to a position below the toolbar. A More actions
 menu that is higher than the space below the toolbar scrolls.
 
+#### Message editor in the mobile layout
+
+- The [message editor](#message-editor) has the height of its text: from 2 lines to 6
+  lines. Longer text scrolls in the editor.
+- The editor and the terminal have no divider. The terminal gets the other height of
+  the session.
+- A wider window uses the divider again, with the editor height from before.
+- The session keeps a minimum height of 340 pixels for its terminal and its editor. In
+  a lower window, the main area scrolls.
+
+#### On-screen keyboard
+
+The on-screen keyboard of a phone covers the lower part of the window. The browser
+keeps the height of the page. Without a change, it scrolls the page to show the control
+with the focus, and the toolbar leaves the window. Thus the page follows the keyboard:
+
+- While the keyboard shows, the page has the position and the height of the visual
+  viewport. That is the part of the window above the keyboard. The toolbar stays at
+  the top.
+- The page hides the [view switch](#view-switch) and the bar above the session
+  terminal while the keyboard shows. Their space goes to the shown view.
+- The session has no minimum height while the keyboard shows.
+- The sidebar drawer also ends above the keyboard.
+- When the keyboard goes away, the page uses the full window again.
+
+The page finds the keyboard from the visual viewport of the browser. A keyboard shows
+when the visual viewport is 150 pixels or more lower than the layout viewport, and the
+page has no pinch zoom. This rule applies at each window width, not only in the mobile
+layout.
+
+A terminal keeps its PTY size while the keyboard shows. The view sends no resize
+request. A new size at each change of the keyboard would make the terminal application
+draw its screen again, and the recording keeps that output. The session terminal and
+the [side terminal](#side-terminal) both use these rules:
+
+- The view is lower than the terminal and shows a part of its rows.
+- The view shows the last rows of the terminal. When the cursor is above them, the
+  cursor row is the last shown row.
+- The shown part follows the cursor when the cursor moves.
+- When the keyboard goes away, the view shows all rows. Then it asks for the size that
+  fits, as before.
+
 #### Limits
 
-- The session keeps the minimum heights of its terminal and its message editor, 440
-  pixels together. In a lower window, the main area scrolls.
 - A draft has the height of its form, and the main area scrolls.
-- The mobile layout does not change the message editor, the sizes of the controls, or
-  keyboard input. The page does not follow the on-screen keyboard of a phone.
+- The mobile layout does not change the sizes of the buttons. Some buttons are smaller
+  than a finger, for example the buttons of the bar above the terminal.
+- The editor grows with its text only in a browser with the CSS property
+  `field-sizing`. In another browser, it has a fixed height of 3 lines.
+- The on-screen keyboard has no Esc, Tab, Ctrl, or arrow keys. The page adds no such
+  keys.
+- A pinch zoom while the keyboard shows gives the page the full window height again.
+- The keyboard rules were checked only in Safari on an iPhone simulator. See
+  [Checks of the side terminal and the workspace pane](#checks-of-the-side-terminal-and-the-workspace-pane).
 - A phone in landscape orientation is usually wider than 700 pixels and uses the
   regular layout.
 - A phone reaches the server only through [remote access](#remote-access), which is
@@ -1087,6 +1138,26 @@ or refreshing the tab leaves work and recording running. Refresh reopens the pro
 draft or session identified in the URL path, or Settings at `/settings`. Transport
 failures trigger automatic reconnect with increasing delays from 0.5 to 5 seconds. The
 last screen stays visible and input is disabled until a fresh frame is rendered.
+
+#### Touch scroll in a terminal
+
+xterm.js scrolls on a mouse wheel and on a drag of its scroll bar. It does not scroll on
+a finger drag. Thus the page handles a finger drag in the session terminal and in the
+[side terminal](#side-terminal):
+
+- A vertical drag with one finger scrolls the terminal by the rows that the finger
+  passes. A finger that moves down shows earlier rows.
+- After a fast release, the scroll continues and gets slower. A touch stops it.
+- The browser does not pan the page for a vertical drag that starts in a terminal. A
+  horizontal drag and a pinch keep their browser behavior.
+- A drag on the scroll bar of the terminal moves the scroll bar, as before.
+- A drag scrolls the history rows of the view, as the mouse wheel does. It sends no
+  input. That includes a view of an alternate screen, because the frames draw an
+  alternate screen below the history rows.
+- When the terminal application asked for mouse reports, a drag has the effect of a
+  mouse wheel in xterm.js. xterm.js sends one wheel report for each row to the
+  application. Such a drag does not continue after the release. A report does not
+  change the [size owner](#size-owner).
 
 #### Reconnection after a server restart
 
@@ -2147,6 +2218,9 @@ Use Home/End to reach the limits. Both panes keep a minimum height. Editor conte
 scroll when needed. The editor size stays with the browser view across session switches
 and resets on reload. Size changes use the existing terminal viewport updates.
 
+The [mobile layout](#mobile-layout) has no divider. Its editor has the height of its
+text. See [message editor in the mobile layout](#message-editor-in-the-mobile-layout).
+
 A viewport change resizes the PTY only from the size owner view. Direct terminal
 interaction remains available.
 
@@ -2155,7 +2229,8 @@ interaction remains available.
 The editor has no visible label or help text. Its action row holds **＋ Attach files**,
 **Handoff prompt**, the draft status, and **Send ⌘↵**. The tooltips
 of these buttons explain them. The row wraps when the editor is narrow, for example
-while the workspace pane is open. **Send** stays at the right end of its line.
+while the workspace pane is open. **Send** stays at the right end of its line. A device
+without a pointer that hovers, such as a phone, shows **Send** without the key symbols.
 
 #### Send
 
@@ -3166,6 +3241,9 @@ workspace exists.
 - The side terminal does not change the session status, the view count, or the session
   order.
 - Type directly in the view. The message editor sends only to the session terminal.
+- A finger drag scrolls the view. See
+  [touch scroll in a terminal](#touch-scroll-in-a-terminal). The view keeps its PTY
+  size while an [on-screen keyboard](#on-screen-keyboard) shows.
 - Another view, the pressed terminal icon, and **×** hide the terminal. The shell
   continues, and the browser tab stays connected. A hidden terminal keeps its PTY size.
   **Stop shell** ends the shell and its foreground job for every view. When the shell
@@ -4612,6 +4690,37 @@ repository, and a folder outside Git, each with a shell session.
   **Continue in new terminal** in the More actions menu, a draft, Settings, and the
   welcome view. The browser console was empty. The check used a desktop browser with a
   mouse. It did not use a phone, touch input, or an on-screen keyboard.
+- Web fixtures check the parts of the touch scroll: the whole rows of a drag and the
+  rest for the next movement, the release speed from the last 100 milliseconds, no
+  glide for a slow or rested finger, and the end of a glide. Other fixtures check the
+  keyboard height from the visual viewport, with a low bar and a pinch zoom, and the
+  shown part of a terminal that is higher than its view.
+- A simulator check of touch input and the on-screen keyboard used a demo instance in
+  Safari on an iPhone 17 simulator with iOS 27.2, in light Appearance. The simulator
+  tool sent the touches and the text.
+  - A slow drag of 163 points in the session terminal scrolled 7 rows of 21 points. A
+    fast drag of 150 points scrolled 25 rows and stopped.
+  - A tap in the message editor showed the keyboard with no zoom. The toolbar stayed at
+    the top. The view switch and the bar above the terminal were hidden. Seven terminal
+    rows with the cursor row, and the editor of 2 lines, showed above the keyboard.
+    Typed text of 3 lines made the editor 3 lines high.
+  - The keyboard went away and showed again two times. Each time, the page used the
+    full window and then the part above the keyboard, with the toolbar at the top.
+    Safari gave `window.innerHeight` the height of the visual viewport some time after
+    the keyboard showed, so the page does not use that value.
+  - **Send** showed without the key symbols. It sent the message, the keyboard went
+    away, and the page used the full window again.
+  - In the side terminal, the keyboard left 16 of 30 rows in the view, and the size
+    stayed 50 × 30. After `seq 1 40`, the prompt row was the last shown row.
+  - With the keyboard for the sidebar search field, the drawer ended above the
+    keyboard, with no zoom.
+  - With mouse tracking mode 1000 and the SGR encoding on in the side terminal, a fast
+    drag of 100 points sent five wheel reports, one for each row that the finger
+    passed. No report followed the release, and the size stayed 50 × 30.
+- That simulator check did not use a real phone, a Home Screen web app, Android,
+  landscape orientation, dark Appearance, or a real agent CLI. A tap in the session
+  terminal did not show the keyboard. A second tap in the side terminal showed it. The
+  cause was not examined.
 - A simulator check of the toolbar used a demo instance as a Home Screen web app on an
   iPhone 17 simulator with iOS 27.2, in dark Appearance. Without the sticky toolbar,
   the system blurred the session title. With it, the title was sharp after a page

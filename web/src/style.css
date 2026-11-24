@@ -262,6 +262,9 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 @media (prefers-reduced-motion: reduce) { .message-flash { animation: none; opacity: .25; } }
 #reconnect, #terminal-latest { flex: none; padding: 4px 10px; font-size: 11px; }
 #terminal { flex: 1; min-height: 0; background: var(--terminal-background); border-radius: 9px; padding: 16px; overflow: auto; }
+/* A vertical finger drag scrolls the terminal. See terminal-touch.ts. Thus the browser
+   does not pan the page for it. */
+#terminal .xterm, #side-screen .xterm { touch-action: pan-x pinch-zoom; }
 .terminal-host { height: 100%; }
 /* The footer shows only while it has a hint, Reconnect, or Back to live terminal. */
 .terminal-footer { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 12px; color: var(--text-muted); font-size: 11px; padding: 10px 0 0; }
@@ -284,6 +287,8 @@ body.resizing-session, body.resizing-session * { cursor: row-resize !important; 
 #composer-attach, #handoff-open { padding: 6px 8px; border-color: transparent; background: transparent; }
 #composer-status { flex: 1; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
 #composer-submit { margin-left: auto; }
+/* A device without a pointer that hovers has no Command key. */
+@media (hover: none) { .send-keys { display: none; } }
 #composer-status.form-error { color: var(--danger); }
 #composer-files { display: flex; flex-wrap: wrap; gap: 6px; }
 .composer-file { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid var(--border); border-radius: 6px; padding-left: 9px; background: var(--inset); font-size: 11px; }
@@ -803,8 +808,17 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
   #view-switch button { flex: 1 1 0; padding: 7px 4px; }
   /* The session keeps the minimum heights of its terminal and its message editor. In a
      lower window, the main area scrolls. A draft has the height of its form. */
-  #session-row { min-height: 440px; }
+  #session-row { min-height: 340px; }
   #session-row > #session-view { min-height: 0; padding: 10px 12px 12px; }
+  /* The message editor has the height of its text, from 2 to 6 lines. Then the text
+     scrolls. There is no divider. */
+  #composer { flex: none; min-height: 0; margin-top: 10px; padding: 10px 12px 8px; }
+  #composer-text { flex: none; height: 4.8em; min-height: 3.2em; max-height: 9.6em; padding: 2px 0 6px; }
+  @supports (field-sizing: content) { #composer-text { height: auto; field-sizing: content; } }
+  #composer-text:focus-visible { outline-offset: 2px; }
+  .composer-actions { margin-top: 4px; }
+  /* iOS zooms the page when a text field with a smaller font gets the focus. */
+  :root :is(input, textarea, select) { font-size: 16px; }
   #session-row:has(#preparation:not([hidden])) { flex: none; }
   #preparation { flex: none; }
   #workspace-pane { margin: 0; border: 0; border-radius: 0; }
@@ -815,3 +829,14 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
   #sidebar-scrim { transition: opacity .2s ease-out; }
   @starting-style { .sidebar { translate: -100% 0; } #sidebar-scrim { opacity: 0; } }
 }
+
+/* The on-screen keyboard of a phone. See keyboard.ts. The page has the position and the
+   height of the visual viewport, above the keyboard. A part that moves is a containing
+   block, so the sidebar drawer stays in the page. The view switch and the bar above
+   the terminal give their space to the view. */
+:root.keyboard body { height: var(--viewport-height); translate: 0 var(--viewport-top); }
+:root.keyboard :is(#view-switch, .view-heading) { display: none; }
+:root.keyboard :is(#session-row, #terminal-pane) { min-height: 0; }
+/* A terminal keeps its rows and is higher than its view. Its host has the height of the
+   rows, so that the view scrolls to the padding below the last row. */
+:root.keyboard .terminal-host { height: auto; }

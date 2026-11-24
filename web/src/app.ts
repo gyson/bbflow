@@ -20,6 +20,9 @@ import { ActionMenu } from './action-menu.js';
 import { RowMenus } from './row-menu.js';
 import type { RowAction } from './row-menu.js';
 import { SessionSplit } from './session-split.js';
+import { followKeyboard, keyboardShown } from './keyboard.js';
+import { showCursor } from './terminal-clip.js';
+import { touchScroll } from './terminal-touch.js';
 import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
@@ -849,6 +852,9 @@ function hiddenSize(): Size | undefined {
 function requestFit() {
   if (!terminal || !connection?.ready || !connection?.peer?.active || connection?.resizing) return;
   if (!terminalShown()) return;
+  // The terminal keeps its PTY size while the on-screen keyboard shows. The lower view
+  // shows the part with the cursor row.
+  if (keyboardShown()) return showCursor($('terminal'), terminal);
   const proposed = fit?.proposeDimensions();
   const dimensions = proposed && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows) ? terminalSize(proposed) : undefined;
   if (dimensions) rememberSize(dimensions);
@@ -928,6 +934,7 @@ function makeTerminal(): Terminal {
   hint();
   onTerminalInput(terminal, input => !!connection?.ready && !!connection.peer?.active && connection.peer.send(input));
   messageNav.attach(view);
+  view.onCursorMove(() => { if (keyboardShown()) showCursor($('terminal'), view); });
   return view;
 }
 
@@ -1495,6 +1502,8 @@ async function initialize() {
     await loadTerminals(selected.id);
   }, failed('stop', selected));
   new ResizeObserver(requestFit).observe($('terminal'));
+  touchScroll($('terminal'), () => terminal);
+  followKeyboard();
   window.addEventListener('pagehide', () => connection?.close());
   try {
     const response = await fetch('/client-config', { cache: 'no-store' });

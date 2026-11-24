@@ -1,5 +1,6 @@
 import { dragDivider } from './divider-drag.js';
 import { element } from './dom.js';
+import { mobileQuery } from './sidebar.js';
 
 export class SessionSplit {
   private readonly container = element('session-view', HTMLElement);
@@ -8,9 +9,13 @@ export class SessionSplit {
   private readonly divider = element('session-divider', HTMLElement);
   // This preference belongs to the view. Session changes preserve it. Reload resets it.
   private height = 240;
+  private enabled = false;
+  // The mobile layout has no divider. Its message editor has the height of its text.
+  private readonly mobile = matchMedia(mobileQuery);
   private readonly stopDrag: () => void;
 
   constructor() {
+    this.mobile.addEventListener('change', () => this.setEnabled(this.enabled));
     // An upward drag makes the editor taller.
     this.stopDrag = dragDivider(this.divider, 'y', 'resizing-session', {
       start: () => this.composer.getBoundingClientRect().height,
@@ -35,9 +40,11 @@ export class SessionSplit {
   }
 
   setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    const split = enabled && !this.mobile.matches;
     this.stopDrag();
-    this.divider.hidden = !enabled;
-    if (enabled) this.layout();
+    this.divider.hidden = !split;
+    if (split) this.layout();
     else this.composer.style.removeProperty('flex-basis');
   }
 

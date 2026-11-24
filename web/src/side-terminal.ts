@@ -7,6 +7,9 @@ import { SessionConnection } from './session-connection.js';
 import { element } from './dom.js';
 import { terminalSize } from './terminal-size.js';
 import { onTerminalInput } from './terminal-input.js';
+import { keyboardShown } from './keyboard.js';
+import { showCursor } from './terminal-clip.js';
+import { touchScroll } from './terminal-touch.js';
 
 // SideTerminal is the Terminal view of the workspace pane. It shows an interactive
 // shell in the workspace of the selected session, for ad hoc commands. The server owns
@@ -32,6 +35,7 @@ export class SideTerminal {
     this.startButton.onclick = () => this.connect(true);
     this.stopButton.onclick = () => void this.stop();
     new ResizeObserver(() => this.requestFit()).observe(this.screen);
+    touchScroll(this.screen, () => this.view);
     window.addEventListener('pagehide', () => this.connection?.close());
     this.show();
   }
@@ -177,6 +181,7 @@ export class SideTerminal {
     fit.fit();
     this.dimensions.textContent = `${view.cols} × ${view.rows}`;
     view.onResize(({ rows, cols }) => { this.dimensions.textContent = `${cols} × ${rows}`; });
+    view.onCursorMove(() => { if (keyboardShown()) showCursor(this.screen, view); });
     onTerminalInput(view, input => {
       const peer = this.connection?.ready ? this.connection.peer : null;
       return !!peer?.active && peer.send(input);
@@ -191,6 +196,9 @@ export class SideTerminal {
     if (!view || !connection?.ready || !connection.peer?.active || connection.resizing) return;
     // A hidden view has no size. Keep the PTY size until the view shows again.
     if (!this.screen.clientWidth || !this.screen.clientHeight) return;
+    // The terminal keeps its PTY size while the on-screen keyboard shows. The lower view
+    // shows the part with the cursor row.
+    if (keyboardShown()) return showCursor(this.screen, view);
     const proposed = this.fit?.proposeDimensions();
     if (!proposed || !Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) return;
     const size = terminalSize(proposed);
