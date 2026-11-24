@@ -90,7 +90,7 @@ saves the message as a draft. Click **Send** after the agent is ready.
 - Type in the terminal. As an alternative, write a message in the editor below the
   terminal and click **Send**.
 - Close the tab when you want. The session and its recording continue in the server.
-- Click **Stop session** to end the session.
+- To end the session, click **Stop session** in the **More actions** (⋯) menu.
 
 ### Go to a sent message
 

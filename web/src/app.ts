@@ -86,8 +86,7 @@ const elements = {
   'page-bar-text': element('page-bar-text', HTMLElement),
   'page-bar-reload': element('page-bar-reload', HTMLButtonElement),
   'list-problem': element('list-problem', HTMLElement),
-  'stop': element('stop', HTMLButtonElement),
-  'menu-stop': element('menu-stop', HTMLButtonElement),
+  'stop-session': element('stop-session', HTMLButtonElement),
   'menu-continue': element('menu-continue', HTMLButtonElement),
   'menu-continue-problem': element('menu-continue-problem', HTMLElement),
   'reconnect': element('reconnect', HTMLButtonElement),
@@ -401,13 +400,14 @@ function controls() {
   // Worktree creation shows as running, but only a terminal can stop or reconnect.
   const terminalLive = !!connection?.peer?.active || hasTerminal(selected);
   const shownRun = terminalPicker.shownRun;
-  // In the mobile layout, the More menu has Stop session and Continue in new terminal.
-  // The toolbar then keeps its room for the title.
-  const mobile = mobileLayout.matches;
+  // Stop session ends the process at once, so it is the last item of the More menu, away
+  // from the toolbar icons. The menu moves the focus to its first item when it opens.
   const stoppable = !showingSettings && terminalLive && !shownRun;
-  $('stop').hidden = !stoppable || mobile;
-  $('menu-stop').hidden = !stoppable || !mobile;
-  $('stop').disabled = $('menu-stop').disabled = busy;
+  $('stop-session').hidden = !stoppable;
+  $('stop-session').disabled = busy;
+  // In the mobile layout, the More menu also has Continue in new terminal. The toolbar
+  // then keeps its room for the title.
+  const mobile = mobileLayout.matches;
   // A view of an earlier terminal uses Back to live terminal instead. Only a live terminal
   // gets Reconnect. An ended terminal has no process to connect to.
   const connected = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active || !!shownRun;
@@ -1473,7 +1473,6 @@ async function initialize() {
   $('reconnect').onclick = () => action(async () => { if (selected) await openSession(selected); }, failed('reconnect to', selected));
   $('continue-session').onclick = () => action(showContinue, failed('continue', selected));
   mobileLayout.addEventListener('change', controls);
-  $('menu-stop').onclick = () => $('stop').click();
   $('menu-continue').onclick = () => $('continue-session').click();
   $('handoff-open').onclick = () => action(async () => {
     if (!selected?.id) return;
@@ -1504,7 +1503,7 @@ async function initialize() {
       await openSession(selected, { kind: 'continue', tool });
     }, failed('start a new terminal in', selected));
   };
-  $('stop').onclick = () => action(async () => {
+  $('stop-session').onclick = () => action(async () => {
     if (!server || !selected?.id || terminalPicker.shownRun) return;
     const { stopped } = await call(server, { operation: 'session-stop', session: selected.id });
     // The status and the exit hint show a stop. The hint also shows a stop without effect.

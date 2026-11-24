@@ -777,9 +777,9 @@ once and keeps the selected session and the shown view.
 #### Toolbar in the mobile layout
 
 The toolbar has one row: the sidebar button, the title with its status and workspace
-line, the search icon, and **More actions**. **Stop session** and **Continue in new
-terminal** move to the top of the [More actions menu](#more-actions-menu). When a new
-terminal cannot start, the menu shows the reason below the disabled item.
+line, the search icon, and **More actions**. **Continue in new terminal** moves to the
+top of the [More actions menu](#more-actions-menu). When a new terminal cannot start,
+the menu shows the reason below the disabled item.
 
 The toolbar stays at the top of the main area when the main area scrolls. It has an
 opaque background. A Home Screen web app on iOS blurs the page content below the status
@@ -1819,13 +1819,11 @@ later terminal, each view shows the stored status of the later run.
   of the terminal, and the start event records it.
 - At the right, a search icon opens **Search history**. Four icons show the Messages,
   Changes, Files, and Terminal views of the workspace pane.
-- The session toolbar shows **Stop session** to the left of the icons when you view the
-  live terminal.
+- When the session ends, **Continue in new terminal** shows to the left of the icons in
+  the latest terminal view.
+- **Stop session** is in the [More actions menu](#more-actions-menu), not in the
+  toolbar.
 - During worktree creation, the session shows `running` before a terminal exists.
-- When the server reports that it stopped no terminal, the hint below the terminal says
-  so, and the status stays as is.
-- When the session ends, **Continue in new terminal** shows there in the latest
-  terminal view.
 - Each toolbar icon and text button shows a tooltip on hover and on keyboard focus. The
   tooltip of an icon gives its name and its keyboard shortcut. Each icon also has an
   accessible name.
@@ -1852,8 +1850,12 @@ also shows the reason, and **Reconnect** shows next to the hint.
 - **Archive** shows for `draft` and `ended` sessions. It changes to **Restore** for an
   archived session.
 - **Remove worktree** shows for a session that is not live and has a managed worktree.
-- In the [mobile layout](#mobile-layout), **Stop session** and **Continue in new
-  terminal** show at the top of the menu, with the rules of the toolbar buttons.
+- **Stop session** shows when you view the live terminal. It stops the terminal of the
+  session for every view. It is the last item, away from the toolbar icons. Thus a
+  missed click on an icon cannot stop a session. When the server reports that it
+  stopped no terminal, the hint below the terminal says so, and the status stays as is.
+- In the [mobile layout](#mobile-layout), **Continue in new terminal** shows at the top
+  of the menu, with the rules of the toolbar button.
 
 The menu button does not show when no action applies. A choice, Escape, or a click
 outside the menu closes it. The Up and Down arrow keys move between the items. Tab or
@@ -2612,8 +2614,8 @@ Reload and the session link also open the latest terminal.
 
 A view of an earlier terminal leaves the live process, its capture, and its views
 active. Only views of the live terminal can change its size. The status badge applies to
-the whole session. The session toolbar hides **Stop session** and **Continue in new
-terminal** while you view an earlier terminal.
+the whole session. While you view an earlier terminal, the session toolbar hides
+**Continue in new terminal**, and the More actions menu hides **Stop session**.
 
 #### Terminal list
 
@@ -4232,6 +4234,18 @@ tab continued the session and stopped the new terminal. Both tabs then showed
   the new list arrived. Then the line showed the new tool.
 - After Command-Enter, the keyboard focus was in the editor again. The check did not use
   a pointer, so tooltip display on hover is not verified.
+
+- A browser check of **Stop session** in the More actions menu used a demo instance.
+- At a width of 1,280 pixels, the toolbar of a live session had no **Stop session**.
+  The menu listed **Rename**, **Copy session ID**, **New sub-session**, and **Stop
+  session**. The focus went to **Rename** when the menu opened.
+- **Stop session** in the menu ended the session with **Ended · stopped**. The focus
+  went back to the menu button. **Continue in new terminal** then showed in the
+  toolbar, and the menu no longer had **Stop session**.
+- A view of an earlier terminal had no **Stop session** in the menu.
+- At a width of 375 pixels, the menu of a live session had **Stop session** last. The
+  menu of an ended session had **Continue in new terminal** first.
+- The browser console had no errors. The check used a desktop browser with a mouse.
 
 ### Checks of session titles
 
