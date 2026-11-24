@@ -622,17 +622,26 @@ async function archiveFromList(session: SessionInfo, keyboard: boolean): Promise
 
 // Pin or unpin a session from its row menu. The row moves between Pinned and its project
 // group. A keyboard user keeps the focus on the menu button of the row in its new place.
+// An unpinned family that is older than the shown families of its group is not in the
+// list. The focus then moves to the nearest session row that shows, as after an archive.
 async function pinFromList(session: SessionInfo, keyboard: boolean): Promise<void> {
-  await action(() => setPinned(session.id, !session.pinned), failed(session.pinned ? 'unpin' : 'pin', session));
-  if (keyboard && (!document.activeElement || document.activeElement === document.body)) focusSidebar(`menu:${session.id}`);
+  const before = shownSessionKeys();
+  await action(() => setPinned(session, !session.pinned), failed(session.pinned ? 'unpin' : 'pin', session));
+  if (!keyboard || (document.activeElement && document.activeElement !== document.body)) return;
+  focusSidebar(`menu:${session.id}`);
+  if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.focus === `menu:${session.id}`) return;
+  const key = nearestRow(before, `session:${session.id}`, shownSessionKeys());
+  if (key) focusSidebar(key);
+  else $('filter').focus();
 }
 
-// Pin or unpin a session. A pin opens Pinned, so the user sees where the family went.
-async function setPinned(id: string, pinned: boolean): Promise<void> {
+// Pin or unpin a session. A pin opens Pinned, and an unpin opens the group of the project,
+// so the user sees where the family went.
+async function setPinned(session: { id: string; projectId?: string }, pinned: boolean): Promise<void> {
   if (!server) return;
-  await call(server, { operation: 'session-pin', session: id, pinned });
-  if (selected?.id === id) selected.pinned = pinned;
-  if (pinned) collapsedProjects.delete(pinnedGroup);
+  await call(server, { operation: 'session-pin', session: session.id, pinned });
+  if (selected?.id === session.id) selected.pinned = pinned;
+  collapsedProjects.delete(pinned ? pinnedGroup : groupKey(session.projectId));
   await refreshSessions();
 }
 
@@ -841,7 +850,12 @@ async function refreshSessions() {
     sessions = merged.sessions;
     moreGroups = new Set(merged.more);
     updateNotice.sessionsChanged();
-    if (detail && selected && selected.id === selectedId) selected.archived = detail.archived;
+    // An open draft editor keeps the other fields of the selected session. Another view can
+    // still archive, restore, pin, or unpin it, and the toolbar shows these changes.
+    if (detail && selected && selected.id === selectedId) {
+      selected.archived = detail.archived;
+      selected.pinned = detail.pinned;
+    }
     showConnection(true);
     listProblem();
     if (selected && !showingSettings && !preparation.visible) {
@@ -1374,7 +1388,7 @@ async function initialize() {
     if (selected?.id) await requestArchive({ ...selected, id: selected.id }, !selected.archived);
   }, failed(selected?.archived ? 'restore' : 'archive', selected));
   $('pin-session').onclick = () => action(async () => {
-    if (selected?.id) await setPinned(selected.id, !selected.pinned);
+    if (selected?.id) await setPinned({ ...selected, id: selected.id }, !selected.pinned);
   }, failed(selected?.pinned ? 'unpin' : 'pin', selected));
   $('cancel-archive').onclick = () => $('archive-dialog').close();
   $('page-bar-reload').onclick = () => location.reload();

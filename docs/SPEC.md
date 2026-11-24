@@ -1059,9 +1059,12 @@ pins.
   the More actions menu of the toolbar. For a pinned session, **Unpin** replaces it.
 - A pin moves the family to the top of **Pinned** and expands that group.
 - An unpin returns the family to its project group, at the position of its latest
-  activity.
+  activity, and expands that group. A family that is older than the shown families of
+  the group is then behind **Show more**.
 - After a pin or an unpin with the keyboard from a row menu, the focus moves to the ⋯
-  button of the row in its new place.
+  button of the row in its new place. When the row is behind **Show more**, the focus
+  moves to the nearest later session row that shows, or else the nearest earlier one.
+  Without such a row, the focus moves to the search box.
 - Other views show the change at their next list refresh.
 
 #### Pinned group
@@ -3801,8 +3804,9 @@ steps.
 #### Rejected formats
 
 Formats 1 and 2 have no known migration path in this repository. They, nonempty
-unversioned databases, and formats newer than 18 are rejected without changing their
-schema or records. A newer format error asks for a newer executable. There is no
+unversioned databases, and formats newer than the
+[current format](#database-upgrades) are rejected without changing their schema or
+records. A newer format error asks for a newer executable. There is no
 downgrade path, external migration command, or automatic backup.
 
 ### Read-only SQL
@@ -4172,6 +4176,10 @@ output. Restoration starts no process.
   **Pin** for a sub-session. It also verified search context in **Pinned**, Archived
   without **Pinned**, an archive that removed the pin, and the phone layout. The browser
   reported no errors. No real agent CLI was used.
+- A second browser check with two views verified that an open draft shows **Pin** after
+  the other view unpins it. It also verified that a keyboard unpin expands a collapsed
+  project group, with the focus on the ⋯ button of the row. After an unpin of a family
+  behind **Show more**, the focus moved to the nearest later row.
 
 ### Checks of projects and launches
 
