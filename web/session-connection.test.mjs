@@ -67,6 +67,32 @@ test('reconnect joins the known session, waits for a fresh frame, and never repe
   assert.equal(connection.ready, true);
 });
 
+test('a view asks for each size once, also before the frame of that size arrives', async t => {
+  const { connection, sockets, frames, attach } = fixture(t);
+  const resizes = () => sockets.at(-1).sent.filter(message => message.type === 'resize').map(message => message.size);
+  const opened = connection.connect();
+  attach(sockets[0]);
+  await opened;
+  frames.shift()();
+  // The request already asked for this size.
+  assert.equal(connection.resize(size), false);
+  const lower = { cols: 80, rows: 20 };
+  assert.equal(connection.resize(lower), true);
+  // The frames still have the old size. Another fit gives the same size again.
+  assert.equal(connection.resize(lower), false);
+  assert.deepEqual(resizes(), [lower]);
+  // The area grows again before the frame of the lower size arrives.
+  assert.equal(connection.resize(size), true);
+  assert.deepEqual(resizes(), [lower, size]);
+  // A new connection asks again with the size of its request.
+  sockets[0].close();
+  t.mock.timers.tick(500);
+  attach(sockets[1]);
+  assert.equal(connection.resize(size), false);
+  assert.equal(connection.resize(lower), true);
+  assert.deepEqual(resizes(), [lower]);
+});
+
 test('leaving a session cancels retries and pending frame callbacks', async t => {
   const { connection, sockets, frames, attach } = fixture(t);
   const opened = connection.connect();

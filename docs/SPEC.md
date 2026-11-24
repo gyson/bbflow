@@ -3549,6 +3549,47 @@ side terminal. When the terminal area of the view is smaller, the terminal scrol
 the view. Thus a narrow view does not make an agent redraw and hard-wrap its output at
 a few columns.
 
+A session view fits its terminal to the terminal area. The request that opens the
+session has the size of that fit. In a window that does not change, the view sends at
+most one `resize` after the request.
+
+#### Size of a session view
+
+- Before the first fit, the row above the terminal shows the
+  [message bar](#message-bar), and the hint of the earlier view goes. The size in the
+  request thus includes these rows.
+- A new terminal starts at 20 columns and 5 rows, so that it does not overflow the
+  terminal area. xterm.js rounds the cell width for the current number of columns. The
+  first fit thus repeats, up to three times, until the size stays. A hidden terminal
+  does not fit. It joins with the size that the [view switch](#view-switch) gives.
+- While the view opens, it sends no `resize`. The terminal selector, the draft, and
+  **Handoff prompt** load after the request. They can change the height of the
+  terminal area. When the open completes, one fit sends a `resize` if the size changed.
+- The view sends each size once on a connection. The frames keep the old size until the
+  server applies the `resize`. A fit with the same size in that time sends nothing. The
+  size of the request counts as sent.
+- A live view gets each frame at its own size. After a size change, the terminal is
+  larger than its area until the frame of the new size arrives. Thus the terminal area
+  of a live view shows no scroll bar, but it still scrolls. A scroll bar would take
+  space from the area and make the next fit smaller.
+- The terminal area shows scroll bars for an ended terminal, for an earlier terminal,
+  and while the on-screen keyboard shows.
+
+#### Limits
+
+- In a narrow window, the terminal selector can move the message bar to a second row
+  after the request. This occurs in the mobile layout and in narrow desktop windows,
+  for example 768 pixels wide. In the mobile layout, **Handoff prompt** can also add a
+  row to the message editor. A session with more than one terminal then gets one
+  `resize` when the open completes.
+- xterm.js rounds the cell width for the current number of columns. After a window or
+  divider change, the fit at the new size can differ by one column. The view then sends
+  one more `resize`.
+- When the terminal area of a live view is smaller than 20 columns or 5 rows, the
+  terminal scrolls with no scroll bar.
+- These rules apply only to the session terminal. The side terminal fits once from the
+  default size of xterm.js, and its scroll bars take space from its area.
+
 ### Reports of a view
 
 The page marks each focus report and each mouse report that it sends, with the `report`
@@ -5047,6 +5088,29 @@ repository, and a folder outside Git, each with a shell session.
 - Frame fixtures cover independent viewport sizes, size owner changes, input from every
   view, receipt routing, slow views, final-frame ordering, and ended-screen
   reconstruction.
+- A fixture checks that a new terminal starts at the smallest size that a view asks
+  for. Another fixture checks that a hidden terminal joins with the size of its session,
+  else the latest size of another session terminal, else 80 × 24.
+- A connection fixture checks that a view sends each size once. A second fit with the
+  same size before the frame of that size arrives sends nothing. A return to the size of
+  the request before that frame sends that size. After a reconnect, the size of the new
+  request counts as sent.
+- A browser check with the demo instance at 1400 × 900 pixels loaded the page, then
+  opened live sessions six times in turn. Before the change, each open sent the request
+  at 23 × 130 and then one to three `resize` messages, such as 21 × 128 and then
+  21 × 130. The archive recorded 20 `resize` events. With the change, each open sent
+  only the request at 21 × 130. The archive recorded 4 `resize` events: one for the
+  first view of each session, because the seed starts each PTY at 30 × 100.
+- The same check opened an ended session, a Shell session, an earlier terminal, and
+  **Back to live terminal**. Each sent only its request. Steps of the divider and
+  changes of the window width and height each sent one `resize`. The other dimension
+  stayed the same.
+- At 375 × 812 pixels, each open sent only the request at 26 × 39. The demo session
+  with two terminals also sent one `resize`, to 22 × 39, when the open completed. At
+  400 × 812 and at 768 × 812 pixels, the results were the same: that session sent one
+  `resize`, and the other sessions sent none.
+- In a new tab at 375 × 812 pixels, **Messages** was selected before the first fit. The
+  hidden terminal joined at 24 rows and 80 columns.
 - Terminal tests cover the row limit of each width, the allocation of a resize to more
   columns, the scrollback size budget, frames at the message limit, and the
   narrower-view row cache.
