@@ -301,6 +301,12 @@ body.resizing-session, body.resizing-session * { cursor: row-resize !important; 
 /* The Messages view of the workspace pane. */
 #sent-help { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sent-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; list-style: none; margin: 0; padding: 0; }
+/* A heading stays at the top while the list shows the messages of its terminal. A later
+   heading covers an earlier one. The scroll padding keeps a message below the heading. */
+.sent-list.grouped { scroll-padding-top: 40px; }
+.sent-terminal { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 14px 6px 16px; border-bottom: 1px solid var(--divider); background: var(--inset); font-size: 11px; color: var(--text-muted); }
+.sent-terminal-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
+.sent-terminal .badge { padding: 3px 7px; }
 .sent-item { border-bottom: 1px solid var(--divider); border-left: 3px solid transparent; padding: 14px 14px 14px 13px; }
 .sent-item.current { border-left-color: var(--accent); background: var(--selected); }
 .sent-meta { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted); }

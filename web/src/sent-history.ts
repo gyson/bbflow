@@ -1,16 +1,38 @@
 import { element } from './dom.js';
+import { messageTerminal } from './message-marks.js';
 import { call, errorMessage } from './protocol.js';
-import type { SentMessage, ServerInfo } from './protocol.js';
+import type { SentMessage, ServerInfo, TerminalInfo } from './protocol.js';
 import type { MarkState } from './message-nav.js';
+import { isLive, terminalTimes } from './terminal-picker.js';
 
 // A long message first shows foldLines lines. The first Show more adds foldStep lines.
 // A message is not folded when fewer than foldMinimum lines would stay hidden.
 const foldLines = 8, foldStep = 16, foldMinimum = 4;
 
+// The parts of the page that the Messages view uses.
+export interface SentHost {
+  // Whether the shown terminal shows the message, and whether the view reads it.
+  state(revision: number): MarkState;
+  // Scroll the shown terminal to the message.
+  go(revision: number): boolean;
+  // The terminals of the session in start order.
+  terminals(): readonly TerminalInfo[];
+  // The terminal that the session view shows.
+  shown(): TerminalInfo | undefined;
+  // Open another terminal of the session and scroll it to the message.
+  open(revision: number, terminal: TerminalInfo): void;
+  // Whether the last read of the sent messages of the shown terminal failed.
+  unread(): boolean;
+  // Read the sent messages of the shown terminal again, then scroll to the message.
+  retry(revision: number): void;
+}
+
 // The Messages view of the workspace pane lists the messages that Send sent in one
-// session. The newest message is at the bottom. The view only reads history. Show in
-// terminal scrolls the session terminal to the message. Copy puts the message text on
-// the clipboard, for use in any session.
+// session. The newest message is at the bottom. The view only reads history. A session
+// with several terminals shows a heading above the messages of each terminal. Show in
+// terminal scrolls the shown terminal to the message. For a message of another terminal,
+// the button names that terminal, and a click opens that terminal first. Copy puts the
+// message text on the clipboard, for use in any session.
 export class SentHistory {
   private readonly list = element('sent-list', HTMLOListElement);
   private readonly status = element('sent-status', HTMLElement);
@@ -20,19 +42,17 @@ export class SentHistory {
   private loaded = false; // The list shows the newest messages of the session.
   private oldest = 0;
   private request = 0; // Changes on each load and each session. A late reply is ignored.
-  private readonly items = new Map<number, { item: HTMLLIElement; go: HTMLButtonElement }>();
+  private readonly items = new Map<number, { item: HTMLLIElement; go: HTMLButtonElement; created: string }>();
+  private grouped = ''; // The terminals and messages of the shown headings. See group.
 
-  constructor(private readonly server: () => ServerInfo | null, private readonly marks: {
-    // Whether the session terminal shows the message, and whether the view reads it.
-    state(revision: number): MarkState;
-    // Scroll the session terminal to the message.
-    go(revision: number): boolean;
-  }) {
+  constructor(private readonly server: () => ServerInfo | null, private readonly host: SentHost) {
     this.more.onclick = () => { void this.load(); };
   }
 
-  // Select the session of the view. The list loads when the view shows.
+  // Select the session of the view. The list loads when the view shows. A change of the
+  // shown terminal keeps the list, because the list has the messages of all terminals.
   select(session: string): void {
+    if (session === this.session) return;
     this.session = session;
     this.clear();
     if (this.shown) void this.load();
@@ -49,17 +69,42 @@ export class SentHistory {
     if (this.shown) void this.load();
   }
 
-  // Show which messages the session terminal shows, and the message that the view reads.
+  // Show which messages the shown terminal shows, and the message that the view reads. A
+  // message of another terminal gets a button that names its terminal.
   mark(): void {
-    for (const [revision, { item, go }] of this.items) {
-      const state = this.marks.state(revision);
+    const terminals = this.host.terminals();
+    const shown = this.host.shown();
+    const unread = this.host.unread();
+    this.group(terminals, shown);
+    for (const [revision, { item, go, created }] of this.items) {
+      const state = this.host.state(revision);
       const current = state === 'current';
       if (current && !item.classList.contains('current') && this.shown) item.scrollIntoView({ block: 'nearest' });
       item.classList.toggle('current', current);
-      go.disabled = state === 'missing';
-      go.title = go.disabled
-        ? 'The terminal that this view shows does not show this message.'
-        : 'Scroll the session terminal to this message. The position comes from the terminal text.';
+      const button = showButton(state, terminals, shown, created, unread);
+      go.disabled = button.disabled;
+      go.textContent = button.text;
+      go.title = button.title;
+    }
+  }
+
+  // A session with several terminals shows a heading above the messages of each
+  // terminal. The heading of the shown terminal says that the view shows it. The
+  // headings change only when the terminals or the messages change.
+  private group(terminals: readonly TerminalInfo[], shown: TerminalInfo | undefined): void {
+    const key = terminals.length < 2 ? '' : [shown?.number ?? 0, this.items.size,
+      ...terminals.map(terminal => `${terminal.number}|${terminal.tool}|${terminal.status}|${terminal.started}|${terminal.ended}`)].join(' ');
+    if (key === this.grouped) return;
+    this.grouped = key;
+    this.list.classList.toggle('grouped', !!key);
+    for (const heading of this.list.querySelectorAll('.sent-terminal')) heading.remove();
+    if (!key) return;
+    let last: TerminalInfo | null | undefined = null;
+    for (const item of this.list.querySelectorAll<HTMLLIElement>('.sent-item')) {
+      const terminal = messageTerminal(terminals, item.dataset.created ?? '');
+      if (terminal === last) continue;
+      last = terminal;
+      item.before(terminalHeading(terminal, !!terminal && terminal.number === shown?.number));
     }
   }
 
@@ -68,6 +113,7 @@ export class SentHistory {
     this.loaded = false;
     this.oldest = 0;
     this.items.clear();
+    this.grouped = '';
     this.list.replaceChildren();
     this.more.hidden = true;
     this.message('');
@@ -93,13 +139,18 @@ export class SentHistory {
       const page = await call(server, { operation: 'composer-sent', session: this.session, ...(older ? { revision: this.oldest } : {}) });
       if (request !== this.request) return;
       this.loaded = true;
-      const below = this.list.scrollHeight - this.list.scrollTop;
+      // An older page keeps the first visible message in place. A heading above it can
+      // move to the new messages, so the view measures the message itself.
+      const anchor = older ? this.list.querySelector('.sent-item') : null;
+      const top = anchor?.getBoundingClientRect().top ?? 0;
       const items = page.messages.map(message => this.item(message)).reverse();
       this.list.prepend(...items);
       for (const item of items) this.fold(item);
       this.oldest = page.messages.at(-1)?.revision ?? this.oldest;
       this.more.hidden = !page.more;
-      this.list.scrollTop = this.list.scrollHeight - (older ? below : 0);
+      this.group(this.host.terminals(), this.host.shown());
+      if (anchor) this.list.scrollTop += anchor.getBoundingClientRect().top - top;
+      else this.list.scrollTop = this.list.scrollHeight;
       this.message(this.list.childElementCount ? '' : 'Send has not sent a message in this session.');
       this.mark();
     } catch (error) {
@@ -158,9 +209,14 @@ export class SentHistory {
     show(foldLines);
   }
 
+  private show(message: SentMessage): void {
+    if (!showMessage(this.host, message)) this.mark();
+  }
+
   private item(message: SentMessage): HTMLLIElement {
     const item = document.createElement('li');
     item.className = 'sent-item';
+    item.dataset.created = message.created;
     const meta = document.createElement('div');
     meta.className = 'sent-meta';
     const state = document.createElement('span');
@@ -187,10 +243,8 @@ export class SentHistory {
     };
     const go = document.createElement('button');
     go.textContent = 'Show in terminal';
-    go.onclick = () => {
-      if (!this.marks.go(message.revision)) this.mark();
-    };
-    this.items.set(message.revision, { item, go });
+    go.onclick = () => this.show(message);
+    this.items.set(message.revision, { item, go, created: message.created });
     meta.append(state, time, go, copy);
     const text = document.createElement('div');
     text.className = 'sent-text';
@@ -215,4 +269,78 @@ export class SentHistory {
     }
     return item;
   }
+}
+
+// showMessage does a click of Show in terminal. It scrolls the shown terminal to the
+// message. A message of another terminal first opens that terminal. After a failed read
+// of the sent messages of the shown terminal, a click reads them again. It returns false
+// when it did nothing.
+export function showMessage(host: SentHost, message: Pick<SentMessage, 'revision' | 'created'>): boolean {
+  if (host.go(message.revision)) return true;
+  const other = elsewhere(host.terminals(), host.shown(), message.created);
+  if (other) host.open(message.revision, other);
+  else if (host.unread()) host.retry(message.revision);
+  else return false;
+  return true;
+}
+
+// showButton returns the Show in terminal button of a message. The button scrolls the
+// shown terminal to a message that it shows. For a message of another terminal, the
+// button names that terminal. After a failed read of the sent messages of the shown
+// terminal, the button reads them again. Otherwise the button is off.
+export function showButton(state: MarkState, terminals: readonly TerminalInfo[], shown: TerminalInfo | undefined, created: string, unread = false): { text: string; title: string; disabled: boolean } {
+  const other = state === 'missing' ? elsewhere(terminals, shown, created) : undefined;
+  if (other) {
+    return {
+      text: `Show in terminal ${other.number}`,
+      title: other === terminals.at(-1) && isLive(other)
+        ? `Open terminal ${other.number}, the live terminal, and scroll it to this message.`
+        : `Open the saved final screen of terminal ${other.number} and scroll it to this message. Input and Send are off in that view.`,
+      disabled: false,
+    };
+  }
+  if (state === 'missing' && unread) {
+    return { text: 'Show in terminal', title: 'The view could not read the sent messages of this terminal. Read them again, then scroll to this message.', disabled: false };
+  }
+  return state === 'missing'
+    ? { text: 'Show in terminal', title: 'The terminal that this view shows does not show this message.', disabled: true }
+    : { text: 'Show in terminal', title: 'Scroll the session terminal to this message. The position comes from the terminal text.', disabled: false };
+}
+
+// terminalHeadingText names a terminal, its tool, and its status for the heading above
+// its messages.
+export function terminalHeadingText(terminal: TerminalInfo | undefined): string {
+  return terminal ? `Terminal ${terminal.number} · ${terminal.tool || 'Unknown tool'} · ${terminal.status}` : 'Unknown terminal';
+}
+
+// elsewhere returns the terminal of a message when it is not the shown terminal, or
+// undefined.
+function elsewhere(terminals: readonly TerminalInfo[], shown: TerminalInfo | undefined, created: string): TerminalInfo | undefined {
+  const terminal = messageTerminal(terminals, created);
+  return terminal && shown && terminal.number !== shown.number ? terminal : undefined;
+}
+
+// The heading above the messages of one terminal. It names the terminal, its tool, its
+// status, and its times.
+function terminalHeading(terminal: TerminalInfo | undefined, shown: boolean): HTMLLIElement {
+  const row = document.createElement('li');
+  row.className = 'sent-terminal';
+  const name = document.createElement('span');
+  name.className = 'sent-terminal-name';
+  name.textContent = terminalHeadingText(terminal);
+  row.append(name);
+  if (terminal) {
+    const times = document.createElement('span');
+    times.className = 'sent-terminal-times';
+    times.textContent = terminalTimes(terminal);
+    row.append(times);
+  }
+  if (shown) {
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = 'Shown';
+    badge.title = 'The session view shows this terminal.';
+    row.append(badge);
+  }
+  return row;
 }

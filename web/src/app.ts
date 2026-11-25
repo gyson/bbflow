@@ -38,6 +38,7 @@ import { ErrorToasts } from './toasts.js';
 import { pageBar } from './page-bar.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { MessageNav } from './message-nav.js';
+import { MessageJump } from './message-jump.js';
 import { stepShortcut } from './message-marks.js';
 import { SentHistory } from './sent-history.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
@@ -216,10 +217,40 @@ const messageNav: MessageNav = new MessageNav({
   // A narrow main area shows the workspace pane in place of the session.
   reveal: () => { if (!terminalShown()) workspacePane.close(); },
   list: () => workspacePane.show('messages'),
+  // A move in the shown terminal stops a jump to another terminal that did not seek yet.
+  moved: () => messageJump.cancel(),
   changed: () => sentHistory.mark(),
   sent: () => sentHistory.refresh(),
 });
-const sentHistory: SentHistory = new SentHistory(() => server, messageNav);
+// A jump from the Messages view to a message in another terminal of the session.
+const messageJump = new MessageJump({
+  session: () => selected?.id ?? '',
+  busy: () => busy,
+  opens: () => opens,
+  loadTerminals: id => loadTerminals(id),
+  terminals: () => terminalPicker.all,
+  shownRun: () => terminalPicker.shown()?.run ?? '',
+  reveal: () => { if (!terminalShown()) workspacePane.close(); },
+  async open(id, run) {
+    let open = null as number | null;
+    await action(async () => {
+      if (selected?.id === id) open = await openSession(selected, undefined, run);
+    }, failed('show the terminal of', selected));
+    return open;
+  },
+  seek: revision => messageNav.seek(revision),
+  readError: () => messageNav.readError,
+  failed: (number, detail) => toasts.show(failed(number ? `show the message in terminal ${number} of` : 'show the message of', selected), detail),
+});
+const sentHistory: SentHistory = new SentHistory(() => server, {
+  state: revision => messageNav.state(revision),
+  go: revision => messageNav.go(revision),
+  terminals: () => terminalPicker.all,
+  shown: () => terminalPicker.shown(),
+  open: (revision, target) => { void messageJump.show(revision, target); },
+  unread: () => !!messageNav.readError,
+  retry: revision => { void messageJump.retry(revision); },
+});
 const workspacePane = new WorkspacePane(diffPane, sideTerminal, sentHistory);
 // The address tells the view before a session of the address is open.
 const sidebar = new Sidebar(() => parseRoute(location.pathname).page === 'home');
@@ -466,7 +497,7 @@ function controls() {
 }
 
 // failure is the title of the error toast when the work fails. It names the action.
-async function action(work: () => Promise<void>, failure = 'The action failed.'): Promise<void> {
+async function action(work: () => Promise<unknown>, failure = 'The action failed.'): Promise<void> {
   if (busy) return;
   busy = true;
   controls();
@@ -801,6 +832,10 @@ function watchStatuses(info: ServerInfo) {
       if (message.type !== 'statuses') return;
       const next = message.statuses ?? {};
       const changed = terminalsChanged(liveStatuses, next);
+      // Another view can start or end a terminal of the selected session. Then read its
+      // terminals again, so the Messages view names the terminal of each message.
+      const id = selected?.id;
+      if (id && (id in liveStatuses) !== (id in next)) void loadTerminals(id);
       liveStatuses = next;
       // The update dialog counts the live sessions of the same message as the offer.
       updateNotice.show(message.update, Object.keys(next));
@@ -876,6 +911,10 @@ async function refreshSessions() {
     listProblem();
     if (selected && !showingSettings && !preparation.visible) {
       if (detail && selected.id === detail.id) {
+        // The status watch misses a terminal that another view started and that ended
+        // within one status message. A new latest run here reads the terminal list again.
+        const latest = terminalPicker.all.at(-1);
+        if (!opening && detail.run?.id && latest?.run && latest.run !== detail.run.id) void loadTerminals(detail.id);
         selected = withDetail(selected, detail);
         if (connection?.ready) showStatus();
       }
@@ -913,6 +952,9 @@ function rememberSize(value: Size): void {
 // prompt load after the request, and they can change the height of the terminal area.
 // At the end of the open, one fit corrects the size of the request.
 let opening = false;
+// The number of opens of a session view. Each open adds one, so a jump from the Messages
+// view can tell that another open came after its click.
+let opens = 0;
 
 // resized tells that the size of the terminal view changed. Each frame also calls this
 // function.
@@ -1055,11 +1097,13 @@ let terminalsLoad: Promise<void> = Promise.resolve();
 
 // run shows an earlier terminal of the session. Without run, the view shows the latest
 // terminal.
-async function openSession(session: SessionView, launch?: Launch, run = ''): Promise<void> {
+async function openSession(session: SessionView, launch?: Launch, run = ''): Promise<number> {
+  const open = ++opens;
   opening = true;
   try {
     await showSession(session, launch, run);
     await terminalsLoad;
+    return open;
   } finally {
     opening = false;
     requestFit();
@@ -1150,7 +1194,7 @@ async function showSession(session: SessionView, launch?: Launch, run = ''): Pro
           $('status').textContent = 'Restoring';
           hint(message.active ? '' : terminalPicker.shownRun ? earlierHint(terminalPicker.shown()) :
             'Recorded output of the latest terminal. No process was started.');
-          terminalsLoad = loadTerminals(message.session);
+          terminalsLoad = loadTerminals(message.session, true);
           view.options.disableStdin = true;
           history.replaceState(null, '', sessionURL(message.session));
           if (message.notice) {
@@ -1222,15 +1266,36 @@ async function loadHandoff(id: string): Promise<void> {
   controls();
 }
 
-// A missing list only hides the terminal selector. Only the newest request updates it.
-async function loadTerminals(id: string): Promise<void> {
+// The open whose session message read the terminal list last, and the open for which
+// the view has a list from a read after that session message. See loadTerminals.
+let openRead = 0, listed = 0;
+
+// Only the newest request updates the list. A failed read keeps the list that the view
+// has, so the selector and the buttons of the Messages view stay. A view without a list
+// shows no selector.
+//
+// opening marks the read for the session message of an open. The server chose the
+// terminal of an empty run before that read, so the read has that terminal. Each later
+// read keeps the shown terminal: a view of the saved screen of the latest terminal first
+// names that terminal by its run. When another view started a newer terminal, the view
+// then shows its terminal as an earlier terminal. A read that started before the session
+// message can lack the shown terminal, so it does not count for this rule.
+async function loadTerminals(id: string, opening = false): Promise<void> {
   if (!server || !id) return;
   const generation = ++terminalsGeneration;
-  let terminals: TerminalInfo[] = [];
-  try { terminals = await call(server, { operation: 'session-terminals', session: id }); } catch { /* Hide the selector. */ }
+  const open = opens;
+  if (opening) openRead = open;
+  const fresh = openRead === open;
+  let terminals: TerminalInfo[] | null = null;
+  try { terminals = await call(server, { operation: 'session-terminals', session: id }); } catch { /* Keep the known list. */ }
   if (generation !== terminalsGeneration || selected?.id !== id) return;
-  terminalPicker.update(terminals);
+  const shown = terminalPicker.shown();
+  if (listed === opens && !terminalPicker.shownRun && shown?.run && connection?.ready && !connection.peer?.active) terminalPicker.show(shown.run);
+  terminalPicker.update(terminals ?? [...terminalPicker.all]);
+  if (terminals && fresh && open === opens) listed = open;
   messageNav.window(terminalPicker.shown());
+  // The Messages view names the terminal of each message.
+  sentHistory.mark();
   if (terminalPicker.shownRun && connection?.ready) hint(earlierHint(terminalPicker.shown()));
   // The tool on the workspace line comes from the shown terminal.
   if (selected && !showingSettings && !preparation.visible) showWorkspace(selected.workspace, selected.worktree);

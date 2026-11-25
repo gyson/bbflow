@@ -1,6 +1,6 @@
 import type { IDecoration, IDisposable, IMarker, Terminal } from '@xterm/xterm';
 import { element } from './dom.js';
-import { call } from './protocol.js';
+import { call, errorMessage } from './protocol.js';
 import type { SentMessage, ServerInfo, TerminalInfo } from './protocol.js';
 import { addPage, barState, emptyCache, locate, messageTime, sentText, stepMark, wantsOlder } from './message-marks.js';
 
@@ -10,6 +10,9 @@ const searchDelay = 300, searchShare = 10;
 const flashTime = 1200;
 
 export type MarkState = 'current' | 'found' | 'missing';
+// The result of a seek. cancelled means that the view changed before the seek ended.
+// failed means that the view could not read the sent messages. See readError.
+export type SeekResult = 'found' | 'missing' | 'cancelled' | 'failed';
 
 interface Mark { message: SentMessage; row: number; marker?: IMarker; decoration?: IDecoration | undefined }
 
@@ -34,6 +37,12 @@ export class MessageNav {
   private terminal: TerminalInfo | undefined;
   private cache = emptyCache(); // The sent messages of the shown terminal.
   private loading = false;
+  private loaded = false; // The view read the newest page for the shown terminal.
+  private failure = ''; // The error of the last read of sent messages, or empty.
+  private failedOlder = false; // The failed read was of an older page.
+  private drawn = false; // The terminal of the view drew a frame.
+  // A jump that waits until the view can find its message. See seek.
+  private seeking: { revision: number; done(result: SeekResult): void } | null = null;
   // The newest page of sent messages that the view read last, as text. A reload with a
   // different page tells the host that the sent messages changed.
   private newest: string | null = null;
@@ -56,6 +65,9 @@ export class MessageNav {
     reveal(): void;
     // Open the list of the sent messages.
     list(): void;
+    // The user moved the view to a message or to the latest output: a jump, a step, or
+    // Latest output.
+    moved(): void;
     // The state of a message changed.
     changed(): void;
     // The newest sent messages of the session changed.
@@ -73,6 +85,7 @@ export class MessageNav {
   attach(view: Terminal): void {
     for (const listener of this.listeners) listener.dispose();
     this.view = view;
+    this.drawn = false;
     view.element?.style.setProperty('--message-mark', this.host.color());
     this.marks = [];
     this.pinned = null;
@@ -104,15 +117,21 @@ export class MessageNav {
   // terminal could show the position of a message from a later terminal.
   window(terminal: TerminalInfo | undefined): void {
     if (terminal?.run === this.terminal?.run && terminal?.started === this.terminal?.started && terminal?.ended === this.terminal?.ended) return;
+    if (terminal?.run !== this.terminal?.run) this.finish('cancelled');
     this.terminal = terminal;
+    this.loaded = false;
+    this.failure = '';
     // The cache keeps only the messages of one terminal. Read them again. The marks stay
     // until the next search.
     this.cache = emptyCache();
     if (this.session) void this.load(false);
   }
 
-  // The terminal drew a frame.
-  rendered(): void { this.schedule(); }
+  // The terminal drew a frame. A seek searches at once.
+  rendered(): void {
+    this.drawn = true;
+    this.schedule(this.seeking ? 0 : undefined);
+  }
 
   // The sent messages can have changed. Read the newest page again. Calls during a read
   // cause one more read after it.
@@ -136,6 +155,8 @@ export class MessageNav {
 
   // Scroll the terminal to a message. Return false when the terminal does not show it.
   go(revision: number): boolean {
+    this.host.moved();
+    this.finish('cancelled');
     // The rows can be older than the output. Search again before the jump.
     this.search();
     const index = this.marks.findIndex(mark => mark.message.revision === revision);
@@ -144,11 +165,33 @@ export class MessageNav {
     return true;
   }
 
+  // The error of the last read of sent messages, or empty.
+  get readError(): string { return this.failure; }
+
+  // Scroll to a message after the view opened another terminal. The view jumps when a
+  // search finds the message. The seek ends without a jump when the terminal drew its
+  // first frame, and the view read every message that it can find, without the message.
+  // A read of the sent messages that fails also ends the seek. When a read failed before
+  // the seek, the seek reads that page again first: the newest page, or the next older
+  // page. Another jump, a step, and a change of the session or the terminal cancel the
+  // seek.
+  seek(revision: number): Promise<SeekResult> {
+    this.finish('cancelled');
+    if (!this.session || !this.view) return Promise.resolve('cancelled');
+    return new Promise(done => {
+      this.seeking = { revision, done };
+      if (this.failure && !this.loading) void this.load(this.failedOlder);
+      this.schedule(0);
+    });
+  }
+
   // Step to the earlier (-1) or the later (1) message. A step after the last message
   // shows the latest output.
   step(direction: -1 | 1): void {
     const view = this.view;
     if (!view) return;
+    this.host.moved();
+    this.finish('cancelled');
     this.search();
     const target = stepMark(this.rows(), view.buffer.active.viewportY, this.pin(), direction);
     if (target === 'end') this.end();
@@ -157,17 +200,21 @@ export class MessageNav {
 
   // Show the latest output.
   private end(): void {
+    this.host.moved();
+    this.finish('cancelled');
     this.host.reveal();
     this.view?.scrollToBottom();
     this.focus();
   }
 
   private reset(): void {
+    this.finish('cancelled');
     this.request++;
     clearTimeout(this.timer);
     this.timer = undefined;
     this.cache = emptyCache();
-    this.loading = this.reading = this.again = false;
+    this.loading = this.reading = this.again = this.loaded = false;
+    this.failure = '';
     this.pinned = null;
     this.clear();
     this.marks = [];
@@ -181,7 +228,10 @@ export class MessageNav {
     const session = this.session;
     if (!server || !session || (older && this.loading)) return;
     const request = older ? this.request : ++this.request;
+    // The Messages view shows a failed read on its buttons. Tell it when that changes.
+    const failed = !!this.failure;
     this.loading = true;
+    this.failure = '';
     if (!older) this.reading = true;
     try {
       const page = await call(server, { operation: 'composer-sent', session, ...(older ? { revision: this.cache.cursor } : {}) });
@@ -189,12 +239,18 @@ export class MessageNav {
       this.cache = addPage(this.cache, page, older, this.terminal);
       this.schedule(0);
       if (older) return;
+      this.loaded = true;
       const newest = page.messages.map(message => `${message.revision}:${message.confirmed}`).join(' ');
       const changed = this.newest !== null && this.newest !== newest;
       this.newest = newest;
       if (changed) this.host.sent();
-    } catch {
-      // Without the messages, the bar shows no position. The list reports the failure.
+    } catch (error) {
+      // Without the messages, the bar shows no position. The list reports the failure,
+      // and a seek reports it too.
+      if (request === this.request) {
+        this.failure = errorMessage(error);
+        this.failedOlder = older;
+      }
     } finally {
       if (request === this.request) {
         this.loading = false;
@@ -202,6 +258,8 @@ export class MessageNav {
           this.reading = false;
           if (this.again) { this.again = false; void this.load(false); }
         }
+        if (this.failure) this.settle();
+        if (failed !== !!this.failure) this.host.changed();
       }
     }
   }
@@ -233,6 +291,30 @@ export class MessageNav {
     this.cost = performance.now() - started;
     const oldest = candidates[0];
     if (!this.loading && wantsOlder(this.cache, !!oldest && found[0]?.message === oldest, this.terminal)) void this.load(true);
+    this.settle();
+  }
+
+  // Jump to the message of the seek, or end the seek when the view cannot find it.
+  private settle(): void {
+    const seeking = this.seeking;
+    if (!seeking) return;
+    const index = this.marks.findIndex(mark => mark.message.revision === seeking.revision);
+    if (index >= 0) {
+      this.finish('found');
+      this.jump(index);
+    } else if (this.loading) {
+      // Wait for the read.
+    } else if (this.failure) {
+      this.finish('failed');
+    } else if (this.drawn && this.loaded) {
+      this.finish('missing');
+    }
+  }
+
+  private finish(result: SeekResult): void {
+    const seeking = this.seeking;
+    this.seeking = null;
+    seeking?.done(result);
   }
 
   // The row of each mark. A marker moves when the scrollback drops its oldest rows, so

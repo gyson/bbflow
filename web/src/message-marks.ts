@@ -192,6 +192,17 @@ export function inTerminal(created: string, terminal?: { started: string; ended:
   return !(time < start) && !(time > end);
 }
 
+// messageTerminal returns the terminal that ran when a message was sent, or undefined. It
+// uses the rule of inTerminal, so the view of that terminal keeps the message. A terminal
+// that is still starting has no start time and gets no message.
+export function messageTerminal<T extends { started: string; ended: string }>(terminals: readonly T[], created: string): T | undefined {
+  for (let index = terminals.length - 1; index >= 0; index--) {
+    const terminal = terminals[index];
+    if (terminal && !Number.isNaN(Date.parse(terminal.started)) && inTerminal(created, terminal)) return terminal;
+  }
+  return undefined;
+}
+
 // messageTime shows a local time. It shows the date too when the date is not today.
 export function messageTime(created: string, now = new Date(), locale?: string, timeZone?: string): string {
   const date = new Date(created);

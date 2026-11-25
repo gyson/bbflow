@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import xterm from '@xterm/xterm';
 import { MessageNav } from './dist/message-nav.js';
+import { MessageJump } from './dist/message-jump.js';
+import { showButton, showMessage } from './dist/sent-history.js';
 import { VERSION } from './dist/protocol.js';
 
 const server = { protocol: VERSION, instance: 'fixture', dataDir: '/fixture', port: 1234 };
@@ -11,7 +13,8 @@ const settle = async () => { for (let turn = 0; turn < 4; turn++) await new Prom
 const sent = (revision, text, created = '2026-11-23T10:10:00Z') => ({ revision, created, text, attachments: [], confirmed: true });
 
 // A small fake DOM and a fake server. pages returns the page of sent messages for a
-// request. The terminal is a real xterm.js terminal without a page.
+// request, or an Error for a failed request. The terminal is a real xterm.js terminal
+// without a page.
 function fixture(t, pages) {
   class Node { hidden = false; disabled = false; textContent = ''; title = ''; }
   const ids = ['message-bar', 'message-open', 'message-previous', 'message-next', 'message-latest'];
@@ -24,7 +27,9 @@ function fixture(t, pages) {
     send(text) {
       const { request } = JSON.parse(text);
       requests.push(request);
-      queueMicrotask(() => this.onmessage({ data: JSON.stringify({ type: 'result', result: pages(request) }) }));
+      const reply = pages(request);
+      const message = reply instanceof Error ? { type: 'error', error: reply.message } : { type: 'result', result: reply };
+      queueMicrotask(() => this.onmessage({ data: JSON.stringify(message) }));
     }
     close() { this.readyState = 3; }
   }
@@ -41,9 +46,12 @@ function fixture(t, pages) {
   const view = new xterm.Terminal({ cols: 40, rows: 5, scrollback: 20, allowProposedApi: true });
   t.after(() => view.dispose());
   let changes = 0;
-  const nav = new MessageNav({ server: () => server, color: () => '#8bbcff', reveal() {}, list() {}, changed() {}, sent() { changes++; } });
+  // moves counts the moves of the user. A test can set hooks.moved.
+  const hooks = { moves: 0, moved() {} };
+  const nav = new MessageNav({ server: () => server, color: () => '#8bbcff', reveal() {}, list() {}, changed() {}, sent() { changes++; },
+    moved() { hooks.moves++; hooks.moved(); } });
   nav.attach(view);
-  return { nav, view, nodes, requests, changes: () => changes };
+  return { nav, view, nodes, requests, hooks, changes: () => changes };
 }
 
 const lines = (count, name = 'output') => Array.from({ length: count }, (_, index) => `${name} ${index}\r\n`).join('');
@@ -180,4 +188,203 @@ test('a detached view hides the bar, stops its search, and reads nothing more', 
   assert.equal(nav.go(1), false);
   await new Promise(resolve => setTimeout(resolve, 400));
   assert.equal(requests.length, count, 'no request after the view left the session');
+});
+
+const earlier = { number: 1, run: 'a', tool: 'Demo agent', status: 'stopped', started: '2026-11-23T10:00:00Z', ended: '2026-11-23T10:30:00Z' };
+
+test('a seek waits for the first frame of the opened terminal, then jumps to its message', async t => {
+  const { nav, view, nodes } = fixture(t, () => ({ messages: [sent(2, 'later question', '2026-11-23T11:00:00Z'), sent(1, 'first question')], more: false }));
+  nav.select('one');
+  nav.window(earlier);
+  let result;
+  const seek = nav.seek(1).then(value => { result = value; });
+  await settle();
+  assert.equal(result, undefined, 'the terminal has drawn no frame yet');
+  await write(view, lines(6) + '> first question\r\n' + lines(17));
+  nav.rendered();
+  await seek;
+  assert.equal(result, 'found');
+  assert.equal(top(view), 6);
+  assert.match(nodes['message-open'].textContent, /^Message 1 of 1 · /);
+});
+
+test('a seek ends without a jump when the opened terminal does not show the message', async t => {
+  const { nav, view } = fixture(t, () => ({ messages: [sent(1, 'first question')], more: false }));
+  await write(view, lines(30));
+  nav.select('one');
+  nav.window(earlier);
+  nav.rendered();
+  view.scrollToLine(3);
+  assert.equal(await nav.seek(1), 'missing');
+  assert.equal(top(view), 3, 'the view stays where it was');
+});
+
+test('a change of the terminal or a step cancels a seek', async t => {
+  const { nav, view } = fixture(t, () => ({ messages: [sent(1, 'first question')], more: false }));
+  nav.select('one');
+  nav.window(earlier);
+  const first = nav.seek(1);
+  nav.window({ ...earlier, number: 2, run: 'b', started: '2026-11-23T10:40:00Z', ended: '' });
+  assert.equal(await first, 'cancelled');
+  const second = nav.seek(1);
+  nav.step(-1);
+  assert.equal(await second, 'cancelled');
+  // A later frame does not jump.
+  await write(view, '> first question\r\n' + lines(20));
+  nav.rendered();
+  await settle();
+  assert.notEqual(top(view), 0);
+});
+
+test('a seek reads a failed newest page again, and a failed read ends it without a later jump', async t => {
+  let fail = true;
+  const { nav, view, requests } = fixture(t, () => fail ? new Error('database is locked') : { messages: [sent(1, 'first question')], more: false });
+  await write(view, lines(3) + '> first question\r\n' + lines(20));
+  nav.select('one');
+  nav.window(earlier);
+  nav.rendered();
+  await settle();
+  // The read failed before the seek. The seek reads the newest page again.
+  const count = requests.length;
+  assert.equal(await nav.seek(1), 'failed');
+  assert.equal(requests.length, count + 1);
+  assert.match(nav.readError, /database is locked/);
+  // A later read, for example after a draft change, does not complete the old click.
+  const bottom = top(view);
+  fail = false;
+  nav.reload();
+  await settle();
+  assert.notEqual(nav.state(1), 'missing', 'the view found the message');
+  assert.equal(top(view), bottom, 'the view did not jump');
+  assert.equal(nav.readError, '');
+  assert.equal(await nav.seek(1), 'found');
+  assert.equal(top(view), 3);
+});
+
+test('a seek ends with failed when an older page of sent messages cannot be read, and the next seek reads that page again', async t => {
+  // The newest page has only messages of a later terminal. The message is older.
+  const later = Array.from({ length: 20 }, (_, index) => sent(21 - index, `later message ${21 - index}`, '2026-11-23T11:00:00Z'));
+  let fail = true;
+  const { nav, view, requests } = fixture(t, request => request.revision
+    ? (fail ? new Error('older page failed') : { messages: [sent(1, 'the message of terminal one')], more: false })
+    : { messages: later, more: true });
+  await write(view, lines(3) + '> the message of terminal one\r\n' + lines(2));
+  nav.select('one');
+  nav.window(earlier);
+  nav.rendered();
+  assert.equal(await nav.seek(1), 'failed');
+  assert.match(nav.readError, /older page failed/);
+  assert.equal(requests.at(-1).revision, 2);
+  fail = false;
+  const count = requests.length;
+  assert.equal(await nav.seek(1), 'found');
+  assert.equal(requests.at(count).revision, 2, 'the seek reads the older page again');
+});
+
+test('a seek after a failed reload of the newest page reads the newest page again', async t => {
+  let fail = false;
+  const { nav, view, requests } = fixture(t, () => fail ? new Error('database is locked') : { messages: [sent(1, 'first question')], more: false });
+  await write(view, lines(3) + '> first question\r\n' + lines(20));
+  nav.select('one');
+  nav.rendered();
+  await settle();
+  // A draft from another view reads the newest page again, and that read fails.
+  fail = true;
+  nav.reload();
+  await settle();
+  assert.match(nav.readError, /database is locked/);
+  fail = false;
+  const count = requests.length;
+  assert.equal(await nav.seek(1), 'found');
+  assert.equal(requests.at(count).revision, undefined, 'the seek reads the newest page');
+});
+
+test('a jump, a step, and Latest output report a move of the user', async t => {
+  const { nav, view, nodes, hooks } = fixture(t, () => ({ messages: [sent(2, 'second question'), sent(1, 'first question')], more: false }));
+  await write(view, lines(3) + '> first question\r\n' + lines(8) + '> second question\r\n' + lines(12));
+  nav.select('one');
+  await settle();
+  nav.go(1);
+  nav.step(1);
+  nodes['message-latest'].onclick();
+  assert.ok(hooks.moves >= 3);
+  // A seek jumps without a report, because the jump is not a move of the user.
+  const moves = hooks.moves;
+  view.scrollToBottom();
+  assert.equal(await nav.seek(1), 'found');
+  assert.equal(hooks.moves, moves);
+});
+
+test('a jump in the shown terminal stops a pending jump to another terminal', async t => {
+  // A real MessageNav and a MessageJump, wired as app.ts wires them. The terminal list
+  // read of the jump waits until the test releases it.
+  const { nav, view, hooks } = fixture(t, () => ({ messages: [sent(1, 'first question')], more: false }));
+  await write(view, lines(3) + '> first question\r\n' + lines(20));
+  nav.select('one');
+  nav.rendered();
+  await settle();
+  let release;
+  const opened = [];
+  const jump = new MessageJump({
+    session: () => 'one', busy: () => false, opens: () => 0,
+    loadTerminals: () => new Promise(done => { release = done; }),
+    terminals: () => [{ number: 2, run: 'run-2', tool: 'Demo agent', status: 'stopped', started: '2026-11-23T11:00:00Z', ended: '2026-11-23T11:30:00Z' }],
+    shownRun: () => 'run-1', reveal() {},
+    async open(session, run) { opened.push(run); return 0; },
+    seek: revision => nav.seek(revision), readError: () => nav.readError, failed() {},
+  });
+  hooks.moved = () => jump.cancel();
+  // Show in terminal 2 on a message of terminal 2, then Show in terminal on a message of
+  // the shown terminal.
+  const remote = jump.show(9, { number: 2, run: 'run-2', tool: 'Demo agent', status: 'stopped', started: '2026-11-23T11:00:00Z', ended: '2026-11-23T11:30:00Z' });
+  assert.equal(nav.go(1), true);
+  assert.equal(top(view), 3);
+  release();
+  await remote;
+  assert.deepEqual(opened, [], 'the older click does not open terminal 2');
+  assert.equal(top(view), 3);
+});
+
+test('after a failed read during a jump, Show in terminal reads the sent messages again and jumps', async t => {
+  // A real MessageNav, MessageJump, and the click of the Messages view, wired as in
+  // app.ts. The jump already opened terminal 1, the terminal of the message.
+  let fail = true;
+  const { nav, view, requests } = fixture(t, () => fail ? new Error('database is locked') : { messages: [sent(1, 'first question')], more: false });
+  await write(view, lines(3) + '> first question\r\n' + lines(20));
+  const terminals = [{ ...earlier, run: 'run-1' }, { ...earlier, number: 2, run: 'run-2', status: 'running', started: '2026-11-23T10:40:00Z', ended: '' }];
+  const toasts = [];
+  let opens = 0;
+  const jump = new MessageJump({
+    session: () => 'one', busy: () => false, opens: () => opens, loadTerminals: async () => {},
+    terminals: () => terminals, shownRun: () => 'run-1', reveal() {},
+    async open() {
+      // The view of terminal 1 reads its sent messages, and the read fails.
+      nav.select('one');
+      nav.window(terminals[0]);
+      nav.rendered();
+      return ++opens;
+    },
+    seek: revision => nav.seek(revision), readError: () => nav.readError,
+    failed: (number, detail) => toasts.push(`terminal ${number}: ${detail}`),
+  });
+  await jump.show(1, terminals[0]);
+  assert.deepEqual(toasts, ['terminal 1: Cannot read the sent messages: database is locked']);
+  const message = sent(1, 'first question');
+  const button = showButton(nav.state(1), terminals, terminals[0], message.created, !!nav.readError);
+  assert.equal(button.disabled, false, 'the button stays on after the failed read');
+  // The read works again. A click reads the sent messages and jumps.
+  fail = false;
+  const count = requests.length;
+  let retried = Promise.resolve();
+  const host = {
+    state: revision => nav.state(revision), go: revision => nav.go(revision),
+    terminals: () => terminals, shown: () => terminals[0], open() { assert.fail('the message is in the shown terminal'); },
+    unread: () => !!nav.readError, retry: revision => { retried = jump.retry(revision); },
+  };
+  assert.equal(showMessage(host, message), true);
+  await retried;
+  assert.ok(requests.length > count, 'the click read the sent messages again');
+  assert.equal(top(view), 3);
+  assert.equal(nav.readError, '');
+  assert.equal(toasts.length, 1);
 });

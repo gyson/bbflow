@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addPage, barState, currentMark, emptyCache, inTerminal, locate, messageLimit, messageTime, readLimit, sentText, stepMark, stepShortcut, wantsOlder } from './dist/message-marks.js';
+import { addPage, barState, currentMark, emptyCache, inTerminal, locate, messageLimit, messageTerminal, messageTime, readLimit, sentText, stepMark, stepShortcut, wantsOlder } from './dist/message-marks.js';
 
 test('a message is found on the row that shows it after a prompt', () => {
   const rows = [
@@ -161,6 +161,24 @@ test('a message belongs to the terminal that ran when it was sent', () => {
   assert.equal(inTerminal('2026-11-23T11:00:01Z', terminal), false);
   assert.equal(inTerminal('2026-11-23T12:00:00Z', { started: terminal.started, ended: '' }), true, 'a live terminal has no end');
   assert.equal(inTerminal('2026-11-23T09:00:00Z'), true);
+});
+
+test('a message gets the terminal that ran when it was sent', () => {
+  const terminals = [
+    { number: 1, started: '2026-11-23T10:00:00Z', ended: '2026-11-23T11:00:00Z' },
+    { number: 2, started: '2026-11-23T11:05:00Z', ended: '2026-11-23T12:00:00Z' },
+    { number: 3, started: '2026-11-23T12:10:00Z', ended: '' },
+  ];
+  const number = created => messageTerminal(terminals, created)?.number;
+  assert.equal(number('2026-11-23T10:30:00Z'), 1);
+  assert.equal(number('2026-11-23T11:30:00Z'), 2);
+  assert.equal(number('2026-11-24T08:00:00Z'), 3, 'a live terminal has no end');
+  assert.equal(number('2026-11-23T11:02:00Z'), undefined, 'no terminal ran between the terminals');
+  assert.equal(number('2026-11-23T09:00:00Z'), undefined);
+  // A new terminal that is still starting has no start time. It gets no message.
+  const starting = [...terminals.slice(0, 2), { number: 3, started: '', ended: '' }];
+  assert.equal(messageTerminal(starting, '2026-11-23T11:30:00Z')?.number, 2);
+  assert.equal(messageTerminal(starting, '2026-11-24T08:00:00Z'), undefined);
 });
 
 test('the time of a message shows the date when it is not today', () => {
