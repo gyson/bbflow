@@ -75,13 +75,15 @@ export class HistorySearch {
     });
   }
 
-  open(selection: Selection): void {
+  // The dialog starts with scope. Without scope, it starts with the selected session, or
+  // else with all sessions.
+  open(selection: Selection, scope?: HistoryScope): void {
     this.selection = selection;
     const own = this.scope.querySelector<HTMLOptionElement>('option[value="session"]');
     const project = this.scope.querySelector<HTMLOptionElement>('option[value="project"]');
     if (own) own.disabled = !selection.session;
     if (project) project.disabled = !selection.project;
-    this.scope.value = selection.session ? 'session' : 'all';
+    this.scope.value = scope ?? (selection.session ? 'session' : 'all');
     if (!this.dialog.open) this.dialog.showModal();
     this.query.focus();
     this.query.select();

@@ -132,6 +132,8 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .session-row { position: relative; }
 .session-row:has(> .row-menu-box .row-menu-button:not([hidden])) > .session-item .session-line { padding-right: 24px; }
 .row-menu-box { position: absolute; top: 6px; right: 5px; z-index: 5; }
+/* An open menu covers the ⋯ buttons of the rows below it. */
+.row-menu-box.open { z-index: 7; }
 .row-menu-button { display: flex; padding: 4px; border-color: transparent; background: transparent; color: var(--text-muted); opacity: 0; }
 .row-menu-button svg { width: 16px; height: 16px; fill: currentColor; }
 .session-row:hover > .row-menu-box .row-menu-button:not(:disabled), .row-menu-button:focus-visible, .row-menu-box.open .row-menu-button { opacity: 1; }
@@ -141,6 +143,7 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .row-menu-box.up .row-menu { top: auto; bottom: calc(100% + 4px); }
 .row-menu button { margin: 1px 0; padding: 6px 10px; border-color: transparent; background: transparent; text-align: left; font-size: 12px; }
 .row-menu button:hover:not(:disabled), .row-menu button:focus-visible { background: var(--selected); border-color: var(--selected-border); }
+.row-menu [role="separator"] { height: 1px; margin: 4px 6px; background: var(--border); }
 .session-item.selected { background: var(--selected); border-color: var(--border); box-shadow: 0 2px 4px var(--shadow-soft); }
 /* A row has one line: the status icon, the title, and an optional worktree mark. A
    second line aligns with the title. */
@@ -193,7 +196,7 @@ body.resizing-sidebar, body.resizing-sidebar * { cursor: col-resize !important; 
 [data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transition-delay: .35s; }
 /* A short confirmation, such as after a copy, shows the tooltip at once. */
 [data-tip].tip-open::after { opacity: 1; transition-delay: 0s; }
-[data-tip]:disabled::after, .action-menu-box > [aria-expanded="true"]::after { display: none; }
+[data-tip]:disabled::after, .action-menu-box > [aria-expanded="true"]::after, .row-menu-box > [aria-expanded="true"]::after { display: none; }
 .toolbar-title [data-tip]::after { right: auto; left: 0; }
 /* A container query on the width of the main area puts the workspace pane below the session. */
 main { min-width: 0; flex: 1; display: flex; flex-direction: column; overflow: auto; container: main / inline-size; }
@@ -332,6 +335,10 @@ dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(3px); }
 form > label { display: block; font-size: 12px; font-weight: 550; margin-bottom: 17px; }
 form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .optional { color: var(--text-muted); font-weight: 400; font-size: 11px; margin-left: 6px; }
+/* The Edit project dialog shows the folder. The folder cannot change. */
+.folder-view { font-size: 12px; font-weight: 550; margin-bottom: 17px; }
+.folder-view code { display: block; margin-top: 8px; padding: 10px 11px; border: 1px solid var(--border); border-radius: 7px; background: var(--inset); color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.form-help code { font-family: ui-monospace, monospace; color: var(--text); overflow-wrap: anywhere; }
 .form-help { font-size: 11px; color: var(--text-muted); line-height: 1.7; margin: 18px 0; }
 #launch-submit { width: 100%; }
 .form-error { color: var(--danger); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
@@ -346,6 +353,10 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .project-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
 .project-toggle, .project-action { background: transparent; border-color: transparent; padding: 6px; }
 .project-action { font-size: 18px; line-height: 1; }
+/* The ⋯ button of a project opens its row menu. Its menu and its tooltip cover the rows below. */
+.project-heading > .row-menu-box { position: relative; top: auto; right: auto; z-index: 6; display: flex; }
+.project-heading > .row-menu-box.open { z-index: 7; }
+.row-menu-box.open > .project-action { background: var(--hover); }
 .project-sessions { padding-left: 10px; border-left: 1px solid var(--border); margin: 5px 0 0 9px; }
 .project-empty { font-size: 11px; color: var(--text-muted); line-height: 1.6; margin: 9px 6px; }
 .project-sessions .session-item { padding: 9px 9px; }
@@ -482,7 +493,7 @@ button.tool-add { margin-top: 12px; font-size: 12px; }
 .tool-default-help { margin: -8px 0 17px; }
 /* The status and Done stay in view while the page scrolls. */
 .settings-actions { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 16px 0 10px; background: var(--workspace); }
-#tool-remove-dialog .form-help { margin: 0 0 14px; overflow-wrap: anywhere; }
+#tool-remove-dialog .form-help, #remove-project-dialog .form-help { margin: 0 0 14px; overflow-wrap: anywhere; }
 .settings-content { padding-bottom: 30px; }
 #settings-error { margin: 16px 0 0; }
 @media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid, .place-group, .model-fields { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 0 16px 16px; } }

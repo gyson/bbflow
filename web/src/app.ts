@@ -64,11 +64,20 @@ const elements = {
   'project-name': element('project-name', HTMLInputElement),
   'project-workspace': element('project-workspace', HTMLInputElement),
   'project-folder': element('project-folder', HTMLElement),
+  'project-folder-view': element('project-folder-view', HTMLElement),
+  'project-folder-path': element('project-folder-path', HTMLElement),
+  'project-help': element('project-help', HTMLElement),
   'project-error': element('project-error', HTMLElement),
   'project-submit': element('project-submit', HTMLButtonElement),
-  'project-remove': element('project-remove', HTMLButtonElement),
-  'project-remove-help': element('project-remove-help', HTMLElement),
   'cancel-project': element('cancel-project', HTMLButtonElement),
+  'remove-project-dialog': element('remove-project-dialog', HTMLDialogElement),
+  'remove-project-form': element('remove-project-form', HTMLFormElement),
+  'remove-project-summary': element('remove-project-summary', HTMLElement),
+  'remove-project-folder': element('remove-project-folder', HTMLElement),
+  'remove-project-error': element('remove-project-error', HTMLElement),
+  'remove-project-submit': element('remove-project-submit', HTMLButtonElement),
+  'cancel-remove-project': element('cancel-remove-project', HTMLButtonElement),
+  'row-menu-status': element('row-menu-status', HTMLElement),
   'rename-session': element('rename-session', HTMLButtonElement),
   'new-sub-session': element('new-sub-session', HTMLButtonElement),
   'archive-dialog': element('archive-dialog', HTMLDialogElement),
@@ -158,6 +167,9 @@ let liveStatuses: Record<string, string> = {};
 let titleRevision = 0;
 let projects: Project[] = [];
 let editingProject: Project | null = null;
+// The project that the Remove project dialog asks about. keyboard is true when the user
+// chose Remove project with the keyboard.
+let removingProject: { project: Project; keyboard: boolean } | null = null;
 const collapsedProjects = new Set<string>();
 // The families that show all of their sub-sessions in this view until reload.
 const shownFamilies = new Set<string>();
@@ -197,7 +209,7 @@ const composer = new Composer({
 });
 const sessionSplit = new SessionSplit();
 const sessionMenu = new ActionMenu('session-menu');
-const rowMenus = new RowMenus(() => renderSessions());
+const rowMenus = new RowMenus(() => renderSessions(), $('row-menu-status'));
 const handoffPrompt = new HandoffPrompt({ insert: text => composer.insert(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
 // final screen. The live process continues while a view shows an earlier terminal.
@@ -324,6 +336,7 @@ const dialogEdits = new DialogEdits([
 ]);
 const dialogErrors = new Map([
   [$('project-dialog'), $('project-error')],
+  [$('remove-project-dialog'), $('remove-project-error')],
   [$('archive-dialog'), $('archive-error')],
   [$('rename-dialog'), $('rename-error')],
   [$('continue-dialog'), $('continue-error')],
@@ -480,7 +493,7 @@ function controls() {
   $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
   $('handoff-open').disabled = busy;
   terminalPicker.controls(busy);
-  $('project-submit').disabled = $('project-remove').disabled = $('rename-submit').disabled = busy;
+  $('project-submit').disabled = $('remove-project-submit').disabled = $('rename-submit').disabled = busy;
   $('rename-session').hidden = $('copy-session-id').hidden = showingSettings || !selected?.id || selected.status === 'draft';
   // A family has one level. On a sub-session, New sub-session adds one to the same parent.
   // A sub-session draft needs a saved project. The server checks the other rules too.
@@ -755,14 +768,14 @@ function renderSessions() {
       add.dataset.focus = `add:${id}`;
       add.onclick = () => action(() => showLaunch(project.id), `Could not add a draft to ${name}.`);
       heading.append(add);
-      const edit = document.createElement('button');
-      edit.className = 'project-action';
-      edit.textContent = '⋯';
-      edit.title = `Edit ${name}`;
-      edit.setAttribute('aria-label', edit.title);
-      edit.dataset.focus = `edit:${id}`;
-      edit.onclick = () => showProject(project);
-      heading.append(edit);
+      // The ⋯ button opens the actions of the project, so one click never removes it.
+      const menu = rowMenus.create(name, `project-menu:${id}`, [
+        { label: 'Edit', run: () => showProject(project) },
+        { label: 'Copy folder path', run: () => void copyFolder(project) },
+        { label: 'Search this project', run: () => historySearch.open({ project: project.id, projectName: name }, 'project') },
+        { label: 'Remove project', danger: true, divider: true, run: keyboard => showRemoveProject(project, keyboard) },
+      ], { className: 'project-action', text: '⋯' });
+      heading.append(menu.box);
     }
     for (const family of group.families) list.append(familyBlock(family, !project && !group.pinned, group.pinned));
     if (moreGroups.has(id)) {
@@ -1399,11 +1412,44 @@ function showProject(project: Project | null = null) {
   $('project-name-hint').hidden = !!project;
   $('project-workspace').value = project?.workspace ?? '';
   $('project-workspace').required = !project;
+  // The folder of a saved project cannot change. Edit project shows it as text.
   $('project-folder').hidden = !!project;
-  $('project-remove').hidden = $('project-remove-help').hidden = !project;
+  $('project-folder-view').hidden = !project;
+  $('project-folder-path').textContent = project?.workspace ?? '';
+  $('project-help').textContent = project
+    ? 'The folder of a project cannot change. To use another folder, add a new project.'
+    : 'Any existing folder works. Git is optional.';
   $('project-error').hidden = true;
-  $('project-submit').textContent = project ? 'Save name' : 'Add project';
+  $('project-submit').textContent = project ? 'Save' : 'Add project';
   showDialog($('project-dialog'));
+}
+
+// Copy the folder of a project. The ⋯ button of the project then shows a confirmation.
+async function copyFolder(project: Project): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(project.workspace);
+    rowMenus.confirm(`project-menu:${project.id}`, 'Folder path copied');
+  } catch (error) { toasts.show(`Could not copy the folder path of ${project.name}.`, errorMessage(error)); }
+}
+
+// Ask before the removal of a project. keyboard is true when the user chose Remove
+// project with the keyboard.
+function showRemoveProject(project: Project, keyboard: boolean): void {
+  removingProject = { project, keyboard };
+  $('remove-project-summary').textContent = `The sessions of “${project.name}” move to Standalone. Pinned sessions stay in Pinned.`;
+  $('remove-project-folder').textContent = project.workspace;
+  $('remove-project-error').hidden = true;
+  showDialog($('remove-project-dialog'));
+}
+
+// A busy action disables the sidebar buttons, so a closed dialog cannot return the focus
+// to the button that opened it. Give the focus to the sidebar button with this key, or to
+// the search box when that button is gone. A rename can move the button out of the
+// visible part of the list, so the list scrolls to it.
+function refocusSidebar(key: string): void {
+  if (document.activeElement && document.activeElement !== document.body) return;
+  focusSidebar(key, true);
+  if (!document.activeElement || document.activeElement === document.body) $('filter').focus();
 }
 
 // The group key of a project in the session list. A session without a saved project is
@@ -1571,9 +1617,9 @@ async function initialize() {
   $('cancel-project').onclick = () => $('project-dialog').close();
   $('project-form').onsubmit = event => {
     event.preventDefault();
-    action(async () => {
+    const project = editingProject;
+    void action(async () => {
       if (!server) return;
-      const project = editingProject;
       try {
         if (project) await call(server, { operation: 'project-rename', project: project.id, name: $('project-name').value });
         else {
@@ -1587,22 +1633,38 @@ async function initialize() {
         $('project-error').textContent = errorMessage(error);
         $('project-error').hidden = false;
       }
-    }, 'Could not save the project.');
+    }, 'Could not save the project.').then(() => {
+      if (project && !$('project-dialog').open) refocusSidebar(`project-menu:${project.id}`);
+    });
   };
-  $('project-remove').onclick = () => action(async () => {
-    if (!server || !editingProject) return;
-    try {
-      await preparation.flush();
-      await composer.flush();
-      await call(server, { operation: 'project-remove', project: editingProject.id });
-      $('project-dialog').close();
+  $('cancel-remove-project').onclick = () => $('remove-project-dialog').close();
+  $('remove-project-form').onsubmit = event => {
+    event.preventDefault();
+    const removing = removingProject;
+    if (!removing) return;
+    const { project, keyboard } = removing;
+    void action(async () => {
+      if (!server) return;
+      try {
+        // A save of the launch choices that ends after the removal would bring back the
+        // old project of the selected draft.
+        await preparation.flush();
+        await call(server, { operation: 'project-remove', project: project.id });
+      } catch (error) {
+        $('remove-project-error').textContent = errorMessage(error);
+        $('remove-project-error').hidden = false;
+        return;
+      }
+      $('remove-project-dialog').close();
+      // The selected session leaves the project but keeps its view. Thus Settings and the
+      // sidebar drawer stay open.
+      if (selected?.projectId === project.id) selected.projectId = '';
       await refreshSessions();
-      if (selected?.projectId === editingProject.id) await openSession(selected);
-    } catch (error) {
-      $('project-error').textContent = errorMessage(error);
-      $('project-error').hidden = false;
-    }
-  }, 'Could not remove the project.');
+    }, `Could not remove ${project.name}.`).then(() => {
+      // The ⋯ button of the project is gone. A keyboard user continues from the search box.
+      if (keyboard && !$('remove-project-dialog').open) refocusSidebar(`project-menu:${project.id}`);
+    });
+  };
   $('rename-session').onclick = () => {
     // An empty title removes the user title. The session then shows its derived title.
     $('rename-name').value = selected?.title ?? '';

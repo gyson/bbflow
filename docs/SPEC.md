@@ -35,7 +35,7 @@ The Web client section has these features:
 | [Session families](#session-families) | Sub-sessions and their parent. |
 | [Pinned sessions](#pinned-sessions) | The Pinned group at the top of the sidebar, and the pin rules. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
-| [Projects and launches](#projects-and-launches) | Projects, Start session, the shell, the terminal view, and reconnection. |
+| [Projects and launches](#projects-and-launches) | Projects, the project menu, Start session, the shell, the terminal view, and reconnection. |
 | [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, built-in tools, tool types and model lists, the launch preparation of a session, and managed worktrees. |
 | [Session status](#session-status) | The four statuses, the sidebar icon, the session toolbar, and the More actions menu. |
 | [Session titles](#session-titles) | User titles, derived titles, and the title tools. |
@@ -742,6 +742,9 @@ about:
   update bar. The restart bar has **Reload page**.
 - After **Copy session ID**, the More actions button shows **Session ID copied** as its
   tooltip for a short time.
+- After **Copy folder path**, the ⋯ button of the project shows **Folder path copied**
+  as its tooltip for a short time. A list refresh keeps it on the new button. See
+  [the project menu](#project-menu).
 - The ⋯ button of the file header shows the result of a file menu item as its tooltip.
   See [the file menu](#file-menu).
 
@@ -750,8 +753,9 @@ toolbar. The toast names the action and the session, for example
 `Could not archive “Fix links”.`, and gives the reason. It stays until the user closes
 it. The page keeps the three newest toasts.
 
-Archive, restore, stop, project removal, and worktree removal show no confirmation. The
-list, the status, and the workspace line show the result.
+Archive, restore, stop, and worktree removal show no confirmation. The list, the status,
+and the workspace line show the result. Project removal asks first. See
+[the project menu](#project-menu).
 
 ### Mobile layout
 
@@ -1184,13 +1188,39 @@ across saved projects. Parent and child folders remain allowed. Project IDs are
 independent of their names and paths.
 
 Names contain 1–200 characters without control characters. Projects can be renamed and
-removed. Removal sets their sessions' `project_id` to NULL. The UI shows these sessions
+removed in the [project menu](#project-menu). The folder of a saved project cannot
+change. Removal sets their sessions' `project_id` to NULL. The UI shows these sessions
 under Standalone. Removal preserves recorded workspace paths, runs, recordings, drafts,
 and files. `session-rename` changes the user title of a session without changing its ID
 or recorded activity. See [session titles](#session-titles).
 
 A new instance has no projects. Project metadata is authoritative in SQLite. Files in a
 project folder are ordinary files outside the database.
+
+#### Project menu
+
+The ⋯ button beside the **＋** button of a project opens its project menu. The menu has
+these items:
+
+| Item | Effect |
+| --- | --- |
+| **Edit** | Opens the Edit project dialog. The dialog changes only the name. It shows the folder as text. |
+| **Copy folder path** | Copies the saved canonical folder of the project to the clipboard. |
+| **Search this project** | Opens [Search history](#history-search) with the scope **This project**. **This session** is not available there. |
+| **Remove project** | Opens a dialog that asks before the removal. The dialog names the project and its folder. |
+
+- **Remove project** is the last item, below a line. Its text has the danger color.
+- The menu has the keys and the focus rules of a row menu. See
+  [archive action](#archive-action). A list refresh does not close it.
+- The groups of Pinned, Standalone, and Archived have no project menu.
+- After a rename, the focus is on the ⋯ button of the project. The list shows the
+  project at its place in name order and scrolls to show the button.
+- A removal keeps the current view. Settings, the selected session, and the sidebar
+  drawer stay open. A selected session of the project becomes standalone.
+- After a removal with the keyboard, the focus moves to the search box. The sessions of
+  the project then show under Standalone. A pinned family stays in Pinned.
+- A failed copy shows an error toast. A failed rename or removal shows its error in the
+  dialog.
 
 #### Drafts and Start session
 
@@ -2867,6 +2897,8 @@ The selected session is the default scope. This scope includes all its earlier
 terminals. **This project** uses current project membership. **All sessions** includes
 standalone sessions and other projects. Every scope includes archived sessions. Without
 a selected session, the dialog selects **All sessions** and waits for search text.
+**Search this project** in the [project menu](#project-menu) selects **This project**
+for that project.
 
 #### Matching
 
@@ -4353,6 +4385,26 @@ at window widths of 1200, 1600, and 1920 pixels.
   entries. They also verified that a new project leaves the current view unchanged. They
   also verified draft restoration after switching, reload and server restart, Shell
   launch in a worktree, and separate drafts for subsequent sessions.
+- A headless Chrome check with the demo instance verified the project menu with the
+  mouse and the keyboard. It verified the order of the items, the line above **Remove
+  project**, the arrow keys, Escape, and a click outside the menu. It also verified that
+  no later row covers an open project menu or session row menu.
+- The same check renamed a project in **Edit** and saw the list sort it again. It saw
+  the folder path on the clipboard and the confirmation of the ⋯ button. It ran
+  **Search this project** with the scope **This project**. It removed a project with the
+  keyboard while one of its sessions was open. The sessions then showed under
+  Standalone, the pin stayed, and no error toast showed.
+- A second check stopped a session in another view while a project menu was open. After
+  **Copy folder path**, the list refresh replaced the ⋯ button, and the new button
+  showed the confirmation. A rename moved the first of eight projects to the end, and
+  the list scrolled to its focused ⋯ button.
+- The second check also removed a project while Settings was open. Settings stayed
+  open, and after **Done** the session was standalone. In a 390-pixel window, a keyboard
+  removal of the project of the selected draft kept the drawer open and moved the focus
+  to the search box.
+- Web fixtures check the order of the project menu items, the line above **Remove
+  project**, and a copy confirmation that stays on the new ⋯ button after a list
+  refresh.
 
 No real agent CLI was used for these project checks.
 
@@ -4890,7 +4942,8 @@ continuation cursors. Display fixtures preserve original bytes and offsets, CRLF
 across events, and intentional blank lines.
 
 Frontend fixtures verify oldest-first page appends, plain-text rendering of markup, and
-explicit scope changes. They also verify rejection of stale search and context replies.
+explicit scope changes. They verify that the project menu selects **This project**
+without a session. They also verify rejection of stale search and context replies.
 A real temporary server check searches two synthetic shell terminals while the latest
 terminal remains writable. It reads earlier context, archives the session, restarts the
 server, and searches the same recordings again. No real agent CLI is used.

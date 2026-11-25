@@ -16,6 +16,7 @@
     <div id="archived-heading" class="section-heading" hidden><span>ARCHIVED SESSIONS</span><button id="sessions-open" title="Back to sessions" aria-label="Back to sessions">← Back</button></div>
     <p id="list-problem" role="status" hidden></p>
     <nav id="sessions" aria-label="Projects and sessions"><p class="muted">Connecting…</p></nav>
+    <span id="row-menu-status" class="sr-only" role="status"></span>
     <button id="update-open" class="update-notice" aria-haspopup="dialog" hidden></button>
     <div class="sidebar-actions"><button id="add-project" aria-haspopup="dialog" aria-label="Add project" title="Add project">＋ Project</button><button id="archives-open" aria-pressed="false" title="Show archived sessions">Archived</button><button id="settings-open">Settings</button></div>
     <div class="instance"><span id="connection" role="status">Connecting to server</span><span id="instance-dir" title="Instance directory"></span></div>
@@ -250,10 +251,19 @@
       <div class="dialog-heading"><h2 id="project-title">Add project</h2><button type="button" id="cancel-project" class="text-button" aria-label="Close project">✕</button></div>
       <label>Project name <span id="project-name-hint" class="optional">defaults to folder name</span><input id="project-name" maxlength="200" placeholder="My project"></label>
       <label id="project-folder">Folder<input id="project-workspace" placeholder="~/projects/my-project" required></label>
-      <p class="form-help">Any existing folder works. Git is optional.</p>
-      <p id="project-remove-help" class="form-help" hidden>Removing a project moves its sessions to Standalone. Their history, running processes, and files are preserved.</p>
+      <div id="project-folder-view" class="folder-view" hidden><span>Folder</span><code id="project-folder-path"></code></div>
+      <p id="project-help" class="form-help"></p>
       <p id="project-error" class="form-error" role="alert" hidden></p>
-      <div class="dialog-actions"><button id="project-remove" type="button" class="danger" hidden>Remove project</button><button id="project-submit" type="submit" class="primary">Add project</button></div>
+      <button id="project-submit" type="submit" class="primary">Add project</button>
+    </form>
+  </dialog>
+  <dialog id="remove-project-dialog" aria-labelledby="remove-project-title" aria-describedby="remove-project-summary remove-project-keep">
+    <form id="remove-project-form">
+      <div class="dialog-heading"><h2 id="remove-project-title">Remove this project?</h2><button type="button" id="cancel-remove-project" class="text-button" aria-label="Close remove project">✕</button></div>
+      <p id="remove-project-summary" class="form-help"></p>
+      <p id="remove-project-keep" class="form-help">bbflow keeps their history, running processes, and files. It does not delete the folder <code id="remove-project-folder"></code>.</p>
+      <p id="remove-project-error" class="form-error" role="alert" hidden></p>
+      <button id="remove-project-submit" type="submit" class="primary">Remove project</button>
     </form>
   </dialog>
   <dialog id="archive-dialog" aria-labelledby="archive-title">
