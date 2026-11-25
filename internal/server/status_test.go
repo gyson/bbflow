@@ -228,6 +228,58 @@ func TestSessionListWaitsForTheQuietFlag(t *testing.T) {
 	first("output that changes the screen", session.ID)
 }
 
+// A terminal can start while the server reads the session list. The list must not count
+// its output before the quiet flag either.
+func TestSessionListWaitsForTheQuietFlagOfANewTerminal(t *testing.T) {
+	s, session := handoffFixture(t)
+	other, err := s.store.CreateSession("other", session.Workspace, session.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := func(id, kind, data string) history.Event {
+		t.Helper()
+		event, err := s.store.Append(id, "run", kind, []byte(data), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return event
+	}
+	record(other.ID, "output", "older")
+	// The list request reads its bounds. Then the terminal starts.
+	filter, err := s.orderFilter(history.SessionFilter{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	marking, release := make(chan struct{}), make(chan struct{})
+	live := &runningSession{id: session.ID, terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
+		quiet: func(seq int64) error { close(marking); <-release; return s.store.MarkQuiet(seq) }}
+	s.mu.Lock()
+	s.sessions[session.ID] = live
+	s.mu.Unlock()
+	if _, err = live.publish(record(session.ID, "start", `{"cols":80,"rows":24}`)); err != nil {
+		t.Fatal(err)
+	}
+	record(other.ID, "input", "x")
+	frame := record(session.ID, "output", "\x1b[?25h")
+	done := make(chan error)
+	go func() { _, err := live.publish(frame); done <- err }()
+	<-marking
+	page, err := s.store.ListSessions(filter)
+	close(release)
+	if err != nil || <-done != nil {
+		t.Fatal(err)
+	}
+	for _, listed := range page.Sessions {
+		if listed.ID == session.ID || listed.ID == other.ID {
+			if listed.ID != other.ID {
+				t.Fatalf("a frame of a terminal that started during the list read came first: %+v", page.Sessions)
+			}
+			return
+		}
+	}
+	t.Fatalf("the list has neither session: %+v", page.Sessions)
+}
+
 func TestLiveStatusesOmitEndedTerminals(t *testing.T) {
 	now := time.Now()
 	s := &Server{sessions: map[string]*runningSession{

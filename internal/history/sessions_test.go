@@ -126,21 +126,27 @@ func TestOrderSkipsLiveOutputBeforeItsQuietFlag(t *testing.T) {
 		}
 		return event.Seq
 	}
-	first := func(reason string, classified map[string]int64, want string) {
+	first := func(reason string, filter SessionFilter, want string) {
 		t.Helper()
-		listed, err := store.ListSessions(SessionFilter{Limit: 2, Classified: classified})
+		filter.Limit = 2
+		listed, err := store.ListSessions(filter)
 		if err != nil || len(listed.Sessions) != 2 || listed.Sessions[0].ID != want {
 			t.Fatalf("%s: list is %+v, %v, expected %s first", reason, listed, err, want)
 		}
 	}
 	start := record(live.ID, "start")
-	record(other.ID, "output")
+	latest := record(other.ID, "output")
 	output := record(live.ID, "output")
-	first("without a live terminal", nil, live.ID)
-	first("output before its quiet flag", map[string]int64{live.ID: start}, other.ID)
-	first("output with its quiet flag", map[string]int64{live.ID: output}, live.ID)
+	first("without bounds", SessionFilter{}, live.ID)
+	first("output before its quiet flag", SessionFilter{Classified: map[string]int64{live.ID: start}}, other.ID)
+	first("output with its quiet flag", SessionFilter{Classified: map[string]int64{live.ID: output}}, live.ID)
+	// A terminal that started after the server read the latest event has no entry. Its
+	// output after that event does not count yet.
+	first("output after the recorded event", SessionFilter{Recorded: latest}, other.ID)
+	first("output up to the recorded event", SessionFilter{Recorded: output}, live.ID)
 	record(live.ID, "input")
-	first("input after the classified event", map[string]int64{live.ID: start}, live.ID)
+	first("input after the classified event", SessionFilter{Classified: map[string]int64{live.ID: start}}, live.ID)
+	first("input after the recorded event", SessionFilter{Recorded: latest}, live.ID)
 }
 
 // Sessions with equal times keep their creation order, newest first. Session IDs are

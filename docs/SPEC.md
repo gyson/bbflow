@@ -1343,7 +1343,9 @@ new rows.
 Frames preserve visible cells, colors, cursor position, bracketed paste, application
 cursor/keypad, mouse, and focus reporting modes. Advanced terminal graphics and extended
 keyboard protocols are not forwarded. Rendered rows visually preserve recorded wrapping.
-Client rows do not preserve soft wraps during copy or reflow. Normal scrollback remains
+A rendered row writes a style only where the style changes, so cells with the same
+colors and styles give the same row. Client rows do not preserve soft wraps during copy
+or reflow. Normal scrollback remains
 available while an alternate screen is visible. Erased output and exited alternate
 screens remain in the original recording.
 
@@ -1914,7 +1916,8 @@ memory. It does this without views too. The detection does not depend on the too
 
 Application output is output that changes what a view shows. The server compares its
 terminal screen before and after each output. A change of a character, a color, or a
-style of a screen cell counts. New rows in history count too. A cursor move, a title, an
+style of a screen cell counts. The server compares the rows that it draws for a view, so
+another SGR form of the same color is not a change. New rows in history count too. A cursor move, a title, an
 input mode, a bell, or a terminal query alone does not count. Thus an agent CLI that
 redraws an unchanged screen while it waits does not show `running`.
 
@@ -3910,10 +3913,16 @@ activity:
 - No other event. Only `input` and `output` events can be quiet. Events from before
   format 21 are not quiet.
 
-The session list does not count the output of a live terminal before the server sets
-its flag. For each live terminal, the server gives the list query the sequence of the
-latest event that it classified. Later output of that session does not count yet. A
-`bbflow query` read in that time can see the output with `quiet` 0.
+The session list does not count the output of a terminal before the server sets its
+flag. For each list read, the server gives the query two bounds:
+
+1. The sequence of the latest event in the archive. The server reads it first.
+2. For each live terminal, the sequence of the latest event that the server classified.
+
+The output of a session counts up to its second bound, or up to the first bound when
+the session has no live terminal entry. A terminal that starts during the list read
+records only output after the first bound. A `bbflow query` read can see the output
+with `quiet` 0 before the server sets the flag.
 
 Viewing, resizing, focus changes, renaming, saving drafts, attachments, terminal replies,
 and saved screens do not change recency. Fresh application output still counts,
@@ -4685,14 +4694,16 @@ A later browser check with the demo instance verified the saves in Settings:
   style, a color, an underline style, new history rows, an erase of the history, a
   notice, the removal of the notice, a switch of the screen buffer, and a reset are
   changes. A frame that only puts the cursor back, a cursor move, a title, a bell, input
-  modes, a query, text that the same output erases, a color in another SGR form,
-  protected cells, and an erase of an empty history are not changes. The comparison of
+  modes, a query, text that the same output erases, a color in another SGR form for a
+  row or for one cell of a row, protected cells, and an erase of an empty history are
+  not changes. The comparison of
   an unchanged screen makes no allocation.
 - A server fixture checks that output without a change keeps `idle` and is quiet. It
   also checks that the reply to a focus report and the echo of typed input are quiet.
 - A server fixture holds the quiet flag of a frame before the server sets it. A list
-  read in that time does not count the frame. A history fixture checks that output after
-  the classified event of a live terminal does not count, and that input does.
+  read in that time does not count the frame. In a second fixture, a terminal starts
+  after a list read took its bounds, and the read does not count its frame either. A
+  history fixture checks both bounds, and that input after them counts.
 - A third PTY fixture starts an application that turns focus reports on. It writes a
   frame without a change ten times each second. The session becomes `idle`. The frames
   and a focus report of a view are quiet and do not change the list order. List reads

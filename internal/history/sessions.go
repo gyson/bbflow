@@ -32,9 +32,13 @@ type SessionFilter struct {
 	Include  string   // A session ID whose family is listed outside its group limit. It needs no Offset.
 	Archived bool
 	Query    string
-	// Classified gives, for a live terminal, the sequence of the latest event whose quiet
-	// flag is final. The server records output before it sets the flag, so the order
-	// does not count later output of that session yet.
+	// Recorded and Classified keep output out of the order until its quiet flag is final.
+	// The server records output before it sets the flag. Recorded is the latest event
+	// sequence before the server read Classified. Classified gives, for a live terminal,
+	// the sequence of the latest event whose quiet flag is final. The output of a session
+	// counts up to its Classified sequence, or up to Recorded without an entry. A zero
+	// Recorded counts all output of the sessions without an entry.
+	Recorded   int64
 	Classified map[string]int64
 }
 
@@ -64,8 +68,8 @@ const pinFormat = "2006-01-02T15:04:05.000000000Z07:00"
 
 // ListSessions orders families by the terminal input, output, and run lifecycle activity
 // of their members in the archive collection. This includes output while detached. View
-// changes, quiet events, unsent drafts, and output after the Classified sequence of its
-// session do not count. SQLite compares these times in whole
+// changes, quiet events, unsent drafts, and output after the bound of SessionFilter
+// Recorded and Classified do not count. SQLite compares these times in whole
 // milliseconds. For equal times, the event sequence and then the creation order decide.
 // The rowid keeps the creation order. The Pinned group orders its families by the time
 // of the pin, newest first, and activity does not change that order. Search and archive filters apply to each member
@@ -101,7 +105,7 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	}
 	// Each group reads one family more than its limit to report more families.
 	rows, err := s.db.Query(listSessionsSQL, filter.Archived, strings.TrimSpace(filter.Query), filter.Offset, filter.Limit,
-		filter.Groups == nil, string(groups), filter.Include, string(classified))
+		filter.Groups == nil, string(groups), filter.Include, string(classified), filter.Recorded)
 	if err != nil {
 		return SessionPage{}, err
 	}
@@ -192,7 +196,7 @@ const listSessionsSQL = `WITH listed AS (
         LEFT JOIN events AS activity ON activity.seq=(
             SELECT seq FROM events WHERE session_id=sessions.id
             AND kind IN ('start','run','input','output','notice') AND quiet=0
-            AND (classified.value IS NULL OR kind<>'output' OR seq<=classified.value) ORDER BY seq DESC LIMIT 1
+            AND (kind<>'output' OR seq<=COALESCE(classified.value,NULLIF(?9,0),seq)) ORDER BY seq DESC LIMIT 1
         )
         WHERE archived=?1 OR sessions.id IN (SELECT parent_id FROM sessions WHERE archived=?1 AND parent_id IS NOT NULL)
     ), members AS (

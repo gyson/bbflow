@@ -572,7 +572,10 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 }
 
 func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPage, error) {
-	filter.Classified = s.classified()
+	filter, err := s.orderFilter(filter)
+	if err != nil {
+		return protocol.SessionPage{}, err
+	}
 	page, err := s.store.ListSessions(filter)
 	if err != nil {
 		return protocol.SessionPage{}, err
@@ -592,6 +595,20 @@ func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPag
 		result.Sessions = append(result.Sessions, info)
 	}
 	return result, nil
+}
+
+// orderFilter adds the bounds of output with a final quiet flag to a session list filter.
+// See history.SessionFilter.Recorded. It reads the latest event first. A terminal that
+// starts after that read records only later output, and a terminal leaves the sessions
+// after its last publish. Thus the output up to that event of a session without an entry
+// has a final flag.
+func (s *Server) orderFilter(filter history.SessionFilter) (history.SessionFilter, error) {
+	recorded, err := s.store.LastEvent()
+	if err != nil {
+		return filter, err
+	}
+	filter.Recorded, filter.Classified = recorded, s.classified()
+	return filter, nil
 }
 
 // classified returns the classified sequence of each live terminal that published an

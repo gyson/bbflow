@@ -360,8 +360,8 @@ order, newest first, breaks remaining ties.
 A quiet event has `quiet` 1 in the `events` table. It is a focus report or a mouse
 report of a view, or output that is not application output: output that changes
 nothing on the screen, and output in the 300 milliseconds after an `input`, a `resize`,
-or a `signal`. Output of a live terminal counts only after the server sets its flag.
-See [session list order](SPEC.md#session-list-order).
+or a `signal`. Output counts only after the server sets its flag, also for a terminal
+that starts during the list read. See [session list order](SPEC.md#session-list-order).
 
 View changes, focus changes, the redraw after a size change, drafts, attachments,
 terminal replies, and saved screens do not affect order. Reattaching at the same

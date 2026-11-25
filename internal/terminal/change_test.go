@@ -43,6 +43,8 @@ func TestApplyChangeComparesWhatAViewShows(t *testing.T) {
 	step("red text", "\x1b[5;1H\x1b[31mred\x1b[0m", true)
 	step("the same red in another SGR form", "\x1b[5;1H\x1b[38;5;1mred\x1b[0m", false)
 	step("the same red in protected cells", "\x1b[5;1H\x1b[31m\x1b[1\"qred\x1b[0\"q\x1b[0m", false)
+	step("one cell of the red text in another SGR form", "\x1b[5;2H\x1b[38;5;1me\x1b[0m", false)
+	step("the cell in the first SGR form again", "\x1b[5;2H\x1b[31me\x1b[0m", false)
 	step("text that the output also erases", "\x1b[3;1Hnotice\x1b[3;1H\x1b[K", false)
 	// Claude Code shows a notice in its footer, and it erases the notice later.
 	step("a notice", "\x1b[3;1Hnotice", true)

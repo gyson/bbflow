@@ -23,6 +23,13 @@ func (s *Store) append(sid, rid, kind string, data []byte, text string, quiet bo
 	return e, err
 }
 
+// LastEvent returns the sequence of the latest event, or 0 without events.
+func (s *Store) LastEvent() (int64, error) {
+	var seq int64
+	err := s.db.QueryRow("SELECT COALESCE(MAX(seq),0) FROM events").Scan(&seq)
+	return seq, err
+}
+
 // MarkQuiet records that a recorded event is not session activity. The server decides
 // this for output after it records the output, see AppendQuiet.
 func (s *Store) MarkQuiet(seq int64) error {

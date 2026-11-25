@@ -485,9 +485,13 @@ func renderLine(line *xterm.BufferLine, cols int) string {
 			length = x
 			break
 		}
+		// Other attributes can give the same style, for example a color in another SGR
+		// form. Write a style only when it changes, so that equal cells give equal rows.
 		if lastStyle == "" || !cell.AttributesEqual(previous) {
-			lastStyle = cellStyle(cell)
-			out.WriteString(lastStyle)
+			if style := cellStyle(cell); style != lastStyle {
+				lastStyle = style
+				out.WriteString(style)
+			}
 		}
 		chars := cell.GetChars()
 		if chars == "" {
