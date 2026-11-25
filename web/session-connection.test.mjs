@@ -28,7 +28,7 @@ function fixture(t, request = resume) {
     });
   }
   const connection = new SessionConnection(server, {
-    options: {}, reset() {}, resize() {}, write(_bytes, parsed) { frames.push(parsed); },
+    options: {}, resize() {}, write(_bytes, parsed) { frames.push(parsed); },
   }, request, {
     size: () => size, message() {}, ready() {},
     disconnected(error, retrying) { errors.push({ error, retrying }); },
@@ -40,18 +40,21 @@ function fixture(t, request = resume) {
     socket.receive({ type: 'session', session: 'one', active: true, ...extra });
     socket.receive({ type: 'frame', revision: 1, full: true, size });
   };
-  return { connection, sockets, frames, errors, greet, attach };
+  // xterm.js parses the queued writes of the outstanding frame and calls their callbacks
+  // in order. A callback can queue another write.
+  const parse = () => { while (frames.length) frames.shift()(); };
+  return { connection, sockets, frames, errors, greet, attach, parse };
 }
 
 test('reconnect joins the known session, waits for a fresh frame, and never repeats input', async t => {
-  const { connection, sockets, frames, attach } = fixture(t, {
+  const { connection, sockets, attach, parse } = fixture(t, {
     operation: 'session-start', session: 'one', revision: 1, size,
   });
   const opened = connection.connect();
   attach(sockets[0]);
   await opened;
   assert.equal(connection.ready, false);
-  frames.shift()();
+  parse();
   assert.equal(connection.ready, true);
   const input = connection.peer.writeInput('eA==', 'one');
   const rejected = assert.rejects(input, /delivery was not confirmed/);
@@ -63,17 +66,17 @@ test('reconnect joins the known session, waits for a fresh frame, and never repe
   attach(sockets[1]);
   assert.deepEqual(sockets[1].sent, [{ type: 'request', request: { ...resume, protocol: VERSION } }]);
   assert.equal(connection.ready, false);
-  frames.shift()();
+  parse();
   assert.equal(connection.ready, true);
 });
 
 test('a view asks for each size once, also before the frame of that size arrives', async t => {
-  const { connection, sockets, frames, attach } = fixture(t);
+  const { connection, sockets, attach, parse } = fixture(t);
   const resizes = () => sockets.at(-1).sent.filter(message => message.type === 'resize').map(message => message.size);
   const opened = connection.connect();
   attach(sockets[0]);
   await opened;
-  frames.shift()();
+  parse();
   // The request already asked for this size.
   assert.equal(connection.resize(size), false);
   const lower = { cols: 80, rows: 20 };
@@ -94,13 +97,13 @@ test('a view asks for each size once, also before the frame of that size arrives
 });
 
 test('leaving a session cancels retries and pending frame callbacks', async t => {
-  const { connection, sockets, frames, attach } = fixture(t);
+  const { connection, sockets, attach, parse } = fixture(t);
   const opened = connection.connect();
   attach(sockets[0]);
   await opened;
   sockets[0].close();
   connection.close();
-  frames.shift()();
+  parse();
   t.mock.timers.tick(30000);
   assert.equal(sockets.length, 1);
   assert.equal(connection.ready, false);
@@ -154,11 +157,11 @@ test('a lost view of an earlier terminal reconnects to the same terminal', async
 
 test('a lost side terminal rejoins its shell and never starts another shell', async t => {
   const open = { operation: 'side-terminal-open', session: 'one', size };
-  const { connection, sockets, frames, attach, greet } = fixture(t, open);
+  const { connection, sockets, attach, greet, parse } = fixture(t, open);
   const opened = connection.connect();
   attach(sockets[0], { shell: 'first' });
   await opened;
-  frames.shift()();
+  parse();
   sockets[0].close();
   t.mock.timers.tick(500);
   assert.equal(sockets.length, 2);

@@ -13,7 +13,6 @@ import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, li
 import type { EndReason } from './session-status.js';
 import { Watch } from './watch.js';
 import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
 import { element } from './dom.js';
@@ -27,6 +26,7 @@ import { followCursor, showCursor } from './terminal-clip.js';
 import { fitEndedRows } from './ended-fit.js';
 import { touchScroll } from './terminal-touch.js';
 import { hiddenSize, smallestSize, terminalSize } from './terminal-size.js';
+import { fitSize } from './terminal-fit.js';
 import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
@@ -167,7 +167,6 @@ let server: ServerInfo | null = null;
 let connection: SessionConnection | null = null;
 let terminal: Terminal | null = null;
 const systemDark = matchMedia('(prefers-color-scheme: dark)');
-let fit: FitAddon | null = null;
 let sessions: SessionInfo[] = [];
 // The status of each session that has a live terminal, from the status watch.
 let liveStatuses: Record<string, string> = {};
@@ -1011,8 +1010,8 @@ function requestFit(resized = false) {
     if (!peer?.active) return;
     return resized ? showCursor($('terminal'), terminal) : followCursor($('terminal'), terminal);
   }
-  const proposed = fit?.proposeDimensions();
-  const dimensions = proposed && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows) ? terminalSize(proposed) : undefined;
+  const proposed = fitSize(terminal);
+  const dimensions = proposed ? terminalSize(proposed) : undefined;
   if (!dimensions) return;
   // An ended terminal has no PTY and gets no more frames. The view sets its rows itself.
   if (!peer?.active) {
@@ -1085,8 +1084,6 @@ function makeTerminal(): Terminal {
     if (event.type === 'keydown') messageNav.step(direction);
     return false;
   });
-  fit = new FitAddon();
-  terminal.loadAddon(fit);
   const host = document.createElement('div');
   host.className = 'terminal-host';
   $('terminal').append(host);
@@ -1094,13 +1091,8 @@ function makeTerminal(): Terminal {
   // The hint of the earlier view goes before the fit. Its row would make the fit lower.
   hint();
   if (terminalShown()) {
-    // xterm.js rounds the cell width for the current number of columns. The later fits
-    // measure at the size of the request. Thus fit again until the size stays.
-    let cols = 0, rows = 0;
-    for (let i = 0; i < 3 && (view.cols !== cols || view.rows !== rows); i++) {
-      cols = view.cols; rows = view.rows;
-      fit.fit();
-    }
+    const fitted = fitSize(view);
+    if (fitted) view.resize(fitted.cols, fitted.rows);
     rememberSize(size(view));
   } else {
     const hidden = hiddenSize(shownSizes, selected?.id ?? '');
@@ -1433,7 +1425,7 @@ async function showWelcome(): Promise<void> {
   workspacePane.select('');
   terminalPicker.update([]); terminalPicker.show('');
   messageNav.detach();
-  terminal?.dispose(); terminal = null; fit = null;
+  terminal?.dispose(); terminal = null;
   sessionSplit.setEnabled(false);
   $('session-view').hidden = true;
   $('welcome').hidden = false;

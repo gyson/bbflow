@@ -58,23 +58,87 @@ test('server frames match raw PTY rendering in real xterm.js', async () => {
   } finally { reference.dispose(); rendered.dispose(); }
 });
 
+// A fake view queues each write. parse calls the callbacks in order, as xterm.js does. A
+// callback can queue another write.
+function fakeView(calls = []) {
+  const queued = [];
+  const view = {
+    options: {},
+    // xterm.js 6.1 parses the waiting writes before a resize. Then no write may wait.
+    resize(cols, rows) { assert.equal(queued.length, 0, 'a write waits during a resize'); calls.push(`resize ${cols}x${rows}`); },
+    write(bytes, callback) { calls.push(`write ${JSON.stringify(new TextDecoder().decode(bytes))}`); queued.push(callback); },
+  };
+  return { view, queued, parse: () => { while (queued.length) queued.shift()(); } };
+}
+
 test('ack waits for parsing and a stale session view cannot acknowledge', () => {
-  let parsed, current = true;
+  let current = true;
   const acks = [];
-  const view = { options: {}, reset() {}, resize() {}, write(bytes, callback) { parsed = callback; } };
+  const { view, queued, parse } = fakeView();
   const stream = new TerminalStream(view, { current: () => current, acknowledge: n => acks.push(n), ready() {}, fail: e => assert.fail(e) });
   stream.push({ type: 'frame', revision: 1, full: true, size: { cols: 80, rows: 24 } });
   assert.deepEqual(acks, []);
-  parsed();
+  parse();
   assert.deepEqual(acks, [1]);
   stream.push({ type: 'frame', revision: 2, size: { cols: 80, rows: 24 } });
+  queued.shift()(); // The view changes and queues the frame data.
   current = false;
-  parsed();
+  parse();
   assert.deepEqual(acks, [1]);
 });
 
+test('a full frame holds the view, sets its size, then resets it in the write of its data', () => {
+  const calls = [];
+  const { view, parse } = fakeView(calls);
+  const stream = new TerminalStream(view, { current: () => true, acknowledge: () => calls.push('ack'), ready() {}, fail: e => assert.fail(e) });
+  stream.push({ type: 'frame', revision: 1, full: true, size: { cols: 40, rows: 10 }, data: btoa('hi') });
+  // The task that receives the frame only queues a write.
+  assert.deepEqual(calls, ['write "\\u001b[?2026h\\u001b[3J"']);
+  parse();
+  assert.deepEqual(calls, ['write "\\u001b[?2026h\\u001b[3J"', 'resize 40x10', 'write "\\u001bchi\\u001b[?2026l"', 'ack']);
+  // A delta frame does not reset or hold the view.
+  calls.length = 0;
+  stream.push({ type: 'frame', revision: 2, size: { cols: 40, rows: 10 }, data: btoa('hi') });
+  parse();
+  assert.deepEqual(calls, ['write ""', 'resize 40x10', 'write "hi"', 'ack']);
+  // A stream that stops before the parse does not change the view.
+  calls.length = 0;
+  stream.push({ type: 'frame', revision: 3, size: { cols: 50, rows: 10 }, data: btoa('hi') });
+  stream.stop();
+  parse();
+  assert.deepEqual(calls, ['write ""']);
+});
+
+test('a full frame never shows an empty view in real xterm.js', async () => {
+  const view = new xterm.Terminal({ cols: 20, rows: 3, allowProposedApi: true });
+  const text = () => view.buffer.active.getLine(view.buffer.active.baseY).translateToString(true);
+  // xterm.js can end its parse task after a write, and the browser can paint then. At
+  // the resize, the view must still have the earlier screen, and synchronized output must
+  // hold the rendering.
+  const resize = view.resize.bind(view);
+  let atResize;
+  view.resize = (cols, rows) => { atResize = [text(), view.modes.synchronizedOutputMode]; resize(cols, rows); };
+  let parsed;
+  const stream = new TerminalStream(view, {
+    current: () => true, acknowledge: () => parsed(), ready() {}, fail: error => assert.fail(error),
+  });
+  const frame = (revision, cols, line) => new Promise(resolve => {
+    parsed = resolve;
+    stream.push({ type: 'frame', revision, full: true, size: { cols, rows: 3 }, data: btoa(`\x1b[H${line}`) });
+  });
+  try {
+    await frame(1, 20, 'first');
+    const second = frame(2, 30, 'second');
+    // At the end of the task that receives the frame, the view shows the earlier frame.
+    assert.deepEqual([text(), view.cols], ['first', 20]);
+    await second;
+    assert.deepEqual(atResize, ['first', true]);
+    assert.deepEqual([text(), view.cols, view.modes.synchronizedOutputMode], ['second', 30, false]);
+  } finally { view.dispose(); }
+});
+
 test('a full frame sets the history row limit of its width', () => {
-  const view = { options: { scrollback: 1 }, reset() {}, resize() {}, write(bytes, callback) { callback(); } };
+  const view = { options: { scrollback: 1 }, resize() {}, write(bytes, callback) { callback(); } };
   const stream = new TerminalStream(view, { current: () => true, acknowledge() {}, ready() {}, fail: e => assert.fail(e) });
   stream.push({ type: 'frame', revision: 1, full: true, size: { cols: 40, rows: 24 } });
   assert.equal(view.options.scrollback, 25000);
@@ -89,7 +153,7 @@ test('a full frame sets the history row limit of its width', () => {
 test('reject a delta without a baseline or a second unacknowledged frame', () => {
   for (const full of [false, true]) {
     const errors = [];
-    const stream = new TerminalStream({ options: {}, reset() {}, resize() {}, write() {} }, {
+    const stream = new TerminalStream({ options: {}, resize() {}, write() {} }, {
       current: () => true, acknowledge() {}, ready() {}, fail: e => errors.push(e),
     });
     stream.push({ type: 'frame', revision: 1, full, size: { cols: 80, rows: 24 } });

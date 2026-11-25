@@ -89,9 +89,8 @@ executable embeds the web UI, so the deployed binary needs no other files.
 - Frontend sources are under `web/`, with strict TypeScript and CSS under `web/src`.
   Source builds require Node.js 22+ and npm. The TypeScript compiler checks types.
 - esbuild bundles the application and its npm dependencies into one ES2022 JavaScript
-  file and one CSS file. The dependencies are xterm.js 6.0.0, FitAddon 0.11.0,
-  CodeMirror 6 with `@codemirror/merge` 6.12.3, a fixed set of language modes, and
-  markdown-it 15.0.3.
+  file and one CSS file. The dependencies are xterm.js 6.0.0, CodeMirror 6 with
+  `@codemirror/merge` 6.12.3, a fixed set of language modes, and markdown-it 15.0.3.
 - The build also includes HTML and the licenses of every bundled npm package, which it
   reads from the esbuild metafile.
 - The JavaScript file is about 1.2 MB. CodeMirror adds about 290 KB, its language modes
@@ -1342,6 +1341,20 @@ the row count. A frame carries at most 11 MiB of rendered data. A full frame alw
 includes the visible screen and omits the oldest rows that do not fit. A view narrower
 than the terminal keeps its own cache of cropped rows. Each of its frames renders only
 new rows.
+
+The browser never paints an empty view between the old screen and a full frame. xterm.js
+parses each write in a later task, and a reset empties the rows of the view at once. Thus
+the browser applies a full frame in two writes:
+
+1. The first write starts synchronized output (DEC mode 2026) and erases the history
+   rows. xterm.js then renders no rows, so the view keeps the old screen.
+2. The callback of the first write sets the row limit of the frame width and the frame
+   size. Then it writes the frame data, after a reset (RIS) and before the end of
+   synchronized output. xterm.js parses one write in one task, so the browser paints the
+   rows of the frame after the reset.
+
+No write waits while the view resizes. A delta frame has no reset and no synchronized
+output.
 
 Frames preserve visible cells, colors, cursor position, bracketed paste, application
 cursor/keypad, mouse, and focus reporting modes. Advanced terminal graphics and extended
@@ -3880,9 +3893,13 @@ most one `resize` after the request.
   [message bar](#message-bar), and the hint of the earlier view goes. The size in the
   request thus includes these rows.
 - A new terminal starts at 20 columns and 5 rows, so that it does not overflow the
-  terminal area. xterm.js rounds the cell width for the current number of columns. The
-  first fit thus repeats, up to three times, until the size stays. A hidden terminal
-  does not fit. It joins with the size that the [view switch](#view-switch) gives.
+  terminal area. Then one fit sets its size. A hidden terminal does not fit. It joins
+  with the size that the [view switch](#view-switch) gives.
+- A fit gives the largest number of columns and rows that xterm.js draws in the
+  terminal area. xterm.js draws n cells in Math.round(n × cell / ratio) CSS pixels.
+  The cell is the unrounded cell size in device pixels, and the ratio is the device
+  pixel ratio. The fit compares whole pixels, so its result does not depend on the
+  current size of the terminal. The side terminal uses the same fit.
 - While the view opens, it sends no `resize`. The terminal selector and the draft load
   after the request. They can change the height of the terminal area. When the open completes, one fit sends a `resize` if the size changed.
 - The view sends each size once on a connection. The frames keep the old size until the
@@ -3901,9 +3918,10 @@ most one `resize` after the request.
   after the request. This occurs in the mobile layout and in narrow desktop windows,
   for example 768 pixels wide. A session with more than one terminal then gets one
   `resize` when the open completes.
-- xterm.js rounds the cell width for the current number of columns. After a window or
-  divider change, the fit at the new size can differ by one column. The view then sends
-  one more `resize`.
+- The fit reads the unrounded cell size from private renderer state of xterm.js 6.0.0.
+  The fit addon of xterm.js reads the same state. A new version of xterm.js can change
+  the state or the size that the renderer draws. Then the fit can overflow the area or
+  leave an unused column or row.
 - When the terminal area of a live view is smaller than 20 columns or 5 rows, the
   terminal scrolls with no scroll bar.
 - These rules apply only to the session terminal. The side terminal fits once from the
@@ -3999,10 +4017,17 @@ separate bounded queue.
 
 A new attachment always starts with a full frame. Reconnecting does not change the PTY
 size while another view owns it. The server updates PTY size when the size owner's
-dimensions change. Reattaching at the same size uses the saved screen without requesting
-an application redraw. An ended view never starts another process or invokes native
-provider resume. Only an explicit `session-continue` starts a new terminal in an ended
-session.
+dimensions change.
+
+The size owner gets the frame of its new size when the emulator applies the resize. A
+frame before that keeps the emulator size. It is not a crop of the old screen at the new
+size. Thus one resize gives the size owner one full frame. A view without the size gets a
+crop or a padding of the screen at its new size at once. A resize of the size owner to
+the emulator size also gets its frame at once, because the runtime ignores it.
+
+Reattaching at the same size uses the saved screen without requesting an application
+redraw. An ended view never starts another process or invokes native provider resume.
+Only an explicit `session-continue` starts a new terminal in an ended session.
 
 ### Session list order
 
@@ -5644,6 +5669,42 @@ repository, and a folder outside Git, each with a shell session.
   same size before the frame of that size arrives sends nothing. A return to the size of
   the request before that frame sends that size. After a reconnect, the size of the new
   request counts as sent.
+- A fixture with the xterm.js engine checks a full frame. At the end of the task that
+  receives the frame, the view shows the earlier frame at the earlier size. At the
+  resize, the view still has the earlier screen, and synchronized output holds the
+  rendering. A fixture with a fake view checks the order of the writes. It also checks
+  that no write waits during a resize, and that a delta frame has no reset.
+- A fixture checks the fit with the cell sizes that xterm.js 6.0.0 measured in Chrome
+  for both terminal fonts, at device pixel ratios of 1, 1.5, and 2. For each area from
+  20 to 2,600 pixels, the fit gives the largest count of cells that xterm.js draws in
+  the area. In an area 2,278 pixels wide at a ratio of 1, the fit addon of xterm.js asks
+  for 290 columns at 147 columns, then for 291 columns. In an area 130 pixels high at a
+  ratio of 2, it asks for 6 and 7 rows in turn. The fit gives 291 columns and 7 rows.
+- Go tests check that a resize of the size owner wakes its view only when the emulator
+  applies the resize. A view without the size gets its frame at once. A resize of the
+  size owner to the emulator size also gets its frame at once. Output before the
+  emulator resize gives the size owner a delta frame of the emulator size. Then the
+  resize gives one full frame of the new size.
+- A browser check loaded xterm.js 6.0.0 in Chrome at device pixel ratios of 1, 1.5,
+  and 2. It compared the fit addon of xterm.js with the fit for areas 220 to 2,620
+  pixels wide and 100 to 1,400 pixels high, from several current sizes. The fit addon
+  asked for a second size for 10 to 12.5% of the widths. At ratios of 1.5 and 2, it asked for a
+  second size for 3 to 6% of the heights, and it never settled at 6 to 10 heights for
+  each font. The fit gave the same size from each current size. That size never
+  overflowed the area, and one more cell always overflowed it.
+- A browser check used the demo session **Review test failures** at 2560 × 1200 pixels
+  and a device pixel ratio of 2. Its shell printed 4,000 rows of different lengths. The
+  check opened and closed the side terminal three times, made the window narrower,
+  wider, lower, and taller, and dragged the terminal divider and the workspace divider.
+  It ran with an idle shell, then with a status line that changed every 60 ms. It read
+  the rows of the main terminal just before each paint. Before the change, 75 resizes
+  gave 85 full frames. Each full frame painted an empty terminal for 164 to 383 ms, 19
+  seconds in total. A narrower window sent 196 columns, then 197 columns. With the
+  change, 72 resizes gave 68 full frames, and no paint showed an empty terminal. Each
+  window change sent one `resize`.
+- In the same check, a window 1,186 pixels high gave a terminal area 722 pixels high.
+  Before the change, the view then sent `resize` messages without end, for 38 and 39
+  rows in turn. With the change, it sent none.
 - A browser check with the demo instance at 1400 × 900 pixels loaded the page, then
   opened live sessions six times in turn. Before the change, each open sent the request
   at 23 × 130 and then one to three `resize` messages, such as 21 × 128 and then

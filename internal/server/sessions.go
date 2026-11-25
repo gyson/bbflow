@@ -108,6 +108,20 @@ func (r *runningSession) subscribe(conn *protocol.Conn, size protocol.Size) *att
 	a.wake()
 	return a
 }
+
+// frameSize returns the size of the next frame of a view. previous is the last frame of
+// the view. A view gets frames of its own size. A resize of the size owner reaches the
+// emulator later. Until then, the size owner gets frames of the emulator size, not a crop
+// of the screen at its new size. Thus one resize gives the view one full frame. A view
+// that shows its own size keeps it, for example a view that took the size with input.
+// Requires r.mu.
+func (r *runningSession) frameSize(a *attachment, previous *terminal.View) protocol.Size {
+	if r.sizeOwner == a && previous != nil && previous.Size != a.size {
+		return r.terminal.Size()
+	}
+	return a.size
+}
+
 func (r *runningSession) leave(a *attachment) {
 	r.controlMu.Lock()
 	defer r.controlMu.Unlock()
@@ -151,8 +165,6 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 	}
 	if message.Type == "resize" {
 		a.size = message.Size
-		r.revision++
-		a.wake()
 	}
 	var controls []agent.Control
 	translated, report := a.report(message)
@@ -188,6 +200,14 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 			}
 		}
 		controls = append(controls, control)
+	}
+	// A view without the size gets a crop or a padding of the screen at its new size at
+	// once. The size owner gets the frame of its new size when the emulator applies the
+	// resize. The runtime ignores a resize to the current size, so such a resize of the
+	// size owner gets its frame at once. See frameSize.
+	if message.Type == "resize" && (r.sizeOwner != a || message.Size == r.terminal.Size()) {
+		r.revision++
+		a.wake()
 	}
 	// The runtime ignores a resize to the current PTY size, so the application does not
 	// redraw. Such a resize must not hide the application output that follows it.
@@ -486,7 +506,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 			switch {
 			case saved:
 			case revision != sent || previous == nil:
-				next = r.terminal.ViewFor(a.size, &a.history)
+				next = r.terminal.ViewFor(r.frameSize(a, previous), &a.history)
 			case ended && !r.side:
 				// A view of another size shows a crop or a padding of the screen. Its last
 				// frame is the saved screen, as a reload shows it.
