@@ -37,15 +37,20 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	appendAt := func(id, kind, created string) {
+	record := func(add func(sid, rid, kind string, data []byte, text string) (Event, error), id, kind, created string) int64 {
 		t.Helper()
-		event, err := store.Append(id, "", kind, nil, "")
+		event, err := add(id, "", kind, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err = store.db.Exec("UPDATE events SET created=? WHERE seq=?", created, event.Seq); err != nil {
 			t.Fatal(err)
 		}
+		return event.Seq
+	}
+	appendAt := func(id, kind, created string) int64 {
+		t.Helper()
+		return record(store.Append, id, kind, created)
 	}
 	assertRecent := func(id, updated string) {
 		t.Helper()
@@ -65,6 +70,14 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 		appendAt(older.ID, kind, ignored)
 		assertRecent(newer.ID, activity)
 	}
+	// Quiet events are not activity: a focus report of a view, and output that changed
+	// nothing on the screen.
+	record(store.AppendQuiet, older.ID, "input", ignored)
+	assertRecent(newer.ID, activity)
+	if err = store.MarkQuiet(appendAt(older.ID, "output", ignored)); err != nil {
+		t.Fatal(err)
+	}
+	assertRecent(newer.ID, activity)
 	if err = store.RenameSession(older.ID, "renamed"); err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +99,58 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertRecent(newer.ID, activity)
+}
+
+// The server records output before it sets the quiet flag of the output. Until then, the
+// output does not count. Other events count, because their flags are final when they are
+// recorded.
+func TestOrderSkipsOutputBeforeItsQuietFlag(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	live, err := store.CreateSession("live", "/tmp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := store.CreateSession("other", "/tmp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := func(id, kind string) int64 {
+		t.Helper()
+		event, err := store.Append(id, "run", kind, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return event.Seq
+	}
+	first := func(reason string, bounds *OutputBounds, want string) {
+		t.Helper()
+		listed, err := store.ListSessions(SessionFilter{Limit: 2, Bounds: bounds})
+		if err != nil || len(listed.Sessions) != 2 || listed.Sessions[0].ID != want {
+			t.Fatalf("%s: list is %+v, %v, expected %s first", reason, listed, err, want)
+		}
+	}
+	// In an empty archive, the server reads 0 as the latest event. A terminal that starts
+	// during the list read then records output after it.
+	empty := &OutputBounds{}
+	record(live.ID, "output")
+	first("without bounds", nil, live.ID)
+	first("output after an empty archive", empty, other.ID)
+	start := record(live.ID, "start")
+	latest := record(other.ID, "output")
+	output := record(live.ID, "output")
+	first("output before its quiet flag", &OutputBounds{Recorded: output, Classified: map[string]int64{live.ID: start}}, other.ID)
+	first("output with its quiet flag", &OutputBounds{Recorded: output, Classified: map[string]int64{live.ID: output}}, live.ID)
+	// A terminal that started after the server read the latest event has no entry. Its
+	// output after that event does not count yet.
+	first("output after the recorded event", &OutputBounds{Recorded: latest}, other.ID)
+	first("output up to the recorded event", &OutputBounds{Recorded: output}, live.ID)
+	record(live.ID, "input")
+	first("input after the classified event", &OutputBounds{Recorded: output, Classified: map[string]int64{live.ID: start}}, live.ID)
+	first("input after the recorded event", &OutputBounds{Recorded: latest}, live.ID)
 }
 
 // Sessions with equal times keep their creation order, newest first. Session IDs are

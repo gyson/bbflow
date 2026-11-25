@@ -32,6 +32,21 @@ type SessionFilter struct {
 	Include  string   // A session ID whose family is listed outside its group limit. It needs no Offset.
 	Archived bool
 	Query    string
+	// Bounds keeps output out of the order until its quiet flag is final. Nil counts all
+	// output.
+	Bounds *OutputBounds
+}
+
+// OutputBounds keeps output out of the session order until its quiet flag is final. The
+// server records output before it sets the flag. The output of a session counts up to
+// its Classified sequence, or up to Recorded when it has no entry.
+type OutputBounds struct {
+	// Recorded is the latest event sequence before the server read Classified, or 0 when
+	// the archive had no event.
+	Recorded int64
+	// Classified gives, for a live terminal, the sequence of the latest event whose quiet
+	// flag is final.
+	Classified map[string]int64
 }
 
 // SessionPage lists matching families, most recent first. Each family lists its
@@ -60,7 +75,8 @@ const pinFormat = "2006-01-02T15:04:05.000000000Z07:00"
 
 // ListSessions orders families by the terminal input, output, and run lifecycle activity
 // of their members in the archive collection. This includes output while detached. View
-// changes and unsent drafts do not count. SQLite compares these times in whole
+// changes, quiet events, unsent drafts, and output after its OutputBounds do not count.
+// SQLite compares these times in whole
 // milliseconds. For equal times, the event sequence and then the creation order decide.
 // The rowid keeps the creation order. The Pinned group orders its families by the time
 // of the pin, newest first, and activity does not change that order. Search and archive filters apply to each member
@@ -87,9 +103,20 @@ func (s *Store) ListSessions(filter SessionFilter) (SessionPage, error) {
 	if err != nil {
 		return SessionPage{}, err
 	}
+	// Without bounds, a NULL recorded bound counts all output.
+	var recorded any
+	classified := []byte("{}")
+	if filter.Bounds != nil {
+		recorded = filter.Bounds.Recorded
+		if filter.Bounds.Classified != nil {
+			if classified, err = json.Marshal(filter.Bounds.Classified); err != nil {
+				return SessionPage{}, err
+			}
+		}
+	}
 	// Each group reads one family more than its limit to report more families.
 	rows, err := s.db.Query(listSessionsSQL, filter.Archived, strings.TrimSpace(filter.Query), filter.Offset, filter.Limit,
-		filter.Groups == nil, string(groups), filter.Include)
+		filter.Groups == nil, string(groups), filter.Include, string(classified), recorded)
 	if err != nil {
 		return SessionPage{}, err
 	}
@@ -176,9 +203,11 @@ const listSessionsSQL = `WITH listed AS (
                 OR instr(lower(workspace),lower(?2))>0 OR instr(lower(sessions.id),lower(?2))>0
                 OR EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id
                     AND (instr(lower(projects.name),lower(?2))>0 OR instr(lower(projects.workspace),lower(?2))>0))) AS hit
-        FROM sessions LEFT JOIN events AS activity ON activity.seq=(
+        FROM sessions LEFT JOIN json_each(?8) AS classified ON classified.key=sessions.id
+        LEFT JOIN events AS activity ON activity.seq=(
             SELECT seq FROM events WHERE session_id=sessions.id
-            AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
+            AND kind IN ('start','run','input','output','notice') AND quiet=0
+            AND (kind<>'output' OR seq<=COALESCE(classified.value,?9,seq)) ORDER BY seq DESC LIMIT 1
         )
         WHERE archived=?1 OR sessions.id IN (SELECT parent_id FROM sessions WHERE archived=?1 AND parent_id IS NOT NULL)
     ), members AS (

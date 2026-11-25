@@ -38,7 +38,12 @@ type runningSession struct {
 	// received runs after the PTY accepts an input that has an ID. It gets the input
 	// bytes. It can be nil.
 	received func(id string, data []byte)
-	shell    string // Identifies the shell of a side terminal.
+	// quiet records that a recorded output is not session activity. It can be nil.
+	quiet func(seq int64) error
+	// classified is the sequence of the latest event that publish completed. The quiet
+	// flags of the events up to it are final. See history.OutputBounds.
+	classified int64
+	shell      string // Identifies the shell of a side terminal.
 }
 
 type attachment struct {
@@ -153,6 +158,9 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 	if report {
 		message.Data = translated
 	}
+	// The runtime records a report as a quiet event. Only input that the server accepts as
+	// a report is one.
+	message.Report = report
 	userInput := message.Type == "input" && !report
 	if r.sizeOwner != a && (userInput || (message.Type == "resize" && r.sizeOwner == nil)) {
 		r.sizeOwner = a
@@ -196,25 +204,55 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 		}
 	}
 }
+
+// publish gives a recorded event to the emulator and wakes the views. Output of a
+// session is application activity when it changes what a view shows after the echo
+// window of a view action. publish marks other output as quiet in the archive.
 func (r *runningSession) publish(event history.Event) ([]byte, error) {
+	responses, quiet, err := r.apply(event)
+	if err == nil && quiet && r.quiet != nil {
+		err = r.quiet(event.Seq)
+	}
+	if err == nil {
+		r.mu.Lock()
+		r.classified = event.Seq
+		r.mu.Unlock()
+	}
+	return responses, err
+}
+
+func (r *runningSession) apply(event history.Event) (responses []byte, quiet bool, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.terminal == nil {
 		r.terminal = terminal.New(protocol.Size{Cols: 80, Rows: 24})
 	}
-	responses, err := r.terminal.Apply(event)
+	now := time.Now()
+	switch {
+	case event.Kind != "output" || r.side:
+		responses, err = r.terminal.Apply(event)
+	case !r.activity.afterEcho(now):
+		// The echo of typed input or the redraw after a size change. A comparison would
+		// not change the status.
+		responses, err = r.terminal.Apply(event)
+		quiet = true
+	default:
+		var changed bool
+		responses, changed, err = r.terminal.ApplyChange(event)
+		if changed {
+			r.activity.applicationOutput(now)
+		}
+		quiet = !changed
+	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	r.runID = event.RunID
-	if event.Kind == "output" {
-		r.activity.applicationOutput(time.Now())
-	}
 	r.revision++
 	for client := range r.clients {
 		client.wake()
 	}
-	return responses, nil
+	return responses, quiet, nil
 }
 
 // finish ends the terminal. Each view gets the exit code, the recorded run status, and
@@ -239,6 +277,7 @@ func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, ses
 	runContext, cancel := context.WithCancel(ctx)
 	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool, activity: activity{output: time.Now()}}
 	r.received = func(id string, data []byte) { s.titleAfterReceipt(session.ID, id, data) }
+	r.quiet = s.store.MarkQuiet
 	s.sessions[session.ID] = r
 	s.mu.Unlock()
 	launch := func() {
@@ -533,6 +572,10 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 }
 
 func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPage, error) {
+	filter, err := s.orderFilter(filter)
+	if err != nil {
+		return protocol.SessionPage{}, err
+	}
 	page, err := s.store.ListSessions(filter)
 	if err != nil {
 		return protocol.SessionPage{}, err
@@ -552,6 +595,40 @@ func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPag
 		result.Sessions = append(result.Sessions, info)
 	}
 	return result, nil
+}
+
+// orderFilter adds the bounds of output with a final quiet flag to a session list filter.
+// See history.OutputBounds. It reads the latest event first. A terminal that
+// starts after that read records only later output, and a terminal leaves the sessions
+// after its last publish. Thus the output up to that event of a session without an entry
+// has a final flag.
+func (s *Server) orderFilter(filter history.SessionFilter) (history.SessionFilter, error) {
+	recorded, err := s.store.LastEvent()
+	if err != nil {
+		return filter, err
+	}
+	filter.Bounds = &history.OutputBounds{Recorded: recorded, Classified: s.classified()}
+	return filter, nil
+}
+
+// classified returns the classified sequence of each live terminal that published an
+// event. Before its first event, a terminal has no output, so it needs no entry.
+func (s *Server) classified() map[string]int64 {
+	s.mu.Lock()
+	sessions := make([]*runningSession, 0, len(s.sessions))
+	for _, r := range s.sessions {
+		sessions = append(sessions, r)
+	}
+	s.mu.Unlock()
+	classified := make(map[string]int64, len(sessions))
+	for _, r := range sessions {
+		r.mu.Lock()
+		if r.classified > 0 {
+			classified[r.id] = r.classified
+		}
+		r.mu.Unlock()
+	}
+	return classified
 }
 
 // archiveSession archives or restores a session. Archive of a top-level session also

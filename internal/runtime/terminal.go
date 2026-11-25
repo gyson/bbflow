@@ -36,9 +36,10 @@ type Launch struct {
 	Handoff   string // The handoff folder that bbflow wrote for a new terminal.
 }
 
-// recording commits terminal events and run states. A side terminal keeps nothing.
+// recording commits terminal events and run states. A side terminal keeps nothing. A
+// quiet event is not session activity, see history.Store.AppendQuiet.
 type recording struct {
-	append func(kind string, data []byte, text string) (history.Event, error)
+	append func(kind string, data []byte, text string, quiet bool) (history.Event, error)
 	save   func(*history.Run) error
 }
 
@@ -50,7 +51,10 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 		return 1, err
 	}
 	record := recording{
-		append: func(kind string, data []byte, text string) (history.Event, error) {
+		append: func(kind string, data []byte, text string, quiet bool) (history.Event, error) {
+			if quiet {
+				return store.AppendQuiet(session.ID, run.ID, kind, data, text)
+			}
 			return store.Append(session.ID, run.ID, kind, data, text)
 		},
 		save: store.SaveRun,
@@ -63,7 +67,7 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 // the events in the same order as for a recorded run.
 func Side(ctx context.Context, dataDir string, session history.Session, request Launch, controls <-chan Control, publish func(history.Event) ([]byte, error)) (int, error) {
 	record := recording{
-		append: func(kind string, data []byte, text string) (history.Event, error) {
+		append: func(kind string, data []byte, text string, quiet bool) (history.Event, error) {
 			return history.Event{SessionID: session.ID, Kind: kind, Data: data}, nil
 		},
 		save: func(*history.Run) error { return nil },
@@ -87,17 +91,17 @@ func runPTY(ctx context.Context, record recording, run *history.Run, dataDir str
 		_, err := tty.Write(data)
 		return err
 	}
-	appendEvent := func(kind string, data []byte, text string) error {
+	appendEvent := func(kind string, data []byte, text string, quiet bool) error {
 		eventMu.Lock()
 		defer eventMu.Unlock()
-		event, err := record.append(kind, data, text)
+		event, err := record.append(kind, data, text, quiet)
 		if err == nil && (kind == "start" || kind == "resize" || kind == "output") {
 			responses, renderErr := publish(event)
 			if renderErr != nil {
 				return renderErr
 			}
 			if len(responses) > 0 {
-				if _, err = record.append("terminal-response", responses, ""); err == nil {
+				if _, err = record.append("terminal-response", responses, "", false); err == nil {
 					err = write(responses)
 				}
 			}
@@ -109,7 +113,7 @@ func runPTY(ctx context.Context, record recording, run *history.Run, dataDir str
 			return err
 		}
 		data, _ := json.Marshal(run)
-		return appendEvent("run", data, "")
+		return appendEvent("run", data, "", false)
 	}
 	start := map[string]any{"command": command, "startupCommand": request.Command, "workspace": session.Workspace, "cols": size.Cols, "rows": size.Rows}
 	for key, value := range map[string]string{"tool": request.Tool, "continues": request.Continues, "handoff": request.Handoff} {
@@ -118,7 +122,7 @@ func runPTY(ctx context.Context, record recording, run *history.Run, dataDir str
 		}
 	}
 	metadata, _ := json.Marshal(start)
-	if err := appendEvent("start", metadata, ""); err != nil {
+	if err := appendEvent("start", metadata, "", false); err != nil {
 		run.Status, run.Ended, run.Detail = "failed", history.Now(), err.Error()
 		return 1, errors.Join(err, status())
 	}
@@ -170,7 +174,7 @@ func runPTY(ctx context.Context, record recording, run *history.Run, dataDir str
 			n, err := tty.Read(buf)
 			if n > 0 {
 				text := parser.Push(buf[:n])
-				if result = appendEvent("output", buf[:n], text); result != nil {
+				if result = appendEvent("output", buf[:n], text, false); result != nil {
 					report(fmt.Errorf("record terminal output: %w", result))
 					return
 				}
@@ -191,7 +195,7 @@ func runPTY(ctx context.Context, record recording, run *history.Run, dataDir str
 	// restart.
 	if request.Command != "" {
 		input := []byte(request.Command + "\r")
-		if err := appendEvent("input", input, ""); err != nil {
+		if err := appendEvent("input", input, "", false); err != nil {
 			report(err)
 		} else {
 			report(write(input))
@@ -247,7 +251,8 @@ wait:
 			}
 			switch control.Type {
 			case "input":
-				if err := appendEvent("input", control.Data, ""); err != nil {
+				// A focus report or a mouse report of a view is not session activity.
+				if err := appendEvent("input", control.Data, "", control.Report); err != nil {
 					if control.Ack != nil {
 						control.Ack(err)
 					}
@@ -267,7 +272,7 @@ wait:
 				}
 				size = &pty.Winsize{Rows: control.Size.Rows, Cols: control.Size.Cols}
 				data, _ := json.Marshal(control.Size)
-				report(appendEvent("resize", data, ""))
+				report(appendEvent("resize", data, "", false))
 				// The PTY notifies its foreground process when dimensions change.
 				report(resize(tty, size))
 			case "signal":

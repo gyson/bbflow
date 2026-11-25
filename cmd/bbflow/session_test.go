@@ -103,6 +103,21 @@ func fixtureAgent() {
 				}
 			}
 		}
+	case "waiting":
+		// An agent CLI that waits for input. It turns focus reports on. Ten times each
+		// second, it writes a frame that changes nothing on the screen, as Codex 0.172.0
+		// does about every 15 seconds.
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		fmt.Print("\x1b[?1004hREADY\r\n")
+		emitted := false
+		for range ticker.C {
+			fmt.Print("\x1b[?2026h\x1b[0m\x1b[?25h\x1b[?2026l")
+			if _, err := os.Stat(os.Args[3]); err == nil && !emitted {
+				fmt.Print("BACKGROUND_ACTIVITY\r\n")
+				emitted = true
+			}
+		}
 	case "scope":
 		fmt.Println("READY")
 		cmd := exec.Command(os.Args[0], "query", "SELECT session_id FROM events WHERE session_id='"+os.Getenv("BBFLOW_SESSION")+"'")

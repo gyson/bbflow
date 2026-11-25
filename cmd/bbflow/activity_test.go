@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,7 +59,15 @@ func TestSessionViewsDoNotChangeActivityOrder(t *testing.T) {
 	if err = resumed.conn.Send(protocol.Message{Type: "resize", Size: protocol.Size{Rows: 30, Cols: 100}}); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(recordedOutput(t, store, firstID), "RESIZED=30x100") })
+	// The redraw after a size change is a quiet event, so it does not move the session.
+	// The server marks the output quiet just after it records the output.
+	waitFor(t, func() bool {
+		result, err := store.Query(context.Background(), "SELECT count(*) FROM events WHERE session_id='"+firstID+"' AND kind='output' AND quiet=1 AND instr(CAST(data AS TEXT),'RESIZED=30x100')>0")
+		return err == nil && result.Rows[0][0] == int64(1)
+	})
+	if sessionInfos(t, 10)[0].ID == firstID {
+		t.Fatal("the redraw after a size change promoted the first session")
+	}
 	events, err = recordedEvents(t, store, firstID)
 	if err != nil {
 		t.Fatal(err)
@@ -87,6 +97,8 @@ func TestSessionViewsDoNotChangeActivityOrder(t *testing.T) {
 	if sessionInfos(t, 10)[0].ID == firstID {
 		t.Fatal("terminal interaction did not promote the second session")
 	}
+	// Output in the 300 milliseconds after the size change would be a quiet event too.
+	time.Sleep(400 * time.Millisecond)
 	if err = os.WriteFile(trigger, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -136,6 +148,72 @@ func TestSessionStatusFollowsApplicationOutput(t *testing.T) {
 	}
 	// A session whose terminal ended is absent from the watch.
 	waitFor(t, func() bool { return watch.of(id) == "idle,running,idle,absent" })
+}
+
+// An agent CLI that waits for input can write output that changes nothing on the screen.
+// The session becomes idle anyway. That output and a focus report of a view are quiet
+// events, so they do not move the session in the session list.
+func TestOutputThatChangesNothingKeepsTheSessionIdle(t *testing.T) {
+	directory := t.TempDir()
+	startTestServer(t, directory)
+	store := archive(t, directory)
+	trigger := filepath.Join(t.TempDir(), "emit")
+	view := launchAgent(t, t.TempDir(), "waiting", trigger)
+	waitFor(t, func() bool { return strings.Contains(view.text(), "READY") })
+	id := sessionInfos(t, 10)[0].ID
+	status := func() string {
+		for _, info := range sessionInfos(t, 10) {
+			if info.ID == id {
+				return info.Status
+			}
+		}
+		return "absent"
+	}
+	// quiet counts the recorded events of the session of a kind and a quiet flag.
+	quiet := func(kind string, flag int) int64 {
+		result, err := store.Query(context.Background(), fmt.Sprintf("SELECT count(*) FROM events WHERE session_id='%s' AND kind='%s' AND quiet=%d", id, kind, flag))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.Rows[0][0].(int64)
+	}
+	waitWithin(t, idleWait, func() bool { return status() == "idle" })
+	newShell(t, t.TempDir(), "newer")
+	before := sessionInfos(t, 10)
+	if len(before) != 2 || before[0].ID == id {
+		t.Fatalf("the newer shell is not first: %+v", before)
+	}
+	// The view shows the frame that turns focus reports on, so the server accepts the
+	// report.
+	if err := view.conn.Send(protocol.Message{Type: "input", Report: true, Data: []byte("\x1b[I")}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return quiet("input", 1) == 1 })
+	// The server records each frame before it sets the quiet flag. A list read at any
+	// time must not count the frame.
+	frames := quiet("output", 1)
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+		if infos := sessionInfos(t, 10); infos[0].ID == id {
+			t.Fatalf("a frame that changes nothing promoted the session: %+v", infos)
+		}
+	}
+	if got := quiet("output", 1); got < frames+20 {
+		t.Fatalf("the fixture wrote %d quiet frames in 3 seconds", got-frames)
+	}
+	after := sessionInfos(t, 10)
+	for i := range before {
+		if after[i].ID != before[i].ID || after[i].Updated != before[i].Updated {
+			t.Fatalf("quiet events changed the order: before=%+v after=%+v", before, after)
+		}
+	}
+	if got := status(); got != "idle" {
+		t.Fatalf("output that changes nothing gave the status %s", got)
+	}
+	// Output that changes the screen is activity.
+	if err := os.WriteFile(trigger, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return status() == "running" && sessionInfos(t, 10)[0].ID == id })
 }
 
 // A view that reconnects sends its size again. The runtime ignores an unchanged size, so

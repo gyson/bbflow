@@ -1,7 +1,7 @@
 // The server derives one status for each session: draft, running, idle, or ended.
 // A running or idle session is live: it starts or it has a live terminal. Idle means
-// only that the terminal had no recent output. It does not mean that the application is
-// ready for input.
+// only that the screen of the terminal had no recent change. It does not mean that the
+// application is ready for input.
 export function live(status: string | undefined): boolean {
   return status === 'running' || status === 'idle';
 }
@@ -24,8 +24,8 @@ export function statusIcon(status: string, runStatus = ''): string {
 }
 
 const meanings: Record<string, string> = {
-  running: 'Running: output in the last 10 seconds',
-  idle: 'Idle: live, with no output in the last 10 seconds',
+  running: 'Running: a screen change in the last 10 seconds',
+  idle: 'Idle: live, with no screen change in the last 10 seconds',
   draft: 'Draft: not started',
 };
 

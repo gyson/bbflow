@@ -21,8 +21,9 @@ const (
 )
 
 // activity derives running or idle from the output times of a live terminal. It is not
-// durable. Idle means only that there was no recent output. It does not mean that the
-// application completed its work or is ready for input.
+// durable. Only output that changes what a view shows counts. Idle means only that there
+// was no such output recently. It does not mean that the application completed its work
+// or is ready for input.
 type activity struct {
 	output time.Time // The start of the terminal, or its latest application output.
 	view   time.Time // The latest input, size change, or signal from a view.
@@ -30,8 +31,14 @@ type activity struct {
 
 func (a *activity) viewAction(now time.Time) { a.view = now }
 
+// afterEcho tells whether output at this time comes after the echo window of the latest
+// view action.
+func (a *activity) afterEcho(now time.Time) bool { return now.Sub(a.view) >= echoWindow }
+
+// applicationOutput records output that changed what a view shows. Output in the echo
+// window of a view action is not application activity.
 func (a *activity) applicationOutput(now time.Time) {
-	if now.Sub(a.view) >= echoWindow {
+	if a.afterEcho(now) {
 		a.output = now
 	}
 }

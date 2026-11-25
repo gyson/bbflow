@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -126,6 +127,168 @@ func TestOnlyChangedResizeStartsEchoWindow(t *testing.T) {
 			t.Fatalf("output after %s has status %s, expected %s", test.name, got, test.want)
 		}
 	}
+}
+
+// Agent CLIs write output that changes nothing on the screen while they wait. Such output
+// keeps the session idle. The archive marks it quiet, so it does not move the session in
+// the session list.
+func TestOutputThatChangesNothingIsQuiet(t *testing.T) {
+	var quiet []int64
+	r := &runningSession{id: "fixture", terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
+		quiet: func(seq int64) error { quiet = append(quiet, seq); return nil }}
+	idle := time.Now().Add(-time.Minute)
+	r.activity = activity{output: idle, view: idle}
+	publish := func(reason string, event history.Event, status string, marked ...int64) {
+		t.Helper()
+		if _, err := r.publish(event); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.status(time.Now()); got != status || fmt.Sprint(quiet) != fmt.Sprint(marked) {
+			t.Fatalf("%s: status %s and quiet events %v, expected %s and %v", reason, got, quiet, status, marked)
+		}
+	}
+	output := func(seq int64, data string) history.Event {
+		return history.Event{Seq: seq, Kind: "output", Data: []byte(data)}
+	}
+	publish("a prompt", output(1, "prompt> "), "running")
+	r.activity.output = idle
+	// Codex 0.172.0 writes this frame about every 15 seconds while it waits for input.
+	publish("a frame that puts the cursor back", output(2, "\x1b[?2026h\x1b[39m\x1b[49m\x1b[0m\x1b[1;9H\x1b[?25h\x1b[?2026l"), "idle", 2)
+	// Claude Code rings the bell while it waits for input.
+	publish("a bell", output(3, "\x07"), "idle", 2, 3)
+	// The application answers a focus report of a view.
+	r.activity.viewAction(time.Now())
+	publish("the reply to a focus report", output(4, "\x1b(B\x1b[?2004h"), "idle", 2, 3, 4)
+	// The echo of typed input changes the screen, but it is not application activity.
+	publish("the echo of typed input", output(5, "x"), "idle", 2, 3, 4, 5)
+	r.activity.view = idle
+	publish("a notice", output(6, "\r\nnotice"), "running", 2, 3, 4, 5)
+	publish("a size change", history.Event{Seq: 7, Kind: "resize", Data: []byte(`{"cols":40,"rows":10}`)}, "running", 2, 3, 4, 5)
+}
+
+// The runtime records output before the server compares the screen and sets the quiet
+// flag. The session list must not count the output in that time.
+func TestSessionListWaitsForTheQuietFlag(t *testing.T) {
+	s, session := handoffFixture(t)
+	other, err := s.store.CreateSession("other", session.Workspace, session.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marking, release := make(chan struct{}), make(chan struct{})
+	live := &runningSession{id: session.ID, terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
+		quiet: func(seq int64) error { close(marking); <-release; return s.store.MarkQuiet(seq) }}
+	s.sessions[session.ID] = live
+	record := func(id, kind, data string) history.Event {
+		t.Helper()
+		event, err := s.store.Append(id, "run", kind, []byte(data), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return event
+	}
+	publish := func(event history.Event) {
+		t.Helper()
+		if _, err := live.publish(event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := func(reason, want string) {
+		t.Helper()
+		page, err := s.listSessions(history.SessionFilter{Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, info := range page.Sessions {
+			if info.ID == session.ID || info.ID == other.ID {
+				if info.ID != want {
+					t.Fatalf("%s: %s comes first, expected %s", reason, info.ID, want)
+				}
+				return
+			}
+		}
+		t.Fatalf("%s: the list has neither session: %+v", reason, page)
+	}
+	publish(record(session.ID, "start", `{"cols":80,"rows":24}`))
+	publish(record(session.ID, "output", "prompt> "))
+	record(other.ID, "output", "newer")
+	first("the newer output", other.ID)
+	// A frame that changes nothing is recorded with quiet=0. The server sets the flag
+	// after it compares the screen.
+	frame := record(session.ID, "output", "\x1b[?25h")
+	done := make(chan error)
+	go func() { _, err := live.publish(frame); done <- err }()
+	<-marking
+	first("a frame before its quiet flag", other.ID)
+	close(release)
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	first("a frame with its quiet flag", other.ID)
+	publish(record(session.ID, "output", "answer"))
+	first("output that changes the screen", session.ID)
+}
+
+// A terminal can start while the server reads the session list. The list must not count
+// its output before the quiet flag either. In an empty archive, the latest event is 0.
+func TestSessionListWaitsForTheQuietFlagOfANewTerminal(t *testing.T) {
+	for _, archive := range []string{"empty", "populated"} {
+		t.Run(archive, func(t *testing.T) { newTerminalDuringListRead(t, archive == "populated") })
+	}
+}
+
+func newTerminalDuringListRead(t *testing.T, populated bool) {
+	s, session := handoffFixture(t)
+	other, err := s.store.CreateSession("other", session.Workspace, session.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := func(id, kind, data string) history.Event {
+		t.Helper()
+		event, err := s.store.Append(id, "run", kind, []byte(data), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return event
+	}
+	if populated {
+		record(other.ID, "output", "older")
+	}
+	// The list request reads its bounds. Then the terminal starts.
+	filter, err := s.orderFilter(history.SessionFilter{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded := filter.Bounds.Recorded; (recorded == 0) == populated {
+		t.Fatalf("the latest event is %d in an archive that is populated: %v", recorded, populated)
+	}
+	marking, release := make(chan struct{}), make(chan struct{})
+	live := &runningSession{id: session.ID, terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
+		quiet: func(seq int64) error { close(marking); <-release; return s.store.MarkQuiet(seq) }}
+	s.mu.Lock()
+	s.sessions[session.ID] = live
+	s.mu.Unlock()
+	if _, err = live.publish(record(session.ID, "start", `{"cols":80,"rows":24}`)); err != nil {
+		t.Fatal(err)
+	}
+	record(other.ID, "input", "x")
+	frame := record(session.ID, "output", "\x1b[?25h")
+	done := make(chan error)
+	go func() { _, err := live.publish(frame); done <- err }()
+	<-marking
+	page, err := s.store.ListSessions(filter)
+	close(release)
+	if err != nil || <-done != nil {
+		t.Fatal(err)
+	}
+	for _, listed := range page.Sessions {
+		if listed.ID == session.ID || listed.ID == other.ID {
+			if listed.ID != other.ID {
+				t.Fatalf("a frame of a terminal that started during the list read came first: %+v", page.Sessions)
+			}
+			return
+		}
+	}
+	t.Fatalf("the list has neither session: %+v", page.Sessions)
 }
 
 func TestLiveStatusesOmitEndedTerminals(t *testing.T) {
