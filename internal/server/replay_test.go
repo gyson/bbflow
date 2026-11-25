@@ -282,10 +282,11 @@ func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
 	}
 	// report sends input with the report mark. It fails when the input changed the PTY
 	// size before it reached the process, or when the process got other bytes than want.
+	// The runtime records a report as a quiet event.
 	report := func(view *testView, reason, data, want string) {
 		t.Helper()
 		view.send(protocol.Message{Type: "input", Report: true, Data: []byte(data)})
-		if control := next(); control.Type != "input" || string(control.Data) != want {
+		if control := next(); control.Type != "input" || string(control.Data) != want || !control.Report {
 			t.Fatalf("%s: %+v", reason, control)
 		}
 	}
@@ -296,7 +297,8 @@ func TestReportsDoNotChangeTheSizeOwner(t *testing.T) {
 		if control := next(); control.Type != "resize" || control.Size != want {
 			t.Fatalf("%s: %+v", reason, control)
 		}
-		if control := next(); control.Type != "input" || string(control.Data) != string(message.Data) {
+		// Typed input is not a quiet event, also when the view marked it as a report.
+		if control := next(); control.Type != "input" || string(control.Data) != string(message.Data) || control.Report {
 			t.Fatalf("%s: %+v", reason, control)
 		}
 	}

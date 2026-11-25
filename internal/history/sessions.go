@@ -60,7 +60,7 @@ const pinFormat = "2006-01-02T15:04:05.000000000Z07:00"
 
 // ListSessions orders families by the terminal input, output, and run lifecycle activity
 // of their members in the archive collection. This includes output while detached. View
-// changes and unsent drafts do not count. SQLite compares these times in whole
+// changes, quiet events, and unsent drafts do not count. SQLite compares these times in whole
 // milliseconds. For equal times, the event sequence and then the creation order decide.
 // The rowid keeps the creation order. The Pinned group orders its families by the time
 // of the pin, newest first, and activity does not change that order. Search and archive filters apply to each member
@@ -178,7 +178,7 @@ const listSessionsSQL = `WITH listed AS (
                     AND (instr(lower(projects.name),lower(?2))>0 OR instr(lower(projects.workspace),lower(?2))>0))) AS hit
         FROM sessions LEFT JOIN events AS activity ON activity.seq=(
             SELECT seq FROM events WHERE session_id=sessions.id
-            AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
+            AND kind IN ('start','run','input','output','notice') AND quiet=0 ORDER BY seq DESC LIMIT 1
         )
         WHERE archived=?1 OR sessions.id IN (SELECT parent_id FROM sessions WHERE archived=?1 AND parent_id IS NOT NULL)
     ), members AS (

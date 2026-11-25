@@ -932,14 +932,18 @@ The stored status of a run and the state of a preparation keep their values.
 
 ### Derivation
 
-The server derives `running` and `idle` from output times only. It keeps the times in
-memory and tracks them without views. Output in the 300 milliseconds after an `input`,
-a `resize` that changes the PTY size, or a `signal` is not application output. This
-excludes the echo of typed input and the redraw after a size change. A `resize` to the
-current PTY size has no such effect, because the application does not redraw.
+The server derives `running` and `idle` from the times of application output only. It
+keeps the times in memory and tracks them without views. Application output changes
+what a view shows: a cell of the screen, or the rows in history. A cursor move, a
+title, or a bell alone is not application output. See
+[activity detection](SPEC.md#activity-detection). Output in the 300 milliseconds after
+an `input`, a `resize` that changes the PTY size, or a `signal` is not application
+output. This excludes the echo of typed input and the redraw after a size change. A
+`resize` to the current PTY size has no such effect, because the application does not
+redraw.
 
-`idle` means only that there was no recent output. The application can be complete,
-can wait for an answer, or can work without output. `idle` does not show that the
+`idle` means only that there was no recent application output. The application can be
+complete, can wait for an answer, or can work without a change on the screen. `idle` does not show that the
 application is ready for input. Do not send input automatically because of this status.
 
 A live view also gets the status in `status` messages on its

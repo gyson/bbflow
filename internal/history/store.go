@@ -156,7 +156,7 @@ func checkSchema(ctx context.Context, conn *sql.Conn) error {
 		"SELECT id,name,workspace,created FROM projects LIMIT 0",
 		"SELECT " + sessionColumns + " FROM sessions LIMIT 0",
 		"SELECT " + runColumns + " FROM runs LIMIT 0",
-		"SELECT " + eventColumns + " FROM events LIMIT 0",
+		"SELECT " + eventColumns + ",quiet FROM events LIMIT 0",
 		"SELECT revision,data FROM settings LIMIT 0",
 		"SELECT port FROM server LIMIT 0",
 		"SELECT session_id,revision,state,data FROM preparations LIMIT 0",

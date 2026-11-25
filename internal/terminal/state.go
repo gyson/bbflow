@@ -57,6 +57,19 @@ type State struct {
 	epoch     int64
 	responses []byte
 	history   Cache
+	shown     shown
+}
+
+// shown is a copy of what a view shows after the latest event that ApplyChange compared:
+// the cells of the screen and the count of rows that went into history. Apply makes the
+// copy out of date, so ApplyChange copies the screen again before its event.
+type shown struct {
+	current  bool
+	buffer   *xterm.Buffer
+	epoch    int64
+	scrolled int64
+	rows     []*xterm.BufferLine
+	a, b     *xterm.CellData // Reused for each comparison.
 }
 
 // Cache keeps rendered history rows for one width. Row numbers count from the start of
@@ -109,6 +122,7 @@ func (s *State) reset(size protocol.Size) {
 	// that optional protocol to applications in this terminal.
 	s.term.RegisterCsiHandler(xterm.FunctionIdentifier{Prefix: '?', Final: 'u'}, func(*xterm.Params) bool { return true })
 	s.term.OnData(func(data string) { s.responses = append(s.responses, data...) })
+	s.shown.current = false
 	s.trackBuffer()
 	s.limitHistory()
 }
@@ -178,6 +192,105 @@ func (s *State) resize(cols, rows int) {
 // logs the panic and starts a blank emulator for this terminal. The archive keeps the
 // original bytes, so the reset loses only the rendered screen and history.
 func (s *State) Apply(event history.Event) (responses []byte, err error) {
+	s.shown.current = false
+	return s.apply(event)
+}
+
+// ApplyChange applies one event like Apply. It also tells whether the event changed what
+// a view shows: a character, a color, or a style of a screen cell, or the rows in
+// history. A cursor move, a title, an input mode, a bell, and a query are not changes.
+// The comparison reads each cell of the screen, so use it only for the events whose
+// change matters.
+func (s *State) ApplyChange(event history.Event) (responses []byte, changed bool, err error) {
+	if !s.shown.current {
+		s.copyScreen()
+	}
+	responses, err = s.apply(event)
+	return responses, s.compareScreen(), err
+}
+
+// scrolled counts the rows that went into the history of the normal buffer, also the
+// rows that the history limit dropped later.
+func (s *State) scrolled() int64 { return s.trim + int64(s.term.NormalBuffer().YBase) }
+
+// copyScreen copies the rows of the screen into shown. It reuses the copies of earlier
+// rows.
+func (s *State) copyScreen() {
+	c, t := &s.shown, s.term
+	active := t.Buffer()
+	c.current, c.buffer, c.epoch, c.scrolled = true, active, s.epoch, s.scrolled()
+	if c.a == nil {
+		c.a, c.b = xterm.NewCellData(), xterm.NewCellData()
+	}
+	c.rows = slices.Grow(c.rows[:0], t.Rows())[:t.Rows()]
+	for y := range c.rows {
+		c.rows[y] = copyRow(c.rows[y], active.Lines.Get(active.YBase+y))
+	}
+}
+
+// compareScreen tells whether the screen differs from shown. Then it updates shown.
+func (s *State) compareScreen() bool {
+	c, t := &s.shown, s.term
+	active := t.Buffer()
+	if !c.current || c.buffer != active || c.epoch != s.epoch || c.scrolled != s.scrolled() || len(c.rows) != t.Rows() {
+		// A reset, another buffer, a reflow, or new history rows.
+		s.copyScreen()
+		return true
+	}
+	changed := false
+	for y, saved := range c.rows {
+		if line := active.Lines.Get(active.YBase + y); !sameCells(line, saved, c.a, c.b) {
+			c.rows[y] = copyRow(saved, line)
+			changed = true
+		}
+	}
+	return changed
+}
+
+// copyRow returns a copy of line. It reuses the memory of saved when it can.
+func copyRow(saved, line *xterm.BufferLine) *xterm.BufferLine {
+	switch {
+	case line == nil:
+		return nil
+	case saved == nil:
+		return line.Clone()
+	}
+	saved.CopyFrom(line)
+	return saved
+}
+
+// sameCells tells whether two rows have the same cells. It compares what renderLine
+// draws: the characters, the colors, and the styles.
+func sameCells(line, saved *xterm.BufferLine, a, b *xterm.CellData) bool {
+	if line == nil || saved == nil {
+		return line == saved
+	}
+	if line.Len != saved.Len {
+		return false
+	}
+	for x := range line.Len {
+		line.LoadCell(x, a)
+		saved.LoadCell(x, b)
+		if a.Content != b.Content || a.Fg != b.Fg || a.Bg != b.Bg || a.CombinedData != b.CombinedData {
+			return false
+		}
+		// Equal Bg values have the same flag for extended attributes, such as the underline
+		// style and color.
+		if a.HasExtendedAttrs() != 0 && extended(a) != extended(b) {
+			return false
+		}
+	}
+	return true
+}
+
+func extended(cell *xterm.CellData) uint32 {
+	if cell.Extended == nil {
+		return 0
+	}
+	return cell.Extended.Ext()
+}
+
+func (s *State) apply(event history.Event) (responses []byte, err error) {
 	s.responses = nil
 	target := s.Size()
 	defer func() {

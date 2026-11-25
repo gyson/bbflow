@@ -103,6 +103,7 @@ The append-only recording. `seq` gives the order across all sessions.
 | `data` | Original bytes of the event, as a BLOB. |
 | `text` | Derived text. Only some kinds have it. |
 | `created` | Time of the event. |
+| `quiet` | `1` when the event is not session activity, else `0`. It is derived. See the note after the event kinds. |
 
 Event kinds:
 
@@ -118,6 +119,11 @@ Event kinds:
 | `attachment` | Bytes of an attached file. | JSON with `name`, `mediaType`, and `size`. |
 | `title` | JSON for the first message editor send with text that reached the terminal: `revision`, the `draft` event of the send; `tool`, the selected title tool; and `requested`, true when the send started an automatic title request. A session has at most one. | Empty. |
 | `terminal-response`, `terminal-screen` | Internal terminal state. | Empty. |
+
+A quiet event is not session activity. A focus report or a mouse report of a view is
+quiet. Output is quiet when it changed nothing on the screen. Output in the 300
+milliseconds after an input, a size change, or a signal from a view is quiet too. The
+session list order skips quiet events. Events from before the `quiet` column have `0`.
 
 ### `projects`
 

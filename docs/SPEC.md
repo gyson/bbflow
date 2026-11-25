@@ -1909,18 +1909,30 @@ the preparation state without change, so `bbflow query` results do not change.
 
 #### Activity detection
 
-The server records the time of each output of a live terminal in memory. It does this
-without views too. Output in the 300 milliseconds after an input, a PTY size change, or
-a signal from a view does not count. Thus the echo of typed input and the redraw after a
-size change do not make a session `running`. A view that joins or reconnects sends its
-size again. The PTY ignores an unchanged size, so that size does not hide the output
-that follows. The detection does not depend on the tool.
+The server records the time of the latest application output of each live terminal in
+memory. It does this without views too. The detection does not depend on the tool.
 
-`idle` means only that there was no recent output. The application can be complete, can
-wait for an answer or a permission, or can work without output. A spinner or other
-repeated output shows as `running`, even without progress. No completion, readiness, or
-message boundaries are inferred from silence. bbflow never sends input because of a
-status.
+Application output is output that changes what a view shows. The server compares its
+terminal screen before and after each output. A change of a character, a color, or a
+style of a screen cell counts. New rows in history count too. A cursor move, a title, an
+input mode, a bell, or a terminal query alone does not count. Thus an agent CLI that
+redraws an unchanged screen while it waits does not show `running`.
+
+Output in the 300 milliseconds after an input, a PTY size change, or a signal from a
+view does not count either. Thus the echo of typed input and the redraw after a size
+change do not make a session `running`. A view that joins or reconnects sends its size
+again. The PTY ignores an unchanged size, so that size does not hide the output that
+follows.
+
+The archive marks output that does not count as a quiet event. See
+[session list order](#session-list-order).
+
+`idle` means only that there was no recent application output. The application can be
+complete, can wait for an answer or a permission, or can work without a change on the
+screen. A spinner, a clock, or other output that changes the screen shows as `running`,
+even without progress. The same row written again and again adds history rows, so it
+shows as `running` too. No completion, readiness, or message boundaries are inferred
+from silence. bbflow never sends input because of a status.
 
 #### Status in the sidebar
 
@@ -1939,7 +1951,7 @@ project, or its workspace without a saved project. The icon has a different shap
 The sidebar shows the status with these rules:
 
 - The tooltip of the icon gives the status text, for example **Idle: live, with no
-  output in the last 10 seconds** or **Ended · stopped**. It adds **Archived**, the
+  screen change in the last 10 seconds** or **Ended · stopped**. It adds **Archived**, the
   view count, and the place of a sub-session.
 - The tooltip of the row adds the same text to the title, workspace, ID, and update
   time.
@@ -2033,9 +2045,13 @@ process.
 
 #### Limits
 
-- The session status uses output times only. It cannot tell a completed task from a
-  permission question, and it shows `idle` for a command that works without output.
-- An application that writes output while it waits shows as `running`.
+- The session status uses the times of screen changes only. It cannot tell a completed
+  task from a permission question. It shows `idle` for a command that works without a
+  change on the screen.
+- An application that changes its screen while it waits shows as `running`.
+- The server compares the screen after each read from the PTY. An application frame can
+  arrive in two reads. Then the first part can change the screen and count, even when
+  the whole frame changes nothing.
 - Typed input at short intervals for more than 10 seconds can show `idle` while the
   application works.
 - While the status watch reconnects, the sidebar can show a status change up to five
@@ -3875,16 +3891,29 @@ order. The UI requests 101 to display 100 entries and detect another page. Norma
 listing excludes archived sessions. Archived listing includes only archived sessions,
 and the parents of archived sub-sessions as context. Ordering follows the latest
 terminal input, output, or run lifecycle event (`start`, `run`, or interruption
-`notice`), newest first. Sessions without these events use their creation time.
+`notice`), newest first. Quiet events do not count. Sessions without these events use
+their creation time.
 
 Timestamps compare in whole milliseconds. For equal timestamps, the higher event
 sequence comes first. Sessions without these events sort after sessions with them.
 Remaining ties use creation order, newest first. The order is deterministic, so offset
 pages do not overlap while the list is unchanged.
 
-Viewing, resizing, renaming, saving drafts, attachments, terminal replies, and saved
-screens do not change recency. Fresh application output still counts, including output
-while detached or after a real size change. Summaries contain ID, title, project ID
+The server sets the derived `events.quiet` flag for an event that is not session
+activity:
+
+- A focus report or a mouse report of a view. The server sets the flag when it records
+  the input.
+- Output that is not [application output](#activity-detection): output that changes
+  nothing on the screen, and output in the 300 milliseconds after a view action. The
+  server sets the flag just after it records the output.
+- No other event. Events from before format 21 are not quiet.
+
+Viewing, resizing, focus changes, renaming, saving drafts, attachments, terminal replies,
+and saved screens do not change recency. Fresh application output still counts,
+including output while detached. The redraw after a size change does not count. A list
+read just after the server records an output, and before it sets the flag, counts that
+output. The next read does not. Summaries contain ID, title, project ID
 (empty for standalone), parent ID (empty for a top-level session), workspace, update
 time, status, archive flag, view count, and a context flag.
 
@@ -3974,7 +4003,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 20. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 21. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -4046,7 +4075,11 @@ WAL is enabled after the schema transaction commits.
   top-level session that is not archived. Existing sessions start without a pin.
 - Format 19 gains `prompts: []`, the [saved prompts](#saved-prompts), in the settings
   JSON through migration 20. The settings revision and the other values stay.
-- Format 20 opens without running scripts or rewriting history, settings, or metadata.
+- Format 20 gains the `events.quiet` column through migration 21. It marks the
+  [quiet events](#session-list-order) that the session list order skips. Existing events
+  are not quiet. The column has no `CHECK` constraint, so the upgrade does not read the
+  existing events.
+- Format 21 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -4642,6 +4675,19 @@ A later browser check with the demo instance verified the saves in Settings:
   stop.
 - A second PTY fixture sends an unchanged size and then triggers output. It checks that
   the application got no size change and that the session shows `running`.
+- Screen fixtures check which output changes what a view shows. New characters, a
+  style, a color, an underline style, new history rows, a notice, the removal of the
+  notice, a switch of the screen buffer, and a reset are changes. A frame that only
+  puts the cursor back, a cursor move, a title, a bell, input modes, a query, and text
+  that the same output erases are not changes.
+- A server fixture checks that output without a change keeps `idle` and is quiet. It
+  also checks that the reply to a focus report and the echo of typed input are quiet.
+- A third PTY fixture starts an application that turns focus reports on. It writes a
+  frame without a change ten times each second. The session becomes `idle`. The frames
+  and a focus report of a view are quiet and do not change the list order. Output that
+  changes the screen then shows `running` and puts the session first.
+- A server fixture checks that only input that the server accepts as a report reaches
+  the runtime as a report.
 - A server fixture checks the same rule and a changed size with fixed state.
 - A PTY fixture with three shells checks that a view that did not stop a terminal gets
   `stopped` with code 129, and `exited` with code 3. It also checks that each `exit`
@@ -5525,8 +5571,9 @@ repository, and a folder outside Git, each with a shell session.
   removed session commands, and opener failures.
 
 Activity fixtures check stable ordering across same-size reattachment, real PTY resize
-notifications, and promotion by detached output. History tests exclude drafts and
-display events from recency and its timestamp tie-break. They also check creation order
+notifications, and promotion by detached output. The redraw after a real size change
+does not promote the session. History tests exclude drafts, display events, and quiet
+events from recency and its timestamp tie-break. They also check creation order
 for equal timestamps. Server tests cover start/stop/restart, instance isolation, stale
 or tampered metadata, protocol checks, idle peers, and shutdown with stalled views.
 
@@ -5543,15 +5590,16 @@ The final display kept its recorded width. This check did not run a real agent C
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–19 to format 20
+- Frozen schemas from repository history test upgrades from formats 3–20 to format 21
   and verify that reopen preserves the upgraded data. The format 16 fixture has Codex
   and Code Puppy tools, and the upgrade gives them their types. A blocked preparation
   update rolls back migration 17. The format 17 fixture has both values of remote
   access, and the upgrade turns its switch on. A blocked settings update rolls back
   migration 18. No upgrade pins a session. A `pinned_at` column that exists before the
   upgrade rolls back migration 19. Each upgrade adds an empty prompt list, and a blocked
-  settings update rolls back migration 20. Four concurrent opens upgrade a format 19
-  archive once.
+  settings update rolls back migration 20. No upgrade marks an event quiet. A `quiet`
+  column that exists before the upgrade rolls back migration 21. Four concurrent opens
+  upgrade a format 19 or format 20 archive once.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.
   They also cover repeated opens, concurrent upgrades, and unsupported formats.

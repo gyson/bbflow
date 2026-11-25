@@ -24,8 +24,8 @@ export function statusIcon(status: string, runStatus = ''): string {
 }
 
 const meanings: Record<string, string> = {
-  running: 'Running: output in the last 10 seconds',
-  idle: 'Idle: live, with no output in the last 10 seconds',
+  running: 'Running: a screen change in the last 10 seconds',
+  idle: 'Idle: live, with no screen change in the last 10 seconds',
   draft: 'Draft: not started',
 };
 

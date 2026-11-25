@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -126,6 +127,43 @@ func TestOnlyChangedResizeStartsEchoWindow(t *testing.T) {
 			t.Fatalf("output after %s has status %s, expected %s", test.name, got, test.want)
 		}
 	}
+}
+
+// Agent CLIs write output that changes nothing on the screen while they wait. Such output
+// keeps the session idle. The archive marks it quiet, so it does not move the session in
+// the session list.
+func TestOutputThatChangesNothingIsQuiet(t *testing.T) {
+	var quiet []int64
+	r := &runningSession{id: "fixture", terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
+		quiet: func(seq int64) error { quiet = append(quiet, seq); return nil }}
+	idle := time.Now().Add(-time.Minute)
+	r.activity = activity{output: idle, view: idle}
+	publish := func(reason string, event history.Event, status string, marked ...int64) {
+		t.Helper()
+		if _, err := r.publish(event); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.status(time.Now()); got != status || fmt.Sprint(quiet) != fmt.Sprint(marked) {
+			t.Fatalf("%s: status %s and quiet events %v, expected %s and %v", reason, got, quiet, status, marked)
+		}
+	}
+	output := func(seq int64, data string) history.Event {
+		return history.Event{Seq: seq, Kind: "output", Data: []byte(data)}
+	}
+	publish("a prompt", output(1, "prompt> "), "running")
+	r.activity.output = idle
+	// Codex 0.172.0 writes this frame about every 15 seconds while it waits for input.
+	publish("a frame that puts the cursor back", output(2, "\x1b[?2026h\x1b[39m\x1b[49m\x1b[0m\x1b[1;9H\x1b[?25h\x1b[?2026l"), "idle", 2)
+	// Claude Code rings the bell while it waits for input.
+	publish("a bell", output(3, "\x07"), "idle", 2, 3)
+	// The application answers a focus report of a view.
+	r.activity.viewAction(time.Now())
+	publish("the reply to a focus report", output(4, "\x1b(B\x1b[?2004h"), "idle", 2, 3, 4)
+	// The echo of typed input changes the screen, but it is not application activity.
+	publish("the echo of typed input", output(5, "x"), "idle", 2, 3, 4, 5)
+	r.activity.view = idle
+	publish("a notice", output(6, "\r\nnotice"), "running", 2, 3, 4, 5)
+	publish("a size change", history.Event{Seq: 7, Kind: "resize", Data: []byte(`{"cols":40,"rows":10}`)}, "running", 2, 3, 4, 5)
 }
 
 func TestLiveStatusesOmitEndedTerminals(t *testing.T) {

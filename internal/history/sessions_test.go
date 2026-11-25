@@ -37,15 +37,20 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	appendAt := func(id, kind, created string) {
+	record := func(add func(sid, rid, kind string, data []byte, text string) (Event, error), id, kind, created string) int64 {
 		t.Helper()
-		event, err := store.Append(id, "", kind, nil, "")
+		event, err := add(id, "", kind, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err = store.db.Exec("UPDATE events SET created=? WHERE seq=?", created, event.Seq); err != nil {
 			t.Fatal(err)
 		}
+		return event.Seq
+	}
+	appendAt := func(id, kind, created string) int64 {
+		t.Helper()
+		return record(store.Append, id, kind, created)
 	}
 	assertRecent := func(id, updated string) {
 		t.Helper()
@@ -65,6 +70,14 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 		appendAt(older.ID, kind, ignored)
 		assertRecent(newer.ID, activity)
 	}
+	// Quiet events are not activity: a focus report of a view, and output that changed
+	// nothing on the screen.
+	record(store.AppendQuiet, older.ID, "input", ignored)
+	assertRecent(newer.ID, activity)
+	if err = store.MarkQuiet(appendAt(older.ID, "output", ignored)); err != nil {
+		t.Fatal(err)
+	}
+	assertRecent(newer.ID, activity)
 	if err = store.RenameSession(older.ID, "renamed"); err != nil {
 		t.Fatal(err)
 	}

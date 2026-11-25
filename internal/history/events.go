@@ -1,16 +1,33 @@
 package history
 
 func (s *Store) Append(sid, rid, kind string, data []byte, text string) (Event, error) {
+	return s.append(sid, rid, kind, data, text, false)
+}
+
+// AppendQuiet records an event that is not session activity, such as a focus report of a
+// view. The order of the session list skips it.
+func (s *Store) AppendQuiet(sid, rid, kind string, data []byte, text string) (Event, error) {
+	return s.append(sid, rid, kind, data, text, true)
+}
+
+func (s *Store) append(sid, rid, kind string, data []byte, text string, quiet bool) (Event, error) {
 	if data == nil {
 		data = []byte{}
 	}
 	e := Event{SessionID: sid, RunID: rid, Kind: kind, Data: data, Text: text, Created: Now()}
-	result, err := s.db.Exec("INSERT INTO events(session_id,run_id,kind,data,text,created) VALUES(?,?,?,?,?,?)", sid, rid, kind, data, text, e.Created)
+	result, err := s.db.Exec("INSERT INTO events(session_id,run_id,kind,data,text,created,quiet) VALUES(?,?,?,?,?,?,?)", sid, rid, kind, data, text, e.Created, quiet)
 	if err != nil {
 		return e, err
 	}
 	e.Seq, err = result.LastInsertId()
 	return e, err
+}
+
+// MarkQuiet records that a recorded event is not session activity. The server decides
+// this for output after it records the output, see AppendQuiet.
+func (s *Store) MarkQuiet(seq int64) error {
+	_, err := s.db.Exec("UPDATE events SET quiet=1 WHERE seq=?", seq)
+	return err
 }
 
 // LastRunEventData returns the data of the latest event of one kind in one run.
