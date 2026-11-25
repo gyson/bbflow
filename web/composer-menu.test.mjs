@@ -116,6 +116,56 @@ test('a failed first read tells that the prompts are not available, and a later 
   assert.deepEqual(items(), []);
 });
 
+test('an open menu follows the lock of the draft, also with an empty list', async t => {
+  const { nodes, menu, host, toggle } = await fixture(t, [[review, summarize], []]);
+  toggle();
+  await settle();
+  const prompts = nodes['composer-prompts'].children;
+  prompts[1].focus();
+  // Another view sends the draft. The editor reports its controls, and the items go off.
+  host.blocked = 'A send may have reached the terminal. Check the terminal and unlock the draft first.';
+  menu.update();
+  assert.ok(prompts.every(item => item.disabled));
+  assert.equal(nodes['composer-prompts-note'].textContent, host.blocked);
+  assert.ok(!nodes['composer-prompts-note'].hidden);
+  assert.equal(document.activeElement, nodes['composer-prompts-manage'], 'the focus stays in the menu');
+  // The user unlocks the draft. The items come back on, and the note goes.
+  host.blocked = undefined;
+  menu.update();
+  assert.ok(prompts.every(item => !item.disabled));
+  assert.ok(nodes['composer-prompts-note'].hidden);
+  // Without prompts, the note tells why Attach files is off, then that no prompt is saved.
+  toggle();
+  toggle();
+  await settle();
+  host.blocked = 'Wait for the current action to finish.';
+  menu.update();
+  assert.equal(nodes['composer-prompts-note'].textContent, 'Wait for the current action to finish.');
+  host.blocked = undefined;
+  menu.update();
+  assert.equal(nodes['composer-prompts-note'].textContent, 'No saved prompts yet. Add one with Manage prompts.');
+});
+
+test('a read keeps the focus on the same prompt after another view changed the order', async t => {
+  const { nodes, toggle } = await fixture(t, [[review, summarize], [summarize, review], [summarize]]);
+  toggle();
+  await settle();
+  toggle();
+  // The menu opens with the last read. The user moves to Review PR before the reply.
+  toggle();
+  nodes['composer-prompts'].children[0].focus();
+  assert.equal(document.activeElement.dataset.promptId, 'p1');
+  await settle();
+  assert.deepEqual(nodes['composer-prompts'].children.map(item => item.dataset.promptId), ['p2', 'p1']);
+  assert.equal(document.activeElement.dataset.promptId, 'p1', 'Enter still inserts Review PR');
+  toggle();
+  // Another view removed the focused prompt. Manage prompts gets the focus.
+  toggle();
+  nodes['composer-prompts'].children[1].focus();
+  await settle();
+  assert.equal(document.activeElement, nodes['composer-prompts-manage']);
+});
+
 test('a menu item shows the text of a prompt on one line, cut at the limit', () => {
   assert.equal(summary('  one\n\n\ttwo  ', 20), 'one two');
   assert.equal(summary('abcdefghij', 10), 'abcdefghij');

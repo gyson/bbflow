@@ -13,7 +13,7 @@ async function fixture(t, writeInput) {
     hidden = false; disabled = false; textContent = ''; value = '';
     classList = { toggle() {} };
     selectionStart = 0; selectionEnd = 0;
-    focus() {}
+    focus() { document.activeElement = this; }
     setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
     // The text goes in place of start to end, and the cursor goes after it.
     setRangeText(text, start, end) {
@@ -213,6 +213,21 @@ test('the browser command inserts the text when it can, so that the edit keeps i
   assert.deepEqual(commands, ['insertText']);
   await composer.flush();
   assert.equal(saved.at(-1).text, 'Handoff:\nContinue the work.');
+});
+
+test('the browser command runs only when the editor has the focus', async t => {
+  const { composer, nodes, saved } = await fixture(t, () => Promise.resolve());
+  const commands = [];
+  document.execCommand = command => { commands.push(command); return true; };
+  // A modal dialog keeps the focus, so the focus of the editor does not move.
+  const dialog = { id: 'dialog' };
+  nodes['composer-text'].focus = () => { document.activeElement = dialog; };
+  type(nodes, 'before AFTER', 7, 12);
+  assert.equal(composer.insert('handoff'), undefined);
+  assert.deepEqual(commands, [], 'the command would write to the dialog');
+  assert.equal(nodes['composer-text'].value, 'before handoff');
+  await composer.flush();
+  assert.equal(saved.at(-1).text, 'before handoff');
 });
 
 test('no prompt goes in while a send may have reached the terminal', async t => {

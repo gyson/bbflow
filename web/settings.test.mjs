@@ -599,10 +599,15 @@ test('a prompt edit applies only its changed fields to the latest prompt', () =>
   const latest = { ...prompted, prompts: [{ ...review, name: 'Review' }, checks] };
   const edited = promptEdit({ ...review, text: 'Review pull request #' }, review)(latest);
   assert.deepEqual(edited.prompts, [{ id: 'p1', name: 'Review', text: 'Review pull request #' }, checks]);
-  // A new prompt goes at the end. A second save of the same new prompt adds nothing.
+  // A new prompt goes at the end. A retry of the same add after a lost reply changes
+  // nothing, so the save ends at once.
   const added = promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize.' })(prompted);
   assert.deepEqual(added.prompts.map(prompt => prompt.id), ['p1', 'p2', 'p3']);
-  assert.equal(promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize.' })(added), added);
+  assert.ok(sameSettings(promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize.' })(added), added));
+  // A retry with a changed entry saves the change, in the place of the earlier attempt.
+  const retried = promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize the branch.' })(added);
+  assert.deepEqual(retried.prompts, [review, checks, { id: 'p3', name: 'Summary', text: 'Summarize the branch.' }]);
+  assert.ok(!sameSettings(retried, added));
   // A name that another view saved first stops the save. The case does not count.
   assert.throws(() => promptEdit({ id: 'p3', name: 'run CHECKS', text: 'x' })(prompted), { message: duplicatePromptError });
   assert.throws(() => promptEdit({ ...checks, name: 'Review PR' }, checks)(prompted), { message: duplicatePromptError });
@@ -630,6 +635,14 @@ test('the prompt editor names the field of the first problem', () => {
   assert.match(problem('Summary', 'é'.repeat(8 * 1024 + 1)).message, /16 KiB/);
   assert.equal(problem('Summary', 'é'.repeat(8 * 1024)), null);
   assert.match(problem('Summary', 'one\rtwo').message, /control characters/);
+  assert.deepEqual(problem('Summary', 'pasted \x1b[31m red').field, 'text');
+  // The server rejects each control character in a name, also a tab, and it counts code
+  // points. An emoji is one character, though it has two UTF-16 code units.
+  assert.deepEqual(problem('A\tB', 'text'), { field: 'name', message: 'Remove the control characters from the name, such as a tab.' });
+  assert.equal(problem('Bell\x07', 'text').field, 'name');
+  assert.equal(problem('Next\u0085line', 'text').field, 'name');
+  assert.equal(problem('🚀'.repeat(200), 'text'), null);
+  assert.deepEqual(problem('🚀'.repeat(201), 'text'), { field: 'name', message: 'Use a name of at most 200 characters.' });
   const full = Array.from({ length: maxPrompts }, (_, index) => ({ id: `p${index}`, name: `Prompt ${index}`, text: 'x' }));
   assert.match(problem('Summary', 'text', 'new', full).message, /at most 100 prompts/);
   assert.equal(problem('Prompt 0', 'edit', 'p0', full), null, 'an edit saves when the list is full');
@@ -641,6 +654,8 @@ test('the Settings page has a prompt table, one editor dialog, and asks before a
   assert.match(html, /<button id="prompt-add" type="button" class="tool-add">＋ Add prompt<\/button>/);
   assert.match(html, /<dialog id="prompt-editor-dialog" class="tool-editor-dialog" aria-labelledby="prompt-editor-title">\s*<form id="prompt-editor" class="tool-editor" novalidate>/);
   assert.match(html, /<dialog id="prompt-remove-dialog"/);
+  // The server counts code points, so the name field has no maxlength in code units.
+  assert.match(html, /<input id="prompt-name" placeholder="Review PR" autocomplete="off">/);
   // The ＋ menu of the message editor has the file item, the handoff prompt, the saved
   // prompts, and Manage prompts, in this order.
   const menu = html.slice(html.indexOf('<div id="composer-menu"'), html.indexOf('<input id="composer-picker"'));

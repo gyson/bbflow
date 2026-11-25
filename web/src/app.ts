@@ -201,18 +201,9 @@ const sessionStep = 5;
 const groupLimits = { list: new Map<string, number>(), archived: new Map<string, number>() };
 let moreGroups = new Set<string>();
 const limits = () => archivedList ? groupLimits.archived : groupLimits.list;
-const composer = new Composer({
-  server: () => server,
-  peer: () => connection?.peer ?? null,
-  bracketed: () => !!terminal?.modes.bracketedPasteMode,
-  action,
-  sent: () => messageNav.reload(),
-});
-const sessionSplit = new SessionSplit();
-const sessionMenu = new ActionMenu('session-menu');
-const rowMenus = new RowMenus(() => renderSessions(), $('row-menu-status'));
-const handoffPrompt = new HandoffPrompt({ insert: text => composer.insert(text) });
 // The ＋ menu of the message editor. Manage prompts opens the Prompts card of Settings.
+// The menu comes before the editor, because the editor reports each change of its
+// controls to it.
 const composerMenu = new ComposerMenu({
   server: () => server,
   blocked: () => composer.insertBlocked(),
@@ -223,6 +214,18 @@ const composerMenu = new ComposerMenu({
     settingsView.revealPrompts();
   }, 'Could not open Settings.'),
 });
+const composer = new Composer({
+  server: () => server,
+  peer: () => connection?.peer ?? null,
+  bracketed: () => !!terminal?.modes.bracketedPasteMode,
+  action,
+  sent: () => messageNav.reload(),
+  controls: () => composerMenu.update(),
+});
+const sessionSplit = new SessionSplit();
+const sessionMenu = new ActionMenu('session-menu');
+const rowMenus = new RowMenus(() => renderSessions(), $('row-menu-status'));
+const handoffPrompt = new HandoffPrompt({ blocked: () => composer.insertBlocked(), insert: text => composer.insert(text), problem: text => composer.problem(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
 // final screen. The live process continues while a view shows an earlier terminal.
 const terminalPicker = new TerminalPicker({

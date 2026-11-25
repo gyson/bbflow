@@ -54,6 +54,8 @@ interface Host {
   // The sent messages of the session can have changed: this view sent a message, or
   // another view saved a draft.
   sent(): void;
+  // The controls changed, for example the lock of a pending draft.
+  controls?(): void;
 }
 
 export class Composer {
@@ -133,6 +135,7 @@ export class Composer {
     this.review.hidden = !this.state.draft.pending;
     this.review.disabled = unavailable;
     for (const button of this.files.querySelectorAll('button')) button.disabled = unavailable || this.state.draft.pending;
+    this.host.controls?.();
   }
 
   // insertBlocked tells why text cannot go into the editor now, or undefined.
@@ -150,8 +153,12 @@ export class Composer {
     const start = this.text.selectionStart, end = this.text.selectionEnd;
     this.text.focus();
     this.text.setSelectionRange(start, end);
+    // The command writes to the focused element. A modal dialog can keep the focus, so
+    // the command runs only when the editor has it.
     let inserted = false;
-    try { inserted = document.execCommand('insertText', false, text); } catch { inserted = false; }
+    if (document.activeElement === this.text) {
+      try { inserted = document.execCommand('insertText', false, text); } catch { inserted = false; }
+    }
     // The command gives an input event, which saves the edit. Without the command, the
     // text goes in directly.
     if (!inserted) {

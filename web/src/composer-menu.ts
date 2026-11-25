@@ -41,16 +41,39 @@ export class ComposerMenu {
   // The number of the latest read. Only its reply changes the list.
   private reads = 0;
 
+  private readonly manageButton = element('composer-prompts-manage', HTMLButtonElement);
+
   constructor(private readonly host: Host) {
     this.menu = new ActionMenu('composer-menu', () => {
       this.render();
       void this.refresh();
     });
-    element('composer-prompts-manage', HTMLButtonElement).onclick = () => this.host.manage();
+    this.manageButton.onclick = () => this.host.manage();
   }
 
   // Call this after the host shows or hides an item, such as Handoff prompt.
   controls(): void { this.menu.controls(); }
+
+  // update applies the lock of the draft to the items and the note. The editor calls it
+  // after each change of its controls, so an open menu follows a send from another view.
+  update(): void {
+    const blocked = this.host.blocked();
+    let lost = false;
+    for (const item of this.list.children) {
+      if (!(item instanceof HTMLButtonElement) || item.disabled === !!blocked) continue;
+      // A disabled item loses the focus. Manage prompts then keeps it in the menu.
+      lost ||= item === document.activeElement;
+      item.disabled = !!blocked;
+    }
+    let note = '';
+    if (this.failed && !this.loaded) note = 'Cannot read the saved prompts. Open the menu again to retry.';
+    else if (!this.loaded) note = 'Loading the saved prompts…';
+    else if (blocked) note = blocked;
+    else if (!this.prompts.length) note = 'No saved prompts yet. Add one with Manage prompts.';
+    if (this.note.textContent !== note) this.note.textContent = note;
+    this.note.hidden = !note;
+    if (lost) this.manageButton.focus();
+  }
 
   // refresh reads the saved prompts. A failed read keeps the prompts of the last read.
   async refresh(): Promise<void> {
@@ -72,15 +95,18 @@ export class ComposerMenu {
     }
   }
 
-  // render shows the saved prompts. An item that has the focus keeps it.
+  // render shows the saved prompts. The focused prompt keeps the focus, also when the
+  // list has another order. When it went away, Manage prompts gets the focus, so the
+  // focus stays in the menu.
   private render(): void {
-    const blocked = this.host.blocked();
-    const focused = [...this.list.children].indexOf(document.activeElement as Element);
+    const active = document.activeElement;
+    const focused = active instanceof HTMLElement && this.list.contains(active) ? active.dataset.promptId : undefined;
     const items = this.prompts.map(prompt => {
       const button = document.createElement('button');
       button.type = 'button';
       button.setAttribute('role', 'menuitem');
       button.className = 'prompt-item';
+      button.dataset.promptId = prompt.id;
       button.title = summary(prompt.text, tipLength);
       const name = document.createElement('span');
       name.className = 'prompt-item-name';
@@ -89,7 +115,6 @@ export class ComposerMenu {
       text.className = 'prompt-item-text';
       text.textContent = summary(prompt.text, previewLength);
       button.append(name, text);
-      button.disabled = !!blocked;
       button.onclick = () => {
         const problem = this.host.insert(prompt.text);
         if (problem) this.host.problem(problem);
@@ -97,14 +122,10 @@ export class ComposerMenu {
       return button;
     });
     this.list.replaceChildren(...items);
-    let note = '';
-    if (this.failed && !this.loaded) note = 'Cannot read the saved prompts. Open the menu again to retry.';
-    else if (!this.loaded) note = 'Loading the saved prompts…';
-    else if (!items.length) note = 'No saved prompts yet. Add one with Manage prompts.';
-    else if (blocked) note = blocked;
-    this.note.textContent = note;
-    this.note.hidden = !note;
-    // A focused item that went away gives the focus to Manage prompts, so it stays in the menu.
-    if (focused >= 0) (items[Math.min(focused, items.length - 1)] ?? element('composer-prompts-manage', HTMLButtonElement)).focus();
+    this.update();
+    if (focused !== undefined) {
+      const item = items.find(candidate => candidate.dataset.promptId === focused && !candidate.disabled);
+      (item ?? this.manageButton).focus();
+    }
   }
 }

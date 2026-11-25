@@ -130,7 +130,10 @@ export const duplicatePromptError = 'Another prompt has this name. Enter a diffe
 // promptProblem checks the entry of the prompt editor before a request. It returns the
 // first problem and the field to correct, or null.
 export function promptProblem(prompts: Prompt[], name: string, text: string, id: string): { field: 'name' | 'text'; message: string } | null {
+  // The server counts the characters of a name as code points, as [...name] does.
   if (!name) return { field: 'name', message: 'Enter a name.' };
+  if ([...name].length > 200) return { field: 'name', message: 'Use a name of at most 200 characters.' };
+  if (/\p{Cc}/u.test(name)) return { field: 'name', message: 'Remove the control characters from the name, such as a tab.' };
   if (duplicatePromptName(prompts, name, id)) return { field: 'name', message: duplicatePromptError };
   if (!text.trim()) return { field: 'text', message: 'Enter the text of the prompt.' };
   if (new TextEncoder().encode(text).length > maxPromptBytes) return { field: 'text', message: 'The text of a prompt can have at most 16 KiB.' };
@@ -142,7 +145,8 @@ export function promptProblem(prompts: Prompt[], name: string, text: string, id:
 // promptEdit is the change that adds a prompt, or that saves an edit of original. An
 // edit applies only the fields that the user changed, as for the tools. It checks the
 // name against the settings of each attempt, because another view can save the name
-// first.
+// first. An add can find its own ID when an earlier attempt saved but its reply did not
+// come. The entry of the new attempt then replaces that prompt.
 export function promptEdit(edited: Prompt, original?: Prompt): SettingsChange {
   return settings => {
     const prompts = [...settings.prompts];
@@ -156,7 +160,7 @@ export function promptEdit(edited: Prompt, original?: Prompt): SettingsChange {
         name: edited.name === original.name ? current.name : edited.name,
         text: edited.text === original.text ? current.text : edited.text,
       };
-    } else if (index >= 0) return settings;
+    }
     if (next.name !== original?.name && duplicatePromptName(prompts, next.name, next.id)) throw new Error(duplicatePromptError);
     if (index >= 0) prompts[index] = next;
     else prompts.push(next);

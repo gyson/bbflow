@@ -2023,10 +2023,10 @@ also shows the reason, and **Reconnect** shows next to the hint.
   of the menu, with the rules of the toolbar button.
 
 The menu button does not show when no action applies. A choice, Escape, or a click
-outside the menu closes it. The Up and Down arrow keys move between the items. Tab or
-Shift+Tab closes the menu and moves the focus to the control after or before the menu
-button. After a choice, the focus is on the menu button. A dialog that the choice opens
-returns the focus to that button when it closes.
+outside the menu closes it. The Up and Down arrow keys move between the items that are
+on. Tab or Shift+Tab closes the menu and moves the focus to the control after or before
+the menu button. After a choice, the focus is on the menu button. A dialog that the
+choice opens returns the focus to that button when it closes.
 
 The terminal selector shows the stored status of each run, where `running` means a live
 process.
@@ -2450,9 +2450,13 @@ edge. It has these items, in this order:
   a note tells that the prompts load. A failed read keeps the earlier list.
 - While a send may have reached the terminal, the draft is locked. Then **Attach
   files…** and the saved prompts are off, and a note tells why. **Handoff prompt…** and
-  **Manage prompts…** stay on, so **Copy prompt** still works.
-- Up and Down move between the items. Escape and Tab close the menu, as does a click
-  outside it.
+  **Manage prompts…** stay on, so **Copy prompt** still works. An open menu follows each
+  change of the lock, also a send from another view. When the focused item turns off,
+  **Manage prompts…** gets the focus.
+- When another view changes the order of the prompts, the focused prompt keeps the
+  focus. When another view removes it, **Manage prompts…** gets the focus.
+- Up and Down move between the items that are on. Escape and Tab close the menu, as does
+  a click outside it.
 
 #### Saved prompts
 
@@ -2863,9 +2867,11 @@ without a command. The user can copy the handoff prompt from the dialog.
 The prompt stays available after the new terminal starts. When the handoff folder of the
 selected session has its README, **Handoff prompt…** appears in the
 [＋ menu](#add-to-message-menu) of the message editor. Its dialog shows the folder and the prompt,
-with **Copy prompt** and **Insert in message**. Insert in message puts the prompt at the
-cursor of the editor, or in place of the selected text. The rest of the draft and its
-files stay. It works only while no send is pending, and it sends nothing. The user sends
+with **Copy prompt** and **Insert in message**. Insert in message closes the dialog,
+then puts the prompt at the cursor of the editor, or in place of the selected text. The
+editor then has the focus, and Undo removes the prompt. The rest of the draft and its
+files stay. While a send is pending, the dialog stays open and tells why. Insert in
+message sends nothing. The user sends
 the prompt with Send when the agent is ready.
 
 #### Limits
@@ -4847,7 +4853,18 @@ A check with headless Chrome 158 and the demo instance used the dark appearance 
 - Escape closed the menu and returned the focus to **＋**. No browser errors were
   reported.
 
-This check did not use Safari, a real agent CLI, or a pending send in the browser.
+A second check with headless Chrome 158 and the demo instance used a second connection
+as another view:
+
+- **Insert in message** replaced a selected word with the handoff prompt. The editor
+  had the focus, and Undo restored the word.
+- With the menu open, a pending draft from the other view turned off **Attach files…**
+  and the four saved prompts, and the note told why. The menu stayed open. The release
+  of the lock turned the items on again and hid the note.
+- With the lock, Down moved from **Handoff prompt…** to **Manage prompts…**, and Up
+  moved back.
+
+These checks did not use Safari or a real agent CLI.
 
 ### Checks of sent messages in the terminal
 

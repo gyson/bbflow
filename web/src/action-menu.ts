@@ -40,11 +40,14 @@ export class ActionMenu {
         this.open(false);
         this.button.focus();
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        // A disabled item takes no focus, so the arrow keys move only between the items
+        // that are on.
         event.preventDefault();
-        const items = this.items();
+        const items = this.items().filter(item => !item.disabled);
         const index = items.indexOf(document.activeElement as HTMLButtonElement);
         const step = event.key === 'ArrowDown' ? 1 : -1;
-        items[(index + step + items.length) % items.length]?.focus();
+        const next = index < 0 ? (step > 0 ? 0 : items.length - 1) : (index + step + items.length) % items.length;
+        items[next]?.focus();
       } else if (event.key === 'Tab') {
         // Close the menu and continue from the menu button. The browser then moves the
         // focus to the control after or before that button.
