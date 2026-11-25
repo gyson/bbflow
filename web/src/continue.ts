@@ -31,12 +31,14 @@ export function continueDialogError(error: DialogError, shown: string, problem: 
   return { error, shown: '', blocked: false };
 }
 
-// Prefer the tool that the session started with, if it is still a choice. tools are the
-// tools that are on, in the order of the menu. shell tells that Shell, the empty ID, is
-// on. Without a choice, the first tool is the answer.
-export function defaultContinueTool(tools: readonly { id: string }[], preferred: string | undefined, fallback: string, shell = true): string {
+// Return the first preferred tool that is still a choice. The view prefers the tool of
+// the latest terminal, then the tool that the session started with, then the default
+// tool. An undefined ID is unknown. tools are the tools that are on, in the order of the
+// menu. shell tells that Shell, the empty ID, is on. Without a choice, the first tool is
+// the answer.
+export function defaultContinueTool(tools: readonly { id: string }[], preferred: readonly (string | undefined)[], shell = true): string {
   const choice = (id: string | undefined) => id !== undefined && (id === '' ? shell : tools.some(tool => tool.id === id));
-  if (choice(preferred)) return preferred!;
-  if (choice(fallback)) return fallback;
+  const found = preferred.find(choice);
+  if (found !== undefined) return found;
   return shell ? '' : tools[0]?.id ?? '';
 }

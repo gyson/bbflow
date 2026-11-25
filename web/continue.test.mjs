@@ -81,15 +81,19 @@ test('an open Continue dialog removes only its own reason when the session is av
   assert.deepEqual(continueDialogError(copy, '', '', false), { error: copy, shown: '', blocked: false });
 });
 
-test('the form prefers the original tool, then the default tool, then Shell', () => {
-  assert.equal(defaultContinueTool(tools, 'plain', 'codex'), 'plain');
-  assert.equal(defaultContinueTool(tools, '', 'codex'), '', 'a session that started with Shell');
-  assert.equal(defaultContinueTool(tools, 'removed', 'codex'), 'codex');
-  assert.equal(defaultContinueTool(tools, undefined, 'removed'), '');
+test('the form prefers the latest tool, then the original tool, then the default tool, then Shell', () => {
+  // The preferred tools are the tool of the latest terminal, the tool of the first
+  // terminal, and the default tool.
+  assert.equal(defaultContinueTool(tools, ['plain', 'codex', 'codex']), 'plain', 'the latest terminal switched to another tool');
+  assert.equal(defaultContinueTool(tools, ['', 'codex', 'codex']), '', 'the latest terminal used Shell');
+  assert.equal(defaultContinueTool(tools, [undefined, 'plain', 'codex']), 'plain', 'an older run without a tool ID');
+  assert.equal(defaultContinueTool(tools, ['removed', 'plain', 'codex']), 'plain', 'the latest tool was removed');
+  assert.equal(defaultContinueTool(tools, ['removed', 'removed', 'codex']), 'codex');
+  assert.equal(defaultContinueTool(tools, [undefined, undefined, 'removed']), '');
   // When Shell is off, it is no choice, and the first tool takes its place.
-  assert.equal(defaultContinueTool(tools, '', '', false), tools[0].id);
-  assert.equal(defaultContinueTool(tools, '', 'plain', false), 'plain');
-  assert.equal(defaultContinueTool([], '', '', false), '');
+  assert.equal(defaultContinueTool(tools, ['', '', ''], false), tools[0].id);
+  assert.equal(defaultContinueTool(tools, ['', '', 'plain'], false), 'plain');
+  assert.equal(defaultContinueTool([], ['', '', ''], false), '');
 });
 
 test('a prompt goes into a loaded editor without a pending send, also next to a draft', () => {

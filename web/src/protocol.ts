@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/44';
+export const VERSION = 'bbflow/45';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -73,7 +73,9 @@ export interface Worktree { path: string; repository: string; base: string; comm
 export interface Run { id: string; status: string }
 // One terminal of a session. number counts from 1 in start order. A new terminal has an
 // empty run until its process starts.
-export interface TerminalInfo { number: number; run: string; tool: string; status: string; started: string; ended: string }
+// toolId is the tool ID of Settings, and empty for Shell. An older run can have no
+// recorded ID.
+export interface TerminalInfo { number: number; run: string; tool: string; toolId?: string; status: string; started: string; ended: string }
 // status is the session status that the server derives. run.status is the stored status
 // of the latest run.
 // title is the title that the user set, or empty. autoTitle is derived by the server.
@@ -221,8 +223,9 @@ export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
   | { operation: 'session-resume'; session: string; size: Size; run?: string }
-  // latestRun is the latest run that this view saw. An empty tool selects Shell.
-  | { operation: 'session-continue'; session: string; latestRun: string; tool: string; size: Size }
+  // latestRun is the latest run that this view saw. An empty tool selects Shell. An empty
+  // model or effort selects the default of the CLI.
+  | { operation: 'session-continue'; session: string; latestRun: string; tool: string; model: string; effort: string; size: Size }
   // A side terminal is an unrecorded shell in the session workspace. Open starts a shell
   // when none runs. Resume only joins a live shell.
   | { operation: 'side-terminal-open'; session: string; size: Size }

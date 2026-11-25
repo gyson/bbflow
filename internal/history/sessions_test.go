@@ -422,3 +422,35 @@ func TestTitleToolSettings(t *testing.T) {
 		t.Fatalf("settings after the stale save: %+v, %v", saved, err)
 	}
 }
+
+// A new terminal selects the tool of the latest terminal by its recorded ID. Start
+// events from bbflow 0.0.23 and earlier have no tool ID.
+func TestRunToolIDReadsTheStartEvent(t *testing.T) {
+	preparation := &Preparation{ToolID: "codex", ToolName: "Codex"}
+	text := func(id *string) string {
+		if id == nil {
+			return "unknown"
+		}
+		return "[" + *id + "]"
+	}
+	for _, c := range []struct {
+		start string
+		first bool
+		want  string
+	}{
+		{`{"tool":"Claude Code","toolId":"claude"}`, false, "[claude]"},
+		{`{"tool":"Shell","toolId":""}`, false, "[]"},
+		{`{"tool":"Shell","toolId":""}`, true, "[]"},
+		// An older first run uses its preparation, and an older later run is unknown.
+		{`{"tool":"Codex"}`, true, "[codex]"},
+		{`{"tool":"Codex"}`, false, "unknown"},
+		{``, false, "unknown"},
+	} {
+		if got := text(RunToolID([]byte(c.start), c.first, preparation)); got != c.want {
+			t.Errorf("RunToolID(%s, first %v) = %s; want %s", c.start, c.first, got, c.want)
+		}
+	}
+	if got := text(RunToolID([]byte(`{"tool":"Codex"}`), true, nil)); got != "unknown" {
+		t.Errorf("a first run without a preparation has tool ID %s", got)
+	}
+}
