@@ -12,11 +12,18 @@ export interface RowButton { className: string; text: string }
 
 interface OpenMenu { box: HTMLElement; button: HTMLButtonElement; menu: HTMLElement }
 
+// Show a confirmation as the tooltip of a ⋯ button.
+function mark(button: HTMLButtonElement, text: string): void {
+  button.dataset.tip = text;
+  button.classList.add('tip-open');
+}
+
 const dotsIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.5" cy="10" r="1.4"/><circle cx="10" cy="10" r="1.4"/><circle cx="15.5" cy="10" r="1.4"/></svg>';
 
 export class RowMenus {
   private current: OpenMenu | null = null;
-  private confirmed: HTMLButtonElement | null = null;
+  // The confirmation that shows now, and the focus key of its ⋯ button.
+  private confirmation: { key: string; text: string } | null = null;
   private confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
   // closed runs after a menu closes. The host then applies the list changes that it kept.
@@ -44,6 +51,8 @@ export class RowMenus {
     if (look) button.textContent = look.text;
     else button.innerHTML = dotsIcon;
     button.dataset.focus = focus;
+    // A list refresh replaces the buttons. The new button keeps the confirmation.
+    if (this.confirmation?.key === focus) mark(button, this.confirmation.text);
     const menu = document.createElement('div');
     menu.className = 'row-menu';
     menu.setAttribute('role', 'menu');
@@ -100,23 +109,27 @@ export class RowMenus {
     return { box, button, items };
   }
 
-  // Show a short confirmation of an item, such as a copy, as the tooltip of its ⋯ button.
-  confirm(button: HTMLButtonElement, text: string): void {
+  // Show a short confirmation of an item, such as a copy, as the tooltip of the ⋯ button
+  // with the focus key key. The action can end after a list refresh replaced the button
+  // that opened the menu, so the key selects the button.
+  confirm(key: string, text: string): void {
     this.clear();
-    button.dataset.tip = this.status.textContent = text;
-    button.classList.add('tip-open');
-    this.confirmed = button;
+    this.confirmation = { key, text };
+    this.status.textContent = text;
+    for (const button of document.querySelectorAll<HTMLButtonElement>('.row-menu-box > button')) {
+      if (button.dataset.focus === key) mark(button, text);
+    }
     this.confirmTimer = setTimeout(() => this.clear(), 1800);
   }
 
   private clear(): void {
     clearTimeout(this.confirmTimer);
-    if (this.confirmed) {
-      delete this.confirmed.dataset.tip;
-      this.confirmed.classList.remove('tip-open');
-    }
-    this.confirmed = null;
+    this.confirmation = null;
     this.status.textContent = '';
+    for (const button of document.querySelectorAll<HTMLButtonElement>('.row-menu-box > .tip-open')) {
+      delete button.dataset.tip;
+      button.classList.remove('tip-open');
+    }
   }
 
   close(): void {

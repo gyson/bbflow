@@ -743,7 +743,8 @@ about:
 - After **Copy session ID**, the More actions button shows **Session ID copied** as its
   tooltip for a short time.
 - After **Copy folder path**, the ⋯ button of the project shows **Folder path copied**
-  as its tooltip for a short time. See [the project menu](#project-menu).
+  as its tooltip for a short time. A list refresh keeps it on the new button. See
+  [the project menu](#project-menu).
 - The ⋯ button of the file header shows the result of a file menu item as its tooltip.
   See [the file menu](#file-menu).
 
@@ -1212,8 +1213,10 @@ these items:
 - The menu has the keys and the focus rules of a row menu. See
   [archive action](#archive-action). A list refresh does not close it.
 - The groups of Pinned, Standalone, and Archived have no project menu.
-- After a rename, the focus is on the ⋯ button of the project. The list then shows the
-  project at its place in name order.
+- After a rename, the focus is on the ⋯ button of the project. The list shows the
+  project at its place in name order and scrolls to show the button.
+- A removal keeps the current view. Settings, the selected session, and the sidebar
+  drawer stay open. A selected session of the project becomes standalone.
 - After a removal with the keyboard, the focus moves to the search box. The sessions of
   the project then show under Standalone. A pinned family stays in Pinned.
 - A failed copy shows an error toast. A failed rename or removal shows its error in the
@@ -4391,6 +4394,17 @@ at window widths of 1200, 1600, and 1920 pixels.
   **Search this project** with the scope **This project**. It removed a project with the
   keyboard while one of its sessions was open. The sessions then showed under
   Standalone, the pin stayed, and no error toast showed.
+- A second check stopped a session in another view while a project menu was open. After
+  **Copy folder path**, the list refresh replaced the ⋯ button, and the new button
+  showed the confirmation. A rename moved the first of eight projects to the end, and
+  the list scrolled to its focused ⋯ button.
+- The second check also removed a project while Settings was open. Settings stayed
+  open, and after **Done** the session was standalone. In a 390-pixel window, a keyboard
+  removal of the project of the selected draft kept the drawer open and moved the focus
+  to the search box.
+- Web fixtures check the order of the project menu items, the line above **Remove
+  project**, and a copy confirmation that stays on the new ⋯ button after a list
+  refresh.
 
 No real agent CLI was used for these project checks.
 

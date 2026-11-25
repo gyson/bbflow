@@ -771,7 +771,7 @@ function renderSessions() {
       // The ⋯ button opens the actions of the project, so one click never removes it.
       const menu = rowMenus.create(name, `project-menu:${id}`, [
         { label: 'Edit', run: () => showProject(project) },
-        { label: 'Copy folder path', run: () => void copyFolder(project, menu.button) },
+        { label: 'Copy folder path', run: () => void copyFolder(project) },
         { label: 'Search this project', run: () => historySearch.open({ project: project.id, projectName: name }, 'project') },
         { label: 'Remove project', danger: true, divider: true, run: keyboard => showRemoveProject(project, keyboard) },
       ], { className: 'project-action', text: '⋯' });
@@ -1425,10 +1425,10 @@ function showProject(project: Project | null = null) {
 }
 
 // Copy the folder of a project. The ⋯ button of the project then shows a confirmation.
-async function copyFolder(project: Project, button: HTMLButtonElement): Promise<void> {
+async function copyFolder(project: Project): Promise<void> {
   try {
     await navigator.clipboard.writeText(project.workspace);
-    rowMenus.confirm(button, 'Folder path copied');
+    rowMenus.confirm(`project-menu:${project.id}`, 'Folder path copied');
   } catch (error) { toasts.show(`Could not copy the folder path of ${project.name}.`, errorMessage(error)); }
 }
 
@@ -1444,10 +1444,11 @@ function showRemoveProject(project: Project, keyboard: boolean): void {
 
 // A busy action disables the sidebar buttons, so a closed dialog cannot return the focus
 // to the button that opened it. Give the focus to the sidebar button with this key, or to
-// the search box when that button is gone.
+// the search box when that button is gone. A rename can move the button out of the
+// visible part of the list, so the list scrolls to it.
 function refocusSidebar(key: string): void {
   if (document.activeElement && document.activeElement !== document.body) return;
-  focusSidebar(key);
+  focusSidebar(key, true);
   if (!document.activeElement || document.activeElement === document.body) $('filter').focus();
 }
 
@@ -1645,8 +1646,9 @@ async function initialize() {
     void action(async () => {
       if (!server) return;
       try {
+        // A save of the launch choices that ends after the removal would bring back the
+        // old project of the selected draft.
         await preparation.flush();
-        await composer.flush();
         await call(server, { operation: 'project-remove', project: project.id });
       } catch (error) {
         $('remove-project-error').textContent = errorMessage(error);
@@ -1654,8 +1656,10 @@ async function initialize() {
         return;
       }
       $('remove-project-dialog').close();
+      // The selected session leaves the project but keeps its view. Thus Settings and the
+      // sidebar drawer stay open.
+      if (selected?.projectId === project.id) selected.projectId = '';
       await refreshSessions();
-      if (selected?.projectId === project.id) await openSession(selected);
     }, `Could not remove ${project.name}.`).then(() => {
       // The ⋯ button of the project is gone. A keyboard user continues from the search box.
       if (keyboard && !$('remove-project-dialog').open) refocusSidebar(`project-menu:${project.id}`);
