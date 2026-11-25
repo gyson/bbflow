@@ -101,6 +101,48 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 	assertRecent(newer.ID, activity)
 }
 
+// The server records output before it sets the quiet flag of the output. Until then, the
+// output of a live terminal does not count. Other events count, because their flags are
+// final when they are recorded.
+func TestOrderSkipsLiveOutputBeforeItsQuietFlag(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	live, err := store.CreateSession("live", "/tmp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := store.CreateSession("other", "/tmp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := func(id, kind string) int64 {
+		t.Helper()
+		event, err := store.Append(id, "run", kind, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return event.Seq
+	}
+	first := func(reason string, classified map[string]int64, want string) {
+		t.Helper()
+		listed, err := store.ListSessions(SessionFilter{Limit: 2, Classified: classified})
+		if err != nil || len(listed.Sessions) != 2 || listed.Sessions[0].ID != want {
+			t.Fatalf("%s: list is %+v, %v, expected %s first", reason, listed, err, want)
+		}
+	}
+	start := record(live.ID, "start")
+	record(other.ID, "output")
+	output := record(live.ID, "output")
+	first("without a live terminal", nil, live.ID)
+	first("output before its quiet flag", map[string]int64{live.ID: start}, other.ID)
+	first("output with its quiet flag", map[string]int64{live.ID: output}, live.ID)
+	record(live.ID, "input")
+	first("input after the classified event", map[string]int64{live.ID: start}, live.ID)
+}
+
 // Sessions with equal times keep their creation order, newest first. Session IDs are
 // random, so they cannot give a stable order.
 func TestEqualSessionTimesUseCreationOrder(t *testing.T) {

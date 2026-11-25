@@ -3906,14 +3906,19 @@ activity:
   the input.
 - Output that is not [application output](#activity-detection): output that changes
   nothing on the screen, and output in the 300 milliseconds after a view action. The
-  server sets the flag just after it records the output.
-- No other event. Events from before format 21 are not quiet.
+  server records output before it compares the screen, and it sets the flag just after.
+- No other event. Only `input` and `output` events can be quiet. Events from before
+  format 21 are not quiet.
+
+The session list does not count the output of a live terminal before the server sets
+its flag. For each live terminal, the server gives the list query the sequence of the
+latest event that it classified. Later output of that session does not count yet. A
+`bbflow query` read in that time can see the output with `quiet` 0.
 
 Viewing, resizing, focus changes, renaming, saving drafts, attachments, terminal replies,
 and saved screens do not change recency. Fresh application output still counts,
-including output while detached. The redraw after a size change does not count. A list
-read just after the server records an output, and before it sets the flag, counts that
-output. The next read does not. Summaries contain ID, title, project ID
+including output while detached. The redraw after a size change does not count.
+Summaries contain ID, title, project ID
 (empty for standalone), parent ID (empty for a top-level session), workspace, update
 time, status, archive flag, view count, and a context flag.
 
@@ -3986,8 +3991,8 @@ fork ancestry, or inherited history yet.
 ### Database upgrades
 
 The server upgrades the database by itself at start, in one transaction. A failed
-upgrade changes nothing and stops the start. The current format is 19. Formats from 3,
-shipped in v0.0.1, are supported.
+upgrade changes nothing and stops the start. The current format is 21. Formats 3
+through 21 are supported. Format 3 shipped in v0.0.1.
 
 #### Upgrade transaction
 
@@ -4077,8 +4082,9 @@ WAL is enabled after the schema transaction commits.
   JSON through migration 20. The settings revision and the other values stay.
 - Format 20 gains the `events.quiet` column through migration 21. It marks the
   [quiet events](#session-list-order) that the session list order skips. Existing events
-  are not quiet. The column has no `CHECK` constraint, so the upgrade does not read the
-  existing events.
+  are not quiet. The column has no `CHECK` constraint, so the addition of the column does
+  not read the existing events. The foreign-key check of the upgrade transaction still
+  reads all events, as in each upgrade.
 - Format 21 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
@@ -4676,16 +4682,22 @@ A later browser check with the demo instance verified the saves in Settings:
 - A second PTY fixture sends an unchanged size and then triggers output. It checks that
   the application got no size change and that the session shows `running`.
 - Screen fixtures check which output changes what a view shows. New characters, a
-  style, a color, an underline style, new history rows, a notice, the removal of the
-  notice, a switch of the screen buffer, and a reset are changes. A frame that only
-  puts the cursor back, a cursor move, a title, a bell, input modes, a query, and text
-  that the same output erases are not changes.
+  style, a color, an underline style, new history rows, an erase of the history, a
+  notice, the removal of the notice, a switch of the screen buffer, and a reset are
+  changes. A frame that only puts the cursor back, a cursor move, a title, a bell, input
+  modes, a query, text that the same output erases, a color in another SGR form,
+  protected cells, and an erase of an empty history are not changes. The comparison of
+  an unchanged screen makes no allocation.
 - A server fixture checks that output without a change keeps `idle` and is quiet. It
   also checks that the reply to a focus report and the echo of typed input are quiet.
+- A server fixture holds the quiet flag of a frame before the server sets it. A list
+  read in that time does not count the frame. A history fixture checks that output after
+  the classified event of a live terminal does not count, and that input does.
 - A third PTY fixture starts an application that turns focus reports on. It writes a
   frame without a change ten times each second. The session becomes `idle`. The frames
-  and a focus report of a view are quiet and do not change the list order. Output that
-  changes the screen then shows `running` and puts the session first.
+  and a focus report of a view are quiet and do not change the list order. List reads
+  without a pause for 3 seconds never put the session first. Output that changes the
+  screen then shows `running` and puts the session first.
 - A server fixture checks that only input that the server accepts as a report reaches
   the runtime as a report.
 - A server fixture checks the same rule and a changed size with fixed state.

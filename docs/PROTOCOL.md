@@ -351,14 +351,21 @@ The query has these rules:
 ### Session order
 
 `session-list` orders by the latest `start`, `run`, `input`, `output`, or interruption
-`notice` event, newest first, falling back to session creation time. The Pinned group
-orders by the time of the pin, newest first, and activity does not change that order. `updated` carries
-that timestamp. Timestamps compare in whole milliseconds. Event sequence determines the
-order when timestamps are equal. Creation order, newest first, breaks remaining ties.
+`notice` event that is not quiet, newest first, falling back to session creation time.
+The Pinned group orders by the time of the pin, newest first, and activity does not
+change that order. `updated` carries that timestamp. Timestamps compare in whole
+milliseconds. Event sequence determines the order when timestamps are equal. Creation
+order, newest first, breaks remaining ties.
 
-View changes, drafts, attachments, terminal replies, and saved screens do not affect
-order. Reattaching at the same dimensions does not resize the PTY or request an
-application redraw.
+A quiet event has `quiet` 1 in the `events` table. It is a focus report or a mouse
+report of a view, or output that is not application output: output that changes
+nothing on the screen, and output in the 300 milliseconds after an `input`, a `resize`,
+or a `signal`. Output of a live terminal counts only after the server sets its flag.
+See [session list order](SPEC.md#session-list-order).
+
+View changes, focus changes, the redraw after a size change, drafts, attachments,
+terminal replies, and saved screens do not affect order. Reattaching at the same
+dimensions does not resize the PTY or request an application redraw.
 
 ### Session archive
 

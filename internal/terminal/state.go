@@ -61,15 +61,18 @@ type State struct {
 }
 
 // shown is a copy of what a view shows after the latest event that ApplyChange compared:
-// the cells of the screen and the count of rows that went into history. Apply makes the
-// copy out of date, so ApplyChange copies the screen again before its event.
+// the cells of the screen and the range of rows in history. Apply makes the copy out of
+// date, so ApplyChange copies the screen again before its event.
 type shown struct {
-	current  bool
-	buffer   *xterm.Buffer
-	epoch    int64
-	scrolled int64
-	rows     []*xterm.BufferLine
-	a, b     *xterm.CellData // Reused for each comparison.
+	current    bool
+	buffer     *xterm.Buffer
+	epoch      int64
+	first, end int64 // The rows in the history of the normal buffer, see historyRows.
+	rows       []*xterm.BufferLine
+	a, b       *xterm.CellData // Reused for each comparison.
+	// empty stays empty. LoadCell keeps it for a cell without extended attributes, so a
+	// comparison does not allocate.
+	empty *xterm.ExtendedAttrs
 }
 
 // Cache keeps rendered history rows for one width. Row numbers count from the start of
@@ -209,18 +212,23 @@ func (s *State) ApplyChange(event history.Event) (responses []byte, changed bool
 	return responses, s.compareScreen(), err
 }
 
-// scrolled counts the rows that went into the history of the normal buffer, also the
-// rows that the history limit dropped later.
-func (s *State) scrolled() int64 { return s.trim + int64(s.term.NormalBuffer().YBase) }
+// historyRows returns the row numbers of the history of the normal buffer: its first row
+// and the row after its last row. Row numbers count from the start of the buffer, as in
+// Cache. New rows move the end. A history limit and an erase of the history move the
+// first row.
+func (s *State) historyRows() (first, end int64) {
+	return s.trim, s.trim + int64(s.term.NormalBuffer().YBase)
+}
 
 // copyScreen copies the rows of the screen into shown. It reuses the copies of earlier
 // rows.
 func (s *State) copyScreen() {
 	c, t := &s.shown, s.term
 	active := t.Buffer()
-	c.current, c.buffer, c.epoch, c.scrolled = true, active, s.epoch, s.scrolled()
+	c.current, c.buffer, c.epoch = true, active, s.epoch
+	c.first, c.end = s.historyRows()
 	if c.a == nil {
-		c.a, c.b = xterm.NewCellData(), xterm.NewCellData()
+		c.a, c.b, c.empty = xterm.NewCellData(), xterm.NewCellData(), &xterm.ExtendedAttrs{}
 	}
 	c.rows = slices.Grow(c.rows[:0], t.Rows())[:t.Rows()]
 	for y := range c.rows {
@@ -232,17 +240,24 @@ func (s *State) copyScreen() {
 func (s *State) compareScreen() bool {
 	c, t := &s.shown, s.term
 	active := t.Buffer()
-	if !c.current || c.buffer != active || c.epoch != s.epoch || c.scrolled != s.scrolled() || len(c.rows) != t.Rows() {
-		// A reset, another buffer, a reflow, or new history rows.
+	first, end := s.historyRows()
+	if !c.current || c.buffer != active || c.epoch != s.epoch || c.first != first || c.end != end || len(c.rows) != t.Rows() {
+		// A reset, another buffer, a reflow, or other history rows.
 		s.copyScreen()
 		return true
 	}
 	changed := false
 	for y, saved := range c.rows {
-		if line := active.Lines.Get(active.YBase + y); !sameCells(line, saved, c.a, c.b) {
-			c.rows[y] = copyRow(saved, line)
+		line := active.Lines.Get(active.YBase + y)
+		if c.sameCells(line, saved) {
+			continue
+		}
+		// Other cells can give the same row, for example a color in another SGR form, or
+		// a protected cell. renderLine draws what a view shows.
+		if renderLine(line, t.Cols()) != renderLine(saved, t.Cols()) {
 			changed = true
 		}
+		c.rows[y] = copyRow(saved, line)
 	}
 	return changed
 }
@@ -259,16 +274,18 @@ func copyRow(saved, line *xterm.BufferLine) *xterm.BufferLine {
 	return saved
 }
 
-// sameCells tells whether two rows have the same cells. It compares what renderLine
-// draws: the characters, the colors, and the styles.
-func sameCells(line, saved *xterm.BufferLine, a, b *xterm.CellData) bool {
+// sameCells tells whether two rows have the same cells: the same characters, colors,
+// styles, and other attributes. It allocates nothing.
+func (c *shown) sameCells(line, saved *xterm.BufferLine) bool {
 	if line == nil || saved == nil {
 		return line == saved
 	}
 	if line.Len != saved.Len {
 		return false
 	}
+	a, b := c.a, c.b
 	for x := range line.Len {
+		a.Extended, b.Extended = c.empty, c.empty
 		line.LoadCell(x, a)
 		saved.LoadCell(x, b)
 		if a.Content != b.Content || a.Fg != b.Fg || a.Bg != b.Bg || a.CombinedData != b.CombinedData {

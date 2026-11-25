@@ -40,7 +40,10 @@ type runningSession struct {
 	received func(id string, data []byte)
 	// quiet records that a recorded output is not session activity. It can be nil.
 	quiet func(seq int64) error
-	shell string // Identifies the shell of a side terminal.
+	// classified is the sequence of the latest event that publish completed. The quiet
+	// flags of the events up to it are final. See history.SessionFilter.Classified.
+	classified int64
+	shell      string // Identifies the shell of a side terminal.
 }
 
 type attachment struct {
@@ -209,6 +212,11 @@ func (r *runningSession) publish(event history.Event) ([]byte, error) {
 	responses, quiet, err := r.apply(event)
 	if err == nil && quiet && r.quiet != nil {
 		err = r.quiet(event.Seq)
+	}
+	if err == nil {
+		r.mu.Lock()
+		r.classified = event.Seq
+		r.mu.Unlock()
 	}
 	return responses, err
 }
@@ -564,6 +572,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 }
 
 func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPage, error) {
+	filter.Classified = s.classified()
 	page, err := s.store.ListSessions(filter)
 	if err != nil {
 		return protocol.SessionPage{}, err
@@ -583,6 +592,26 @@ func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPag
 		result.Sessions = append(result.Sessions, info)
 	}
 	return result, nil
+}
+
+// classified returns the classified sequence of each live terminal that published an
+// event. Before its first event, a terminal has no output, so it needs no entry.
+func (s *Server) classified() map[string]int64 {
+	s.mu.Lock()
+	sessions := make([]*runningSession, 0, len(s.sessions))
+	for _, r := range s.sessions {
+		sessions = append(sessions, r)
+	}
+	s.mu.Unlock()
+	classified := make(map[string]int64, len(sessions))
+	for _, r := range sessions {
+		r.mu.Lock()
+		if r.classified > 0 {
+			classified[r.id] = r.classified
+		}
+		r.mu.Unlock()
+	}
+	return classified
 }
 
 // archiveSession archives or restores a session. Archive of a top-level session also

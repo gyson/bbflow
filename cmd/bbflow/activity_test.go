@@ -189,8 +189,17 @@ func TestOutputThatChangesNothingKeepsTheSessionIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return quiet("input", 1) == 1 })
+	// The server records each frame before it sets the quiet flag. A list read at any
+	// time must not count the frame.
 	frames := quiet("output", 1)
-	waitFor(t, func() bool { return quiet("output", 1) >= frames+5 })
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+		if infos := sessionInfos(t, 10); infos[0].ID == id {
+			t.Fatalf("a frame that changes nothing promoted the session: %+v", infos)
+		}
+	}
+	if got := quiet("output", 1); got < frames+20 {
+		t.Fatalf("the fixture wrote %d quiet frames in 3 seconds", got-frames)
+	}
 	after := sessionInfos(t, 10)
 	for i := range before {
 		if after[i].ID != before[i].ID || after[i].Updated != before[i].Updated {

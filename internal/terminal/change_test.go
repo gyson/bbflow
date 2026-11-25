@@ -39,6 +39,10 @@ func TestApplyChangeComparesWhatAViewShows(t *testing.T) {
 	step("an underline", "\x1b[1;1H\x1b[31;4mp\x1b[0m", true)
 	step("an underline style", "\x1b[1;1H\x1b[31;4:3mp\x1b[0m", true)
 	step("the same underline style", "\x1b[1;1H\x1b[31;4:3mp\x1b[0m", false)
+	// Other cell attributes can draw the same row.
+	step("red text", "\x1b[5;1H\x1b[31mred\x1b[0m", true)
+	step("the same red in another SGR form", "\x1b[5;1H\x1b[38;5;1mred\x1b[0m", false)
+	step("the same red in protected cells", "\x1b[5;1H\x1b[31m\x1b[1\"qred\x1b[0\"q\x1b[0m", false)
 	step("text that the output also erases", "\x1b[3;1Hnotice\x1b[3;1H\x1b[K", false)
 	// Claude Code shows a notice in its footer, and it erases the notice later.
 	step("a notice", "\x1b[3;1Hnotice", true)
@@ -62,4 +66,35 @@ func TestApplyChangeComparesWhatAViewShows(t *testing.T) {
 	// A reset after an emulator panic gives a blank screen.
 	step("a reset", "\x1b[z", true)
 	step("a frame after a reset", "\x1b[1;1H", false)
+}
+
+// An erase of the history changes the history rows of a view, but not the screen rows.
+func TestApplyChangeFindsAnEraseOfTheHistory(t *testing.T) {
+	state := New(protocol.Size{Cols: 10, Rows: 2})
+	step := func(reason, output string, want bool, history int) {
+		t.Helper()
+		_, changed, err := state.ApplyChange(historyEvent(output))
+		if got := len(state.View().History); err != nil || changed != want || got != history {
+			t.Fatalf("%s: changed is %v, %v, with %d history rows, expected %v with %d", reason, changed, err, got, want, history)
+		}
+	}
+	step("four rows", "1\r\n2\r\n3\r\n4", true, 2)
+	step("an erase of the history", "\x1b[3J", true, 0)
+	step("an erase of an empty history", "\x1b[3J", false, 0)
+}
+
+// The comparison of an unchanged screen allocates nothing, also for a row with cells
+// that have extended attributes before plain cells.
+func TestCompareScreenAllocatesNothing(t *testing.T) {
+	state := New(protocol.Size{Cols: 40, Rows: 6})
+	if _, _, err := state.ApplyChange(historyEvent("\x1b[4:3mcurly\x1b[0m plain\r\n\x1b[58;5;2;4mcolored\x1b[0m plain")); err != nil {
+		t.Fatal(err)
+	}
+	if allocs := testing.AllocsPerRun(100, func() { state.compareScreen() }); allocs != 0 {
+		t.Fatalf("the comparison of an unchanged screen made %v allocations", allocs)
+	}
+}
+
+func historyEvent(output string) history.Event {
+	return history.Event{Kind: "output", Data: []byte(output)}
 }

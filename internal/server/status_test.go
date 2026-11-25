@@ -166,6 +166,68 @@ func TestOutputThatChangesNothingIsQuiet(t *testing.T) {
 	publish("a size change", history.Event{Seq: 7, Kind: "resize", Data: []byte(`{"cols":40,"rows":10}`)}, "running", 2, 3, 4, 5)
 }
 
+// The runtime records output before the server compares the screen and sets the quiet
+// flag. The session list must not count the output in that time.
+func TestSessionListWaitsForTheQuietFlag(t *testing.T) {
+	s, session := handoffFixture(t)
+	other, err := s.store.CreateSession("other", session.Workspace, session.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marking, release := make(chan struct{}), make(chan struct{})
+	live := &runningSession{id: session.ID, terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
+		quiet: func(seq int64) error { close(marking); <-release; return s.store.MarkQuiet(seq) }}
+	s.sessions[session.ID] = live
+	record := func(id, kind, data string) history.Event {
+		t.Helper()
+		event, err := s.store.Append(id, "run", kind, []byte(data), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return event
+	}
+	publish := func(event history.Event) {
+		t.Helper()
+		if _, err := live.publish(event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := func(reason, want string) {
+		t.Helper()
+		page, err := s.listSessions(history.SessionFilter{Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, info := range page.Sessions {
+			if info.ID == session.ID || info.ID == other.ID {
+				if info.ID != want {
+					t.Fatalf("%s: %s comes first, expected %s", reason, info.ID, want)
+				}
+				return
+			}
+		}
+		t.Fatalf("%s: the list has neither session: %+v", reason, page)
+	}
+	publish(record(session.ID, "start", `{"cols":80,"rows":24}`))
+	publish(record(session.ID, "output", "prompt> "))
+	record(other.ID, "output", "newer")
+	first("the newer output", other.ID)
+	// A frame that changes nothing is recorded with quiet=0. The server sets the flag
+	// after it compares the screen.
+	frame := record(session.ID, "output", "\x1b[?25h")
+	done := make(chan error)
+	go func() { _, err := live.publish(frame); done <- err }()
+	<-marking
+	first("a frame before its quiet flag", other.ID)
+	close(release)
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	first("a frame with its quiet flag", other.ID)
+	publish(record(session.ID, "output", "answer"))
+	first("output that changes the screen", session.ID)
+}
+
 func TestLiveStatusesOmitEndedTerminals(t *testing.T) {
 	now := time.Now()
 	s := &Server{sessions: map[string]*runningSession{
