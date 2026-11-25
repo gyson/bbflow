@@ -5229,8 +5229,11 @@ other connection. No send in these checks lost its receipt.
   exact messages grouped by terminal. They also cover Sent and Not confirmed states,
   fenced text, read-only files, and rebuilds without leftover staging folders.
 - Request fixtures reject live terminals, old run IDs, running records, archived
-  sessions, removed worktrees, missing workspaces, and unknown tools.
+  sessions, removed worktrees, missing workspaces, and unknown tools. They also reject
+  an effort for Shell, a model for a Custom tool, and an effort that is not one word.
 - A rejected request writes no handoff folder.
+- Request fixtures verify the command, the tool name, and the tool ID of a new terminal,
+  also with the model and the effort of a built-in tool.
 - Store fixtures read the tool ID of a start event, also the empty ID of Shell. An older
   first run without a tool ID uses its preparation, and an older later run has no known
   ID.
