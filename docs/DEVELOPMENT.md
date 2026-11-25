@@ -117,13 +117,15 @@ To capture the screenshots again, do these steps:
    The UI shows the instance path, so the path must not contain a user name. Each
    session inherits the environment of the server.
 2. Open the UI in the browser view that captures the pages, with the viewport of
-   `session.png`. Do steps 3 to 7 in this view. A second view with a different
-   terminal width makes Claude Code draw its output again. An earlier copy of the
-   message then stays in the terminal.
+   `session.png`, the dark color scheme, and a device scale factor of 2. Do steps 3 to
+   7 in this view, and keep these settings until step 7 ends. A second view with a
+   different terminal width makes Claude Code draw its output again. A change of the
+   scale factor can also change the terminal width. An earlier copy of the message then
+   stays in the terminal.
 3. In **Orbit API**, create a draft with the tool **Claude Code** and without **Use
    worktree**. Name it **Explain the period formula**. Start the session.
-4. Accept the trust question of Claude Code. Claude Code saves this answer in
-   `~/.claude.json`.
+4. If Claude Code asks whether you trust the folder, accept. Claude Code saves this
+   answer in `~/.claude.json`, so a later capture in the same folder does not ask.
 5. Send one short question about `internal/orbit/period.go` from the message editor.
    Ask for no file changes. Wait for the answer and the status **Idle**.
 6. Write a second message in the message editor. Do not send it.
