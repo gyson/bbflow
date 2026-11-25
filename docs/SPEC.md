@@ -1346,15 +1346,17 @@ The browser never paints an empty view between the old screen and a full frame. 
 parses each write in a later task, and a reset empties the rows of the view at once. Thus
 the browser applies a full frame in two writes:
 
-1. The first write starts synchronized output (DEC mode 2026) and erases the history
-   rows. xterm.js then renders no rows, so the view keeps the old screen.
+1. The first write erases the history rows, hides the cursor, and moves it to the last
+   row. The screen stays. The resize then has no history rows to reflow. A lower view
+   keeps the bottom rows of the screen, as the server crops a lower view.
 2. The callback of the first write sets the row limit of the frame width and the frame
-   size. Then it writes the frame data, after a reset (RIS) and before the end of
-   synchronized output. xterm.js parses one write in one task, so the browser paints the
-   rows of the frame after the reset.
+   size. Then it writes a reset (RIS) and the frame data in one write. xterm.js parses
+   one write in one task, so the browser paints the rows of the frame after the reset.
 
-No write waits while the view resizes. A delta frame has no reset and no synchronized
-output.
+No write waits while the view resizes. A delta frame has no erase and no reset. A frame
+that the browser received always reaches the view, also when the connection fails
+before xterm.js parses the frame. Thus the view keeps a complete frame while it
+reconnects.
 
 Frames preserve visible cells, colors, cursor position, bracketed paste, application
 cursor/keypad, mouse, and focus reporting modes. Advanced terminal graphics and extended
@@ -4019,11 +4021,20 @@ A new attachment always starts with a full frame. Reconnecting does not change t
 size while another view owns it. The server updates PTY size when the size owner's
 dimensions change.
 
-The size owner gets the frame of its new size when the emulator applies the resize. A
-frame before that keeps the emulator size. It is not a crop of the old screen at the new
-size. Thus one resize gives the size owner one full frame. A view without the size gets a
-crop or a padding of the screen at its new size at once. A resize of the size owner to
-the emulator size also gets its frame at once, because the runtime ignores it.
+The size owner gets no frame while its size differs from the emulator size. When the
+emulator applies the resize, the view gets one full frame of its new size, with the
+output of the wait. Thus the view never shows a crop of the screen at another size
+first. This rule also applies to:
+
+- the first frame of a view that joins as the size owner with another size.
+- a view that takes the size after the size owner leaves. It keeps its own picture, not
+  the size of the view that left.
+
+A view without the size gets a crop or a padding of the screen at its new size at once.
+A resize of the size owner to the emulator size also gets its frame at once, because the
+runtime ignores it. The emulator applies each resize that the runtime accepts, or the run
+ends. A wait of the size owner still ends after one second. Then the view gets frames of
+its own size, as a view without the size.
 
 Reattaching at the same size uses the saved screen without requesting an application
 redraw. An ended view never starts another process or invokes native provider resume.
@@ -5669,11 +5680,13 @@ repository, and a folder outside Git, each with a shell session.
   same size before the frame of that size arrives sends nothing. A return to the size of
   the request before that frame sends that size. After a reconnect, the size of the new
   request counts as sent.
-- A fixture with the xterm.js engine checks a full frame. At the end of the task that
-  receives the frame, the view shows the earlier frame at the earlier size. At the
-  resize, the view still has the earlier screen, and synchronized output holds the
-  rendering. A fixture with a fake view checks the order of the writes. It also checks
-  that no write waits during a resize, and that a delta frame has no reset.
+- Fixtures with the xterm.js engine check a full frame. At the end of the task that
+  receives the frame, the view shows the earlier frame at the earlier size. A lower view
+  shows the bottom rows of the earlier screen after the resize, also when only its last
+  row has text. A full frame that arrives just before the connection fails reaches the
+  view with its history rows, and the stream does not acknowledge it. A fixture with a
+  fake view checks the order of the writes. It also checks that no write waits during a
+  resize, and that a delta frame has no erase and no reset.
 - A fixture checks the fit with the cell sizes that xterm.js 6.0.0 measured in Chrome
   for both terminal fonts, at device pixel ratios of 1, 1.5, and 2. For each area from
   20 to 2,600 pixels, the fit gives the largest count of cells that xterm.js draws in
@@ -5683,8 +5696,16 @@ repository, and a folder outside Git, each with a shell session.
 - Go tests check that a resize of the size owner wakes its view only when the emulator
   applies the resize. A view without the size gets its frame at once. A resize of the
   size owner to the emulator size also gets its frame at once. Output before the
-  emulator resize gives the size owner a delta frame of the emulator size. Then the
-  resize gives one full frame of the new size.
+  emulator resize gives the size owner no frame. Then the resize gives one full frame
+  of the new size, with that output. The same tests cover a view that joins as the size
+  owner with another size, and a view that takes the size after the size owner leaves.
+  A resize that never reaches the emulator gives the view frames of its own size after
+  one second.
+- A browser check pushed full frames through `TerminalStream` with 10,000 history rows,
+  and a resize that took 15 ms, so xterm.js yielded before the frame data. It read the
+  rows just before each paint. A view that went from 24 to 12 rows, with text only on
+  the last row, showed that row until the new frame. Before the change, it painted no
+  text.
 - A browser check loaded xterm.js 6.0.0 in Chrome at device pixel ratios of 1, 1.5,
   and 2. It compared the fit addon of xterm.js with the fit for areas 220 to 2,620
   pixels wide and 100 to 1,400 pixels high, from several current sizes. The fit addon
@@ -5700,7 +5721,7 @@ repository, and a folder outside Git, each with a shell session.
   the rows of the main terminal just before each paint. Before the change, 75 resizes
   gave 85 full frames. Each full frame painted an empty terminal for 164 to 383 ms, 19
   seconds in total. A narrower window sent 196 columns, then 197 columns. With the
-  change, 72 resizes gave 68 full frames, and no paint showed an empty terminal. Each
+  change, 72 resizes gave 67 full frames, and no paint showed an empty terminal. Each
   window change sent one `resize`.
 - In the same check, a window 1,186 pixels high gave a terminal area 722 pixels high.
   Before the change, the view then sent `resize` messages without end, for 38 and 39

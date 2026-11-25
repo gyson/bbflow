@@ -87,53 +87,80 @@ test('ack waits for parsing and a stale session view cannot acknowledge', () => 
   assert.deepEqual(acks, [1]);
 });
 
-test('a full frame holds the view, sets its size, then resets it in the write of its data', () => {
+test('a full frame prepares the view, sets its size, then resets it in the write of its data', () => {
   const calls = [];
   const { view, parse } = fakeView(calls);
   const stream = new TerminalStream(view, { current: () => true, acknowledge: () => calls.push('ack'), ready() {}, fail: e => assert.fail(e) });
   stream.push({ type: 'frame', revision: 1, full: true, size: { cols: 40, rows: 10 }, data: btoa('hi') });
   // The task that receives the frame only queues a write.
-  assert.deepEqual(calls, ['write "\\u001b[?2026h\\u001b[3J"']);
+  assert.deepEqual(calls, ['write "\\u001b[3J\\u001b[?25l\\u001b[999;1H"']);
   parse();
-  assert.deepEqual(calls, ['write "\\u001b[?2026h\\u001b[3J"', 'resize 40x10', 'write "\\u001bchi\\u001b[?2026l"', 'ack']);
-  // A delta frame does not reset or hold the view.
+  assert.deepEqual(calls, ['write "\\u001b[3J\\u001b[?25l\\u001b[999;1H"', 'resize 40x10', 'write "\\u001bchi"', 'ack']);
+  // A delta frame does not prepare or reset the view.
   calls.length = 0;
   stream.push({ type: 'frame', revision: 2, size: { cols: 40, rows: 10 }, data: btoa('hi') });
   parse();
   assert.deepEqual(calls, ['write ""', 'resize 40x10', 'write "hi"', 'ack']);
-  // A stream that stops before the parse does not change the view.
+  // A frame that the stream started reaches the view after a stop, with no ack.
   calls.length = 0;
-  stream.push({ type: 'frame', revision: 3, size: { cols: 50, rows: 10 }, data: btoa('hi') });
+  stream.push({ type: 'frame', revision: 3, size: { cols: 40, rows: 10 }, data: btoa('hi') });
   stream.stop();
   parse();
-  assert.deepEqual(calls, ['write ""']);
+  assert.deepEqual(calls, ['write ""', 'resize 40x10', 'write "hi"']);
 });
 
-test('a full frame never shows an empty view in real xterm.js', async () => {
-  const view = new xterm.Terminal({ cols: 20, rows: 3, allowProposedApi: true });
-  const text = () => view.buffer.active.getLine(view.buffer.active.baseY).translateToString(true);
-  // xterm.js can end its parse task after a write, and the browser can paint then. At
-  // the resize, the view must still have the earlier screen, and synchronized output must
-  // hold the rendering.
+// Helpers for a real xterm.js view of 20 columns and 4 rows.
+function realView() {
+  const view = new xterm.Terminal({ cols: 20, rows: 4, allowProposedApi: true });
+  const screen = () => Array.from({ length: view.rows }, (_, y) => view.buffer.active.getLine(view.buffer.active.baseY + y).translateToString(true));
+  const history = () => Array.from({ length: view.buffer.active.baseY }, (_, y) => view.buffer.active.getLine(y).translateToString(true));
+  const frame = (revision, cols, rows, text) => ({ type: 'frame', revision, full: true, size: { cols, rows }, data: btoa(text) });
+  // Ten rows go to the history. Then the screen has text only on its last row, and the
+  // cursor is at the top.
+  const earlier = frame(1, 20, 4, `${Array.from({ length: 10 }, (_, i) => `h${i}\r\n`).join('')}\x1b[2J\x1b[4;1Hlast\x1b[H`);
+  return { view, screen, history, frame, earlier };
+}
+
+test('a full frame keeps the bottom rows of the earlier screen until xterm.js parses the frame data', async () => {
+  const { view, screen, history, frame, earlier } = realView();
+  // The browser can paint after the resize. Then the view must show the bottom rows of
+  // the earlier screen, as the server crops a lower view.
   const resize = view.resize.bind(view);
-  let atResize;
-  view.resize = (cols, rows) => { atResize = [text(), view.modes.synchronizedOutputMode]; resize(cols, rows); };
+  let afterResize;
+  view.resize = (cols, rows) => { resize(cols, rows); afterResize = screen(); };
   let parsed;
   const stream = new TerminalStream(view, {
     current: () => true, acknowledge: () => parsed(), ready() {}, fail: error => assert.fail(error),
   });
-  const frame = (revision, cols, line) => new Promise(resolve => {
-    parsed = resolve;
-    stream.push({ type: 'frame', revision, full: true, size: { cols, rows: 3 }, data: btoa(`\x1b[H${line}`) });
-  });
+  const push = message => new Promise(resolve => { parsed = resolve; stream.push(message); });
   try {
-    await frame(1, 20, 'first');
-    const second = frame(2, 30, 'second');
+    await push(earlier);
+    assert.deepEqual([screen(), history().length], [['', '', '', 'last'], 7]);
+    const later = push(frame(2, 30, 2, '\x1b[Hsecond'));
     // At the end of the task that receives the frame, the view shows the earlier frame.
-    assert.deepEqual([text(), view.cols], ['first', 20]);
-    await second;
-    assert.deepEqual(atResize, ['first', true]);
-    assert.deepEqual([text(), view.cols, view.modes.synchronizedOutputMode], ['second', 30, false]);
+    assert.deepEqual([screen(), history().length, view.cols], [['', '', '', 'last'], 7, 20]);
+    await later;
+    assert.deepEqual(afterResize, ['', 'last']);
+    assert.deepEqual([screen(), view.cols], [['second', ''], 30]);
+  } finally { view.dispose(); }
+});
+
+test('a full frame that arrives before a stop reaches the view with its history', async () => {
+  const { view, screen, history, frame, earlier } = realView();
+  const acks = [];
+  let parsed;
+  const stream = new TerminalStream(view, {
+    current: () => true, acknowledge: n => { acks.push(n); parsed(); }, ready() {}, fail: error => assert.fail(error),
+  });
+  const flush = () => new Promise(resolve => view.write('', resolve));
+  try {
+    await new Promise(resolve => { parsed = resolve; stream.push(earlier); });
+    // The connection fails just after the next frame arrives.
+    stream.push(frame(2, 20, 4, `${Array.from({ length: 9 }, (_, i) => `n${i}\r\n`).join('')}new`));
+    stream.stop();
+    await flush();
+    await flush();
+    assert.deepEqual([screen().at(-1), history()[0], history().length, acks], ['new', 'n0', 6, [1]]);
   } finally { view.dispose(); }
 });
 

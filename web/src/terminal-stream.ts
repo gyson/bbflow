@@ -6,30 +6,30 @@ import { scrollbackRows } from './terminal-size.js';
 export type Display = Pick<Terminal, 'write' | 'resize' | 'options'>;
 
 const ascii = (text: string) => Uint8Array.from(text, char => char.charCodeAt(0));
-// The start of synchronized output (DEC mode 2026), then an erase of the history rows.
-const holdAndErase = ascii('\x1b[?2026h\x1b[3J');
+// An erase of the history rows, a hidden cursor, and a move of the cursor to the last
+// row.
+const prepare = ascii('\x1b[3J\x1b[?25l\x1b[999;1H');
 // A full reset (RIS).
 const reset = ascii('\x1bc');
-// The end of synchronized output.
-const release = ascii('\x1b[?2026l');
 
 // Frames contain cells rendered by the server. They exclude raw application escape
 // sequences. Only one frame is outstanding. Acknowledge it after asynchronous xterm
 // parsing finishes.
 //
 // xterm.js parses each write in a later task, and the browser can paint between tasks.
-// A reset empties the rows of the view at once, so the browser must not paint between
-// the reset and the parse of the frame data. A frame thus changes the view only in
-// xterm.js writes:
+// A reset empties the rows of the view at once. Thus a full frame changes the view in
+// two writes:
 //
-// 1. A full frame first starts synchronized output and erases the history rows. xterm.js
-//    renders no rows until the release, so the view keeps the earlier screen. Without
-//    history rows, the resize has no rows to reflow.
-// 2. The callback of that write sets the frame size. Then it writes the frame data. For
-//    a full frame, the data starts with a reset and ends with the release. xterm.js
-//    parses one write in one task, so it renders the rows of the frame after the reset.
-//    No write waits during the resize, because a resize can parse the waiting writes
-//    first.
+// 1. The first write erases the history rows and moves the cursor to the last row. The
+//    screen stays. The resize then has no history rows to reflow. A lower view keeps the
+//    bottom rows of the screen, as the server crops a lower view.
+// 2. The callback of the first write sets the frame size. Then it writes the frame data
+//    after a reset. xterm.js parses one write in one task, so the browser paints the
+//    rows of the frame after the reset.
+//
+// No write waits during the resize, because a resize can parse the waiting writes first.
+// A frame that push started always reaches the view, also after stop. Thus the view keeps
+// a complete frame while it is offline. Only a current stream acknowledges a frame.
 export class TerminalStream {
   resizing = false;
   private pending = false;
@@ -53,14 +53,13 @@ export class TerminalStream {
     }
     this.pending = true;
     try {
-      this.view.write(message.full ? holdAndErase : new Uint8Array(), () => this.render(message));
+      this.view.write(message.full ? prepare : new Uint8Array(), () => this.render(message));
     } catch (error) {
       this.fail(error);
     }
   }
 
   private render(message: Extract<ServerMessage, { type: 'frame' }>): void {
-    if (this.stopped || !this.host.current()) return;
     try {
       // The server sends no more history rows than this limit for the frame width. A new
       // width always gives a full frame.
@@ -72,7 +71,7 @@ export class TerminalStream {
         this.resizing = false;
       }
       const data = decodeBytes(message.data);
-      this.view.write(message.full ? concat(reset, data, release) : data, () => {
+      this.view.write(message.full ? concat(reset, data) : data, () => {
         if (this.stopped || !this.host.current()) return;
         this.pending = false;
         this.revision = message.revision;
@@ -85,6 +84,7 @@ export class TerminalStream {
   }
 
   private fail(error: unknown): void {
+    if (this.stopped) return;
     this.stopped = true;
     this.host.fail(`Cannot render terminal: ${String(error)}`);
   }
