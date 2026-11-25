@@ -1756,7 +1756,8 @@ folder:
 The server keeps each list in memory until **Refresh list** or a server restart. A failed
 command keeps no list, and its error shows below the menu. **Other…** still works then.
 The tool editor in Settings also tells where each list comes from, and it has **Refresh
-list**. A draft shows only the error of a failed list. A refresh also updates each other
+list**. A draft and the **Continue in new terminal** dialog show only the error of a
+failed list. A refresh also updates each other
 model menu of the type that is in view. A chosen model stays, also when the new list does
 not have it. When two refreshes overlap, only the later one updates the menus.
 
@@ -1780,8 +1781,6 @@ effort is part of the model ID. Code Puppy has no effort.
 - The session records its startup command, with the options, in its start event. The
   toolbar shows only the tool name. A model change inside the agent, such as `/model`, is
   not recorded.
-- A new terminal in an ended session uses the default model and effort of the selected
-  tool. Its dialog has no model choice.
 
 #### Preparation
 
@@ -2928,10 +2927,17 @@ while you view the latest terminal of an unarchived session after that terminal 
 state `ready` to enable the button. If the worktree state blocks the action, hover over
 the button or use Tab to see the reason.
 
-The dialog shows the session workspace, a tool choice, the handoff prompt, and a Copy
-button. The default tool is the session's original tool if it still exists, then the
-default tool, then Shell. For an `interrupted` run, the dialog warns that an agent from
-a crashed server can still run in the workspace.
+The dialog shows the session workspace, the tool group of a draft, the handoff prompt,
+and a Copy button. The tool group has **Tool**, **Model**, and **Thinking effort** in one
+row, then the **bbflow submits** line with the command. These fields work as in a
+[draft](#preparation). A newly selected tool brings its default model and effort.
+**Model** and **Thinking effort** are hidden for Shell and for a Custom tool.
+
+The dialog selects the tool of the latest terminal, the last choice of the user. If that
+tool is no longer a choice, it selects the tool that the session started with, then the
+default tool, then Shell. The model and the effort are the defaults of the selected tool
+in Settings. For an `interrupted` run, the dialog warns that an agent from a crashed
+server can still run in the workspace.
 
 If the session changes while the dialog opens, an error toast explains why continuation
 is unavailable. If the latest run changes or continuation becomes unavailable while the
@@ -2949,12 +2955,14 @@ launch lock and rejects the request in these conditions:
 - The managed worktree is not `ready`, or the session workspace no longer exists.
   bbflow does not create a replacement worktree.
 - The selected tool no longer exists.
+- The model or the effort is not valid for the tool type. The rules are those of a
+  draft. Shell and a Custom tool take no model or effort.
 
 A rejected request writes no files and starts no process. Otherwise the server writes
 the handoff folder, then starts `$SHELL -i` in the session's recorded workspace. The
 session keeps its ID, title, project, worktree, message draft, and history. The new run
-gets the same `BBFLOW_SESSION`. Its start event records the tool name, the previous run
-ID (`continues`), and the handoff folder.
+gets the same `BBFLOW_SESSION`. Its start event records the tool name, the tool ID
+(`toolId`), the previous run ID (`continues`), and the handoff folder.
 
 #### Handoff folder
 
@@ -2984,8 +2992,9 @@ agent state is lost and that the files are a record, not instructions. It asks t
 agent to check the current files, summarize where the work stopped, and wait for the
 next message.
 
-bbflow records and submits the selected tool's startup command once. Shell starts
-without a command. The user can copy the handoff prompt from the dialog.
+bbflow records and submits the startup command of the selected tool once, with the
+options of the selected model and effort. Shell starts without a command. The user can
+copy the handoff prompt from the dialog.
 
 The prompt stays available after the new terminal starts. When the handoff folder of the
 selected session has its README, **Handoff prompt…** appears in the
@@ -3058,6 +3067,11 @@ and earlier have no tool, so the first run uses the tool of the preparation. A n
 terminal has no run record until its process starts. Until then, the list ends with a
 `starting` terminal without a run ID. The UI reads the list again every five seconds
 until that terminal has a run.
+
+Each start event also records the tool ID, and the list gives it as `toolId`. Shell has
+the empty ID. The **Continue in new terminal** dialog uses this ID to select the tool of
+the latest terminal. Start events from bbflow 0.0.23 and earlier have no tool ID. The
+first run then uses the tool ID of the preparation, and a later run has no known ID.
 
 A view of the saved screen of the latest terminal keeps that terminal when another view
 starts a newer terminal. The view then shows its terminal as an earlier terminal, with
@@ -4701,8 +4715,9 @@ synthetic output of `codex debug models`, `agy models`, and `code-puppy --setup 
 list`, including hidden Codex models, Antigravity efforts in model IDs, and progress
 lines. Server fixtures verify that a draft copies the defaults of its tool, saves its
 own model and effort, and launches with their options. They verify that a new terminal
-uses the defaults of the tool, that a model list runs once until a refresh, and that a
-failed list command keeps no list. Web fixtures cover the model and effort menus of
+launches with the model and the effort of its request, and that it rejects the choices
+that a draft rejects and a model or an effort for Shell. They verify that a model list
+runs once until a refresh, and that a failed list command keeps no list. Web fixtures cover the model and effort menus of
 each type and the merge of a tool edit. The view and the server build the same command
 for the same cases. Interface inspection of Codex 0.171.0, Claude Code 2.1.330,
 Antigravity 1.5.15, and Code Puppy 0.0.969 found the list commands and the options. A
@@ -5214,15 +5229,26 @@ other connection. No send in these checks lost its receipt.
   exact messages grouped by terminal. They also cover Sent and Not confirmed states,
   fenced text, read-only files, and rebuilds without leftover staging folders.
 - Request fixtures reject live terminals, old run IDs, running records, archived
-  sessions, removed worktrees, missing workspaces, and unknown tools.
+  sessions, removed worktrees, missing workspaces, and unknown tools. They also reject
+  an effort for Shell, a model for a Custom tool, and an effort that is not one word.
 - A rejected request writes no handoff folder.
+- Request fixtures verify the command, the tool name, and the tool ID of a new terminal,
+  also with the model and the effort of a built-in tool.
+- Store fixtures read the tool ID of a start event, also the empty ID of Shell. An older
+  first run without a tool ID uses its preparation, and an older later run has no known
+  ID.
+- Web fixtures verify the tool that the dialog selects: the tool of the latest terminal,
+  then the tool of the first terminal, then the default tool, then Shell. When Shell is
+  off, the first tool takes its place.
 - A startup command can contain literal `{prompt}` text.
 
 A temporary server test starts a worktree session with a synthetic tool and sends one
 editor message. It stops the session and continues it with the same tool. It verifies
 the startup command, absence of automatic handoff input, the worktree path, the handoff
-files, and the rejection of a second continue request. After a server restart, it
-continues with Shell. The README lists both earlier terminals, newest first.
+files, and the rejection of a second continue request. A request with a model for its
+Custom tool fails before the server writes the handoff folder. After a server restart,
+it continues with Shell. The README lists both earlier terminals, newest first. The
+terminal list then gives the tool ID of each terminal, with the empty ID for Shell.
 
 Earlier-terminal fixtures cover the terminal list with tools from start events and from
 the preparation, a `starting` terminal without a run record, and the change to its run.

@@ -25,13 +25,14 @@ type Control struct {
 	Ack func(error)
 }
 
-// Launch adds server-owned shell settings to a session request. Tool, Continues, and
-// Handoff describe the run in its start event.
+// Launch adds server-owned shell settings to a session request. Tool, ToolID,
+// Continues, and Handoff describe the run in its start event.
 type Launch struct {
 	protocol.Run
 	Shell     string
 	Env       []string
 	Tool      string // The tool name, or Shell.
+	ToolID    string // The tool ID of Settings, or empty for Shell.
 	Continues string // The previous run of the same session, for a new terminal.
 	Handoff   string // The handoff folder that bbflow wrote for a new terminal.
 }
@@ -72,7 +73,7 @@ func Side(ctx context.Context, dataDir string, session history.Session, request 
 		},
 		save: func(*history.Run) error { return nil },
 	}
-	request.Command, request.Tool, request.Continues, request.Handoff = "", "", "", ""
+	request.Command, request.Tool, request.ToolID, request.Continues, request.Handoff = "", "", "", "", ""
 	return runPTY(ctx, record, &history.Run{SessionID: session.ID}, dataDir, session, request, controls, publish)
 }
 
@@ -121,6 +122,9 @@ func runPTY(ctx context.Context, record recording, run *history.Run, dataDir str
 			start[key] = value
 		}
 	}
+	// The empty tool ID is Shell, so the event always has the key. A new terminal selects
+	// the tool of the latest terminal by this ID.
+	start["toolId"] = request.ToolID
 	metadata, _ := json.Marshal(start)
 	if err := appendEvent("start", metadata, "", false); err != nil {
 		run.Status, run.Ended, run.Detail = "failed", history.Now(), err.Error()

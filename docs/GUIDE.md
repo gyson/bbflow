@@ -190,14 +190,16 @@ Use this procedure after a session ends, for example when an agent reaches a usa
 limit. To find an agent with usage left, first [check your usage
 limits](#check-your-usage-limits).
 
-1. Click **Continue in new terminal**.
-2. Select the tool for the new terminal.
-3. Click **Start new terminal**. bbflow writes a read-only handoff folder with the
+1. Click **Continue in new terminal**. The dialog selects the tool of the latest
+   terminal, with the default model and thinking effort of that tool.
+2. If that agent reached its usage limit, select another **Tool**.
+3. Optional: change **Model** and **Thinking effort**, as in a new session.
+4. Click **Start new terminal**. bbflow writes a read-only handoff folder with the
    earlier terminals and messages. Then it starts the tool.
-4. Wait until the new agent is ready.
-5. Click **＋** in the message editor, then **Handoff prompt…**.
-6. Click **Insert in message**.
-7. Click **Send**.
+5. Wait until the new agent is ready.
+6. Click **＋** in the message editor, then **Handoff prompt…**.
+7. Click **Insert in message**.
+8. Click **Send**.
 
 **Insert in message** puts the prompt at the cursor of the message editor. Text that is
 already in the editor stays. To paste the prompt somewhere else, click **Copy prompt**

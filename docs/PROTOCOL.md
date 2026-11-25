@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/44`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/45`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/44",
+    "protocol": "bbflow/45",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/44",
+    "protocol": "bbflow/45",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -184,9 +184,9 @@ replies.
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed; missing confirms none) | `result`, containing `archived`. Applies to the family. See [Session archive](#session-archive). Rejects active runs and unfinished launch claims. |
 | `session-pin` | `session` ID, `pinned` boolean (true to pin, false to unpin) | `result`, containing `pinned`. See [Session pins](#session-pins). |
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
-| `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, `status`, `started`, and `ended`. |
+| `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, an optional `toolId`, `status`, `started`, and `ended`. |
 | `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
-| `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
+| `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), optional `model` and `effort`, terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
 
 ### History operations
 
@@ -890,14 +890,20 @@ when a terminal is live, when `latestRun` is not the latest run, or when that ru
 not ended. It also rejects archived sessions, sessions without a run, a managed worktree
 that is not `ready`, a missing workspace, and an unknown tool.
 
+`model` and `effort` are the choices of the new terminal. An empty value selects the
+default of the CLI, as in the `preparation` of a draft. The server checks them with the
+rules of a draft. It rejects a model or an effort for Shell and for a Custom tool. The
+web UI sends the defaults of the selected tool, unless the user changes them.
+
 A rejected request writes no files and starts no process. A repeated request with the
 same `latestRun` fails after the first request started a terminal. After a lost
 response, read session-config. If its latest run changed, use session-resume to join
 the new terminal. Do not send session-continue again only because a response was lost.
 
-The server records and submits the selected tool's `command` once. Shell submits
-nothing. The client shows the handoff prompt for the user to send. The start event of
-the new run records `tool`, `continues` (the previous run ID), and `handoff` (the
+The server records and submits the `command` of the selected tool once, with the
+options of the model and the effort. Shell submits nothing. The client shows the handoff
+prompt for the user to send. The start event of the new run records `tool`, `toolId`
+(the empty ID for Shell), `continues` (the previous run ID), and `handoff` (the
 folder).
 
 ### Handoff folder
@@ -917,6 +923,10 @@ in start order. `tool` comes from the start event of the run. Start events from 
 terminal has no run record until its process starts. Until then, the list ends with a
 `starting` terminal that has an empty `run`. The operation starts no process and writes
 no files.
+
+`toolId` is the tool ID from the start event, and the empty ID for Shell. Start events
+from bbflow 0.0.23 and earlier have no tool ID. The first run then has the tool ID of
+the preparation. A later run has no `toolId`, because its tool is unknown.
 
 ## Side terminals
 
@@ -1318,13 +1328,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/44") {
+    if (message.server.protocol !== "bbflow/45") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/44", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/45", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1454,6 +1464,10 @@ versions.
   No operation is new. SQLite format 20 adds an empty list.
 - Protocol 44 adds [`tool-usage`](#usage-limits), the usage limits of Codex, Claude
   Code, and Antigravity. The SQLite format does not change.
+- Protocol 45 adds the optional `model` and `effort` fields of
+  [`session-continue`](#session-continue) and the optional `toolId` of each terminal of
+  [`session-terminals`](#session-terminals). The start event of each new run records
+  `toolId`. The SQLite format does not change.
 
 ## Source files
 

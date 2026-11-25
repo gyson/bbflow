@@ -31,6 +31,7 @@ type runningSession struct {
 	revision  int64
 	runID     string
 	tool      string // The tool of the run. It does not change.
+	toolID    string // The tool ID of the run, or empty for Shell. It does not change.
 	ended     bool
 	exit      protocol.Message
 	activity  activity
@@ -275,7 +276,7 @@ func (r *runningSession) finish(code int, status string, err error) {
 func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, session history.Session, run *agent.Launch, notice string) func() {
 	s.mu.Lock()
 	runContext, cancel := context.WithCancel(ctx)
-	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool, activity: activity{output: time.Now()}}
+	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool, toolID: run.ToolID, activity: activity{output: time.Now()}}
 	r.received = func(id string, data []byte) { s.titleAfterReceipt(session.ID, id, data) }
 	r.quiet = s.store.MarkQuiet
 	s.sessions[session.ID] = r

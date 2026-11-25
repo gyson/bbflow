@@ -357,7 +357,17 @@
       <div class="dialog-heading"><h2 id="continue-title">Continue in a new terminal</h2><button type="button" id="cancel-continue" class="text-button" aria-label="Close new terminal">✕</button></div>
       <p class="form-help">The new terminal gets a read-only handoff folder with the earlier terminals and your sent messages.</p>
       <p id="continue-workspace" class="continue-path"></p>
-      <label>Tool<select id="continue-tool"></select></label>
+      <fieldset class="launch-tool-group">
+        <legend class="sr-only">Tool and model</legend>
+        <label>Tool<select id="continue-tool"></select></label>
+        <div id="continue-models" class="model-fields" hidden>
+          <div class="model-field"><label for="continue-model">Model</label><select id="continue-model"></select>
+            <input id="continue-model-other" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Type the full model name" aria-label="Model name" hidden>
+            <p class="model-help"><span id="continue-model-help"></span> <button type="button" id="continue-model-refresh" class="link-button">Refresh list</button></p></div>
+          <div class="model-field"><label for="continue-effort">Thinking effort</label><select id="continue-effort"></select><p id="continue-effort-help" class="model-help"></p></div>
+        </div>
+        <p class="form-help launch-command">bbflow submits <code id="continue-command"></code></p>
+      </fieldset>
       <p class="form-help">Send the handoff prompt when the agent is ready.</p>
       <label>Handoff prompt<textarea id="continue-prompt" class="prompt-text" rows="6" readonly></textarea></label>
       <p id="continue-warning" class="form-warning" role="alert" hidden>The latest terminal was interrupted. If the server stopped unexpectedly, its agent can still run and change files in this workspace. Check this before you continue.</p>

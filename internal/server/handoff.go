@@ -95,7 +95,7 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 	if _, err = agent.Canonical(session.Workspace); err != nil {
 		return session, nil, fmt.Errorf("the session workspace is not available: %w", err)
 	}
-	tool, command, err := s.continueTool(request.Tool)
+	tool, command, err := s.continueTool(request.Tool, request.Model, request.Effort)
 	if err != nil {
 		return session, nil, err
 	}
@@ -106,25 +106,32 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 	if err = s.writeHandoff(session); err != nil {
 		return session, nil, fmt.Errorf("write the handoff folder: %w", err)
 	}
-	run.Tool, run.Continues, run.Handoff = tool, session.Run.ID, s.handoff(session.ID).Folder
+	run.Tool, run.ToolID, run.Continues, run.Handoff = tool, request.Tool, session.Run.ID, s.handoff(session.ID).Folder
 	return session, run, nil
 }
 
-// continueTool returns the tool name and its startup command, with the default model and
-// effort of the tool.
-func (s *Server) continueTool(id string) (name, command string, err error) {
+// continueTool returns the tool name and its startup command, with the options of the
+// model and the effort. An empty model or effort selects the default of the CLI, as in a
+// draft. The view sends the defaults of the tool, unless the user changes them.
+func (s *Server) continueTool(id, model, effort string) (name, command string, err error) {
 	settings, err := s.store.Settings()
 	if err != nil {
 		return "", "", err
 	}
 	if id == "" {
+		if model != "" || effort != "" {
+			return "", "", errors.New("Shell has no model or effort")
+		}
 		return "Shell", "", shellChoice(settings)
 	}
 	tool, err := enabledTool(settings, id)
 	if err != nil {
 		return "", "", err
 	}
-	return tool.Name, models.Command(tool.Type, tool.Command, tool.Model, tool.Effort), nil
+	if err = models.Validate(tool.Type, model, effort); err != nil {
+		return "", "", err
+	}
+	return tool.Name, models.Command(tool.Type, tool.Command, model, effort), nil
 }
 
 // handoffTerminal is one earlier terminal in the handoff folder. Number counts from 1 in

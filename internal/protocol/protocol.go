@@ -13,7 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/44"
+const Version = "bbflow/45"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -67,15 +67,19 @@ type Request struct {
 	Run       string   `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
 	Shell     string   `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
 	Tool      string   `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
-	ToolType  string   `json:"toolType,omitempty"`  // The tool type of tool-models and tool-usage.
-	Refresh   bool     `json:"refresh,omitempty"`   // tool-models and tool-usage run their command again.
-	Limit     int      `json:"limit,omitempty"`
-	Groups    []string `json:"groups,omitempty"` // Session list group keys. "" is Standalone, and "pinned" is Pinned.
-	Offset    int      `json:"offset,omitempty"` // The sessions of the group to skip.
-	Size      Size     `json:"size,omitempty"`
-	Draft     *Draft   `json:"draft,omitempty"`
-	Upload    *Upload  `json:"upload,omitempty"`
-	Version   string   `json:"version,omitempty"` // The release of the offer that update-start confirms.
+	// Model and Effort are the choices of session-continue for the new terminal. An empty
+	// value selects the default of the CLI, as in a draft.
+	Model    string   `json:"model,omitempty"`
+	Effort   string   `json:"effort,omitempty"`
+	ToolType string   `json:"toolType,omitempty"` // The tool type of tool-models and tool-usage.
+	Refresh  bool     `json:"refresh,omitempty"`  // tool-models and tool-usage run their command again.
+	Limit    int      `json:"limit,omitempty"`
+	Groups   []string `json:"groups,omitempty"` // Session list group keys. "" is Standalone, and "pinned" is Pinned.
+	Offset   int      `json:"offset,omitempty"` // The sessions of the group to skip.
+	Size     Size     `json:"size,omitempty"`
+	Draft    *Draft   `json:"draft,omitempty"`
+	Upload   *Upload  `json:"upload,omitempty"`
+	Version  string   `json:"version,omitempty"` // The release of the offer that update-start confirms.
 
 	Search  *history.SearchFilter   `json:"search,omitempty"`
 	Context *history.ContextRequest `json:"context,omitempty"`
@@ -272,14 +276,16 @@ type Handoff struct {
 
 // Terminal is one terminal of a session. Each terminal is one run. Number counts from 1
 // in start order. A new terminal has no run ID until its process starts. Tool is empty
-// when the start event of an older run has no tool.
+// when the start event of an older run has no tool. ToolID is the tool ID of Settings,
+// and empty for Shell. It is nil when the start event of an older run has no tool ID.
 type Terminal struct {
-	Number  int    `json:"number"`
-	Run     string `json:"run"`
-	Tool    string `json:"tool"`
-	Status  string `json:"status"`
-	Started string `json:"started"`
-	Ended   string `json:"ended"`
+	Number  int     `json:"number"`
+	Run     string  `json:"run"`
+	Tool    string  `json:"tool"`
+	ToolID  *string `json:"toolId,omitempty"`
+	Status  string  `json:"status"`
+	Started string  `json:"started"`
+	Ended   string  `json:"ended"`
 }
 
 // SessionDetail is a session with its Status.

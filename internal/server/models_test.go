@@ -81,10 +81,26 @@ func TestDraftsTakeToolDefaultsAndLaunchWithTheChosenModel(t *testing.T) {
 	if want := "codex --no-alt-screen --model gpt-6-sol -c model_reasoning_effort=high"; run.Command != want || run.Tool != "Codex" {
 		t.Fatalf("launch command %q, tool %q; want %q", run.Command, run.Tool, want)
 	}
-	// A new terminal of an ended session uses the defaults of the tool.
-	name, command, err := s.continueTool("builtin-code-puppy")
-	if err != nil || name != "Code Puppy" || command != "code-puppy --model codex-gpt-6-luna" {
-		t.Fatalf("continue command %q %q %v", name, command, err)
+	// A new terminal of an ended session launches with the model and the effort of the
+	// view, as a draft does. The view sends the defaults of the tool, unless the user
+	// changes them. An empty value selects the default of the CLI.
+	for _, c := range []struct{ tool, model, effort, name, command string }{
+		{"builtin-code-puppy", "codex-gpt-6-luna", "", "Code Puppy", "code-puppy --model codex-gpt-6-luna"},
+		{"builtin-codex", "gpt-6-sol", "high", "Codex", "codex --no-alt-screen --model gpt-6-sol -c model_reasoning_effort=high"},
+		{"builtin-codex", "", "", "Codex", "codex --no-alt-screen"},
+		{"script", "", "", "Script", "echo script"},
+		{"", "", "", "Shell", ""},
+	} {
+		name, command, err := s.continueTool(c.tool, c.model, c.effort)
+		if err != nil || name != c.name || command != c.command {
+			t.Fatalf("continue %q %q %q: %q %q %v", c.tool, c.model, c.effort, name, command, err)
+		}
+	}
+	// A new terminal rejects the same choices as a draft. Shell has no model or effort.
+	for _, invalid := range [][3]string{{"builtin-codex", "gpt; id", ""}, {"builtin-code-puppy", "codex-gpt-6-luna", "high"}, {"script", "gpt-6-luna", ""}, {"", "gpt-6-luna", ""}, {"", "", "high"}} {
+		if _, _, err = s.continueTool(invalid[0], invalid[1], invalid[2]); err == nil {
+			t.Fatalf("a new terminal accepted %q", invalid)
+		}
 	}
 }
 

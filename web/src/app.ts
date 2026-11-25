@@ -1,5 +1,5 @@
 import { call, errorMessage, sessionTitle, VERSION } from './protocol.js';
-import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Worktree, ServerInfo, SessionInfo, Size, StreamRequest } from './protocol.js';
+import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Tool, Worktree, ServerInfo, SessionInfo, Size, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
 import { ComposerMenu } from './composer-menu.js';
 import { HistorySearch } from './history-search.js';
@@ -34,6 +34,7 @@ import { familyGroup, mergeSessions, pinLimit, pinnedGroup, placeText, sessionGr
 import type { Family } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
+import { launchCommand, ModelPicker, typed } from './model-choice.js';
 import { SettingsView } from './settings.js';
 import { UpdateNotice } from './update.js';
 import { ErrorToasts } from './toasts.js';
@@ -112,6 +113,10 @@ const elements = {
   'continue-form': element('continue-form', HTMLFormElement),
   'continue-workspace': element('continue-workspace', HTMLElement),
   'continue-tool': element('continue-tool', HTMLSelectElement),
+  'continue-model': element('continue-model', HTMLSelectElement),
+  'continue-model-other': element('continue-model-other', HTMLInputElement),
+  'continue-effort': element('continue-effort', HTMLSelectElement),
+  'continue-command': element('continue-command', HTMLElement),
   'continue-prompt': element('continue-prompt', HTMLTextAreaElement),
   'continue-warning': element('continue-warning', HTMLElement),
   'continue-error': element('continue-error', HTMLElement),
@@ -156,7 +161,7 @@ interface SessionView {
 }
 
 // start claims a prepared draft. continue starts a new terminal in an ended session.
-type Launch = { kind: 'start' } | { kind: 'continue'; tool: string };
+type Launch = { kind: 'start' } | { kind: 'continue'; tool: string; model: string; effort: string };
 
 let server: ServerInfo | null = null;
 let connection: SessionConnection | null = null;
@@ -186,6 +191,8 @@ let selected: SessionView | null = null;
 let continueRun: string | undefined;
 // The reason that the open Continue dialog shows for a session change, or empty.
 let continueProblem = '';
+// The tools that are on when the Continue dialog opened.
+let continueTools: Tool[] = [];
 // The handoff prompt of the selected session. It stays available after a new terminal
 // starts, so the user can copy or send it later.
 let handoff: { session: string; info: Handoff } | null = null;
@@ -350,7 +357,7 @@ function failed(what: string, session?: { title: string; autoTitle?: string } | 
 const dialogEdits = new DialogEdits([
   { dialog: $('project-dialog'), fields: [$('project-name'), $('project-workspace')] },
   { dialog: $('rename-dialog'), fields: [$('rename-name')] },
-  { dialog: $('continue-dialog'), fields: [$('continue-tool')] },
+  { dialog: $('continue-dialog'), fields: [$('continue-tool'), $('continue-model'), $('continue-model-other'), $('continue-effort')] },
 ]);
 const dialogErrors = new Map([
   [$('project-dialog'), $('project-error')],
@@ -1196,7 +1203,7 @@ async function showSession(session: SessionView, launch?: Launch, run = ''): Pro
   if (launch?.kind === 'start' && session.id && session.preparation) {
     request = { operation: 'session-start', session: session.id, revision: session.preparation.revision, size: size(view) };
   } else if (launch?.kind === 'continue' && session.id && session.run) {
-    request = { operation: 'session-continue', session: session.id, latestRun: session.run.id, tool: launch.tool, size: size(view) };
+    request = { operation: 'session-continue', session: session.id, latestRun: session.run.id, tool: launch.tool, model: launch.model, effort: launch.effort, size: size(view) };
   } else if (session.id) {
     request = { operation: 'session-resume', session: session.id, size: size(view), ...(run ? { run } : {}) };
   } else {
@@ -1334,14 +1341,38 @@ async function loadTerminals(id: string, opening = false): Promise<void> {
   controls();
 }
 
+// The Continue dialog has the model and effort fields of a draft. The dialog shows no
+// notes about the model list, as a draft does.
+const continueModels = new ModelPicker('continue', { server: () => server, changed: previewContinue, quiet: true });
+
+// The tool that the Continue dialog selects. Shell has no tool.
+function continueTool(): Tool | undefined {
+  return continueTools.find(tool => tool.id === $('continue-tool').value);
+}
+
+// A newly selected tool brings its default model and effort, as in a draft.
+function selectContinueTool(): void {
+  const tool = continueTool();
+  continueModels.set(tool?.type ?? '', tool?.model ?? '', tool?.effort ?? '');
+  previewContinue();
+}
+
+// Show the command that the new terminal submits.
+function previewContinue(): void {
+  const tool = continueTool(), type = tool?.type ?? '';
+  $('continue-command').textContent = launchCommand(type, tool?.command ?? '',
+    typed(type) ? continueModels.model : '', typed(type) ? continueModels.effort : '') || '(no startup command)';
+}
+
 async function showContinue(): Promise<void> {
   if (!server || !selected?.id) return;
   await composer.flush();
   const id = selected.id;
-  const [detail, settings, handoff] = await Promise.all([
+  const [detail, settings, handoff, terminals] = await Promise.all([
     call(server, { operation: 'session-config', session: id }),
     call(server, { operation: 'settings-get' }),
     call(server, { operation: 'session-handoff', session: id }),
+    call(server, { operation: 'session-terminals', session: id }),
   ]);
   if (selected?.id !== id) return;
   selected = withDetail(selected, detail);
@@ -1356,7 +1387,11 @@ async function showContinue(): Promise<void> {
   fillToolMenu($('continue-tool') as HTMLSelectElement, settings.tools, !settings.shellOff);
   const groups = toolGroups(settings.tools, !settings.shellOff);
   const choices = [...groups.builtin, ...groups.custom].filter(choice => choice.id);
-  $('continue-tool').value = defaultContinueTool(choices, selected.preparation?.toolId, settings.defaultTool, !settings.shellOff);
+  // The dialog selects the tool of the latest terminal, the last choice of the user. Its
+  // model and effort are the defaults of the tool, as for a new choice in a draft.
+  continueTools = settings.tools.filter(tool => tool.enabled);
+  $('continue-tool').value = defaultContinueTool(choices, [terminals[terminals.length - 1]?.toolId, selected.preparation?.toolId, settings.defaultTool], !settings.shellOff);
+  selectContinueTool();
   $('continue-prompt').value = handoff.prompt;
   $('continue-workspace').textContent = selected.worktree ? `⑂ ${selected.worktree.branch} · ${selected.workspace}` : selected.workspace;
   $('continue-warning').hidden = selected.run?.status !== 'interrupted';
@@ -1741,6 +1776,7 @@ async function initialize() {
     else composer.problem('The handoff folder of this session is not available. Continue in a new terminal to write it again.');
   }, failed('show the handoff prompt of', selected));
   $('cancel-continue').onclick = () => $('continue-dialog').close();
+  $('continue-tool').onchange = selectContinueTool;
   $('continue-copy').onclick = async () => {
     try {
       await navigator.clipboard.writeText($('continue-prompt').value);
@@ -1759,8 +1795,10 @@ async function initialize() {
       const continuation = continueAction(selected, !!connection?.peer?.active, terminalPicker.shownRun);
       if (restarted || continueDialogProblem(continuation, selected.run?.id, continueRun)) return;
       const tool = $('continue-tool').value;
+      const type = continueTool()?.type ?? '';
+      const model = typed(type) ? continueModels.model : '', effort = typed(type) ? continueModels.effort : '';
       $('continue-dialog').close();
-      await openSession(selected, { kind: 'continue', tool });
+      await openSession(selected, { kind: 'continue', tool, model, effort });
     }, failed('start a new terminal in', selected));
   };
   $('stop-session').onclick = () => action(async () => {

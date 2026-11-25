@@ -186,7 +186,7 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 	if run.Title == "" {
 		run.Title = autoTitle
 	}
-	run.Tool = p.ToolName
+	run.Tool, run.ToolID = p.ToolName, p.ToolID
 	if err = s.store.SetLaunchWorkspace(id, autoTitle, run.Workspace); err != nil {
 		return session, nil, err
 	}

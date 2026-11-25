@@ -538,3 +538,20 @@ func RunTool(start []byte, first bool, preparation *Preparation) string {
 	}
 	return event.Tool
 }
+
+// RunToolID reads the recorded tool ID of a run. Shell has the empty ID. Start events
+// from bbflow 0.0.23 and earlier have no tool ID. The first run then uses the tool ID of
+// its preparation, and a later run has no known ID.
+func RunToolID(start []byte, first bool, preparation *Preparation) *string {
+	var event struct {
+		ToolID *string `json:"toolId"`
+	}
+	if len(start) > 0 {
+		json.Unmarshal(start, &event)
+	}
+	if event.ToolID == nil && first && preparation != nil {
+		id := preparation.ToolID
+		return &id
+	}
+	return event.ToolID
+}

@@ -79,6 +79,15 @@ func TestContinueWorktreeSessionInNewTerminal(t *testing.T) {
 	if handoff.Available {
 		t.Fatal("handoff is available before the first continue", handoff)
 	}
+	// A Custom tool has no model. The server rejects the request before it writes files.
+	rejected := openSessionView(t, protocol.Request{Operation: "session-continue", Session: session.ID, LatestRun: firstRun.ID, Tool: "fixture", Model: "gpt-6-luna", Size: size})
+	if message := <-rejected.done; message.Type != "error" || !strings.Contains(message.Error, "no model") {
+		t.Fatal("accepted a model for a Custom tool", message)
+	}
+	rpc(protocol.Request{Operation: "session-handoff", Session: session.ID}, &handoff)
+	if handoff.Available {
+		t.Fatal("a rejected request wrote the handoff folder", handoff)
+	}
 	second := openSessionView(t, protocol.Request{Operation: "session-continue", Session: session.ID, LatestRun: firstRun.ID, Tool: "fixture", Size: size})
 	waitFor(t, func() bool { return strings.Contains(second.text(), "START_run") })
 	// A second view that saw the same latest run cannot start another terminal.
@@ -130,6 +139,20 @@ func TestContinueWorktreeSessionInNewTerminal(t *testing.T) {
 	}
 	third := openSessionView(t, protocol.Request{Operation: "session-continue", Session: session.ID, LatestRun: secondRun.ID, Size: size})
 	waitFor(t, func() bool { return strings.Contains(third.text(), "BBFLOW_SHELL_PROMPT> ") })
+	// Each start event records the tool ID, so a new terminal can select the tool of the
+	// latest terminal. Shell has the empty ID.
+	var terminals []protocol.Terminal
+	rpc(protocol.Request{Operation: "session-terminals", Session: session.ID}, &terminals)
+	var ids []string
+	for _, terminal := range terminals {
+		if terminal.ToolID == nil {
+			t.Fatal("a terminal has no tool ID", terminals)
+		}
+		ids = append(ids, *terminal.ToolID)
+	}
+	if strings.Join(ids, ",") != "fixture,fixture," {
+		t.Fatal("tool IDs", ids)
+	}
 	text := readme()
 	two, one := strings.Index(text, "### Terminal 2 · stopped"), strings.Index(text, "### Terminal 1 · stopped")
 	if two < 0 || one < two || !strings.Contains(text, "Started from a handoff folder after terminal 1.") || !strings.Contains(text, "Tool: Fixture") {

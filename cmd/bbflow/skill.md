@@ -111,7 +111,7 @@ Event kinds:
 | --- | --- | --- |
 | `output` | Bytes that the terminal wrote. | The output without terminal escapes. |
 | `input` | Bytes that a view sent to the terminal. | Empty. |
-| `start` | JSON with `command`, `startupCommand`, `workspace`, `cols`, `rows`, and optional `tool`. | Empty. |
+| `start` | JSON with `command`, `startupCommand`, `workspace`, `cols`, `rows`, and optional `tool`, `toolId` (empty for Shell), `continues` (the previous run of a new terminal), and `handoff` (its handoff folder). | Empty. |
 | `run` | JSON copy of the `runs` row after a status change. | Empty. |
 | `resize` | JSON with the new terminal size. | Empty. |
 | `notice` | Text that reports an interrupted terminal. | Empty. |
