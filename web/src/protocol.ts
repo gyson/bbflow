@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/43';
+export const VERSION = 'bbflow/44';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -42,6 +42,16 @@ export interface ToolModel { id: string; name: string; efforts: string[]; defaul
 // The model list of a tool type. source is the command that printed it, or empty for a
 // built-in list. efforts lists the efforts for any model. loaded is the time of the list.
 export interface ToolModels { type: string; source: string; models: ToolModel[]; efforts: string[]; loaded: string }
+// One usage limit of a plan. label names its length, such as '5-hour' or 'Weekly'. model
+// names the model of a limit for one model. used is the used part in percent. resets is
+// the reset time in RFC 3339 format, or absent when the CLI does not tell it.
+export interface UsageWindow { label: string; model?: string; used: number; resets?: string }
+// A set of models that share their limits. A group without a name has all models.
+export interface UsageGroup { name?: string; windows: UsageWindow[] }
+// The last usage check of a tool type. checked is the time of the report, or absent
+// without a report. error is the error of the last check. With a report, the report is
+// then from an earlier check.
+export interface ToolUsage { type: string; plan?: string; groups: UsageGroup[]; checked?: string; error?: string }
 // port 0 selects the automatic port. A saved port applies at the next server start.
 // remoteOn is the switch of remote access. Remote access works only while it is on and
 // remoteHost and remoteLogin are both set.
@@ -192,6 +202,8 @@ type TitleToolSetRequest = { operation: 'title-tool-set'; settings: TitleChoice 
 type TitleToolsRequest = { operation: 'title-tools' };
 type ToolModelsRequest = { operation: 'tool-models'; toolType: string; refresh?: boolean };
 type ToolCheckRequest = { operation: 'tool-check' };
+// tool-usage reuses a check that is less than a minute old, unless refresh is set.
+type ToolUsageRequest = { operation: 'tool-usage'; toolType: string; refresh?: boolean };
 type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
 // The server does what the offer with this version and revision says, then restarts.
 // The restart ends all sessions.
@@ -204,7 +216,7 @@ type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
 // shell stops only that shell. Without shell, the request stops the live shell.
 type StopSideRequest = { operation: 'side-terminal-stop'; session: string; shell?: string };
-type RPCRequest = ToolCheckRequest | ToolModelsRequest | UpdateRequest | DiffRPC | TitleTestRequest | TitleToolSetRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | PinRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = ToolCheckRequest | ToolModelsRequest | ToolUsageRequest | UpdateRequest | DiffRPC | TitleTestRequest | TitleToolSetRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | PinRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -291,10 +303,13 @@ export const titleTestLimit = 100000;
 // A model list runs a list command of an agent CLI. The server stops it after 30 seconds,
 // so the browser waits a little longer. See modelListTimeout in internal/server/models.go.
 export const modelListLimit = 35000;
+// A usage check stops after 20 seconds. See usageTimeout in internal/server/usage.go.
+export const usageLimit = 25000;
 // The time that the browser waits for the reply of a request.
 export const responseLimit = (request: Request) => {
   if (request.operation === 'title-test' || request.operation === 'title-tool-set') return titleTestLimit;
   if (request.operation === 'tool-models') return modelListLimit;
+  if (request.operation === 'tool-usage') return usageLimit;
   return 12000;
 };
 
@@ -443,6 +458,7 @@ export function call(server: ServerInfo, request: TitleToolsRequest): Promise<Ti
 export function call(server: ServerInfo, request: ToolModelsRequest): Promise<ToolModels>;
 // installed holds the agent types whose CLI is on the PATH of the server.
 export function call(server: ServerInfo, request: ToolCheckRequest): Promise<{ installed: Record<string, boolean> | null }>;
+export function call(server: ServerInfo, request: ToolUsageRequest): Promise<ToolUsage>;
 export function call(server: ServerInfo, request: InspectRequest): Promise<RepositoryInfo>;
 export function call(server: ServerInfo, request: UpdateRequest): Promise<{ updating: boolean }>;
 export function call(server: ServerInfo, request: PrepareRequest | ConfigRequest): Promise<PreparedSession>;

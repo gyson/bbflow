@@ -432,17 +432,22 @@ func runCLI(ctx context.Context, command, input string, timeout time.Duration, l
 		return "", fmt.Errorf("the command did not finish in %s", timeout)
 	}
 	if err != nil {
-		detail := strings.TrimSpace(terminalEscapes.ReplaceAllString(stderr.String(), ""))
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 127 {
-			return "", fmt.Errorf("the CLI is not installed or not on the PATH of the server: %s", detail)
-		}
-		if detail == "" {
-			return "", fmt.Errorf("the command ended with %w", err)
-		}
-		return "", fmt.Errorf("the command ended with %w: %s", err, detail)
+		return "", commandError(err, stderr)
 	}
 	return stdout.String(), nil
+}
+
+// commandError explains the failure of a CLI command with its standard error.
+func commandError(err error, stderr *limitedBuffer) error {
+	detail := strings.TrimSpace(terminalEscapes.ReplaceAllString(stderr.String(), ""))
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 127 {
+		return fmt.Errorf("the CLI is not installed or not on the PATH of the server: %s", detail)
+	}
+	if detail == "" {
+		return fmt.Errorf("the command ended with %w", err)
+	}
+	return fmt.Errorf("the command ended with %w: %s", err, detail)
 }
 
 // receiptPrefix starts the input ID of a send from the message editor. The rest is the

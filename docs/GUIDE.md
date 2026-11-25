@@ -40,8 +40,9 @@ Claude Code.
 
 bbflow keeps the name and the command of a built-in tool. If **NOT FOUND** shows for a
 CLI that you have, click **Edit** and enter its full path in **CLI path**, for example
-`/opt/homebrew/bin/codex`. bbflow then uses this path for sessions, the model list, and
-automatic titles. For other options, such as `codex --search`, add a custom tool.
+`/opt/homebrew/bin/codex`. bbflow then uses this path for sessions, the model list,
+automatic titles, and the [usage check](#check-your-usage-limits). For other options,
+such as `codex --search`, add a custom tool.
 
 Your own tools are custom tools. They have their own table, **Custom tools**, below the
 built-in tools. To add one, such as a script or a Codex command with other options,
@@ -167,10 +168,27 @@ project, click **Unpin** in the same menu. **Pin** and **Unpin** are also in the
 **More actions** (⋯) menu of the toolbar. Archive removes the pin. See
 [Pinned sessions](SPEC.md#pinned-sessions) for the rules and limits.
 
+## Check your usage limits
+
+The plan of an agent has usage limits, such as a 5-hour limit and a weekly limit. To
+see how much of each limit is left, do these steps:
+
+1. Click **Usage** at the bottom of the sidebar, next to **Settings**.
+2. Read the section of each agent. Each limit shows the part that is left and when it
+   resets.
+3. To ask the agents again, click **Check now**.
+
+bbflow shows Codex, Claude Code, and Antigravity when their tools are on. It asks each
+CLI for the limits of your account. A check starts no agent turn. A limit with less than
+20% left is amber, and an empty limit is red. If a section shows an error, sign in to
+the agent in a terminal, or set its **CLI path** in Settings. See [Usage
+limits](SPEC.md#usage-limits) for the rules.
+
 ## Continue with a different agent
 
-Use this procedure after a session ends, for example when an agent reaches a quota
-limit.
+Use this procedure after a session ends, for example when an agent reaches a usage
+limit. To find an agent with usage left, first [check your usage
+limits](#check-your-usage-limits).
 
 1. Click **Continue in new terminal**.
 2. Select the tool for the new terminal.

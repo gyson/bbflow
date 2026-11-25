@@ -7,6 +7,7 @@ import { DiffPane } from './diff-pane.js';
 import { SideTerminal } from './side-terminal.js';
 import { WorkspacePane } from './workspace-pane.js';
 import { fillToolMenu, toolGroups } from './tool-menu.js';
+import { UsageDialog } from './usage.js';
 import { continueAction, continueDialogError, continueDialogProblem, defaultContinueTool } from './continue.js';
 import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
@@ -54,6 +55,7 @@ const elements = {
   'archive-session': element('archive-session', HTMLButtonElement),
   'pin-session': element('pin-session', HTMLButtonElement),
   'settings-open': element('settings-open', HTMLButtonElement),
+  'usage-open': element('usage-open', HTMLButtonElement),
   'settings-close': element('settings-close', HTMLButtonElement),
   'remove-worktree': element('remove-worktree', HTMLButtonElement),
   'terminal-pane': element('terminal-pane', HTMLElement),
@@ -225,6 +227,7 @@ const composer = new Composer({
 const sessionSplit = new SessionSplit();
 const sessionMenu = new ActionMenu('session-menu');
 const rowMenus = new RowMenus(() => renderSessions(), $('row-menu-status'));
+const usageDialog = new UsageDialog({ server: () => server });
 const handoffPrompt = new HandoffPrompt({ blocked: () => composer.insertBlocked(), insert: text => composer.insert(text), problem: text => composer.problem(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
 // final screen. The live process continues while a view shows an earlier terminal.
@@ -459,7 +462,7 @@ function controls() {
   $('pin-session').disabled = busy;
   $('pin-session').textContent = selected?.pinned ? 'Unpin' : 'Pin';
   if (!showingSettings && selected?.status === 'draft') $('status').textContent = selected.archived ? 'Draft · Archived' : 'Draft';
-  $('settings-open').disabled = busy || !server;
+  $('settings-open').disabled = $('usage-open').disabled = busy || !server;
   updateNotice.controls(busy || !server);
   $('settings-close').disabled = busy;
   composer.controls(busy, !!connection?.ready && !!connection.peer?.active);
@@ -1619,6 +1622,7 @@ async function initialize() {
     void action(showWelcome, 'Could not open Home.');
   };
   $('settings-open').onclick = () => action(showSettings, 'Could not open Settings.');
+  $('usage-open').onclick = () => action(() => usageDialog.open(), 'Could not open Usage.');
   $('settings-close').onclick = () => action(async () => {
     settingsView.close(); showingSettings = false;
     if (selected) await openSession(selected);
