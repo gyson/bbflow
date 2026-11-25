@@ -4,6 +4,7 @@ package protocol
 import (
 	"bbflow/internal/history"
 	"bbflow/internal/models"
+	"bbflow/internal/usage"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -12,7 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/43"
+const Version = "bbflow/44"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -66,8 +67,8 @@ type Request struct {
 	Run       string   `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
 	Shell     string   `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
 	Tool      string   `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
-	ToolType  string   `json:"toolType,omitempty"`  // The tool type of tool-models.
-	Refresh   bool     `json:"refresh,omitempty"`   // tool-models runs the list command again.
+	ToolType  string   `json:"toolType,omitempty"`  // The tool type of tool-models and tool-usage.
+	Refresh   bool     `json:"refresh,omitempty"`   // tool-models and tool-usage run their command again.
 	Limit     int      `json:"limit,omitempty"`
 	Groups    []string `json:"groups,omitempty"` // Session list group keys. "" is Standalone, and "pinned" is Pinned.
 	Offset    int      `json:"offset,omitempty"` // The sessions of the group to skip.
@@ -322,6 +323,16 @@ type SessionInfo struct {
 type ToolModels struct {
 	models.Catalog
 	Loaded string `json:"loaded"`
+}
+
+// ToolUsage is the reply of tool-usage: the last usage report of a tool type. Checked is
+// the time of the report in RFC 3339 format, and it is empty without a report. Error is
+// the error of the last check. With a report, the report is then from an earlier check.
+type ToolUsage struct {
+	Type string `json:"type"`
+	usage.Report
+	Checked string `json:"checked,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // TitleTool is an agent CLI that can make automatic session titles. The server owns its

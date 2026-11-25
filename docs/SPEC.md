@@ -37,6 +37,7 @@ The Web client section has these features:
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
 | [Projects and launches](#projects-and-launches) | Projects, the project menu, Start session, the shell, the terminal view, and reconnection. |
 | [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, built-in tools, tool types and model lists, the launch preparation of a session, and managed worktrees. |
+| [Usage limits](#usage-limits) | The Usage dialog, the check of each agent CLI, and the cache of the server. |
 | [Session status](#session-status) | The four statuses, the sidebar icon, the session toolbar, and the More actions menu. |
 | [Session titles](#session-titles) | User titles, derived titles, and the title tools. |
 | [Message editor](#message-editor) | Send, the ＋ menu, saved prompts, the shared draft, sent messages, and attachments. |
@@ -890,8 +891,8 @@ the [side terminal](#side-terminal) both use these rules:
 
 The sidebar lists the saved projects. Under each project, it shows the most recent
 sessions in groups. [Pinned](#pinned-sessions) comes first, above the projects. The
-sidebar also has a search box, and a bottom row with **＋ Project**, **Archived**, and
-**Settings**.
+sidebar also has a search box, and a bottom row with **＋ Project**, **Archived**,
+**Usage**, and **Settings**.
 
 #### Projects and groups
 
@@ -969,9 +970,11 @@ the home page shows `bbflow`.
 
 #### Bottom row
 
-Below the list, a row holds **＋ Project**, **Archived**, and **Settings**. A newer
-release shows above this row. The instance directory shows below the row. The sidebar
-shows the server connection only while the server is unavailable.
+Below the list, a row holds **＋ Project**, **Archived**, **Usage**, and **Settings**.
+In a narrow sidebar, **Usage** and **Settings** go to a second line together. **Usage**
+opens the [Usage dialog](#usage-dialog). A newer release shows above this row. The
+instance directory shows below the row. The sidebar shows the server connection only
+while the server is unavailable.
 
 ### Session families
 
@@ -1684,7 +1687,7 @@ user is signed in.
 
 A built-in tool has an optional **CLI path**. The program of an agent type is this
 path, or the plain CLI name when the path is empty: `codex`, `claude`, `agy`, or
-`code-puppy`. bbflow runs the program in four places:
+`code-puppy`. bbflow runs the program in five places:
 
 - The sessions of the built-in tool. Its command is the program, then `--no-alt-screen`
   for Codex. The launch adds the model and effort options.
@@ -1695,15 +1698,17 @@ path, or the plain CLI name when the path is empty: `codex`, `claude`, `agy`, or
   name must be on the PATH of the server. A path must name an executable file.
 - The [title tool](#title-models) of the type. The start of its command is the
   program.
+- The [usage check](#checks-of-each-cli) of Codex, Claude Code, and Antigravity.
 
 A session runs in the shell of the session, which reads the startup files of the user.
-The other three run in the shell of the server without them. So a plain name can work in
-a session and fail in the check. A CLI path serves all four.
+The other four run in the shell of the server without them. So a plain name can work in
+a session and fail in the check. A CLI path serves all five.
 
 A CLI path has at most 500 characters: letters, digits, and `_ . / ~ + @ -`, without
 spaces. So the shell does not interpret it, except a `~` at its start. A path with a
-folder starts with `/` or `~/`. Sessions, the model lists, the check, and the title
-tools run in different folders, so a relative path would name different files. Only a built-in
+folder starts with `/` or `~/`. Sessions, the model lists, the check, the title tools,
+and the usage checks run in different folders, so a relative path would name different
+files. Only a built-in
 tool has a CLI path. After a save with another path, the page reads the model lists,
 the check, and the title commands again.
 
@@ -1896,6 +1901,103 @@ and all session history.
 External processes and concurrent edits outside bbflow are not coordinated. Git manages
 its locks and linked-worktree metadata. Missing or moved repositories cause explicit
 errors.
+
+### Usage limits
+
+**Usage** in the bottom row of the sidebar opens a dialog with the usage limits of the
+agent tools. For each limit of the plan of the account, the dialog shows the part that
+is left and the reset time. The server asks each agent CLI. A check starts no agent turn
+and sends no history.
+
+#### Usage dialog
+
+- The dialog has one section for each built-in tool that has a check and is on:
+  **Codex**, **Claude Code**, and **Antigravity**, sorted by name. Shell, Code Puppy,
+  and custom tools have no check. Without such a tool, the dialog tells the user to turn
+  one on in Settings.
+- Each section has a row for each limit. A row shows the name of the limit, a bar, the
+  part that is left, and the reset time. An example is **5-hour**, **62% left**, and
+  **Resets 6:32 AM · in 3 h 52 min**.
+- A reset on another day names the weekday. A reset 6 or more days away names the date.
+- The bar is green. With less than 20% left, the bar and the value are amber. With
+  nothing left, they are red.
+- A limit for one model names the model, such as **Weekly (Fable)**. Antigravity shows
+  a heading for each model group, such as **Gemini Models**.
+- The head of a section shows the plan when the CLI tells it, such as **PLUS**. It also
+  shows the time of the check, such as **Checked 10:41 AM**.
+- The dialog reads the settings when it opens. Then it sends one `tool-usage` request
+  for each tool, all at the same time. Each section shows **Checking…** until its
+  answer.
+- **Check now** asks each CLI again. While a check of the dialog runs, the button shows
+  **Checking…** and is off. The old values stay, dimmed, until the new answer.
+- A failed check shows its error. When the server has a report from an earlier check,
+  the section shows that report with a warning. The warning names the time of the report
+  and the error.
+- **Close**, **✕**, and Escape close the dialog. An answer after the close changes
+  nothing.
+- The times do not change while the dialog stays open. A new open or **Check now** shows
+  new times.
+
+#### Checks of each CLI
+
+The server runs the [program](#tool-program) of the built-in tool in the shell of the
+server, in an empty temporary folder:
+
+| Type | Command | Output |
+| --- | --- | --- |
+| Codex | `codex app-server`. Standard input gets the JSON-RPC requests `initialize`, `initialized`, and `account/rateLimits/read`. | The JSON reply of `account/rateLimits/read`: the used percent, the length, and the reset time of each window, and the plan. |
+| Claude Code | `claude -p /usage --no-session-persistence` | Text. bbflow reads the lines that start with `Current session` and `Current week`. |
+| Antigravity | `agy -p /usage --output-format json` | JSON: the model groups, and the remaining part and the reset time of each limit. |
+
+- Codex exits at the end of its input without the answer of a pending request. Thus
+  standard input stays open until the reply line arrives. Then bbflow closes standard
+  input. If the process still runs 2 seconds later, bbflow stops its process group.
+- A Codex window of 300 minutes is **5-hour**. A window of 10,080 minutes is
+  **Weekly**. Another length gets a name such as **8-hour**.
+- The **Current session** line of Claude Code is **5-hour**. Each **Current week** line
+  is **Weekly**. A line for one model, such as `Current week (Fable)`, names the model.
+- The windows `5h` and `weekly` of Antigravity are **5-hour** and **Weekly**, in this
+  order. Another window of Antigravity keeps its name.
+- Claude Code prints its reset times without a year, such as `Nov 25 at 4:49am
+  (America/Los_Angeles)`. bbflow uses the first such time after one day ago. A time
+  without a date is today. It is tomorrow when it is more than an hour ago.
+- A line that starts with `Current ` in another format is an error. Thus a change of the
+  output cannot hide a limit or show a guessed number.
+- A check fails after 20 seconds. The browser waits 25 seconds for the reply.
+
+#### Cache of the server
+
+- The server keeps the last check of each type in memory. A server restart forgets it.
+  A check is not history, so it is not in SQLite.
+- A request without `refresh` gets the last check when it is less than 1 minute old.
+  Otherwise the request runs a new check.
+- One check of a type runs at a time. A request that waits for the check of another
+  request gets the result of that check.
+- A failed check keeps the last report. The reply then has the report, its time, and the
+  error.
+- A failed check counts as a check. Thus a request without `refresh` does not run it
+  again within 1 minute.
+- A change of the program, such as a new CLI path, forgets the last check of the type.
+- A disconnect stops the command and saves nothing.
+- `tool-usage` rejects a type without a check, and a type whose built-in tool is off.
+
+#### Limits
+
+- The checks were verified with Codex 0.172.0, Claude Code 2.1.332, and agy 1.5.17.
+  `codex app-server` is an experimental interface of Codex. The output of `claude -p
+  /usage` is text for people. Other versions can change either output. A changed output
+  shows as an error.
+- bbflow reads only the default limit of Codex, `rateLimits`. It ignores the other limit
+  IDs of the reply.
+- An account without plan limits, such as a login with an API key, shows the error of
+  the CLI.
+- A check uses the installation, authentication, and account of the user. The CLI sends
+  its own request to its provider. bbflow adds no history, message, or file to it.
+- When Claude Code cannot read its limits, it can show the last values that it read in
+  the past 60 minutes. The dialog then shows those values with the time of the bbflow
+  check.
+- The dialog shows only the built-in tools. A custom tool that starts an agent CLI has no
+  check.
 
 ### Session status
 
@@ -4675,6 +4777,37 @@ A later browser check with the demo instance verified the saves in Settings:
 - A click on **Done** with port 6000 in the field gave one toast.
 - A custom title command that failed after **Done** gave a toast. The hidden page then
   had no entry, and the browser did not warn at a close of the tab.
+
+### Checks of usage limits
+
+- Usage fixtures parse synthetic outputs in the formats of Codex 0.172.0, Claude Code
+  2.1.332, and agy 1.5.17. They verify the windows, the plan, and the reset times. They
+  also verify a reset in the next year, a reset without a date, and the order of the
+  Antigravity windows.
+- Usage fixtures verify the errors: a JSON-RPC error, missing rate limits, an
+  unanswered request, an unknown `Current ` line, an unknown reset time, an output
+  without limits, and a failed Antigravity status.
+- Server fixtures with scripts in place of the CLIs verify the cache: reuse within 1
+  minute, a new check after a refresh or after 1 minute, one check for requests that
+  wait together, and a new check after a change of the CLI path. They verify that a
+  failed check keeps the last report with the error, and that a canceled check saves
+  nothing. They verify the rejection of a tool that is off and of a type without a
+  check.
+- A server fixture with a script that acts like `codex app-server` verifies that
+  standard input stays open until the answer. The same script gives no answer when its
+  input closes at once. Other fixtures verify the time limit, a command that ends without
+  an answer, a missing CLI, a command that runs after its answer, and a reply line that
+  arrives in parts.
+- Web fixtures verify the tools of the dialog, the part that is left, the levels, the
+  names of the limits, and the reset texts.
+- A live check ran the real Codex 0.172.0, Claude Code 2.1.332, and agy 1.5.17 through
+  the server code. Each check returned the limits of the account.
+- A browser check of a demo instance opened **Usage** with the real Codex and Claude
+  Code CLIs. It verified the centered dialog in the dark and light appearances,
+  **Checking…** before each answer, **Check now**, an error for a missing Antigravity
+  CLI path, and the phone layout without a side scroll. It also verified the bottom row
+  on one line at the default sidebar width of a 1200-pixel window, and **Usage** and
+  **Settings** together on a second line in a 900-pixel window.
 
 ### Checks of the session status and toolbar
 

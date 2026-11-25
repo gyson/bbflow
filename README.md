@@ -81,6 +81,8 @@ bbflow is at an early version. Commands and APIs can still change.
 - The server asks GitHub for the latest release when it starts and then once a day. The
   request sends no history or settings. Turn it off with **Check for a new version
   every day** in Settings.
+- **Usage** in the sidebar asks each agent CLI for the usage limits of your account.
+  bbflow adds no history to the request.
 
 See [Your data](docs/GUIDE.md#your-data) for the storage location and the limits.
 

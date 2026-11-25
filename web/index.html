@@ -18,7 +18,7 @@
     <nav id="sessions" aria-label="Projects and sessions"><p class="muted">Connecting…</p></nav>
     <span id="row-menu-status" class="sr-only" role="status"></span>
     <button id="update-open" class="update-notice" aria-haspopup="dialog" hidden></button>
-    <div class="sidebar-actions"><button id="add-project" aria-haspopup="dialog" aria-label="Add project" title="Add project">＋ Project</button><button id="archives-open" aria-pressed="false" title="Show archived sessions">Archived</button><button id="settings-open">Settings</button></div>
+    <div class="sidebar-actions"><button id="add-project" aria-haspopup="dialog" aria-label="Add project" title="Add project">＋ Project</button><button id="archives-open" aria-pressed="false" title="Show archived sessions">Archived</button><span class="sidebar-group"><button id="usage-open" aria-haspopup="dialog" title="Show the usage limits of the agent tools">Usage</button><button id="settings-open">Settings</button></span></div>
     <div class="instance"><span id="connection" role="status">Connecting to server</span><span id="instance-dir" title="Instance directory"></span></div>
   </aside>
   <div id="sidebar-scrim" hidden></div>
@@ -375,6 +375,12 @@
       <p id="update-error" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button id="update-close" type="button">Cancel</button><button id="update-submit" type="submit" class="primary">Update and restart</button></div>
     </form>
+  </dialog>
+  <dialog id="usage-dialog" class="usage-dialog" aria-labelledby="usage-title">
+    <div class="dialog-heading"><h2 id="usage-title">Usage</h2><button type="button" id="usage-close" class="text-button" aria-label="Close usage">✕</button></div>
+    <p class="form-help">The usage limits of the built-in agent tools that are on. bbflow asks each CLI for the limits of your account. A check starts no agent turn.</p>
+    <div id="usage-list" class="usage-list"></div>
+    <div class="dialog-actions"><button id="usage-done" type="button">Close</button><button id="usage-check" type="button" class="primary">Check now</button></div>
   </dialog>
   <dialog id="handoff-dialog" class="continue-dialog" aria-labelledby="handoff-title">
     <div class="dialog-heading"><h2 id="handoff-title">Handoff prompt</h2><button type="button" id="handoff-close" class="text-button" aria-label="Close handoff prompt">✕</button></div>

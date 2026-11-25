@@ -15,7 +15,7 @@ each operation, and each stream. See [COMMANDS.md](COMMANDS.md) for user command
 | [Sessions and projects](#sessions-and-projects) | New sessions, session fields, projects, the session list, and archive. |
 | [Recorded-output search](#recorded-output-search) | `history-search` and `history-context`. |
 | [Workspace changes](#workspace-changes) | The operations of the Changes and Files views. |
-| [Settings and prepared launches](#settings-and-prepared-launches) | Settings, model lists, the preparation of a session, and managed worktrees. |
+| [Settings and prepared launches](#settings-and-prepared-launches) | Settings, model lists, usage limits, the preparation of a session, and managed worktrees. |
 | [New terminals in ended sessions](#new-terminals-in-ended-sessions) | `session-continue`, the handoff folder, and `session-terminals`. |
 | [Side terminals](#side-terminals) | The shell of the workspace pane. |
 | [Session status](#session-status) | The derived status, `status-watch`, and release offers. |
@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/43`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/44`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/43",
+    "protocol": "bbflow/44",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/43",
+    "protocol": "bbflow/44",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -229,6 +229,7 @@ See [Settings and prepared launches](#settings-and-prepared-launches).
 | `settings-save` | `settings`, including current revision | `result`, updated settings and revision. It keeps the saved `titleTool`, `titleCommand`, `titleModel`, and `titleEffort`. |
 | `tool-check` | None | `result`, containing `installed`: the agent types whose [program](SPEC.md#tool-program) the server finds, such as `{"codex": true}`. It finds only the CLI. |
 | `tool-models` | `toolType`: `codex`, `claude`, `agy`, or `code-puppy`. Optional `refresh` | `result`, the model list of the type. See [Model lists](#model-lists). |
+| `tool-usage` | `toolType`: `codex`, `claude`, or `agy`. Optional `refresh` | `result`, the last usage check of the type. See [Usage limits](#usage-limits). |
 | `title-tools` | None | `result`, containing `tools`, the built-in title tools with `id`, `name`, and the exact `command` with the default model and the [program](SPEC.md#tool-program) of the type, and for Claude, Codex, and Code Puppy also `type`, `prefix`, `suffix`, `model`, and `effort`. The command with another model is `prefix`, the model options of `type`, then `suffix`. and `sample`, the message of a title test. Custom is not in the list. |
 | `title-test` | `settings` with `titleTool`, `titleModel` and `titleEffort`, and `titleCommand` for `custom` | `result`, containing the `title`. It runs the title tool once with the sample message and saves nothing. `custom` needs `titleCommand`. The client sends the custom command that it shows, so the test runs that command. |
 | `title-tool-set` | `settings` with `titleTool`, `titleModel` and `titleEffort`, and `titleCommand` for `custom` | `result`, containing the saved `settings` with a new revision, and the `title` of the test. See [Title tool change](#title-tool-change). |
@@ -788,6 +789,35 @@ stops a running command. `custom` and an empty type return an error. For `agy`, 
 model ID is the ID without its effort, such as `gemini-4-neon`. The launch adds the
 effort to the ID.
 
+### Usage limits
+
+`tool-usage` runs the [usage check](SPEC.md#checks-of-each-cli) of a type with the
+[program](SPEC.md#tool-program) of its built-in tool. The built-in tool must be on. The
+reply has these fields:
+
+| Field | Value |
+| --- | --- |
+| `type` | The tool type of the request. |
+| `plan` | The plan of the account, such as `plus`. It is absent when the CLI does not tell it. |
+| `groups` | The model groups. Each has an optional `name` and `windows`. A group without a name has all models. The list is empty without a report. |
+| `checked` | The time of the report in RFC 3339 format. It is absent without a report. |
+| `error` | The error of the last check. With a report, the report is from an earlier check. |
+
+Each window has these fields:
+
+| Field | Value |
+| --- | --- |
+| `label` | The length of the limit, such as `5-hour` or `Weekly`. |
+| `model` | The model of a limit for one model, such as `Fable`. It is absent for a limit of all models. |
+| `used` | The used part in percent, from 0 to 100, with at most one decimal. |
+| `resets` | The reset time in RFC 3339 format. It is absent when the CLI does not tell it. |
+
+A request without `refresh` gets the last check when it is less than 1 minute old. A
+failed check is a `result` with `error`, not an `error` message. An `error` message
+rejects a type without a check, a built-in tool that is off, and a request that cannot
+read the settings. A disconnect stops a running check. See [Cache of the
+server](SPEC.md#cache-of-the-server).
+
 ### Title tool change
 
 `title-tool-set` changes the title tool with these rules:
@@ -1288,13 +1318,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/43") {
+    if (message.server.protocol !== "bbflow/44") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/43", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/44", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1422,6 +1452,8 @@ versions.
   `sessions.pinned_at`. No session has a pin after the upgrade.
 - Protocol 43 adds `prompts`, the [saved prompts](SPEC.md#saved-prompts), to settings.
   No operation is new. SQLite format 20 adds an empty list.
+- Protocol 44 adds [`tool-usage`](#usage-limits), the usage limits of Codex, Claude
+  Code, and Antigravity. The SQLite format does not change.
 
 ## Source files
 
