@@ -192,7 +192,7 @@ limits](#check-your-usage-limits).
 
 1. Click **Continue in new terminal**. The dialog selects the tool of the latest
    terminal, with the default model and thinking effort of that tool.
-2. If that agent reached its quota limit, select another **Tool**.
+2. If that agent reached its usage limit, select another **Tool**.
 3. Optional: change **Model** and **Thinking effort**, as in a new session.
 4. Click **Start new terminal**. bbflow writes a read-only handoff folder with the
    earlier terminals and messages. Then it starts the tool.
