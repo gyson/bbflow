@@ -859,13 +859,18 @@ func TestDiffParsersDropPartialRecords(t *testing.T) {
 	}
 }
 
+// requestLimit stops requestResult when a reply does not come. It does not measure
+// speed. A reply with two image sides at the size limit takes about 0.1 seconds
+// alone. On a busy macOS Intel runner, it took more than 5 seconds.
+const requestLimit = 30 * time.Second
+
 // requestResult sends one request through the server and returns its result.
 func requestResult(t *testing.T, s *Server, request protocol.Request, result any) {
 	t.Helper()
 	conn, peer := attachmentPair(t)
 	done := make(chan struct{})
 	go func() { defer close(done); s.handle(context.Background(), conn) }()
-	peer.SetReadDeadline(time.Now().Add(5 * time.Second))
+	peer.SetReadDeadline(time.Now().Add(requestLimit))
 	var greeting protocol.Message
 	if err := peer.ReadJSON(&greeting); err != nil || greeting.Type != "server" {
 		t.Fatal(greeting, err)
