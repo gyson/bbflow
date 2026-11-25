@@ -41,7 +41,7 @@ type runningSession struct {
 	// quiet records that a recorded output is not session activity. It can be nil.
 	quiet func(seq int64) error
 	// classified is the sequence of the latest event that publish completed. The quiet
-	// flags of the events up to it are final. See history.SessionFilter.Classified.
+	// flags of the events up to it are final. See history.OutputBounds.
 	classified int64
 	shell      string // Identifies the shell of a side terminal.
 }
@@ -598,7 +598,7 @@ func (s *Server) listSessions(filter history.SessionFilter) (protocol.SessionPag
 }
 
 // orderFilter adds the bounds of output with a final quiet flag to a session list filter.
-// See history.SessionFilter.Recorded. It reads the latest event first. A terminal that
+// See history.OutputBounds. It reads the latest event first. A terminal that
 // starts after that read records only later output, and a terminal leaves the sessions
 // after its last publish. Thus the output up to that event of a session without an entry
 // has a final flag.
@@ -607,7 +607,7 @@ func (s *Server) orderFilter(filter history.SessionFilter) (history.SessionFilte
 	if err != nil {
 		return filter, err
 	}
-	filter.Recorded, filter.Classified = recorded, s.classified()
+	filter.Bounds = &history.OutputBounds{Recorded: recorded, Classified: s.classified()}
 	return filter, nil
 }
 

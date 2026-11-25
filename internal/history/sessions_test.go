@@ -102,9 +102,9 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 }
 
 // The server records output before it sets the quiet flag of the output. Until then, the
-// output of a live terminal does not count. Other events count, because their flags are
-// final when they are recorded.
-func TestOrderSkipsLiveOutputBeforeItsQuietFlag(t *testing.T) {
+// output does not count. Other events count, because their flags are final when they are
+// recorded.
+func TestOrderSkipsOutputBeforeItsQuietFlag(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
 	if err != nil {
 		t.Fatal(err)
@@ -126,27 +126,31 @@ func TestOrderSkipsLiveOutputBeforeItsQuietFlag(t *testing.T) {
 		}
 		return event.Seq
 	}
-	first := func(reason string, filter SessionFilter, want string) {
+	first := func(reason string, bounds *OutputBounds, want string) {
 		t.Helper()
-		filter.Limit = 2
-		listed, err := store.ListSessions(filter)
+		listed, err := store.ListSessions(SessionFilter{Limit: 2, Bounds: bounds})
 		if err != nil || len(listed.Sessions) != 2 || listed.Sessions[0].ID != want {
 			t.Fatalf("%s: list is %+v, %v, expected %s first", reason, listed, err, want)
 		}
 	}
+	// In an empty archive, the server reads 0 as the latest event. A terminal that starts
+	// during the list read then records output after it.
+	empty := &OutputBounds{}
+	record(live.ID, "output")
+	first("without bounds", nil, live.ID)
+	first("output after an empty archive", empty, other.ID)
 	start := record(live.ID, "start")
 	latest := record(other.ID, "output")
 	output := record(live.ID, "output")
-	first("without bounds", SessionFilter{}, live.ID)
-	first("output before its quiet flag", SessionFilter{Classified: map[string]int64{live.ID: start}}, other.ID)
-	first("output with its quiet flag", SessionFilter{Classified: map[string]int64{live.ID: output}}, live.ID)
+	first("output before its quiet flag", &OutputBounds{Recorded: output, Classified: map[string]int64{live.ID: start}}, other.ID)
+	first("output with its quiet flag", &OutputBounds{Recorded: output, Classified: map[string]int64{live.ID: output}}, live.ID)
 	// A terminal that started after the server read the latest event has no entry. Its
 	// output after that event does not count yet.
-	first("output after the recorded event", SessionFilter{Recorded: latest}, other.ID)
-	first("output up to the recorded event", SessionFilter{Recorded: output}, live.ID)
+	first("output after the recorded event", &OutputBounds{Recorded: latest}, other.ID)
+	first("output up to the recorded event", &OutputBounds{Recorded: output}, live.ID)
 	record(live.ID, "input")
-	first("input after the classified event", SessionFilter{Classified: map[string]int64{live.ID: start}}, live.ID)
-	first("input after the recorded event", SessionFilter{Recorded: latest}, live.ID)
+	first("input after the classified event", &OutputBounds{Recorded: output, Classified: map[string]int64{live.ID: start}}, live.ID)
+	first("input after the recorded event", &OutputBounds{Recorded: latest}, live.ID)
 }
 
 // Sessions with equal times keep their creation order, newest first. Session IDs are

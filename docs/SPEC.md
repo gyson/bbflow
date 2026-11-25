@@ -3916,7 +3916,8 @@ activity:
 The session list does not count the output of a terminal before the server sets its
 flag. For each list read, the server gives the query two bounds:
 
-1. The sequence of the latest event in the archive. The server reads it first.
+1. The sequence of the latest event in the archive, or 0 without events. The server
+   reads it first.
 2. For each live terminal, the sequence of the latest event that the server classified.
 
 The output of a session counts up to its second bound, or up to the first bound when
@@ -4702,8 +4703,10 @@ A later browser check with the demo instance verified the saves in Settings:
   also checks that the reply to a focus report and the echo of typed input are quiet.
 - A server fixture holds the quiet flag of a frame before the server sets it. A list
   read in that time does not count the frame. In a second fixture, a terminal starts
-  after a list read took its bounds, and the read does not count its frame either. A
-  history fixture checks both bounds, and that input after them counts.
+  after a list read took its bounds, and the read does not count its frame either. This
+  fixture runs in an empty archive and in an archive with events. A history fixture
+  checks both bounds, the bound 0 of an empty archive, and that input after them
+  counts.
 - A third PTY fixture starts an application that turns focus reports on. It writes a
   frame without a change ten times each second. The session becomes `idle`. The frames
   and a focus report of a view are quiet and do not change the list order. List reads

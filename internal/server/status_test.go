@@ -229,8 +229,14 @@ func TestSessionListWaitsForTheQuietFlag(t *testing.T) {
 }
 
 // A terminal can start while the server reads the session list. The list must not count
-// its output before the quiet flag either.
+// its output before the quiet flag either. In an empty archive, the latest event is 0.
 func TestSessionListWaitsForTheQuietFlagOfANewTerminal(t *testing.T) {
+	for _, archive := range []string{"empty", "populated"} {
+		t.Run(archive, func(t *testing.T) { newTerminalDuringListRead(t, archive == "populated") })
+	}
+}
+
+func newTerminalDuringListRead(t *testing.T, populated bool) {
 	s, session := handoffFixture(t)
 	other, err := s.store.CreateSession("other", session.Workspace, session.ProjectID)
 	if err != nil {
@@ -244,11 +250,16 @@ func TestSessionListWaitsForTheQuietFlagOfANewTerminal(t *testing.T) {
 		}
 		return event
 	}
-	record(other.ID, "output", "older")
+	if populated {
+		record(other.ID, "output", "older")
+	}
 	// The list request reads its bounds. Then the terminal starts.
 	filter, err := s.orderFilter(history.SessionFilter{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if recorded := filter.Bounds.Recorded; (recorded == 0) == populated {
+		t.Fatalf("the latest event is %d in an archive that is populated: %v", recorded, populated)
 	}
 	marking, release := make(chan struct{}), make(chan struct{})
 	live := &runningSession{id: session.ID, terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
