@@ -111,15 +111,13 @@ func (r *runningSession) subscribe(conn *protocol.Conn, size protocol.Size) *att
 
 // awaitsResize tells that the size owner waits for the emulator to apply its size. A
 // frame before that would show the screen at another size, and the resize would then
-// give a second full frame. Requires r.mu.
+// give a second full frame. The wait ends: the runtime records each resize that it
+// accepts, and the emulator applies the record. The runtime ignores only a resize to its
+// PTY size, which is the emulator size after each control. A failed record stops the
+// run, and the end wakes each view. Requires r.mu.
 func (r *runningSession) awaitsResize(a *attachment) bool {
 	return r.sizeOwner == a && !r.ended && a.size != r.terminal.Size()
 }
-
-// resizeWait limits the time that the size owner waits for the emulator. The emulator
-// applies each resize that the runtime accepts, or the run ends. The limit only keeps a
-// view from waiting without end for a resize that does not come.
-const resizeWait = time.Second
 
 func (r *runningSession) leave(a *attachment) {
 	r.controlMu.Lock()
@@ -497,27 +495,17 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 	dirty := true
 	// saved tells that the view got the saved screen of the ended terminal.
 	saved := false
-	// The size that the size owner waits for, and the start of the wait. See awaitsResize.
-	var waitSize protocol.Size
-	var waitStart time.Time
 	for {
 		if dirty && sent == acked && (previous == nil || time.Since(sentAt) >= 50*time.Millisecond) {
 			r.mu.Lock()
 			revision, ended, exit := r.revision, r.ended, r.exit
 			var next *terminal.View
-			wait := false
 			switch {
 			case saved:
+			case r.awaitsResize(a):
+				// The emulator resize wakes the view.
 			case revision != sent || previous == nil:
-				if r.awaitsResize(a) {
-					if waitSize != a.size {
-						waitSize, waitStart = a.size, time.Now()
-					}
-					wait = time.Since(waitStart) < resizeWait
-				}
-				if !wait {
-					next = r.terminal.ViewFor(a.size, &a.history)
-				}
+				next = r.terminal.ViewFor(a.size, &a.history)
 			case ended && !r.side:
 				// A view of another size shows a crop or a padding of the screen. Its last
 				// frame is the saved screen, as a reload shows it.
@@ -539,8 +527,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 				conn.Send(exit)
 				return
 			}
-			// A waiting view checks again at the next tick or change.
-			dirty = wait
+			dirty = false
 		}
 		select {
 		case <-a.closed:

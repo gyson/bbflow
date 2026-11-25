@@ -2,13 +2,11 @@ import type { Terminal } from '@xterm/xterm';
 import { decodeBytes } from './protocol.js';
 import type { ServerMessage } from './protocol.js';
 import { scrollbackRows } from './terminal-size.js';
+import { lastRow } from './ended-fit.js';
 
-export type Display = Pick<Terminal, 'write' | 'resize' | 'options'>;
+export type Display = Pick<Terminal, 'write' | 'resize' | 'options' | 'rows' | 'buffer'>;
 
 const ascii = (text: string) => Uint8Array.from(text, char => char.charCodeAt(0));
-// An erase of the history rows, a hidden cursor, and a move of the cursor to the last
-// row.
-const prepare = ascii('\x1b[3J\x1b[?25l\x1b[999;1H');
 // A full reset (RIS).
 const reset = ascii('\x1bc');
 
@@ -20,9 +18,10 @@ const reset = ascii('\x1bc');
 // A reset empties the rows of the view at once. Thus a full frame changes the view in
 // two writes:
 //
-// 1. The first write erases the history rows and moves the cursor to the last row. The
-//    screen stays. The resize then has no history rows to reflow. A lower view keeps the
-//    bottom rows of the screen, as the server crops a lower view.
+// 1. The first write erases the history rows and moves the cursor to the last row with
+//    text, or to the cursor row when it is lower. The screen stays. The resize then has
+//    no history rows to reflow. xterm.js removes the rows below the cursor first, so a
+//    lower view keeps the last row with text and as many rows above it as fit.
 // 2. The callback of the first write sets the frame size. Then it writes the frame data
 //    after a reset. xterm.js parses one write in one task, so the browser paints the
 //    rows of the frame after the reset.
@@ -53,7 +52,9 @@ export class TerminalStream {
     }
     this.pending = true;
     try {
-      this.view.write(message.full ? prepare : new Uint8Array(), () => this.render(message));
+      // Erase the history rows, hide the cursor, and move it to the last row with text.
+      const prepare = message.full ? ascii(`\x1b[3J\x1b[?25l\x1b[${lastRow(this.view) + 1};1H`) : new Uint8Array();
+      this.view.write(prepare, () => this.render(message));
     } catch (error) {
       this.fail(error);
     }

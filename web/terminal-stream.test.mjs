@@ -58,12 +58,15 @@ test('server frames match raw PTY rendering in real xterm.js', async () => {
   } finally { reference.dispose(); rendered.dispose(); }
 });
 
+// The buffer of a fake view: an empty screen with the cursor on the first row.
+const emptyBuffer = { active: { cursorY: 0, baseY: 0, getLine: () => undefined } };
+
 // A fake view queues each write. parse calls the callbacks in order, as xterm.js does. A
 // callback can queue another write.
 function fakeView(calls = []) {
   const queued = [];
   const view = {
-    options: {},
+    options: {}, rows: 24, buffer: emptyBuffer,
     // xterm.js 6.1 parses the waiting writes before a resize. Then no write may wait.
     resize(cols, rows) { assert.equal(queued.length, 0, 'a write waits during a resize'); calls.push(`resize ${cols}x${rows}`); },
     write(bytes, callback) { calls.push(`write ${JSON.stringify(new TextDecoder().decode(bytes))}`); queued.push(callback); },
@@ -93,9 +96,9 @@ test('a full frame prepares the view, sets its size, then resets it in the write
   const stream = new TerminalStream(view, { current: () => true, acknowledge: () => calls.push('ack'), ready() {}, fail: e => assert.fail(e) });
   stream.push({ type: 'frame', revision: 1, full: true, size: { cols: 40, rows: 10 }, data: btoa('hi') });
   // The task that receives the frame only queues a write.
-  assert.deepEqual(calls, ['write "\\u001b[3J\\u001b[?25l\\u001b[999;1H"']);
+  assert.deepEqual(calls, ['write "\\u001b[3J\\u001b[?25l\\u001b[1;1H"']);
   parse();
-  assert.deepEqual(calls, ['write "\\u001b[3J\\u001b[?25l\\u001b[999;1H"', 'resize 40x10', 'write "\\u001bchi"', 'ack']);
+  assert.deepEqual(calls, ['write "\\u001b[3J\\u001b[?25l\\u001b[1;1H"', 'resize 40x10', 'write "\\u001bchi"', 'ack']);
   // A delta frame does not prepare or reset the view.
   calls.length = 0;
   stream.push({ type: 'frame', revision: 2, size: { cols: 40, rows: 10 }, data: btoa('hi') });
@@ -115,34 +118,36 @@ function realView() {
   const screen = () => Array.from({ length: view.rows }, (_, y) => view.buffer.active.getLine(view.buffer.active.baseY + y).translateToString(true));
   const history = () => Array.from({ length: view.buffer.active.baseY }, (_, y) => view.buffer.active.getLine(y).translateToString(true));
   const frame = (revision, cols, rows, text) => ({ type: 'frame', revision, full: true, size: { cols, rows }, data: btoa(text) });
-  // Ten rows go to the history. Then the screen has text only on its last row, and the
-  // cursor is at the top.
-  const earlier = frame(1, 20, 4, `${Array.from({ length: 10 }, (_, i) => `h${i}\r\n`).join('')}\x1b[2J\x1b[4;1Hlast\x1b[H`);
+  // Ten rows go to the history. Then the screen has text only on one row, and the cursor
+  // is at the top.
+  const earlier = (row, text) => frame(1, 20, 4, `${Array.from({ length: 10 }, (_, i) => `h${i}\r\n`).join('')}\x1b[2J\x1b[${row};1H${text}\x1b[H`);
   return { view, screen, history, frame, earlier };
 }
 
-test('a full frame keeps the bottom rows of the earlier screen until xterm.js parses the frame data', async () => {
-  const { view, screen, history, frame, earlier } = realView();
-  // The browser can paint after the resize. Then the view must show the bottom rows of
-  // the earlier screen, as the server crops a lower view.
-  const resize = view.resize.bind(view);
-  let afterResize;
-  view.resize = (cols, rows) => { resize(cols, rows); afterResize = screen(); };
-  let parsed;
-  const stream = new TerminalStream(view, {
-    current: () => true, acknowledge: () => parsed(), ready() {}, fail: error => assert.fail(error),
-  });
-  const push = message => new Promise(resolve => { parsed = resolve; stream.push(message); });
-  try {
-    await push(earlier);
-    assert.deepEqual([screen(), history().length], [['', '', '', 'last'], 7]);
-    const later = push(frame(2, 30, 2, '\x1b[Hsecond'));
-    // At the end of the task that receives the frame, the view shows the earlier frame.
-    assert.deepEqual([screen(), history().length, view.cols], [['', '', '', 'last'], 7, 20]);
-    await later;
-    assert.deepEqual(afterResize, ['', 'last']);
-    assert.deepEqual([screen(), view.cols], [['second', ''], 30]);
-  } finally { view.dispose(); }
+test('a lower view keeps the rows with text of the earlier screen until xterm.js parses the frame data', async () => {
+  for (const [row, before, after] of [[4, ['', '', '', 'last'], ['', 'last']], [1, ['first', '', '', ''], ['first', '']]]) {
+    const { view, screen, history, frame, earlier } = realView();
+    // The browser can paint after the resize. Then the view must show the rows with
+    // text: the last rows of the screen, or the first rows when the text is at the top.
+    const resize = view.resize.bind(view);
+    let afterResize;
+    view.resize = (cols, rows) => { resize(cols, rows); afterResize = screen(); };
+    let parsed;
+    const stream = new TerminalStream(view, {
+      current: () => true, acknowledge: () => parsed(), ready() {}, fail: error => assert.fail(error),
+    });
+    const push = message => new Promise(resolve => { parsed = resolve; stream.push(message); });
+    try {
+      await push(earlier(row, before[row - 1]));
+      assert.deepEqual([screen(), history().length], [before, 7]);
+      const later = push(frame(2, 30, 2, '\x1b[Hsecond'));
+      // At the end of the task that receives the frame, the view shows the earlier frame.
+      assert.deepEqual([screen(), history().length, view.cols], [before, 7, 20]);
+      await later;
+      assert.deepEqual(afterResize, after, `text on row ${row}`);
+      assert.deepEqual([screen(), view.cols], [['second', ''], 30]);
+    } finally { view.dispose(); }
+  }
 });
 
 test('a full frame that arrives before a stop reaches the view with its history', async () => {
@@ -154,7 +159,7 @@ test('a full frame that arrives before a stop reaches the view with its history'
   });
   const flush = () => new Promise(resolve => view.write('', resolve));
   try {
-    await new Promise(resolve => { parsed = resolve; stream.push(earlier); });
+    await new Promise(resolve => { parsed = resolve; stream.push(earlier(4, 'last')); });
     // The connection fails just after the next frame arrives.
     stream.push(frame(2, 20, 4, `${Array.from({ length: 9 }, (_, i) => `n${i}\r\n`).join('')}new`));
     stream.stop();
@@ -165,7 +170,7 @@ test('a full frame that arrives before a stop reaches the view with its history'
 });
 
 test('a full frame sets the history row limit of its width', () => {
-  const view = { options: { scrollback: 1 }, resize() {}, write(bytes, callback) { callback(); } };
+  const view = { options: { scrollback: 1 }, rows: 24, buffer: emptyBuffer, resize() {}, write(bytes, callback) { callback(); } };
   const stream = new TerminalStream(view, { current: () => true, acknowledge() {}, ready() {}, fail: e => assert.fail(e) });
   stream.push({ type: 'frame', revision: 1, full: true, size: { cols: 40, rows: 24 } });
   assert.equal(view.options.scrollback, 25000);
@@ -180,7 +185,7 @@ test('a full frame sets the history row limit of its width', () => {
 test('reject a delta without a baseline or a second unacknowledged frame', () => {
   for (const full of [false, true]) {
     const errors = [];
-    const stream = new TerminalStream({ options: {}, resize() {}, write() {} }, {
+    const stream = new TerminalStream({ options: {}, rows: 24, buffer: emptyBuffer, resize() {}, write() {} }, {
       current: () => true, acknowledge() {}, ready() {}, fail: e => errors.push(e),
     });
     stream.push({ type: 'frame', revision: 1, full, size: { cols: 80, rows: 24 } });

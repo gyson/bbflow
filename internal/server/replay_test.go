@@ -362,28 +362,30 @@ func TestNewOwnerKeepsItsSizeUntilTheEmulatorResizes(t *testing.T) {
 	f.next(second, wider, "pending")
 }
 
-// A resize that never reaches the emulator does not stop the frames of the size owner.
-// After resizeWait, the view gets frames of its own size, as a view without the size.
-func TestOwnerWaitForTheEmulatorIsLimited(t *testing.T) {
+// Each resize of the size owner waits for the emulator. A later resize to the same width
+// also waits, after any pause.
+func TestOwnerWaitsForEachResize(t *testing.T) {
 	f := newOwnerFixture(t)
-	owner := openTestView(t, f.s, f.r, protocol.Size{Cols: 80, Rows: 24})
-	f.control(protocol.Size{Cols: 80, Rows: 24})
-	f.shows(owner)
+	size := protocol.Size{Cols: 80, Rows: 24}
 	narrow := protocol.Size{Cols: 40, Rows: 24}
-	start := time.Now()
-	owner.send(protocol.Message{Type: "resize", Size: narrow})
-	f.control(narrow)
-	f.publish("output", []byte("late"))
-	if m := owner.read("frame"); m.Size != narrow || time.Since(start) < resizeWait {
-		t.Fatalf("got size=%+v after %v", m.Size, time.Since(start))
-	} else {
-		owner.ack(m)
+	owner := openTestView(t, f.s, f.r, size)
+	f.control(size)
+	f.shows(owner)
+	resize := func(next protocol.Size, output string) {
+		t.Helper()
+		owner.send(protocol.Message{Type: "resize", Size: next})
+		f.control(next)
+		if output != "" {
+			f.publish("output", []byte(output))
+			time.Sleep(settle)
+		}
+		f.resize(next)
+		f.next(owner, next, output)
 	}
-	// The view does not wait again for the same size.
-	f.publish("output", []byte("again"))
-	if m := owner.read("frame"); m.Size != narrow || !strings.Contains(string(m.Data), "again") {
-		t.Fatalf("got size=%+v", m.Size)
-	}
+	resize(narrow, "first")
+	resize(size, "")
+	time.Sleep(1100 * time.Millisecond)
+	resize(narrow, "again")
 }
 
 // When the process ends, a view of another size gets the saved screen as its last frame,

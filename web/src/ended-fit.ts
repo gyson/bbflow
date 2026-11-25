@@ -76,7 +76,7 @@ async function moveCursor(view: Terminal, row: number, column: number): Promise<
 // lastRow returns the last screen row with text, or the cursor row when it is lower. The
 // server writes the cells of a background color as spaces, so a row with a background
 // color counts as a row with text.
-function lastRow(view: Terminal): number {
+export function lastRow(view: Pick<Terminal, 'rows' | 'buffer'>): number {
   const buffer = view.buffer.active;
   for (let y = view.rows - 1; y > buffer.cursorY; y--) {
     if (buffer.getLine(buffer.baseY + y)?.translateToString(true)) return y;
