@@ -115,6 +115,10 @@ func (s *Server) toolUsage(ctx context.Context, kind string, refresh bool) (prot
 	lock := s.usage.lock(kind)
 	lock.Lock()
 	defer lock.Unlock()
+	// The client can disconnect while the request waits for the lock.
+	if err := ctx.Err(); err != nil {
+		return protocol.ToolUsage{}, err
+	}
 	entry := s.usage.entry(kind)
 	if entry.program != program {
 		entry = usageEntry{program: program}
@@ -152,6 +156,10 @@ func (s *Server) toolUsage(ctx context.Context, kind string, refresh bool) (prot
 // exit, and stops the process group if it still runs. It returns the accepted line. Like
 // runCLI, it runs the command in the shell of the server, in an empty temporary folder.
 func runUntil(ctx context.Context, command, input string, done func([]byte) bool, timeout time.Duration, limit int) (string, error) {
+	// A canceled request starts no command.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	shell, env, err := serverShell()
 	if err != nil {
 		return "", err

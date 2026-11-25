@@ -209,6 +209,16 @@ func TestRunUntilStopsACommandWithoutAnAnswer(t *testing.T) {
 			t.Fatalf("%q: got %v, want %q", command, err, message)
 		}
 	}
+	// A canceled request does not start the command.
+	ran := filepath.Join(t.TempDir(), "ran")
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := runUntil(canceled, "touch '"+ran+"'; echo answer", "", done, 5*time.Second, 1<<10); err == nil {
+		t.Fatal("a canceled request ran")
+	}
+	if _, err := os.Stat(ran); !os.IsNotExist(err) {
+		t.Fatalf("a canceled request started the command: %v", err)
+	}
 	// A command that keeps running after its answer stops when its input closes, or
 	// after a short wait.
 	start = time.Now()

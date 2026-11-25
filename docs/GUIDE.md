@@ -40,8 +40,9 @@ Claude Code.
 
 bbflow keeps the name and the command of a built-in tool. If **NOT FOUND** shows for a
 CLI that you have, click **Edit** and enter its full path in **CLI path**, for example
-`/opt/homebrew/bin/codex`. bbflow then uses this path for sessions, the model list, and
-automatic titles. For other options, such as `codex --search`, add a custom tool.
+`/opt/homebrew/bin/codex`. bbflow then uses this path for sessions, the model list,
+automatic titles, and the [usage check](#check-your-usage-limits). For other options,
+such as `codex --search`, add a custom tool.
 
 Your own tools are custom tools. They have their own table, **Custom tools**, below the
 built-in tools. To add one, such as a script or a Codex command with other options,

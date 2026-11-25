@@ -598,7 +598,9 @@ export class SettingsView {
     this.toolBuiltinNote.textContent = 'bbflow keeps the name and the command of this built-in tool. For other options, add a custom tool.';
     this.toolPath.value = original?.path ?? '';
     this.toolPath.placeholder = type;
-    this.toolPathHelp.textContent = `Leave it empty to run ${type} from the PATH of the server. bbflow runs this program for sessions, the model list, the check for the CLI, and automatic titles.`;
+    // Code Puppy has no usage check.
+    const uses = type === 'code-puppy' ? 'the check for the CLI, and automatic titles' : 'the check for the CLI, automatic titles, and the usage check';
+    this.toolPathHelp.textContent = `Leave it empty to run ${type} from the PATH of the server. bbflow runs this program for sessions, the model list, ${uses}.`;
     this.toolModels.set(type, original?.model ?? '', original?.effort ?? '');
     this.editorError.hidden = true;
     if (!this.editorDialog.open) this.editorDialog.showModal();

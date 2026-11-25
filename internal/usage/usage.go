@@ -288,9 +288,13 @@ func claudeResetTime(text string, now time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	reset := time.Date(now.Year(), day.Month(), day.Day(), hour, minute, 0, 0, location)
-	if reset.Before(now.AddDate(0, 0, -1)) {
-		reset = reset.AddDate(1, 0, 0)
+	// The year of the cutoff gives the first such time after the cutoff, or else the
+	// next year does. Thus a reset on December 31 seen on January 1 stays in the last
+	// year.
+	cutoff := now.AddDate(0, 0, -1)
+	reset := time.Date(cutoff.Year(), day.Month(), day.Day(), hour, minute, 0, 0, location)
+	if reset.Before(cutoff) {
+		reset = time.Date(cutoff.Year()+1, day.Month(), day.Day(), hour, minute, 0, 0, location)
 	}
 	return reset, nil
 }
@@ -322,7 +326,8 @@ var agyWindows = map[string]struct {
 	order int
 }{"5h": {"5-hour", 0}, "weekly": {"Weekly", 1}}
 
-// parseAgy reads the usage of each model group of Antigravity.
+// parseAgy reads the usage of each model group of Antigravity. It skips a group without
+// limits. An output without any limit is an error.
 func parseAgy(output []byte) (Report, error) {
 	var out agyOutput
 	if err := json.Unmarshal(bytes.TrimSpace(output), &out); err != nil {
@@ -331,7 +336,7 @@ func parseAgy(output []byte) (Report, error) {
 	if out.Status != "SUCCESS" {
 		return Report{}, fmt.Errorf("Antigravity did not read its usage: %s", cmp.Or(firstLine([]byte(out.Response)), out.Status))
 	}
-	if out.Command == nil || out.Command.Data == nil || len(out.Command.Data.Groups) == 0 {
+	if out.Command == nil || out.Command.Data == nil {
 		return Report{}, errors.New("Antigravity printed no usage limits")
 	}
 	var groups []Group
@@ -363,7 +368,12 @@ func parseAgy(output []byte) (Report, error) {
 			return len(agyWindows)
 		}
 		slices.SortStableFunc(group.Windows, func(a, b Window) int { return order(a) - order(b) })
-		groups = append(groups, group)
+		if len(group.Windows) > 0 {
+			groups = append(groups, group)
+		}
+	}
+	if len(groups) == 0 {
+		return Report{}, errors.New("Antigravity printed no usage limits")
 	}
 	return Report{Groups: groups}, nil
 }

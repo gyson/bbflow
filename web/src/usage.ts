@@ -155,7 +155,7 @@ export class UsageDialog {
     const groups = report?.groups ?? [];
     for (const group of groups) {
       if (group.name && groups.length > 1) section.append(node('h4', 'usage-group', group.name));
-      for (const window of group.windows) section.append(this.row(window, now));
+      for (const window of group.windows ?? []) section.append(this.row(window, now));
     }
     if (failure) section.append(node('p', 'form-error', failure));
     else if (report?.error && groups.length) {

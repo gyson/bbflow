@@ -107,6 +107,18 @@ func TestClaudeResetTimesGetTheirYear(t *testing.T) {
 			t.Fatalf("%q: got %v %v, want %v", text, got, err, want)
 		}
 	}
+	// On January 1, a reset on December 31 an hour ago stays in the last year.
+	newYear := time.Date(2027, 1, 1, 1, 0, 0, 0, la)
+	for text, want := range map[string]time.Time{
+		"Dec 31 at 11:59pm (America/Los_Angeles)": time.Date(2026, 12, 31, 23, 59, 0, 0, la),
+		"Jan 1 at 4am (America/Los_Angeles)":      time.Date(2027, 1, 1, 4, 0, 0, 0, la),
+		"Dec 30 at 11pm (America/Los_Angeles)":    time.Date(2027, 12, 30, 23, 0, 0, 0, la),
+	} {
+		got, err := claudeResetTime(text, newYear)
+		if err != nil || !got.Equal(want) {
+			t.Fatalf("%q on January 1: got %v %v, want %v", text, got, err, want)
+		}
+	}
 	for _, text := range []string{"tomorrow", "Nov 25 at 13pm (America/Los_Angeles)", "Nov 25 at 4:49am (Mars/Olympus)", "Foo 25 at 4am"} {
 		if _, err := claudeResetTime(text, now); err == nil {
 			t.Fatalf("accepted %q", text)
@@ -163,9 +175,18 @@ func TestAgyReadsEachModelGroup(t *testing.T) {
 	}
 }
 
+func TestAgySkipsAGroupWithoutLimits(t *testing.T) {
+	report, err := Parse(models.Agy, []byte(`{"status":"SUCCESS","command":{"data":{"groups":[{"name":"Empty","buckets":[]},{"name":"Gemini Models","buckets":[{"name":"Weekly","window":"weekly","remaining_fraction":0.5}]}]}}}`), time.Now())
+	if err != nil || len(report.Groups) != 1 || report.Groups[0].Name != "Gemini Models" || report.Groups[0].Windows == nil {
+		t.Fatalf("got %+v %v", report, err)
+	}
+}
+
 func TestAgyReportsFailures(t *testing.T) {
 	for output, message := range map[string]string{
 		`{"status":"ERROR","response":"Sign in to continue.\nRun agy."}`:                                                                        "Sign in to continue.",
+		`{"status":"SUCCESS","command":{"data":{"groups":[{"name":"Gemini Models","buckets":[]}]}}}`:                                            "no usage limits",
+		`{"status":"SUCCESS","command":{}}`:                                                                                                     "no usage limits",
 		`{"status":"SUCCESS","command":{"data":{"groups":[]}}}`:                                                                                 "no usage limits",
 		`{"status":"SUCCESS","command":{"data":{"groups":[{"name":"G","buckets":[{"name":"Weekly"}]}]}}}`:                                       "no remaining part",
 		`{"status":"SUCCESS","command":{"data":{"groups":[{"name":"G","buckets":[{"name":"W","remaining_fraction":1,"reset_time":"soon"}]}]}}}`: "reset time",

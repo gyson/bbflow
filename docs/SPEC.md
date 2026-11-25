@@ -1958,6 +1958,8 @@ server, in an empty temporary folder:
   is **Weekly**. A line for one model, such as `Current week (Fable)`, names the model.
 - The windows `5h` and `weekly` of Antigravity are **5-hour** and **Weekly**, in this
   order. Another window of Antigravity keeps its name.
+- A model group of Antigravity without limits does not show. An output without any limit
+  is an error, as for the other CLIs.
 - Claude Code prints its reset times without a year, such as `Nov 25 at 4:49am
   (America/Los_Angeles)`. bbflow uses the first such time after one day ago. A time
   without a date is today. It is tomorrow when it is more than an hour ago.
@@ -4782,8 +4784,9 @@ A later browser check with the demo instance verified the saves in Settings:
 
 - Usage fixtures parse synthetic outputs in the formats of Codex 0.172.0, Claude Code
   2.1.332, and agy 1.5.17. They verify the windows, the plan, and the reset times. They
-  also verify a reset in the next year, a reset without a date, and the order of the
-  Antigravity windows.
+  also verify a reset in the next year, a reset on December 31 seen on January 1, a
+  reset without a date, the order of the Antigravity windows, and an Antigravity group
+  without limits.
 - Usage fixtures verify the errors: a JSON-RPC error, missing rate limits, an
   unanswered request, an unknown `Current ` line, an unknown reset time, an output
   without limits, and a failed Antigravity status.
@@ -4796,8 +4799,8 @@ A later browser check with the demo instance verified the saves in Settings:
 - A server fixture with a script that acts like `codex app-server` verifies that
   standard input stays open until the answer. The same script gives no answer when its
   input closes at once. Other fixtures verify the time limit, a command that ends without
-  an answer, a missing CLI, a command that runs after its answer, and a reply line that
-  arrives in parts.
+  an answer, a missing CLI, a command that runs after its answer, a reply line that
+  arrives in parts, and a canceled request that starts no command.
 - Web fixtures verify the tools of the dialog, the part that is left, the levels, the
   names of the limits, and the reset texts.
 - A live check ran the real Codex 0.172.0, Claude Code 2.1.332, and agy 1.5.17 through
@@ -4808,6 +4811,9 @@ A later browser check with the demo instance verified the saves in Settings:
   CLI path, and the phone layout without a side scroll. It also verified the bottom row
   on one line at the default sidebar width of a 1200-pixel window, and **Usage** and
   **Settings** together on a second line in a 900-pixel window.
+- A second browser check used a temporary server and a script in place of Claude Code,
+  at a CLI path of 226 characters. After one good check, **Check now** failed. The
+  warning with the long error wrapped in the dialog, without a side scroll.
 
 ### Checks of the session status and toolbar
 
