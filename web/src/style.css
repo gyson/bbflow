@@ -291,7 +291,22 @@ body.resizing-session, body.resizing-session * { cursor: row-resize !important; 
    editor narrow. Send stays at the right end of its line. */
 .composer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
 .composer-actions button { font-size: 12px; }
-#composer-attach, #handoff-open { padding: 6px 8px; border-color: transparent; background: transparent; }
+/* The ＋ menu of the message editor opens above its button, at its left edge. The editor
+   scrolls its contents and would clip the menu. Thus the menu box has no position. The
+   menu then starts at the place of the box, outside the clip of the editor, and a
+   translation moves it above the box. */
+#composer-menu-box { position: static; }
+#composer-menu-open { width: 32px; height: 30px; padding: 0; border-color: transparent; background: transparent; font-size: 17px; line-height: 1; }
+#composer-menu-open[aria-expanded="true"] { background: var(--selected); border-color: var(--selected-border); }
+#composer-menu { top: auto; right: auto; width: 320px; max-width: calc(100vw - 32px); max-height: min(440px, 55dvh); overflow-y: auto; translate: 0 calc(-100% - 6px); }
+#composer-menu > *, #composer-prompts > * { flex-shrink: 0; }
+#composer-menu .menu-note { max-width: none; }
+#composer-prompts { display: flex; flex-direction: column; }
+.action-menu .menu-label { margin: 6px 10px 2px; color: var(--text-muted); font-size: 10px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; }
+/* A saved prompt shows its name, and the start of its text below. */
+.action-menu button.prompt-item { display: flex; flex-direction: column; align-items: stretch; gap: 1px; min-width: 0; }
+.prompt-item-name, .prompt-item-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prompt-item-text { color: var(--text-muted); font-size: 11px; }
 #composer-status { flex: 1; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
 #composer-submit { margin-left: auto; }
 /* A device without a pointer that hovers has no Command key. */
@@ -480,6 +495,10 @@ button.switch:hover:not(:disabled) { background: none; border: 0; }
 .tool-table td.tool-actions button { padding: 7px 9px; font-size: 12px; margin-right: 4px; }
 .tool-chip { display: inline-block; white-space: nowrap; margin-left: 8px; padding: 2px 7px; border-radius: 6px; background: var(--info-surface); color: var(--info); font-size: 10px; font-weight: 600; letter-spacing: .5px; vertical-align: 1px; }
 button.tool-add { margin-top: 12px; font-size: 12px; }
+/* The Prompts card shows the start of the text of each prompt, on two lines at most. */
+.prompt-table td.prompt-text-cell { width: 100%; }
+.prompt-text-cell > div { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+#prompt-text { margin-top: 8px; min-height: 140px; line-height: 1.5; resize: vertical; }
 /* The tool editor is a dialog, so a long tool list needs no scroll to reach it. */
 .tool-editor-dialog { width: 640px; }
 .tool-editor { display: flex; flex-direction: column; gap: 16px; }
@@ -870,6 +889,7 @@ body.resizing-file-list, body.resizing-file-list * { cursor: col-resize !importa
    layout. A landscape phone is wider than the mobile layout. */
 :root.keyboard #session-divider { display: none; }
 :root.keyboard #composer { flex: none; min-height: 0; margin-top: 10px; }
+:root.keyboard #composer-menu { max-height: calc(var(--viewport-height) * .55); }
 :root.keyboard #composer-text { flex: none; height: 4.8em; min-height: 3.2em; max-height: 9.6em; }
 @supports (field-sizing: content) { :root.keyboard #composer-text { height: auto; field-sizing: content; } }
 /* A terminal keeps its rows and is higher than its view. Its host has the height of the

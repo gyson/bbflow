@@ -12,8 +12,14 @@ async function fixture(t, writeInput) {
   class Node {
     hidden = false; disabled = false; textContent = ''; value = '';
     classList = { toggle() {} };
+    selectionStart = 0; selectionEnd = 0;
     focus() {}
-    setSelectionRange() {}
+    setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
+    // The text goes in place of start to end, and the cursor goes after it.
+    setRangeText(text, start, end) {
+      this.value = this.value.slice(0, start) + text + this.value.slice(end);
+      this.selectionStart = this.selectionEnd = start + text.length;
+    }
     replaceChildren() {}
     querySelectorAll() { return []; }
   }
@@ -76,7 +82,7 @@ async function fixture(t, writeInput) {
   };
   const watch = () => sockets.findLast(socket => socket.operation === 'composer-watch');
   // advance adds draft revisions that another view saved.
-  return { nodes, saved, writes, send, watch, reports: () => reports, advance: count => { revision += count; },
+  return { composer, nodes, saved, writes, send, watch, reports: () => reports, advance: count => { revision += count; },
     reject: state => { rejection = state; } };
 }
 
@@ -169,4 +175,57 @@ test('a save that the server rejects reports the send from another view', async 
   watch().reply(pushed(3));
   await settle();
   assert.equal(reports(), 1);
+});
+
+// type enters text, as the keyboard does, and puts the cursor or selection at start to end.
+function type(nodes, text, start = text.length, end = start) {
+  nodes['composer-text'].value = text;
+  nodes['composer-text'].setSelectionRange(start, end);
+  nodes['composer-text'].oninput();
+}
+
+test('a prompt goes in at the cursor or in place of the selection, and the draft keeps its other text', async t => {
+  const { composer, nodes, saved } = await fixture(t, () => Promise.resolve());
+  type(nodes, 'Review PR  now', 10);
+  assert.equal(composer.insert('#108'), undefined);
+  assert.equal(nodes['composer-text'].value, 'Review PR #108 now');
+  assert.equal(nodes['composer-text'].selectionStart, 14, 'the cursor goes after the text');
+  nodes['composer-text'].setSelectionRange(0, 6);
+  assert.equal(composer.insert('Check'), undefined);
+  assert.equal(nodes['composer-text'].value, 'Check PR #108 now');
+  await composer.flush();
+  assert.equal(saved.at(-1).text, 'Check PR #108 now');
+  assert.equal(saved.at(-1).pending, false);
+});
+
+test('the browser command inserts the text when it can, so that the edit keeps its undo', async t => {
+  const { composer, nodes, saved } = await fixture(t, () => Promise.resolve());
+  const commands = [];
+  document.execCommand = (command, ui, text) => {
+    commands.push(command);
+    const editor = nodes['composer-text'];
+    editor.setRangeText(text, editor.selectionStart, editor.selectionEnd);
+    editor.oninput();
+    return true;
+  };
+  type(nodes, 'Handoff:\n', 9);
+  assert.equal(composer.insert('Continue the work.'), undefined);
+  assert.deepEqual(commands, ['insertText']);
+  await composer.flush();
+  assert.equal(saved.at(-1).text, 'Handoff:\nContinue the work.');
+});
+
+test('no prompt goes in while a send may have reached the terminal', async t => {
+  const { composer, nodes, send } = await fixture(t, () => Promise.reject(new Error('Input delivery was not confirmed.')));
+  await send('Run the tests.');
+  assert.match(composer.insertBlocked(), /unlock the draft/);
+  assert.match(composer.insert('more'), /unlock the draft/);
+  assert.equal(nodes['composer-text'].value, 'Run the tests.');
+  // I checked the terminal unlocks the draft. Then a prompt goes in after the text.
+  nodes['composer-review'].onclick();
+  assert.equal(composer.insertBlocked(), undefined);
+  nodes['composer-text'].setSelectionRange(14, 14);
+  assert.equal(composer.insert(' Then push.'), undefined);
+  assert.equal(nodes['composer-text'].value, 'Run the tests. Then push.');
+  await composer.flush();
 });

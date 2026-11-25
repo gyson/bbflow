@@ -87,6 +87,7 @@ The simulated data has these parts:
 | Tool **Codex** | The built-in tool. It runs the real `codex --no-alt-screen` CLI of the user. It is on. |
 | Tool **Claude Code** | The built-in tool. It runs the real `claude` CLI of the user. It is on. |
 | Tools **Antigravity** and **Code Puppy** | The built-in tools of these CLIs. They are off, whatever CLIs the computer has. |
+| Setting **Prompts** | Three saved prompts for the ＋ menu of the message editor: **Review PR**, **Run all checks**, and **Summarize the branch**. The last one has two paragraphs. |
 | Setting **Use worktree** | On. New drafts in Git folders select a managed worktree. The draft **Plan release notes** also has it. |
 | Setting **Title tool** | None. Each built-in title tool runs a real agent CLI, which calls a model. Custom runs a command that the user enters. |
 

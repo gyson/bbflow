@@ -103,6 +103,8 @@ saves the message as a draft. Click **Send** after the agent is ready.
 
 - Type in the terminal. As an alternative, write a message in the editor below the
   terminal and click **Send**.
+- To attach files, click **＋** in the message editor, then **Attach files…**. You can
+  also paste or drop files in the editor.
 - Close the tab when you want. The session and its recording continue in the server.
 - To end the session, click **Stop session** in the **More actions** (⋯) menu.
 
@@ -133,6 +135,23 @@ Text that you type directly in the terminal is not in the list. See
 [Sent messages in the terminal](SPEC.md#sent-messages-in-the-terminal) for the rules
 and limits.
 
+### Use a saved prompt
+
+A saved prompt is text that you use often, for example
+`Use the review-loop skill as the reviewer for PR #`. Every session shows the same
+saved prompts.
+
+1. Click **Settings**. In **Prompts**, click **＋ Add prompt**.
+2. Enter a name and the text. Click **Add prompt**.
+3. In a session, put the cursor in the message editor where the text goes.
+4. Click **＋**, then click the name of the prompt.
+5. Complete the message, for example with the PR number. Click **Send**.
+
+The prompt goes in at the cursor, or in place of the selected text. Text that is
+already in the editor stays. bbflow does not send the prompt until you click **Send**.
+To change, sort, or remove prompts, click **＋**, then **Manage prompts…**. See
+[Saved prompts](SPEC.md#saved-prompts) for the rules and limits.
+
 ### Pin a session
 
 Pin the sessions that you use often. **Pinned** at the top of the sidebar lists them
@@ -158,13 +177,13 @@ limit.
 3. Click **Start new terminal**. bbflow writes a read-only handoff folder with the
    earlier terminals and messages. Then it starts the tool.
 4. Wait until the new agent is ready.
-5. Click **Handoff prompt** in the message editor.
-6. Click **Put in message editor**.
+5. Click **＋** in the message editor, then **Handoff prompt…**.
+6. Click **Insert in message**.
 7. Click **Send**.
 
-**Put in message editor** works only while the message editor is empty. If the editor
-has a draft, click **Copy prompt** in the same dialog. Then paste the prompt where you
-want it.
+**Insert in message** puts the prompt at the cursor of the message editor. Text that is
+already in the editor stays. To paste the prompt somewhere else, click **Copy prompt**
+in the same dialog.
 
 The prompt gives the new agent a record of the earlier work. It does not restore the
 internal state of the earlier agent.

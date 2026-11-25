@@ -1,4 +1,5 @@
 import { element } from './dom.js';
+import { PromptSettings } from './prompt-settings.js';
 import { fillToolMenu, sortedBuiltins } from './tool-menu.js';
 import { builtinCommand, forgetModelLists, launchCommand, modelSummary, ModelPicker, typed } from './model-choice.js';
 import { call, ConnectionError, errorMessage } from './protocol.js';
@@ -101,6 +102,8 @@ export class SettingsView {
   private readonly testDetail = element('title-test-detail', HTMLElement);
 
   private readonly saves: SettingsSaves;
+  // The Prompts card. It saves through saves, as the tools do.
+  private readonly prompts: PromptSettings;
   private renderedBase = '';
   private readonly portField = new FieldEdit(portText);
   private readonly remoteFields: RemoteField[] = [
@@ -167,6 +170,13 @@ export class SettingsView {
       get: () => this.send(connected(), { operation: 'settings-get' }),
       conflict: error => error instanceof ConnectionError && error.fromServer,
     }, () => this.render(), () => this.showStatus());
+    this.prompts = new PromptSettings({
+      saves: this.saves,
+      visits: () => this.visits,
+      hidden: () => !!this.panel.hidden,
+      report: (title, detail) => this.report(title, detail),
+      status: () => this.showStatus(),
+    });
     this.appearance.onchange = () => {
       this.applyAppearance(this.appearance.value);
       this.saveDefault('appearance', this.appearance.value);
@@ -244,9 +254,9 @@ export class SettingsView {
       ({ tools: this.titleTools, sample: this.titleSample } = await this.send(server, { operation: 'title-tools' }));
       this.titleTool.replaceChildren(new Option('None', 'none'), ...this.titleTools.map(tool => new Option(tool.name, tool.id)), new Option('Custom', 'custom'));
     } else void this.refreshTitleTools(server);
-    if (!this.pending() && !this.editorOpen()) {
+    if (!this.pending() && !this.editorOpen() && !this.prompts.editorOpen()) {
       const settings = await this.send(server, { operation: 'settings-get' });
-      if (!this.pending() && !this.editorOpen()) {
+      if (!this.pending() && !this.editorOpen() && !this.prompts.editorOpen()) {
         // A title tool change can save while this read runs. Keep the newer settings.
         this.saves.update(settings);
         this.render();
@@ -319,8 +329,12 @@ export class SettingsView {
       this.renderedTitle = '';
     }
     if (this.editorOpen()) this.discardEditor();
+    this.prompts.close();
     this.render();
   }
+
+  // Show the Prompts card. Settings must be open.
+  revealPrompts(): void { this.prompts.reveal(); }
 
   // The entries that are not saved, by the names that the status shows.
   private unsavedNames(): string[] {
@@ -338,6 +352,7 @@ export class SettingsView {
       this.toolPath.value.trim() !== this.editing.path)) {
       names.add(`Edit of ${this.editing.name}`);
     }
+    for (const name of this.prompts.unsaved()) names.add(name);
     return [...names];
   }
 
@@ -432,6 +447,7 @@ export class SettingsView {
     } else if (saved.defaultTool !== this.renderedDefault) this.renderTools();
     const defaultTool = defaults.defaultTool ?? saved.defaultTool;
     this.tool.value = !defaultTool || saved.tools.some(tool => tool.id === defaultTool) ? defaultTool : saved.defaultTool;
+    this.prompts.render();
     const shown = saved.tools.find(tool => tool.id === this.tool.value);
     this.toolHelp.textContent = shown && typed(shown.type)
       ? `New drafts select this tool with its default model and effort: ${modelSummary(shown.type, shown.model, shown.effort)}.` : '';

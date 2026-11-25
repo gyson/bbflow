@@ -37,12 +37,12 @@ export function sendShortcut(event: { key: string; metaKey: boolean; ctrlKey: bo
   return event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && !event.isComposing;
 }
 
-// Text goes into the editor only when the editor is empty and no send is pending. This
-// never merges with or replaces a draft.
-export function insertProblem(state: { loaded: boolean; pending: boolean; text: string; files: number }): string | undefined {
+// Text goes into the editor at the cursor, or in place of the selected text. The rest of
+// the draft and its files stay. No text goes in while a send is pending, because the
+// draft is locked until the user checks the terminal.
+export function insertProblem(state: { loaded: boolean; pending: boolean }): string | undefined {
   if (!state.loaded) return 'The message editor is not ready.';
   if (state.pending) return 'A send may have reached the terminal. Check the terminal and unlock the draft first.';
-  if (state.text.trim() || state.files) return 'The message editor already has a draft. Send or clear it first, or copy the prompt.';
   return undefined;
 }
 
@@ -82,10 +82,7 @@ export class Composer {
   private syncLost = false;
 
   constructor(private readonly host: Host) {
-    this.text.oninput = () => {
-      this.state.draft.text = this.text.value;
-      this.changed();
-    };
+    this.text.oninput = () => this.edited();
     this.text.onkeydown = event => {
       if (!sendShortcut(event)) return;
       event.preventDefault();
@@ -138,15 +135,35 @@ export class Composer {
     for (const button of this.files.querySelectorAll('button')) button.disabled = unavailable || this.state.draft.pending;
   }
 
-  // Put text in the editor as a normal edit. The user still decides when to send it.
+  // insertBlocked tells why text cannot go into the editor now, or undefined.
+  insertBlocked(): string | undefined {
+    return this.blocked ? 'Wait for the current action to finish.' : insertProblem({ loaded: this.loaded, pending: this.state.draft.pending });
+  }
+
+  // Put text in the editor at the cursor, or in place of the selected text, as a normal
+  // edit. The editor keeps its cursor while another control has the focus. The browser
+  // command keeps the edit in the undo history of the editor. The user still decides
+  // when to send the message.
   insert(text: string): string | undefined {
-    const problem = this.blocked ? 'Wait for the current action to finish.' :
-      insertProblem({ loaded: this.loaded, pending: this.state.draft.pending, text: this.text.value, files: this.state.attachments.length });
+    const problem = this.insertBlocked();
     if (problem) return problem;
-    this.text.value = this.state.draft.text = text;
-    this.changed();
+    const start = this.text.selectionStart, end = this.text.selectionEnd;
     this.text.focus();
+    this.text.setSelectionRange(start, end);
+    let inserted = false;
+    try { inserted = document.execCommand('insertText', false, text); } catch { inserted = false; }
+    // The command gives an input event, which saves the edit. Without the command, the
+    // text goes in directly.
+    if (!inserted) {
+      this.text.setRangeText(text, start, end, 'end');
+      this.edited();
+    }
     return undefined;
+  }
+
+  private edited(): void {
+    this.state.draft.text = this.text.value;
+    this.changed();
   }
 
   // Show a problem of a message editor action, such as a handoff prompt that is not

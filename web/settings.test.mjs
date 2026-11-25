@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fallbackTool, toolSwitch, defaultLabels, duplicateName, duplicateNameError, failedTitleChange, mergeToolEdit, parsePort, FieldEdit, portStatus, portText, RemoteChanged, remoteStatus, remoteValue, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
+import { fallbackTool, toolSwitch, defaultLabels, duplicateName, duplicateNameError, duplicatePromptError, failedTitleChange, maxPrompts, mergeToolEdit, parsePort, FieldEdit, portStatus, portText, promptEdit, promptMove, promptProblem, promptRemoval, RemoteChanged, remoteStatus, remoteValue, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', path: '', builtin: false, enabled: true };
 const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', path: '', builtin: false, enabled: true };
@@ -581,4 +581,70 @@ test('turning off the default tool or Shell selects Shell or the first other too
   assert.throws(() => toolSwitch('a', false)(last), /only tool that is on/);
   assert.throws(() => toolRemoval('a', true).change(last), /only tool that is on/);
   assert.equal(fallbackTool(last, 'a'), null);
+});
+
+const review = { id: 'p1', name: 'Review PR', text: 'Review PR #' };
+const checks = { id: 'p2', name: 'Run checks', text: 'Run make test.' };
+const prompted = { ...settings, prompts: [review, checks] };
+
+test('a prompt change needs a save, and the order counts', () => {
+  assert.ok(sameSettings(prompted, structuredClone(prompted)));
+  assert.ok(!sameSettings(prompted, { ...prompted, prompts: [checks, review] }));
+  assert.ok(!sameSettings(prompted, { ...prompted, prompts: [review, { ...checks, text: 'Run make check.' }] }));
+  assert.ok(!sameSettings(prompted, { ...prompted, prompts: [review] }));
+});
+
+test('a prompt edit applies only its changed fields to the latest prompt', () => {
+  // Another view renamed the prompt. This edit changed only the text.
+  const latest = { ...prompted, prompts: [{ ...review, name: 'Review' }, checks] };
+  const edited = promptEdit({ ...review, text: 'Review pull request #' }, review)(latest);
+  assert.deepEqual(edited.prompts, [{ id: 'p1', name: 'Review', text: 'Review pull request #' }, checks]);
+  // A new prompt goes at the end. A second save of the same new prompt adds nothing.
+  const added = promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize.' })(prompted);
+  assert.deepEqual(added.prompts.map(prompt => prompt.id), ['p1', 'p2', 'p3']);
+  assert.equal(promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize.' })(added), added);
+  // A name that another view saved first stops the save. The case does not count.
+  assert.throws(() => promptEdit({ id: 'p3', name: 'run CHECKS', text: 'x' })(prompted), { message: duplicatePromptError });
+  assert.throws(() => promptEdit({ ...checks, name: 'Review PR' }, checks)(prompted), { message: duplicatePromptError });
+  // An edit of a prompt that another view removed stops too.
+  assert.throws(() => promptEdit({ ...checks, text: 'x' }, checks)({ ...prompted, prompts: [review] }), /removed in another view/);
+});
+
+test('a prompt moves within the list and a removal keeps the order of the others', () => {
+  assert.deepEqual(promptMove('p1', 1)(prompted).prompts, [checks, review]);
+  assert.equal(promptMove('p1', -1)(prompted), prompted, 'the first prompt does not move up');
+  assert.equal(promptMove('p2', 1)(prompted), prompted, 'the last prompt does not move down');
+  assert.throws(() => promptMove('gone', 1)(prompted), /removed in another view/);
+  const third = { id: 'p3', name: 'Summary', text: 'Summarize.' };
+  assert.deepEqual(promptRemoval('p2')({ ...prompted, prompts: [review, checks, third] }).prompts, [review, third]);
+});
+
+test('the prompt editor names the field of the first problem', () => {
+  const problem = (name, text, id = 'new', prompts = prompted.prompts) => promptProblem(prompts, name, text, id);
+  assert.equal(problem('Summary', 'Summarize.\n\tList the risks.'), null);
+  assert.deepEqual(problem('', 'text'), { field: 'name', message: 'Enter a name.' });
+  assert.deepEqual(problem('review pr', 'text'), { field: 'name', message: duplicatePromptError });
+  // An edit can keep its own name.
+  assert.equal(problem('Review PR', 'Review PR #', 'p1'), null);
+  assert.equal(problem('Summary', ' \n').field, 'text');
+  assert.match(problem('Summary', 'é'.repeat(8 * 1024 + 1)).message, /16 KiB/);
+  assert.equal(problem('Summary', 'é'.repeat(8 * 1024)), null);
+  assert.match(problem('Summary', 'one\rtwo').message, /control characters/);
+  const full = Array.from({ length: maxPrompts }, (_, index) => ({ id: `p${index}`, name: `Prompt ${index}`, text: 'x' }));
+  assert.match(problem('Summary', 'text', 'new', full).message, /at most 100 prompts/);
+  assert.equal(problem('Prompt 0', 'edit', 'p0', full), null, 'an edit saves when the list is full');
+});
+
+test('the Settings page has a prompt table, one editor dialog, and asks before a removal', () => {
+  const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  assert.match(html, /<tbody id="settings-prompt-rows">/);
+  assert.match(html, /<button id="prompt-add" type="button" class="tool-add">＋ Add prompt<\/button>/);
+  assert.match(html, /<dialog id="prompt-editor-dialog" class="tool-editor-dialog" aria-labelledby="prompt-editor-title">\s*<form id="prompt-editor" class="tool-editor" novalidate>/);
+  assert.match(html, /<dialog id="prompt-remove-dialog"/);
+  // The ＋ menu of the message editor has the file item, the handoff prompt, the saved
+  // prompts, and Manage prompts, in this order.
+  const menu = html.slice(html.indexOf('<div id="composer-menu"'), html.indexOf('<input id="composer-picker"'));
+  const order = ['id="composer-attach"', 'id="handoff-open"', 'id="composer-prompts"', 'id="composer-prompts-note"', 'id="composer-prompts-manage"'].map(id => menu.indexOf(id));
+  assert.ok(order.every((index, i) => index >= 0 && (i === 0 || index > order[i - 1])), order.join());
+  assert.doesNotMatch(html, /＋ Attach files|Put in message editor/);
 });

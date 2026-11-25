@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SettingsView } from './dist/settings.js';
 import { forgetModelLists } from './dist/model-choice.js';
+import { ConnectionError } from './dist/protocol.js';
 
 // A small fake DOM. It has only the parts that the Settings view uses.
 class Node {
@@ -33,11 +34,13 @@ class Node {
     for (; node; node = node.parent) if (node === this) return true;
     return false;
   }
-  // The view asks only for the tool row of a focused button.
-  closest() {
-    for (let node = this; node; node = node.parent) if (node.dataset.toolId) return node;
+  // The view asks only for the tool row or the prompt row of a focused button.
+  closest(selector) {
+    const key = selector === '[data-prompt-id]' ? 'promptId' : 'toolId';
+    for (let node = this; node; node = node.parent) if (node.dataset[key]) return node;
     return null;
   }
+  scrollIntoView() {}
   querySelectorAll() { return []; }
   find(id) {
     if (this.id === id) return this;
@@ -72,11 +75,15 @@ const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-
   'cancel-tool-remove', 'tool-remove-summary', 'tool-remove-default', 'title-settings', 'title-tool', 'title-spinner',
   'title-builtin', 'title-tool-command', 'title-custom', 'title-custom-command', 'title-custom-save', 'title-test',
   'title-test-result', 'title-test-sample', 'title-test-outcome', 'title-test-detail', 'title-model-save', 'title-models',
-  'title-model', 'title-model-other', 'title-model-help', 'title-model-refresh', 'title-effort', 'title-effort-help'];
+  'title-model', 'title-model-other', 'title-model-help', 'title-model-refresh', 'title-effort', 'title-effort-help',
+  'settings-prompts', 'settings-prompts-title', 'settings-prompt-rows', 'prompt-add', 'prompt-error', 'prompt-editor-dialog',
+  'prompt-editor', 'prompt-editor-title', 'prompt-name', 'prompt-text', 'prompt-editor-error', 'prompt-submit', 'prompt-cancel',
+  'prompt-close', 'prompt-remove-dialog', 'prompt-remove-form', 'prompt-remove-summary', 'cancel-prompt-remove'];
 const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', builtin: false, enabled: true, path: '' };
 const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', builtin: false, enabled: true, path: '' };
 const saved = { revision: 4, appearance: 'system', defaultTool: '', worktree: false, base: 'HEAD', tools: [agent, other],
-  titleTool: 'none', titleCommand: '', titleModel: '', titleEffort: '', updateCheck: true, port: 0, remoteOn: false, remoteHost: '', remoteLogin: '' };
+  titleTool: 'none', titleCommand: '', titleModel: '', titleEffort: '', updateCheck: true, port: 0, remoteOn: false, remoteHost: '', remoteLogin: '',
+  prompts: [{ id: 'p1', name: 'Review PR', text: 'Review PR #' }, { id: 'p2', name: 'Run checks', text: 'Run make test.' }] };
 const server = { protocol: 'test', instance: 'test', port: 50000, dataDir: '/fixture' };
 const event = { preventDefault() {} };
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -88,10 +95,10 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
   forgetModelLists();
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
   nodes['tool-editor-error'].hidden = true;
-  for (const id of ['tool-editor-error', 'settings-port-error', 'settings-remote-error', 'settings-remote-host-error', 'settings-remote-login-error', 'settings-error', 'tool-error', 'title-test-result']) nodes[id].hidden = true;
+  for (const id of ['tool-editor-error', 'settings-port-error', 'settings-remote-error', 'settings-remote-host-error', 'settings-remote-login-error', 'settings-error', 'tool-error', 'title-test-result', 'prompt-error', 'prompt-editor-error']) nodes[id].hidden = true;
   nodes['settings-view'].hidden = true;
   for (const [id, node] of Object.entries(nodes)) node.id = id;
-  for (const name of ['HTMLElement', 'HTMLFormElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLButtonElement', 'HTMLDialogElement']) globalThis[name] = Node;
+  for (const name of ['HTMLElement', 'HTMLFormElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLButtonElement', 'HTMLDialogElement', 'HTMLTextAreaElement']) globalThis[name] = Node;
   globalThis.Option = class extends Node {
     constructor(text, value) { super('option'); this.text = text; this.value = value; }
   };
@@ -101,7 +108,7 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
     body,
     activeElement: body,
     documentElement: new Node('html'),
-    getElementById: id => nodes[id] ?? nodes['settings-tools'].find(id) ?? nodes['settings-builtin-tools'].find(id),
+    getElementById: id => nodes[id] ?? nodes['settings-tools'].find(id) ?? nodes['settings-builtin-tools'].find(id) ?? nodes['settings-prompt-rows'].find(id),
     createElement: tag => new Node(tag),
   };
   const pending = [];
@@ -958,4 +965,98 @@ test('of two refreshes that overlap, the later one reaches every picker', async 
   document.getElementById('tool-edit-builtin-codex').onclick();
   await tick();
   assert.ok(models('tool-model').includes('model-c'));
+});
+
+// The rows of the Prompts card, as name and text.
+const promptRows = nodes => nodes['settings-prompt-rows'].children.map(row => row.children.slice(0, 2).map(cell => cell.textContent));
+
+test('Add prompt saves a new prompt at the end, and an edit saves only the changed field', async () => {
+  const { nodes, view, pending, reply, type } = await setup();
+  assert.deepEqual(promptRows(nodes), [['Review PR', 'Review PR #'], ['Run checks', 'Run make test.']]);
+  nodes['prompt-add'].onclick();
+  assert.ok(nodes['prompt-editor-dialog'].open);
+  assert.equal(nodes['prompt-editor-title'].textContent, 'New prompt');
+  assert.equal(document.activeElement, nodes['prompt-name']);
+  // An empty entry does not save, and a name that differs only in case is taken.
+  nodes['prompt-editor'].onsubmit(event);
+  assert.equal(nodes['prompt-editor-error'].textContent, 'Enter a name.');
+  type('prompt-name', ' review pr ');
+  type('prompt-text', 'Other text');
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: New prompt');
+  nodes['prompt-editor'].onsubmit(event);
+  assert.match(nodes['prompt-editor-error'].textContent, /Another prompt has this name/);
+  assert.equal(document.activeElement, nodes['prompt-name']);
+  type('prompt-name', ' Summarize ');
+  type('prompt-text', 'Summarize the branch.\r\nList the risks.');
+  nodes['prompt-editor'].onsubmit(event);
+  await tick();
+  const added = await reply('settings-save');
+  assert.deepEqual(added.settings.prompts.map(prompt => [prompt.name, prompt.text]),
+    [['Review PR', 'Review PR #'], ['Run checks', 'Run make test.'], ['Summarize', 'Summarize the branch.\nList the risks.']]);
+  assert.ok(added.settings.prompts[2].id);
+  assert.ok(!nodes['prompt-editor-dialog'].open);
+  assert.equal(nodes['settings-status'].textContent, 'All settings saved');
+  assert.equal(document.activeElement.id, `prompt-edit-${added.settings.prompts[2].id}`);
+
+  // Another view renames the first prompt while this view edits its text. The save
+  // keeps the new name, because this edit changed only the text.
+  document.getElementById('prompt-edit-p1').onclick();
+  assert.equal(nodes['prompt-editor-title'].textContent, 'Edit of Review PR');
+  assert.equal(nodes['prompt-name'].value, 'Review PR');
+  type('prompt-text', 'Review pull request #');
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Edit of Review PR');
+  nodes['prompt-editor'].onsubmit(event);
+  await tick();
+  const renamed = structuredClone(view.saves.saved);
+  renamed.revision += 1;
+  renamed.prompts[0].name = 'Review';
+  // The first save fails with a revision conflict. The view reads the latest settings
+  // and applies the edit again.
+  const index = pending.findIndex(call => call.request.operation === 'settings-save');
+  pending.splice(index, 1)[0].reject(new ConnectionError('settings changed', false, true));
+  await tick();
+  await reply('settings-get', renamed);
+  const edited = await reply('settings-save');
+  assert.deepEqual(edited.settings.prompts[0], { id: 'p1', name: 'Review', text: 'Review pull request #' });
+});
+
+test('a prompt moves, a removal asks first, and a failure after Done gives a toast', async () => {
+  const { nodes, view, toasts, reply, fail, reopen } = await setup();
+  assert.ok(document.getElementById('prompt-move-up-p1').disabled);
+  assert.ok(document.getElementById('prompt-move-down-p2').disabled);
+  document.getElementById('prompt-move-down-p1').onclick();
+  await tick();
+  assert.deepEqual((await reply('settings-save')).settings.prompts.map(prompt => prompt.id), ['p2', 'p1']);
+  assert.deepEqual(promptRows(nodes), [['Run checks', 'Run make test.'], ['Review PR', 'Review PR #']]);
+
+  document.getElementById('prompt-remove-p2').onclick();
+  assert.ok(nodes['prompt-remove-dialog'].open);
+  assert.match(nodes['prompt-remove-summary'].textContent, /“Run checks” leaves the ＋ menu of every session/);
+  nodes['prompt-remove-form'].onsubmit(event);
+  await tick();
+  assert.ok(!nodes['prompt-remove-dialog'].open);
+  assert.deepEqual((await reply('settings-save')).settings.prompts.map(prompt => prompt.id), ['p1']);
+
+  // The user clicks Done before the reply of a removal. The error goes to a toast.
+  document.getElementById('prompt-remove-p1').onclick();
+  nodes['prompt-remove-form'].onsubmit(event);
+  await tick();
+  view.close();
+  await fail('settings-save', 'database is locked');
+  assert.deepEqual(toasts, [['The removal of “Review PR” did not save.', 'database is locked']]);
+  assert.ok(nodes['prompt-error'].hidden);
+
+  // Done discards an open editor, and the last prompt goes.
+  await reopen();
+  document.getElementById('prompt-edit-p1').onclick();
+  assert.ok(nodes['prompt-editor-dialog'].open);
+  view.close();
+  assert.ok(!nodes['prompt-editor-dialog'].open);
+  assert.ok(!view.unsaved);
+  await reopen();
+  document.getElementById('prompt-remove-p1').onclick();
+  nodes['prompt-remove-form'].onsubmit(event);
+  await tick();
+  await reply('settings-save');
+  assert.deepEqual(promptRows(nodes), [['No prompts yet. Click ＋ Add prompt to add one.']]);
 });

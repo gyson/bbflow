@@ -92,11 +92,9 @@ test('the form prefers the original tool, then the default tool, then Shell', ()
   assert.equal(defaultContinueTool([], '', '', false), '');
 });
 
-test('the handoff prompt goes only into an empty editor without a pending send', () => {
-  const ready = { loaded: true, pending: false, text: ' \n', files: 0 };
+test('a prompt goes into a loaded editor without a pending send, also next to a draft', () => {
+  const ready = { loaded: true, pending: false };
   assert.equal(insertProblem(ready), undefined);
   assert.match(insertProblem({ ...ready, loaded: false }), /not ready/);
   assert.match(insertProblem({ ...ready, pending: true }), /unlock the draft/);
-  assert.match(insertProblem({ ...ready, text: 'my request' }), /already has a draft/);
-  assert.match(insertProblem({ ...ready, files: 1 }), /already has a draft/);
 });

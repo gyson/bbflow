@@ -3,8 +3,8 @@ import { errorMessage } from './protocol.js';
 import type { Handoff } from './protocol.js';
 
 // The dialog shows the handoff prompt of a session again after its new terminal started.
-// The user can copy the prompt or put it in the empty message editor. The dialog never
-// sends input.
+// The ＋ menu of the message editor opens it. The user can copy the prompt, or insert it
+// at the cursor of the message editor. The dialog never sends input.
 export class HandoffPrompt {
   private readonly dialog = element('handoff-dialog', HTMLDialogElement);
   private readonly folder = element('handoff-folder', HTMLElement);

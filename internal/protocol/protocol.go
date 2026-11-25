@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/42"
+const Version = "bbflow/43"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
