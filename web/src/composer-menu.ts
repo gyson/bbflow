@@ -41,6 +41,7 @@ export class ComposerMenu {
   // The number of the latest read. Only its reply changes the list.
   private reads = 0;
 
+  private readonly menuElement = element('composer-menu', HTMLElement);
   private readonly manageButton = element('composer-prompts-manage', HTMLButtonElement);
 
   constructor(private readonly host: Host) {
@@ -51,19 +52,18 @@ export class ComposerMenu {
     this.manageButton.onclick = () => this.host.manage();
   }
 
-  // Call this after the host shows or hides an item, such as Handoff prompt.
-  controls(): void { this.menu.controls(); }
+  // Call this after the host shows, hides, or turns off an item, such as Handoff prompt.
+  controls(): void {
+    this.menu.controls();
+    this.keepFocus();
+  }
 
   // update applies the lock of the draft to the items and the note. The editor calls it
   // after each change of its controls, so an open menu follows a send from another view.
   update(): void {
     const blocked = this.host.blocked();
-    let lost = false;
     for (const item of this.list.children) {
-      if (!(item instanceof HTMLButtonElement) || item.disabled === !!blocked) continue;
-      // A disabled item loses the focus. Manage prompts then keeps it in the menu.
-      lost ||= item === document.activeElement;
-      item.disabled = !!blocked;
+      if (item instanceof HTMLButtonElement && item.disabled !== !!blocked) item.disabled = !!blocked;
     }
     let note = '';
     if (this.failed && !this.loaded) note = 'Cannot read the saved prompts. Open the menu again to retry.';
@@ -72,7 +72,16 @@ export class ComposerMenu {
     else if (!this.prompts.length) note = 'No saved prompts yet. Add one with Manage prompts.';
     if (this.note.textContent !== note) this.note.textContent = note;
     this.note.hidden = !note;
-    if (lost) this.manageButton.focus();
+    this.keepFocus();
+  }
+
+  // A disabled item loses the focus, and the browser then gives it to the page, where
+  // Escape no longer reaches the menu. The editor turns off Attach files, the first item,
+  // and the lock turns off the saved prompts. When the focused item of the menu is off,
+  // Manage prompts gets the focus, because it is always on.
+  private keepFocus(): void {
+    const active = document.activeElement;
+    if (active instanceof HTMLButtonElement && active.disabled && this.menuElement.contains(active)) this.manageButton.focus();
   }
 
   // refresh reads the saved prompts. A failed read keeps the prompts of the last read.

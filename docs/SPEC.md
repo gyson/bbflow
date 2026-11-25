@@ -4861,10 +4861,13 @@ as another view:
 - With the menu open, a pending draft from the other view turned off **Attach files…**
   and the four saved prompts, and the note told why. The menu stayed open. The release
   of the lock turned the items on again and hid the note.
+- The lock turned off **Attach files…** while it had the focus. The focus moved to
+  **Manage prompts…**, and Escape then closed the menu.
 - With the lock, Down moved from **Handoff prompt…** to **Manage prompts…**, and Up
   moved back.
 
-These checks did not use Safari or a real agent CLI.
+These checks did not use Safari or a real agent CLI. The pending drafts came from the
+other connection. No send in these checks lost its receipt.
 
 ### Checks of sent messages in the terminal
 

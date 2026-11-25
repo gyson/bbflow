@@ -20,8 +20,10 @@ async function fixture(t, replies) {
     querySelectorAll() { return []; }
     focus() { document.activeElement = this; }
   }
-  const ids = ['composer-menu-box', 'composer-menu-open', 'composer-menu', 'composer-menu-status', 'composer-prompts', 'composer-prompts-note', 'composer-prompts-manage'];
+  const ids = ['composer-menu-box', 'composer-menu-open', 'composer-menu', 'composer-menu-status', 'composer-attach', 'composer-prompts', 'composer-prompts-note', 'composer-prompts-manage'];
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
+  nodes['composer-menu-box'].append(nodes['composer-menu-open'], nodes['composer-menu']);
+  nodes['composer-menu'].append(nodes['composer-attach'], nodes['composer-prompts'], nodes['composer-prompts-note'], nodes['composer-prompts-manage']);
   class Socket {
     readyState = 1;
     bufferedAmount = 0;
@@ -144,6 +146,33 @@ test('an open menu follows the lock of the draft, also with an empty list', asyn
   host.blocked = undefined;
   menu.update();
   assert.equal(nodes['composer-prompts-note'].textContent, 'No saved prompts yet. Add one with Manage prompts.');
+});
+
+test('the lock keeps the focus in the menu when it turns off Attach files', async t => {
+  const { nodes, menu, host, toggle } = await fixture(t, [[review]]);
+  toggle();
+  await settle();
+  // The menu opens with the focus on Attach files, its first item.
+  nodes['composer-attach'].focus();
+  // A send from another view locks the draft. The editor turns off Attach files first,
+  // then it reports its controls.
+  nodes['composer-attach'].disabled = true;
+  host.blocked = 'A send may have reached the terminal. Check the terminal and unlock the draft first.';
+  menu.update();
+  assert.equal(document.activeElement, nodes['composer-prompts-manage'], 'Escape still reaches the menu');
+  // The host turns off Handoff prompt during an action. Its controls keep the focus too.
+  const handoff = new nodes['composer-menu'].constructor();
+  nodes['composer-menu'].append(handoff);
+  handoff.focus();
+  handoff.disabled = true;
+  menu.controls();
+  assert.equal(document.activeElement, nodes['composer-prompts-manage']);
+  // A focus outside the menu stays where it is.
+  const editor = new nodes['composer-menu'].constructor();
+  editor.focus();
+  editor.disabled = true;
+  menu.update();
+  assert.equal(document.activeElement, editor);
 });
 
 test('a read keeps the focus on the same prompt after another view changed the order', async t => {
