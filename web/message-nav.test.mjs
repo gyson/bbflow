@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import xterm from '@xterm/xterm';
 import { MessageNav } from './dist/message-nav.js';
 import { MessageJump } from './dist/message-jump.js';
+import { showButton, showMessage } from './dist/sent-history.js';
 import { VERSION } from './dist/protocol.js';
 
 const server = { protocol: VERSION, instance: 'fixture', dataDir: '/fixture', port: 1234 };
@@ -260,10 +261,13 @@ test('a seek reads a failed newest page again, and a failed read ends it without
   assert.equal(top(view), 3);
 });
 
-test('a seek ends with failed when an older page of sent messages cannot be read', async t => {
+test('a seek ends with failed when an older page of sent messages cannot be read, and the next seek reads that page again', async t => {
   // The newest page has only messages of a later terminal. The message is older.
   const later = Array.from({ length: 20 }, (_, index) => sent(21 - index, `later message ${21 - index}`, '2026-11-23T11:00:00Z'));
-  const { nav, view, requests } = fixture(t, request => request.revision ? new Error('older page failed') : { messages: later, more: true });
+  let fail = true;
+  const { nav, view, requests } = fixture(t, request => request.revision
+    ? (fail ? new Error('older page failed') : { messages: [sent(1, 'the message of terminal one')], more: false })
+    : { messages: later, more: true });
   await write(view, lines(3) + '> the message of terminal one\r\n' + lines(2));
   nav.select('one');
   nav.window(earlier);
@@ -271,6 +275,28 @@ test('a seek ends with failed when an older page of sent messages cannot be read
   assert.equal(await nav.seek(1), 'failed');
   assert.match(nav.readError, /older page failed/);
   assert.equal(requests.at(-1).revision, 2);
+  fail = false;
+  const count = requests.length;
+  assert.equal(await nav.seek(1), 'found');
+  assert.equal(requests.at(count).revision, 2, 'the seek reads the older page again');
+});
+
+test('a seek after a failed reload of the newest page reads the newest page again', async t => {
+  let fail = false;
+  const { nav, view, requests } = fixture(t, () => fail ? new Error('database is locked') : { messages: [sent(1, 'first question')], more: false });
+  await write(view, lines(3) + '> first question\r\n' + lines(20));
+  nav.select('one');
+  nav.rendered();
+  await settle();
+  // A draft from another view reads the newest page again, and that read fails.
+  fail = true;
+  nav.reload();
+  await settle();
+  assert.match(nav.readError, /database is locked/);
+  fail = false;
+  const count = requests.length;
+  assert.equal(await nav.seek(1), 'found');
+  assert.equal(requests.at(count).revision, undefined, 'the seek reads the newest page');
 });
 
 test('a jump, a step, and Latest output report a move of the user', async t => {
@@ -317,4 +343,48 @@ test('a jump in the shown terminal stops a pending jump to another terminal', as
   await remote;
   assert.deepEqual(opened, [], 'the older click does not open terminal 2');
   assert.equal(top(view), 3);
+});
+
+test('after a failed read during a jump, Show in terminal reads the sent messages again and jumps', async t => {
+  // A real MessageNav, MessageJump, and the click of the Messages view, wired as in
+  // app.ts. The jump already opened terminal 1, the terminal of the message.
+  let fail = true;
+  const { nav, view, requests } = fixture(t, () => fail ? new Error('database is locked') : { messages: [sent(1, 'first question')], more: false });
+  await write(view, lines(3) + '> first question\r\n' + lines(20));
+  const terminals = [{ ...earlier, run: 'run-1' }, { ...earlier, number: 2, run: 'run-2', status: 'running', started: '2026-11-23T10:40:00Z', ended: '' }];
+  const toasts = [];
+  let opens = 0;
+  const jump = new MessageJump({
+    session: () => 'one', busy: () => false, opens: () => opens, loadTerminals: async () => {},
+    terminals: () => terminals, shownRun: () => 'run-1', reveal() {},
+    async open() {
+      // The view of terminal 1 reads its sent messages, and the read fails.
+      nav.select('one');
+      nav.window(terminals[0]);
+      nav.rendered();
+      return ++opens;
+    },
+    seek: revision => nav.seek(revision), readError: () => nav.readError,
+    failed: (number, detail) => toasts.push(`terminal ${number}: ${detail}`),
+  });
+  await jump.show(1, terminals[0]);
+  assert.deepEqual(toasts, ['terminal 1: Cannot read the sent messages: database is locked']);
+  const message = sent(1, 'first question');
+  const button = showButton(nav.state(1), terminals, terminals[0], message.created, !!nav.readError);
+  assert.equal(button.disabled, false, 'the button stays on after the failed read');
+  // The read works again. A click reads the sent messages and jumps.
+  fail = false;
+  const count = requests.length;
+  let retried = Promise.resolve();
+  const host = {
+    state: revision => nav.state(revision), go: revision => nav.go(revision),
+    terminals: () => terminals, shown: () => terminals[0], open() { assert.fail('the message is in the shown terminal'); },
+    unread: () => !!nav.readError, retry: revision => { retried = jump.retry(revision); },
+  };
+  assert.equal(showMessage(host, message), true);
+  await retried;
+  assert.ok(requests.length > count, 'the click read the sent messages again');
+  assert.equal(top(view), 3);
+  assert.equal(nav.readError, '');
+  assert.equal(toasts.length, 1);
 });

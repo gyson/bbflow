@@ -227,7 +227,7 @@ const messageJump = new MessageJump({
   session: () => selected?.id ?? '',
   busy: () => busy,
   opens: () => opens,
-  loadTerminals: id => loadTerminals(id, true),
+  loadTerminals: id => loadTerminals(id),
   terminals: () => terminalPicker.all,
   shownRun: () => terminalPicker.shown()?.run ?? '',
   reveal: () => { if (!terminalShown()) workspacePane.close(); },
@@ -240,7 +240,7 @@ const messageJump = new MessageJump({
   },
   seek: revision => messageNav.seek(revision),
   readError: () => messageNav.readError,
-  failed: (number, detail) => toasts.show(failed(`show the message in terminal ${number} of`, selected), detail),
+  failed: (number, detail) => toasts.show(failed(number ? `show the message in terminal ${number} of` : 'show the message of', selected), detail),
 });
 const sentHistory: SentHistory = new SentHistory(() => server, {
   state: revision => messageNav.state(revision),
@@ -248,6 +248,8 @@ const sentHistory: SentHistory = new SentHistory(() => server, {
   terminals: () => terminalPicker.all,
   shown: () => terminalPicker.shown(),
   open: (revision, target) => { void messageJump.show(revision, target); },
+  unread: () => !!messageNav.readError,
+  retry: revision => { void messageJump.retry(revision); },
 });
 const workspacePane = new WorkspacePane(diffPane, sideTerminal, sentHistory);
 // The address tells the view before a session of the address is open.
@@ -833,7 +835,7 @@ function watchStatuses(info: ServerInfo) {
       // Another view can start or end a terminal of the selected session. Then read its
       // terminals again, so the Messages view names the terminal of each message.
       const id = selected?.id;
-      if (id && (id in liveStatuses) !== (id in next)) void loadTerminals(id, true);
+      if (id && (id in liveStatuses) !== (id in next)) void loadTerminals(id);
       liveStatuses = next;
       // The update dialog counts the live sessions of the same message as the offer.
       updateNotice.show(message.update, Object.keys(next));
@@ -909,6 +911,10 @@ async function refreshSessions() {
     listProblem();
     if (selected && !showingSettings && !preparation.visible) {
       if (detail && selected.id === detail.id) {
+        // The status watch misses a terminal that another view started and that ended
+        // within one status message. A new latest run here reads the terminal list again.
+        const latest = terminalPicker.all.at(-1);
+        if (!opening && detail.run?.id && latest?.run && latest.run !== detail.run.id) void loadTerminals(detail.id);
         selected = withDetail(selected, detail);
         if (connection?.ready) showStatus();
       }
@@ -1188,7 +1194,7 @@ async function showSession(session: SessionView, launch?: Launch, run = ''): Pro
           $('status').textContent = 'Restoring';
           hint(message.active ? '' : terminalPicker.shownRun ? earlierHint(terminalPicker.shown()) :
             'Recorded output of the latest terminal. No process was started.');
-          terminalsLoad = loadTerminals(message.session);
+          terminalsLoad = loadTerminals(message.session, true);
           view.options.disableStdin = true;
           history.replaceState(null, '', sessionURL(message.session));
           if (message.notice) {
@@ -1260,21 +1266,33 @@ async function loadHandoff(id: string): Promise<void> {
   controls();
 }
 
+// The open whose session message read the terminal list last, and the open for which
+// the view has a list from a read after that session message. See loadTerminals.
+let openRead = 0, listed = 0;
+
 // Only the newest request updates the list. A failed read keeps the list that the view
 // has, so the selector and the buttons of the Messages view stay. A view without a list
-// shows no selector. With keep, a view of the saved screen of the latest terminal keeps
-// that terminal. When another view started a newer terminal, the view then shows its
-// terminal as an earlier terminal. Use keep only after the view read the list for its
-// open.
-async function loadTerminals(id: string, keep = false): Promise<void> {
+// shows no selector.
+//
+// opening marks the read for the session message of an open. The server chose the
+// terminal of an empty run before that read, so the read has that terminal. Each later
+// read keeps the shown terminal: a view of the saved screen of the latest terminal first
+// names that terminal by its run. When another view started a newer terminal, the view
+// then shows its terminal as an earlier terminal. A read that started before the session
+// message can lack the shown terminal, so it does not count for this rule.
+async function loadTerminals(id: string, opening = false): Promise<void> {
   if (!server || !id) return;
   const generation = ++terminalsGeneration;
+  const open = opens;
+  if (opening) openRead = open;
+  const fresh = openRead === open;
   let terminals: TerminalInfo[] | null = null;
   try { terminals = await call(server, { operation: 'session-terminals', session: id }); } catch { /* Keep the known list. */ }
   if (generation !== terminalsGeneration || selected?.id !== id) return;
   const shown = terminalPicker.shown();
-  if (keep && !terminalPicker.shownRun && shown?.run && connection?.ready && !connection.peer?.active) terminalPicker.show(shown.run);
+  if (listed === opens && !terminalPicker.shownRun && shown?.run && connection?.ready && !connection.peer?.active) terminalPicker.show(shown.run);
   terminalPicker.update(terminals ?? [...terminalPicker.all]);
+  if (terminals && fresh && open === opens) listed = open;
   messageNav.window(terminalPicker.shown());
   // The Messages view names the terminal of each message.
   sentHistory.mark();

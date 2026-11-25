@@ -24,8 +24,9 @@ export interface JumpHost {
   seek(revision: number): Promise<SeekResult>;
   // The error of the last read of sent messages.
   readError(): string;
-  // Show an error toast for a jump to terminal number.
-  failed(number: number, detail: string): void;
+  // Show an error toast for a jump to terminal number, or to the shown terminal when the
+  // number is unknown.
+  failed(number: number | undefined, detail: string): void;
 }
 
 // MessageJump opens another terminal of the selected session, then scrolls it to a sent
@@ -48,6 +49,14 @@ export class MessageJump {
   // terminal to a message or to the latest output.
   cancel(): void { this.clicks++; }
 
+  // Read the sent messages of the shown terminal again after a failed read, then scroll
+  // to a message. A click on a message of the shown terminal uses it.
+  async retry(revision: number): Promise<void> {
+    const run = this.host.shownRun();
+    const number = this.host.terminals().find(item => !!item.run && item.run === run)?.number;
+    this.report(await this.host.seek(revision), number);
+  }
+
   async show(revision: number, target: TerminalInfo): Promise<void> {
     const click = ++this.clicks;
     const session = this.host.session();
@@ -69,11 +78,14 @@ export class MessageJump {
     const opening = this.opening = this.host.open(session, terminal.run);
     const open = await opening;
     if (open === null || click !== this.clicks || this.host.opens() !== open || this.host.shownRun() !== terminal.run) return;
-    const result = await this.host.seek(revision);
+    this.report(await this.host.seek(revision), terminal.number);
+  }
+
+  private report(result: SeekResult, number: number | undefined): void {
     if (result === 'missing') {
-      this.host.failed(terminal.number, 'The terminal does not show this message. The terminal can have dropped its rows from the scrollback, or the application can show the message in another form.');
+      this.host.failed(number, 'The terminal does not show this message. The terminal can have dropped its rows from the scrollback, or the application can show the message in another form.');
     } else if (result === 'failed') {
-      this.host.failed(terminal.number, `Cannot read the sent messages: ${this.host.readError()}`);
+      this.host.failed(number, `Cannot read the sent messages: ${this.host.readError()}`);
     }
   }
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { showButton, terminalHeadingText } from './dist/sent-history.js';
+import { showButton, showMessage, terminalHeadingText } from './dist/sent-history.js';
 
 const terminal = (number, status, started, ended) => ({ number, run: `run-${number}`, tool: number === 2 ? 'Claude' : 'Codex', status, started, ended });
 const terminals = [
@@ -45,4 +45,30 @@ test('a heading names the terminal, its tool, and its status', () => {
   assert.equal(terminalHeadingText(terminals[1]), 'Terminal 2 · Claude · stopped');
   assert.equal(terminalHeadingText({ ...first, tool: '' }), 'Terminal 1 · Unknown tool · exited');
   assert.equal(terminalHeadingText(undefined), 'Unknown terminal');
+});
+
+test('after a failed read of the sent messages, the button of a message of the shown terminal reads them again', () => {
+  const button = showButton('missing', terminals, live, inLive, true);
+  assert.equal(button.text, 'Show in terminal');
+  assert.equal(button.disabled, false);
+  assert.match(button.title, /could not read the sent messages of this terminal/);
+  // A message of another terminal still names its terminal.
+  assert.equal(showButton('missing', terminals, live, inFirst, true).text, 'Show in terminal 1');
+  assert.equal(showButton('missing', terminals, live, inLive, false).disabled, true);
+});
+
+test('a click scrolls the shown terminal, opens another terminal, or reads the sent messages again', () => {
+  const calls = [];
+  const host = (found, unread) => ({
+    state: () => 'missing', terminals: () => terminals, shown: () => live,
+    go: revision => { calls.push(`go ${revision}`); return found; },
+    open: (revision, terminal) => calls.push(`open ${revision} in ${terminal.number}`),
+    unread: () => unread,
+    retry: revision => calls.push(`retry ${revision}`),
+  });
+  assert.equal(showMessage(host(true, false), { revision: 4, created: inLive }), true);
+  assert.equal(showMessage(host(false, false), { revision: 1, created: inFirst }), true);
+  assert.equal(showMessage(host(false, true), { revision: 4, created: inLive }), true);
+  assert.equal(showMessage(host(false, false), { revision: 4, created: inLive }), false);
+  assert.deepEqual(calls, ['go 4', 'go 1', 'open 1 in 1', 'go 4', 'retry 4', 'go 4']);
 });

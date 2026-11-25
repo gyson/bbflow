@@ -39,6 +39,7 @@ export class MessageNav {
   private loading = false;
   private loaded = false; // The view read the newest page for the shown terminal.
   private failure = ''; // The error of the last read of sent messages, or empty.
+  private failedOlder = false; // The failed read was of an older page.
   private drawn = false; // The terminal of the view drew a frame.
   // A jump that waits until the view can find its message. See seek.
   private seeking: { revision: number; done(result: SeekResult): void } | null = null;
@@ -170,15 +171,16 @@ export class MessageNav {
   // Scroll to a message after the view opened another terminal. The view jumps when a
   // search finds the message. The seek ends without a jump when the terminal drew its
   // first frame, and the view read every message that it can find, without the message.
-  // A read of the sent messages that fails also ends the seek. When the newest page
-  // failed before the seek, the seek reads it again first. Another jump, a step, and a
-  // change of the session or the terminal cancel the seek.
+  // A read of the sent messages that fails also ends the seek. When a read failed before
+  // the seek, the seek reads that page again first: the newest page, or the next older
+  // page. Another jump, a step, and a change of the session or the terminal cancel the
+  // seek.
   seek(revision: number): Promise<SeekResult> {
     this.finish('cancelled');
     if (!this.session || !this.view) return Promise.resolve('cancelled');
     return new Promise(done => {
       this.seeking = { revision, done };
-      if (this.failure && !this.loading && !this.loaded) void this.load(false);
+      if (this.failure && !this.loading) void this.load(this.failedOlder);
       this.schedule(0);
     });
   }
@@ -226,6 +228,8 @@ export class MessageNav {
     const session = this.session;
     if (!server || !session || (older && this.loading)) return;
     const request = older ? this.request : ++this.request;
+    // The Messages view shows a failed read on its buttons. Tell it when that changes.
+    const failed = !!this.failure;
     this.loading = true;
     this.failure = '';
     if (!older) this.reading = true;
@@ -243,7 +247,10 @@ export class MessageNav {
     } catch (error) {
       // Without the messages, the bar shows no position. The list reports the failure,
       // and a seek reports it too.
-      if (request === this.request) this.failure = errorMessage(error);
+      if (request === this.request) {
+        this.failure = errorMessage(error);
+        this.failedOlder = older;
+      }
     } finally {
       if (request === this.request) {
         this.loading = false;
@@ -252,6 +259,7 @@ export class MessageNav {
           if (this.again) { this.again = false; void this.load(false); }
         }
         if (this.failure) this.settle();
+        if (failed !== !!this.failure) this.host.changed();
       }
     }
   }

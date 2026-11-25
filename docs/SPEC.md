@@ -2480,9 +2480,12 @@ terminal**.
 The button of a message of another terminal names that terminal, for example **Show in
 terminal 1**. Its tooltip says whether that terminal is the live terminal or a saved
 final screen. A click opens that terminal, then scrolls it to the message. See
-[Jump to another terminal](#jump-to-another-terminal). The button is off for a message
-of the shown terminal that the terminal does not show. A change of the shown terminal
-keeps the messages and the position of the list.
+[Jump to another terminal](#jump-to-another-terminal).
+
+The button is off for a message of the shown terminal that the terminal does not show.
+After a failed read of the sent messages of the shown terminal, the button stays on, and
+its tooltip says so. A click then reads the sent messages again. A change of the shown
+terminal keeps the messages and the position of the list.
 
 **Copy** puts the message text on the system clipboard. Users can then paste it into
 any session. Copy does not include attachments or their file paths. It is not available
@@ -2644,8 +2647,10 @@ view then scrolls to the message as it does for a jump in the shown terminal.
 - When the search does not find the message, the view shows the terminal without a
   jump. An error toast says that the terminal does not show the message.
 - When a read of the sent messages fails, the jump ends. An error toast gives the
-  reason. A later click reads the newest page again. A later read does not complete
-  the jump that ended.
+  reason. A later read does not complete the jump that ended.
+- After such a failure, **Show in terminal** of a message of the shown terminal stays
+  on. A click reads the failed page again, the newest page or an older page. Then the
+  view scrolls to the message. A second failure shows the error toast again.
 - A change of the session or of the shown terminal cancels the wait. Another jump and a
   step also cancel it.
 - A newer click stops an older click, also when the reply for the older click arrives
@@ -2813,9 +2818,11 @@ the whole session. While you view an earlier terminal, the session toolbar hides
 The UI reads the list with `session-terminals` when it opens a session, when a terminal
 starts or exits, and when the selector opens. It also reads the list when the
 `status-watch` stream reports that a terminal of the selected session started or ended,
-for example in another view. A start or a continue first clears the list of the view,
-because the list then lacks the new terminal. The selector hides until the new list
-arrives.
+for example in another view. The session list refresh, every five seconds, also causes a
+read when the latest run of the selected session changed. Thus the view also finds a
+terminal that started and ended between two status messages. A start or a continue first
+clears the list of the view, because the list then lacks the new terminal. The selector
+hides until the new list arrives.
 
 A failed read keeps the list that the view has. Thus the selector and the buttons of
 the **Messages** view stay. A view without a list shows no selector.
@@ -2828,8 +2835,10 @@ until that terminal has a run.
 
 A view of the saved screen of the latest terminal keeps that terminal when another view
 starts a newer terminal. The view then shows its terminal as an earlier terminal, with
-**Back to live terminal**. Thus the selector label and the message marks continue to
-match the screen.
+**Back to live terminal** or **Back to latest terminal**. Thus the selector label and
+the message marks continue to match the screen. Each read after the read for the open
+keeps the shown terminal this way. The read for the open does not, because the list
+before it can lack the terminal that the server chose.
 
 #### Limits
 
@@ -4733,6 +4742,12 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
   the user, and a seek as no move. A real `MessageNav` and a `MessageJump`, wired as in
   the page, show that a jump in the shown terminal stops a pending jump to another
   terminal.
+- In the same file, a real `MessageNav`, a `MessageJump`, and the click of the
+  **Messages** view go through a failed read during a jump. The button of the message
+  stays on, and a click reads the sent messages again and jumps. Other fixtures retry
+  a failed older page, and a failed reload of the newest page after an earlier read.
+- `web/sent-history.test.mjs` also covers the button after a failed read and the choice
+  of a click: a jump in the shown terminal, an open of another terminal, or a new read.
 - `web/sent-history.test.mjs` covers the **Show in terminal** button: the label for the
   shown terminal, the label and the tooltip for another terminal and for the live
   terminal, and an off button. It also covers the text of a terminal heading.
@@ -4779,6 +4794,12 @@ edits, the pending send, and the cleared draft. No browser errors were reported.
   the row at the top, and the bar named message 7 of 8.
 - The terminal headings stayed at the top of the list in the dark and the light
   appearance.
+- A two-tab check with a custom tool `exit`, whose terminal ends at once: tab A showed
+  the saved screen of the latest terminal 4. Tab B continued the session with that tool
+  in terminal 5. Tab A then showed `Terminal 4 of 5 · Demo agent · stopped` and **Back
+  to latest terminal**. The terminal list kept terminal 4 as the current terminal, and
+  a click on terminal 5 opened it. A second continue to terminal 6, with the list opened
+  in tab A one second later, gave `Terminal 5 of 6` in the same way.
 - A two-tab check used **Refactor orbit in a worktree**. Tab A showed terminal 1 with
   the **Messages** view open. Tab B stopped terminal 2 and continued in terminal 3. Tab
   A then showed `Terminal 1 of 3`, and its heading of terminal 2 showed `stopped`.

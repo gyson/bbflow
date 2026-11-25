@@ -9,6 +9,24 @@ import { isLive, terminalTimes } from './terminal-picker.js';
 // A message is not folded when fewer than foldMinimum lines would stay hidden.
 const foldLines = 8, foldStep = 16, foldMinimum = 4;
 
+// The parts of the page that the Messages view uses.
+export interface SentHost {
+  // Whether the shown terminal shows the message, and whether the view reads it.
+  state(revision: number): MarkState;
+  // Scroll the shown terminal to the message.
+  go(revision: number): boolean;
+  // The terminals of the session in start order.
+  terminals(): readonly TerminalInfo[];
+  // The terminal that the session view shows.
+  shown(): TerminalInfo | undefined;
+  // Open another terminal of the session and scroll it to the message.
+  open(revision: number, terminal: TerminalInfo): void;
+  // Whether the last read of the sent messages of the shown terminal failed.
+  unread(): boolean;
+  // Read the sent messages of the shown terminal again, then scroll to the message.
+  retry(revision: number): void;
+}
+
 // The Messages view of the workspace pane lists the messages that Send sent in one
 // session. The newest message is at the bottom. The view only reads history. A session
 // with several terminals shows a heading above the messages of each terminal. Show in
@@ -27,18 +45,7 @@ export class SentHistory {
   private readonly items = new Map<number, { item: HTMLLIElement; go: HTMLButtonElement; created: string }>();
   private grouped = ''; // The terminals and messages of the shown headings. See group.
 
-  constructor(private readonly server: () => ServerInfo | null, private readonly host: {
-    // Whether the shown terminal shows the message, and whether the view reads it.
-    state(revision: number): MarkState;
-    // Scroll the shown terminal to the message.
-    go(revision: number): boolean;
-    // The terminals of the session in start order.
-    terminals(): readonly TerminalInfo[];
-    // The terminal that the session view shows.
-    shown(): TerminalInfo | undefined;
-    // Open another terminal of the session and scroll it to the message.
-    open(revision: number, terminal: TerminalInfo): void;
-  }) {
+  constructor(private readonly server: () => ServerInfo | null, private readonly host: SentHost) {
     this.more.onclick = () => { void this.load(); };
   }
 
@@ -67,13 +74,14 @@ export class SentHistory {
   mark(): void {
     const terminals = this.host.terminals();
     const shown = this.host.shown();
+    const unread = this.host.unread();
     this.group(terminals, shown);
     for (const [revision, { item, go, created }] of this.items) {
       const state = this.host.state(revision);
       const current = state === 'current';
       if (current && !item.classList.contains('current') && this.shown) item.scrollIntoView({ block: 'nearest' });
       item.classList.toggle('current', current);
-      const button = showButton(state, terminals, shown, created);
+      const button = showButton(state, terminals, shown, created, unread);
       go.disabled = button.disabled;
       go.textContent = button.text;
       go.title = button.title;
@@ -201,13 +209,8 @@ export class SentHistory {
     show(foldLines);
   }
 
-  // Scroll the shown terminal to the message. A message of another terminal first opens
-  // that terminal.
   private show(message: SentMessage): void {
-    if (this.host.go(message.revision)) return;
-    const other = elsewhere(this.host.terminals(), this.host.shown(), message.created);
-    if (other) this.host.open(message.revision, other);
-    else this.mark();
+    if (!showMessage(this.host, message)) this.mark();
   }
 
   private item(message: SentMessage): HTMLLIElement {
@@ -268,10 +271,24 @@ export class SentHistory {
   }
 }
 
+// showMessage does a click of Show in terminal. It scrolls the shown terminal to the
+// message. A message of another terminal first opens that terminal. After a failed read
+// of the sent messages of the shown terminal, a click reads them again. It returns false
+// when it did nothing.
+export function showMessage(host: SentHost, message: Pick<SentMessage, 'revision' | 'created'>): boolean {
+  if (host.go(message.revision)) return true;
+  const other = elsewhere(host.terminals(), host.shown(), message.created);
+  if (other) host.open(message.revision, other);
+  else if (host.unread()) host.retry(message.revision);
+  else return false;
+  return true;
+}
+
 // showButton returns the Show in terminal button of a message. The button scrolls the
 // shown terminal to a message that it shows. For a message of another terminal, the
-// button names that terminal. Otherwise the button is off.
-export function showButton(state: MarkState, terminals: readonly TerminalInfo[], shown: TerminalInfo | undefined, created: string): { text: string; title: string; disabled: boolean } {
+// button names that terminal. After a failed read of the sent messages of the shown
+// terminal, the button reads them again. Otherwise the button is off.
+export function showButton(state: MarkState, terminals: readonly TerminalInfo[], shown: TerminalInfo | undefined, created: string, unread = false): { text: string; title: string; disabled: boolean } {
   const other = state === 'missing' ? elsewhere(terminals, shown, created) : undefined;
   if (other) {
     return {
@@ -281,6 +298,9 @@ export function showButton(state: MarkState, terminals: readonly TerminalInfo[],
         : `Open the saved final screen of terminal ${other.number} and scroll it to this message. Input and Send are off in that view.`,
       disabled: false,
     };
+  }
+  if (state === 'missing' && unread) {
+    return { text: 'Show in terminal', title: 'The view could not read the sent messages of this terminal. Read them again, then scroll to this message.', disabled: false };
   }
   return state === 'missing'
     ? { text: 'Show in terminal', title: 'The terminal that this view shows does not show this message.', disabled: true }

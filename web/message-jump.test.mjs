@@ -169,3 +169,20 @@ test('a jump stops while another action runs, and when the session changes', asy
   await shown;
   assert.deepEqual(state.opened, []);
 });
+
+test('a retry reads the sent messages of the shown terminal again and reports a second failure', async () => {
+  const { jump, state } = fixture();
+  state.shown = 'run-2';
+  state.result = 'failed';
+  await jump.retry(5);
+  assert.deepEqual(state.seeks, [5]);
+  assert.deepEqual(state.toasts, ['terminal 2: Cannot read the sent messages: database is locked']);
+  state.result = 'found';
+  await jump.retry(5);
+  assert.equal(state.toasts.length, 1);
+  // Without a terminal list, the toast names no terminal.
+  const empty = fixture([]);
+  empty.state.result = 'missing';
+  await empty.jump.retry(5);
+  assert.match(empty.state.toasts[0], /^terminal undefined: The terminal does not show this message/);
+});
