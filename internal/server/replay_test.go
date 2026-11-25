@@ -192,6 +192,202 @@ func TestSharedViewsSizeOwnerAndIndependentFlow(t *testing.T) {
 	}
 }
 
+// The size owner gets the frame of a new size when the emulator applies the resize. An
+// earlier frame would be a crop of the screen at the earlier size, and the view would
+// get two full frames for one resize. A view without the size gets its crop at once.
+func TestOwnerResizeWaitsForTheEmulator(t *testing.T) {
+	size := protocol.Size{Cols: 80, Rows: 24}
+	narrow := protocol.Size{Cols: 40, Rows: 24}
+	r := &runningSession{id: "fixture", controls: make(chan agent.Control, 16), done: make(chan struct{}), terminal: terminal.New(size), revision: 1}
+	owner, other := r.subscribe(nil, size), r.subscribe(nil, size)
+	woken := func(a *attachment) bool {
+		select {
+		case <-a.changed:
+			return true
+		default:
+			return false
+		}
+	}
+	woken(owner) // The joins woke both views.
+	woken(other)
+	r.control(owner, protocol.Message{Type: "resize", Size: narrow})
+	if control := <-r.controls; control.Type != "resize" || control.Size != narrow {
+		t.Fatalf("the runtime got %+v", control)
+	}
+	if woken(owner) {
+		t.Fatal("the size owner got a frame before the emulator applied its resize")
+	}
+	data, _ := json.Marshal(narrow)
+	if _, err := r.publish(history.Event{Kind: "resize", Data: data}); err != nil {
+		t.Fatal(err)
+	}
+	if !woken(owner) || r.terminal.Size() != narrow {
+		t.Fatal("the emulator resize did not wake the size owner")
+	}
+	woken(other) // The emulator resize woke the other view too.
+	r.control(other, protocol.Message{Type: "resize", Size: size})
+	if !woken(other) {
+		t.Fatal("a view without the size did not get its crop at once")
+	}
+	// The runtime ignores a resize to the current size. The size owner gets its frame at once.
+	r.control(owner, protocol.Message{Type: "resize", Size: narrow})
+	if !woken(owner) {
+		t.Fatal("a resize to the emulator size did not wake the size owner")
+	}
+}
+
+// ownerFixture gives a live terminal of 80 columns and helpers for its views.
+type ownerFixture struct {
+	t *testing.T
+	r *runningSession
+	s *Server
+}
+
+func newOwnerFixture(t *testing.T) *ownerFixture {
+	r := &runningSession{id: "fixture", controls: make(chan agent.Control, 16), done: make(chan struct{}), terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}), revision: 1}
+	return &ownerFixture{t, r, &Server{}}
+}
+
+func (f *ownerFixture) publish(kind string, data []byte) {
+	f.t.Helper()
+	if _, err := f.r.publish(history.Event{RunID: "run-fixture", Kind: kind, Data: data}); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// resize applies a resize event to the emulator, as the runtime does.
+func (f *ownerFixture) resize(size protocol.Size) {
+	f.t.Helper()
+	data, _ := json.Marshal(size)
+	f.publish("resize", data)
+}
+
+func (f *ownerFixture) control(want protocol.Size) {
+	f.t.Helper()
+	select {
+	case control := <-f.r.controls:
+		if control.Type != "resize" || control.Size != want {
+			f.t.Fatalf("the runtime got %+v, want a resize to %+v", control, want)
+		}
+	case <-time.After(5 * time.Second):
+		f.t.Fatal("control missing")
+	}
+}
+
+func (f *ownerFixture) latest() int64 {
+	f.r.mu.Lock()
+	defer f.r.mu.Unlock()
+	return f.r.revision
+}
+
+// shows acknowledges the frames of a view until it shows the latest state.
+func (f *ownerFixture) shows(view *testView) {
+	f.t.Helper()
+	for {
+		m := view.read("frame")
+		view.ack(m)
+		if m.Revision == f.latest() {
+			return
+		}
+	}
+}
+
+// next fails unless the next frame of the view is the full frame of the latest state at
+// size, with text in it. A frame that the view got before the emulator resize would
+// come first.
+func (f *ownerFixture) next(view *testView, size protocol.Size, text string) {
+	f.t.Helper()
+	m := view.read("frame")
+	if !m.Full || m.Size != size || m.Revision != f.latest() || !strings.Contains(string(m.Data), text) {
+		f.t.Fatalf("got full=%v size=%+v revision=%d of %d, want the full frame at %+v", m.Full, m.Size, m.Revision, f.latest(), size)
+	}
+	view.ack(m)
+}
+
+// The time that a test gives the attachment to send a frame that it must not send.
+const settle = 200 * time.Millisecond
+
+// Output can reach the emulator before the resize of the size owner. The size owner gets
+// no frame for it. Then the resize gives one full frame of the new size, with the output.
+func TestOwnerResizeGetsOneFullFrame(t *testing.T) {
+	f := newOwnerFixture(t)
+	owner := openTestView(t, f.s, f.r, protocol.Size{Cols: 80, Rows: 24})
+	f.control(protocol.Size{Cols: 80, Rows: 24})
+	f.shows(owner)
+	narrow := protocol.Size{Cols: 40, Rows: 24}
+	owner.send(protocol.Message{Type: "resize", Size: narrow})
+	f.control(narrow)
+	f.publish("output", []byte("before"))
+	time.Sleep(settle)
+	f.resize(narrow)
+	f.next(owner, narrow, "before")
+	// Later output gives a delta frame.
+	f.publish("output", []byte("after"))
+	if m := owner.read("frame"); m.Full || m.Size != narrow {
+		t.Fatalf("output after the resize gave full=%v size=%+v", m.Full, m.Size)
+	}
+}
+
+// A view that joins as the size owner with another size gets its first frame when the
+// emulator applies its size. A first frame before that would be a crop of the screen,
+// and the resize would give a second full frame.
+func TestJoiningOwnerWaitsForTheEmulator(t *testing.T) {
+	f := newOwnerFixture(t)
+	f.publish("output", []byte("screen"))
+	narrow := protocol.Size{Cols: 40, Rows: 24}
+	view := openTestView(t, f.s, f.r, narrow)
+	f.control(narrow)
+	time.Sleep(settle)
+	f.resize(narrow)
+	f.next(view, narrow, "screen")
+}
+
+// The size owner leaves. Another view takes the size with a resize. Until the emulator
+// applies that size, the view gets no frame of the earlier owner's size.
+func TestNewOwnerKeepsItsSizeUntilTheEmulatorResizes(t *testing.T) {
+	f := newOwnerFixture(t)
+	first := openTestView(t, f.s, f.r, protocol.Size{Cols: 80, Rows: 24})
+	f.control(protocol.Size{Cols: 80, Rows: 24})
+	f.shows(first)
+	second := openTestView(t, f.s, f.r, protocol.Size{Cols: 40, Rows: 24})
+	f.shows(second)
+	first.peer.Close()
+	<-first.done
+	wider := protocol.Size{Cols: 50, Rows: 24}
+	second.send(protocol.Message{Type: "resize", Size: wider})
+	f.control(wider)
+	f.publish("output", []byte("pending"))
+	time.Sleep(settle)
+	f.resize(wider)
+	f.next(second, wider, "pending")
+}
+
+// Each resize of the size owner waits for the emulator. A later resize to the same width
+// also waits, after any pause.
+func TestOwnerWaitsForEachResize(t *testing.T) {
+	f := newOwnerFixture(t)
+	size := protocol.Size{Cols: 80, Rows: 24}
+	narrow := protocol.Size{Cols: 40, Rows: 24}
+	owner := openTestView(t, f.s, f.r, size)
+	f.control(size)
+	f.shows(owner)
+	resize := func(next protocol.Size, output string) {
+		t.Helper()
+		owner.send(protocol.Message{Type: "resize", Size: next})
+		f.control(next)
+		if output != "" {
+			f.publish("output", []byte(output))
+			time.Sleep(settle)
+		}
+		f.resize(next)
+		f.next(owner, next, output)
+	}
+	resize(narrow, "first")
+	resize(size, "")
+	time.Sleep(1100 * time.Millisecond)
+	resize(narrow, "again")
+}
+
 // When the process ends, a view of another size gets the saved screen as its last frame,
 // as a reload shows it. A view of the terminal size gets no extra frame.
 func TestEndedViewOfAnotherSizeGetsTheSavedScreen(t *testing.T) {

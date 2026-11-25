@@ -1,11 +1,11 @@
 import { Terminal } from '@xterm/xterm';
 import type { ITheme } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
 import { call, errorMessage } from './protocol.js';
 import type { ServerInfo } from './protocol.js';
 import { SessionConnection } from './session-connection.js';
 import { element } from './dom.js';
 import { terminalSize } from './terminal-size.js';
+import { fitSize } from './terminal-fit.js';
 import { onTerminalInput } from './terminal-input.js';
 import { keyboardShown } from './keyboard.js';
 import { followCursor, showCursor } from './terminal-clip.js';
@@ -28,7 +28,6 @@ export class SideTerminal {
   private pending = false; // A request waits for its session message.
   private shell = ''; // The ID of the shown shell. Stop and reconnection use only this shell.
   private view: Terminal | null = null;
-  private fit: FitAddon | null = null;
   private connection: SessionConnection | null = null;
   private readonly stopGlide: () => void; // Stop the glide of a finger drag.
 
@@ -140,7 +139,7 @@ export class SideTerminal {
     this.live = this.pending = false;
     this.shell = '';
     this.view?.dispose();
-    this.view = this.fit = null;
+    this.view = null;
     this.screen.replaceChildren();
     this.dimensions.textContent = '';
   }
@@ -173,13 +172,12 @@ export class SideTerminal {
       // Terminal output must not open links, read the browser clipboard, or write to it.
       linkHandler: { activate() {} },
     });
-    const fit = this.fit = new FitAddon();
-    view.loadAddon(fit);
     const host = document.createElement('div');
     host.className = 'terminal-host';
     this.screen.replaceChildren(host);
     view.open(host);
-    fit.fit();
+    const fitted = fitSize(view);
+    if (fitted) view.resize(fitted.cols, fitted.rows);
     this.dimensions.textContent = `${view.cols} × ${view.rows}`;
     view.onResize(({ rows, cols }) => {
       this.dimensions.textContent = `${cols} × ${rows}`;
@@ -211,8 +209,8 @@ export class SideTerminal {
     // The terminal keeps its PTY size while the on-screen keyboard shows. The lower view
     // shows the part with the cursor row. A frame keeps the part that a drag shows.
     if (keyboardShown()) return resized ? showCursor(this.screen, view) : followCursor(this.screen, view);
-    const proposed = this.fit?.proposeDimensions();
-    if (!proposed || !Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) return;
+    const proposed = fitSize(view);
+    if (!proposed) return;
     const size = terminalSize(proposed);
     if (size.cols !== view.cols || size.rows !== view.rows) {
       connection.peer.send({ type: 'resize', size });

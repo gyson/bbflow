@@ -108,6 +108,17 @@ func (r *runningSession) subscribe(conn *protocol.Conn, size protocol.Size) *att
 	a.wake()
 	return a
 }
+
+// awaitsResize tells that the size owner waits for the emulator to apply its size. A
+// frame before that would show the screen at another size, and the resize would then
+// give a second full frame. The wait ends: the runtime records each resize that it
+// accepts, and the emulator applies the record. The runtime ignores only a resize to its
+// PTY size, which is the emulator size after each control. A failed record stops the
+// run, and the end wakes each view. Requires r.mu.
+func (r *runningSession) awaitsResize(a *attachment) bool {
+	return r.sizeOwner == a && !r.ended && a.size != r.terminal.Size()
+}
+
 func (r *runningSession) leave(a *attachment) {
 	r.controlMu.Lock()
 	defer r.controlMu.Unlock()
@@ -151,8 +162,6 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 	}
 	if message.Type == "resize" {
 		a.size = message.Size
-		r.revision++
-		a.wake()
 	}
 	var controls []agent.Control
 	translated, report := a.report(message)
@@ -188,6 +197,14 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 			}
 		}
 		controls = append(controls, control)
+	}
+	// A view without the size gets a crop or a padding of the screen at its new size at
+	// once. The size owner gets the frame of its new size when the emulator applies the
+	// resize. The runtime ignores a resize to the current size, so such a resize of the
+	// size owner gets its frame at once. See awaitsResize.
+	if message.Type == "resize" && (r.sizeOwner != a || message.Size == r.terminal.Size()) {
+		r.revision++
+		a.wake()
 	}
 	// The runtime ignores a resize to the current PTY size, so the application does not
 	// redraw. Such a resize must not hide the application output that follows it.
@@ -485,6 +502,8 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 			var next *terminal.View
 			switch {
 			case saved:
+			case r.awaitsResize(a):
+				// The emulator resize wakes the view.
 			case revision != sent || previous == nil:
 				next = r.terminal.ViewFor(a.size, &a.history)
 			case ended && !r.side:
