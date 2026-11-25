@@ -102,7 +102,8 @@
         <textarea id="composer-text" rows="4" placeholder="Write a message…" spellcheck="true" aria-label="Message" aria-describedby="composer-help" disabled></textarea>
         <p id="composer-help" class="sr-only">Enter adds a line. Command+Enter or Ctrl+Enter sends the message.</p>
         <div id="composer-files" aria-label="Attached files"></div>
-        <div class="composer-actions"><button id="composer-attach" disabled title="Attach files. You can also paste or drop files in the message editor.">＋ Attach files</button><input id="composer-picker" type="file" multiple hidden><button id="handoff-open" hidden title="Show the prompt that points an agent to the earlier terminals of this session.">Handoff prompt</button><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled title="Paste the message into the terminal prompt and press Enter (⌘Enter or Ctrl+Enter)">Send<span class="send-keys"> ⌘↵</span></button></div>
+        <div class="composer-actions"><span id="composer-menu-box" class="action-menu-box"><span id="composer-menu-status" class="sr-only" role="status"></span><button id="composer-menu-open" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="composer-menu" aria-label="Add to message" title="Attach files, or insert a prompt at the cursor">＋</button>
+          <div id="composer-menu" class="action-menu" role="menu" aria-label="Add to message" hidden><button id="composer-attach" type="button" role="menuitem" disabled title="You can also paste or drop files in the message editor.">Attach files…</button><button id="handoff-open" type="button" role="menuitem" hidden title="Show the prompt that points an agent to the earlier terminals of this session.">Handoff prompt…</button><div role="separator"></div><p class="menu-label" id="composer-prompts-label">Saved prompts</p><div id="composer-prompts" role="group" aria-labelledby="composer-prompts-label"></div><p id="composer-prompts-note" class="menu-note" hidden></p><div role="separator"></div><button id="composer-prompts-manage" type="button" role="menuitem">Manage prompts…</button></div></span><input id="composer-picker" type="file" multiple hidden><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled title="Paste the message into the terminal prompt and press Enter (⌘Enter or Ctrl+Enter)">Send<span class="send-keys"> ⌘↵</span></button></div>
       </section>
     </section>
     <div id="workspace-divider" role="separator" tabindex="0" aria-label="Workspace pane width" aria-orientation="vertical" aria-controls="workspace-pane" title="Drag to resize. Use Left and Right arrow keys when focused." hidden></div>
@@ -194,6 +195,18 @@
             <p class="form-help">HEAD is the current commit of the project. Uncommitted changes are not included. The field saves when you press Enter or leave it. Press Esc to restore the saved value.</p>
           </section>
         </form>
+        <section id="settings-prompts" class="settings-card" aria-labelledby="settings-prompts-title">
+          <div class="settings-heading"><h3 id="settings-prompts-title" tabindex="-1">Prompts</h3></div>
+          <p class="form-help">Saved prompts are in the ＋ menu of the message editor, in every session and in this order. A prompt goes in at the cursor. You still send the message.</p>
+          <div class="tool-table-box">
+            <table class="tool-table prompt-table" aria-label="Prompts">
+              <thead><tr><th scope="col">Name</th><th scope="col">Text</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+              <tbody id="settings-prompt-rows"></tbody>
+            </table>
+          </div>
+          <p id="prompt-error" class="form-error" role="alert" hidden></p>
+          <button id="prompt-add" type="button" class="tool-add">＋ Add prompt</button>
+        </section>
         <section id="title-settings" class="settings-card">
           <h3>Automatic titles</h3>
           <p class="form-help">bbflow asks the title tool once for a title, after your first sent message. A title that you set has priority. bbflow tests a title tool before it saves it. The test can take up to 90 seconds. A title tool is separate from the tools that start sessions.</p>
@@ -310,6 +323,26 @@
       <button id="tool-remove-submit" type="submit" class="primary">Remove tool</button>
     </form>
   </dialog>
+  <dialog id="prompt-editor-dialog" class="tool-editor-dialog" aria-labelledby="prompt-editor-title">
+    <form id="prompt-editor" class="tool-editor" novalidate>
+      <div class="dialog-heading"><h2 id="prompt-editor-title">New prompt</h2><button type="button" id="prompt-close" class="text-button" aria-label="Close the prompt editor">✕</button></div>
+      <div class="model-field"><label for="prompt-name">Name</label><input id="prompt-name" placeholder="Review PR" autocomplete="off"></div>
+      <div class="model-field">
+        <label for="prompt-text">Text</label>
+        <textarea id="prompt-text" rows="8" placeholder="Use the review-loop skill as the reviewer for PR #" spellcheck="true"></textarea>
+        <p class="model-help">The ＋ menu of the message editor puts this text at the cursor. It does not send it.</p>
+      </div>
+      <p id="prompt-editor-error" class="form-error" role="alert" hidden></p>
+      <div class="tool-editor-actions"><button id="prompt-cancel" type="button">Cancel</button><button id="prompt-submit" type="submit" class="primary">Add prompt</button></div>
+    </form>
+  </dialog>
+  <dialog id="prompt-remove-dialog" aria-labelledby="prompt-remove-title">
+    <form id="prompt-remove-form">
+      <div class="dialog-heading"><h2 id="prompt-remove-title">Remove this prompt?</h2><button type="button" id="cancel-prompt-remove" class="text-button" aria-label="Close remove prompt">✕</button></div>
+      <p id="prompt-remove-summary" class="form-help"></p>
+      <button id="prompt-remove-submit" type="submit" class="primary">Remove prompt</button>
+    </form>
+  </dialog>
   <dialog id="rename-dialog" aria-labelledby="rename-title">
     <form id="rename-form">
       <div class="dialog-heading"><h2 id="rename-title">Rename session</h2><button type="button" id="cancel-rename" class="text-button" aria-label="Close rename">✕</button></div>
@@ -349,7 +382,7 @@
     <p id="handoff-folder" class="continue-path"></p>
     <textarea id="handoff-text" class="prompt-text" rows="6" readonly aria-label="Handoff prompt"></textarea>
     <p id="handoff-status" class="form-help" role="status"></p>
-    <div class="dialog-actions"><button id="handoff-copy" type="button">Copy prompt</button><button id="handoff-insert" type="button" class="primary">Put in message editor</button></div>
+    <div class="dialog-actions"><button id="handoff-copy" type="button">Copy prompt</button><button id="handoff-insert" type="button" class="primary">Insert in message</button></div>
   </dialog>
   <dialog id="history-dialog" class="history-dialog" aria-labelledby="history-title" aria-describedby="history-help">
     <div class="dialog-heading"><h2 id="history-title">Search history</h2><button id="history-close" class="text-button" aria-label="Close history search">✕</button></div>

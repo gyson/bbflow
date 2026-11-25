@@ -1,6 +1,7 @@
 import { call, errorMessage, sessionTitle, VERSION } from './protocol.js';
 import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Worktree, ServerInfo, SessionInfo, Size, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
+import { ComposerMenu } from './composer-menu.js';
 import { HistorySearch } from './history-search.js';
 import { DiffPane } from './diff-pane.js';
 import { SideTerminal } from './side-terminal.js';
@@ -200,17 +201,31 @@ const sessionStep = 5;
 const groupLimits = { list: new Map<string, number>(), archived: new Map<string, number>() };
 let moreGroups = new Set<string>();
 const limits = () => archivedList ? groupLimits.archived : groupLimits.list;
+// The ＋ menu of the message editor. Manage prompts opens the Prompts card of Settings.
+// The menu comes before the editor, because the editor reports each change of its
+// controls to it.
+const composerMenu = new ComposerMenu({
+  server: () => server,
+  blocked: () => composer.insertBlocked(),
+  insert: text => composer.insert(text),
+  problem: text => composer.problem(text),
+  manage: () => void action(async () => {
+    await showSettings();
+    settingsView.revealPrompts();
+  }, 'Could not open Settings.'),
+});
 const composer = new Composer({
   server: () => server,
   peer: () => connection?.peer ?? null,
   bracketed: () => !!terminal?.modes.bracketedPasteMode,
   action,
   sent: () => messageNav.reload(),
+  controls: () => composerMenu.update(),
 });
 const sessionSplit = new SessionSplit();
 const sessionMenu = new ActionMenu('session-menu');
 const rowMenus = new RowMenus(() => renderSessions(), $('row-menu-status'));
-const handoffPrompt = new HandoffPrompt({ insert: text => composer.insert(text) });
+const handoffPrompt = new HandoffPrompt({ blocked: () => composer.insertBlocked(), insert: text => composer.insert(text), problem: text => composer.problem(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
 // final screen. The live process continues while a view shows an earlier terminal.
 const terminalPicker = new TerminalPicker({
@@ -492,6 +507,7 @@ function controls() {
   }
   $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
   $('handoff-open').disabled = busy;
+  composerMenu.controls();
   terminalPicker.controls(busy);
   $('project-submit').disabled = $('remove-project-submit').disabled = $('rename-submit').disabled = busy;
   $('rename-session').hidden = $('copy-session-id').hidden = showingSettings || !selected?.id || selected.status === 'draft';
@@ -1769,6 +1785,7 @@ async function initialize() {
     $('instance-dir').title = server.dataDir;
     await refreshSessions();
     watchStatuses(info);
+    void composerMenu.refresh();
     const route = parseRoute(location.pathname);
     if (route.page === 'settings') await action(showSettings, 'Could not open Settings.');
     else if (route.page === 'session') await action(() => openSession(sessions.find(s => s.id === route.id) || { id: route.id, title: 'Session', workspace: '', status: 'unknown' }), 'Could not open the session of this address.');

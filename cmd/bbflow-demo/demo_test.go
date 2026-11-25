@@ -195,6 +195,8 @@ func TestDemo(t *testing.T) {
 	// Claude Code and Codex are on, whatever CLIs this computer has.
 	expect("SELECT group_concat(value->>'name', ',') FROM settings, json_each(data, '$.tools') WHERE value->>'enabled'",
 		"[[Codex,Claude Code,Demo agent,Detail agent,Busy agent]]")
+	expect("SELECT group_concat(value->>'name', ',') FROM settings, json_each(data, '$.prompts')",
+		"[[Review PR,Run all checks,Summarize the branch]]")
 	// The seed calls no model, so it selects no title tool.
 	expect("SELECT data->>'$.titleTool' FROM settings", "[[none]]")
 	expect(`SELECT count(*) FROM events AS input

@@ -82,6 +82,71 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 	}
 }
 
+// Saved prompts keep their order and their text. A save trims the name. It rejects a
+// prompt list that a menu cannot show unambiguously, and text that Send would reject.
+func TestPromptSettings(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings, err := store.Settings()
+	if err != nil || settings.Prompts == nil || len(settings.Prompts) != 0 {
+		t.Fatal("a new database has prompts", settings.Prompts, err)
+	}
+	text := "Use the review-loop skill as the reviewer for PR #"
+	multiline := "Summarize the branch.\n\tList the risks. "
+	settings.Prompts = []Prompt{{ID: "b", Name: "  Review PR ", Text: text}, {ID: "a", Name: "Summary", Text: multiline}}
+	if settings, err = store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	want := []Prompt{{ID: "b", Name: "Review PR", Text: text}, {ID: "a", Name: "Summary", Text: multiline}}
+	if saved, err := store.Settings(); err != nil || !slices.Equal(saved.Prompts, want) || !slices.Equal(settings.Prompts, want) {
+		t.Fatal("the prompts changed", saved.Prompts, settings.Prompts, err)
+	}
+	// A save without the field removes all prompts, as for the tools.
+	empty := settings
+	empty.Prompts = nil
+	if saved, err := store.SaveSettings(empty); err != nil || saved.Prompts == nil || len(saved.Prompts) != 0 {
+		t.Fatal("a save without prompts kept them", saved.Prompts, err)
+	} else {
+		settings = saved
+	}
+	many := make([]Prompt, maxPrompts+1)
+	for i := range many {
+		many[i] = Prompt{ID: strings.Repeat("x", i+1), Name: "Prompt " + strings.Repeat("x", i+1), Text: "text"}
+	}
+	for _, test := range []struct {
+		prompts []Prompt
+		message string
+	}{
+		{many, "at most 100 prompts"},
+		{[]Prompt{{ID: "", Name: "No ID", Text: "text"}}, "unique IDs"},
+		{[]Prompt{{ID: strings.Repeat("x", 101), Name: "Long ID", Text: "text"}}, "unique IDs"},
+		{[]Prompt{{ID: "a", Name: "One", Text: "text"}, {ID: "a", Name: "Two", Text: "text"}}, "unique IDs"},
+		{[]Prompt{{ID: "a", Name: " ", Text: "text"}}, "use a name"},
+		{[]Prompt{{ID: "a", Name: "Line\nbreak", Text: "text"}}, "use a name"},
+		{[]Prompt{{ID: "a", Name: "Review PR", Text: "text"}, {ID: "b", Name: "review pr ", Text: "text"}}, "another prompt has the name"},
+		{[]Prompt{{ID: "a", Name: "Blank", Text: " \n\t"}}, "has no text"},
+		{[]Prompt{{ID: "a", Name: "Long", Text: strings.Repeat("x", maxPromptText+1)}}, "longer than 16 KiB"},
+		{[]Prompt{{ID: "a", Name: "Return", Text: "one\r\ntwo"}}, "control characters"},
+		{[]Prompt{{ID: "a", Name: "Escape", Text: "red \x1b[31m"}}, "control characters"},
+		{[]Prompt{{ID: "a", Name: "Bytes", Text: "bad \xff"}}, "control characters"},
+	} {
+		next := settings
+		next.Prompts = test.prompts
+		if _, err := store.SaveSettings(next); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Fatalf("accepted invalid prompts %.80q: %v", test.prompts, err)
+		}
+	}
+	// The limits themselves save.
+	settings.Prompts = slices.Clone(many[:maxPrompts])
+	settings.Prompts[0].Text = strings.Repeat("é", maxPromptText/2)
+	if saved, err := store.SaveSettings(settings); err != nil || len(saved.Prompts) != maxPrompts {
+		t.Fatal("rejected prompts at the limits", err)
+	}
+}
+
 func TestRemoteAccessSettings(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
 	if err != nil {

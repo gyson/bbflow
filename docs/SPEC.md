@@ -39,7 +39,7 @@ The Web client section has these features:
 | [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, built-in tools, tool types and model lists, the launch preparation of a session, and managed worktrees. |
 | [Session status](#session-status) | The four statuses, the sidebar icon, the session toolbar, and the More actions menu. |
 | [Session titles](#session-titles) | User titles, derived titles, and the title tools. |
-| [Message editor](#message-editor) | Send, the shared draft, sent messages, and attachments. |
+| [Message editor](#message-editor) | Send, the ＋ menu, saved prompts, the shared draft, sent messages, and attachments. |
 | [Sent messages in the terminal](#sent-messages-in-the-terminal) | The positions of the sent messages in the terminal: the message bar, the marks, the steps, and the jump to another terminal. |
 | [Continue in a new terminal](#continue-in-a-new-terminal) | A new terminal in an ended session, with the handoff folder and prompt. |
 | [Earlier terminals](#earlier-terminals) | The terminal selector and the read-only view of an earlier terminal. |
@@ -1410,8 +1410,9 @@ This section has three related parts:
 #### Settings page
 
 Settings is an instance-wide page at `/settings`. Its URL has no session ID. The cards
-are **Appearance**, **Tools**, **Session defaults**, **Automatic titles**, **Updates**,
-**Server**, and **Remote access**. Tools come before the session defaults, because the
+are **Appearance**, **Tools**, **Session defaults**, **Prompts**, **Automatic titles**,
+**Updates**, **Server**, and **Remote access**. See [Saved prompts](#saved-prompts) for
+the **Prompts** card. Tools come before the session defaults, because the
 default tool is one of them.
 
 **Appearance** offers **System**, **Light**, and **Dark**. System is the default and
@@ -1434,6 +1435,7 @@ way:
 | Appearance, default tool, worktree default, update check | At once, on selection. |
 | Starting branch or commit, Port, Tailscale host name, Tailscale login | On Enter, or when the field loses focus. Escape restores the saved value. |
 | Tools | **Add tool** and **Save** in the tool editor. A switch and the move buttons save at once. **Remove** asks first. |
+| Prompts | **Add prompt** and **Save** in the prompt editor. The move buttons save at once. **Remove** asks first. |
 | Title tool | After a passed test. See [Title controls in Settings](#title-controls-in-settings). |
 | Remote access switch | At once, on a click. See [Remote access in Settings](#remote-access-in-settings). |
 
@@ -1441,7 +1443,8 @@ The status shows **Saving…** during a save. It shows **All settings saved** wh
 entry is saved. Otherwise it names each entry that is not saved, for example
 **Not saved: Port, New tool**. The names are **Starting branch or commit**, **Port**,
 **Tailscale host name**, **Tailscale login**, **Custom title command**, **New tool**,
-**Edit of** with the tool name, and the name of a default that failed to save.
+**New prompt**, **Edit of** with the tool or prompt name, and the name of a default
+that failed to save.
 
 - When the user leaves Settings, the page discards the entries that are not saved. The
   fields then show the saved values. A default that the server rejected is such an
@@ -1454,9 +1457,9 @@ entry is saved. Otherwise it names each entry that is not saved, for example
     the server can reject the value before the page closes.
   - The server rejected a port, a default, a title tool, or remote access after the user
     left. The page then also discards that entry.
-  - A save of a new tool, an edit, a move, or a removal failed after the user left. The
-    toast names the action and the tool, for example **The new tool “Codex” did not
-    save.**
+  - A save of a new tool or prompt, an edit, a move, or a removal failed after the user
+    left. The toast names the action and the tool or prompt, for example **The new tool
+    “Codex” did not save.**
 - A reply that comes after the user opened Settings again also goes to a toast, because
   the close discarded the entry of that request.
 - Escape in **Starting branch or commit** also discards a value that the server
@@ -2020,10 +2023,10 @@ also shows the reason, and **Reconnect** shows next to the hint.
   of the menu, with the rules of the toolbar button.
 
 The menu button does not show when no action applies. A choice, Escape, or a click
-outside the menu closes it. The Up and Down arrow keys move between the items. Tab or
-Shift+Tab closes the menu and moves the focus to the control after or before the menu
-button. After a choice, the focus is on the menu button. A dialog that the choice opens
-returns the focus to that button when it closes.
+outside the menu closes it. The Up and Down arrow keys move between the items that are
+on. Tab or Shift+Tab closes the menu and moves the focus to the control after or before
+the menu button. After a choice, the focus is on the menu button. A dialog that the
+choice opens returns the focus to that button when it closes.
 
 The terminal selector shows the stored status of each run, where `running` means a live
 process.
@@ -2394,8 +2397,9 @@ select Code Puppy.
 
 The message editor is a multiline editor below the terminal. **Send** writes the
 message to the session terminal as one input. Each session has one saved draft, and all
-views of the session show it. The editor also attaches files. The **Messages** view of
-the workspace pane lists the sent messages.
+views of the session show it. The **＋** menu attaches files and puts the handoff prompt
+or a saved prompt at the cursor. The **Messages** view of the workspace pane lists the
+sent messages.
 
 #### Layout and size
 
@@ -2415,11 +2419,77 @@ interaction remains available.
 
 #### Action row
 
-The editor has no visible label or help text. Its action row holds **＋ Attach files**,
-**Handoff prompt**, the draft status, and **Send ⌘↵**. The tooltips
-of these buttons explain them. The row wraps when the editor is narrow, for example
-while the workspace pane is open. **Send** stays at the right end of its line. A device
-without a pointer that hovers, such as a phone, shows **Send** without the key symbols.
+The editor has no visible label or help text. Its action row holds **＋**, the draft
+status, and **Send ⌘↵**. The tooltips of these buttons explain them. The row wraps when
+the editor is narrow, for example while the workspace pane is open. **Send** stays at
+the right end of its line. A device without a pointer that hovers, such as a phone,
+shows **Send** without the key symbols.
+
+#### Add to message menu
+
+**＋** opens the **Add to message** menu. The menu opens above the button, at its left
+edge. It has these items, in this order:
+
+| Item | Effect |
+| --- | --- |
+| **Attach files…** | Opens the file selection of the browser. See [Attachments](#attachments). |
+| **Handoff prompt…** | Opens the dialog of the [handoff prompt](#handoff-prompt). The item shows only when the handoff folder of the session has its README. |
+| Saved prompts | One item for each [saved prompt](#saved-prompts), in the saved order, below the label **Saved prompts**. A click puts the text of the prompt at the cursor. |
+| **Manage prompts…** | Opens Settings at the **Prompts** card. |
+
+- A saved prompt and the handoff prompt go into the editor at the cursor, or in place
+  of the selected text. The rest of the draft and its files stay. The editor keeps its
+  cursor while the menu has the focus. Without an earlier cursor, the text goes at the
+  end of the draft.
+- An insert is a normal edit. It saves as a draft and sends nothing. Command+Z or
+  Ctrl+Z undoes it where the browser supports the `insertText` editing command.
+- The item of a saved prompt shows the name and up to 120 characters of the text, on one
+  line. Its tooltip shows up to 600 characters.
+- The menu reads the saved prompts each time it opens, because another view can change
+  them. Until the reply, it shows the prompts of the last read. Before the first reply,
+  a note tells that the prompts load. A failed read keeps the earlier list.
+- While a send may have reached the terminal, the draft is locked. Then **Attach
+  files…** and the saved prompts are off, and a note tells why. **Handoff prompt…** and
+  **Manage prompts…** stay on, so **Copy prompt** still works. An open menu follows each
+  change of the lock, also a send from another view. When the focused item turns off,
+  **Manage prompts…** gets the focus.
+- When another view changes the order of the prompts, the focused prompt keeps the
+  focus. When another view removes it, **Manage prompts…** gets the focus.
+- Up and Down move between the items that are on. Escape and Tab close the menu, as does
+  a click outside it.
+
+#### Saved prompts
+
+Saved prompts are global. They are part of the settings in SQLite, so every session,
+view, and device shows the same list. The **Prompts** card of
+[Settings](#settings-page) manages them:
+
+- A table shows the **Name** and the start of the **Text** of each prompt. The text
+  shows on two lines at most, with its lines joined. Each row has **Edit**, **↑**, **↓**, and **Remove**. The order of the table is the
+  order of the ＋ menu.
+- **＋ Add prompt** and **Edit** open one editor dialog with **Name** and **Text**.
+  **Add prompt** or **Save** saves the entry. **Cancel** and Escape discard it. The
+  fields do not save when they lose focus.
+- The page checks the entry before the save. It shows a problem in the dialog and
+  moves the focus to the field of the problem.
+- An edit applies only the changed fields to the latest saved prompt, as an edit of a
+  tool does. A name that another view saved first stops the save.
+- **Remove** asks first, because a removal has no undo. Drafts and sent messages keep
+  their text.
+- The server removes the spaces around the name. The text keeps its spaces and lines.
+  The editor changes each CR LF and CR to LF.
+
+#### Limits of saved prompts
+
+- At most 100 prompts can be saved. A name has 1 to 200 characters without control
+  characters. Names are unique without regard to letter case. The text of a prompt has
+  at most 16 KiB and at least one character that is not a space. It can have tabs and
+  new lines, but no other control characters. The server rejects a save with another
+  list and saves nothing.
+- Send needs bracketed paste for a prompt with a new line or a tab, as for other
+  multiline text.
+- An open ＋ menu shows a prompt change of another view only after the reply of its
+  read. A view reads the prompts again at the next open of the menu.
 
 #### Send
 
@@ -2795,11 +2865,14 @@ bbflow records and submits the selected tool's startup command once. Shell start
 without a command. The user can copy the handoff prompt from the dialog.
 
 The prompt stays available after the new terminal starts. When the handoff folder of the
-selected session has its README, **Handoff prompt** appears in the action row of the
-message editor. Its dialog shows the folder and the prompt, with **Copy prompt** and
-**Put in message editor**. Put in message editor works only when the editor has no text,
-no files, and no pending send. It never merges with or replaces a draft, and it sends
-nothing. The user sends the prompt with Send when the agent is ready.
+selected session has its README, **Handoff prompt…** appears in the
+[＋ menu](#add-to-message-menu) of the message editor. Its dialog shows the folder and the prompt,
+with **Copy prompt** and **Insert in message**. Insert in message closes the dialog,
+then puts the prompt at the cursor of the editor, or in place of the selected text. The
+editor then has the focus, and Undo removes the prompt. The rest of the draft and its
+files stay. While a send is pending, the dialog stays open and tells why. Insert in
+message sends nothing. The user sends
+the prompt with Send when the agent is ready.
 
 #### Limits
 
@@ -3673,9 +3746,8 @@ most one `resize` after the request.
   terminal area. xterm.js rounds the cell width for the current number of columns. The
   first fit thus repeats, up to three times, until the size stays. A hidden terminal
   does not fit. It joins with the size that the [view switch](#view-switch) gives.
-- While the view opens, it sends no `resize`. The terminal selector, the draft, and
-  **Handoff prompt** load after the request. They can change the height of the
-  terminal area. When the open completes, one fit sends a `resize` if the size changed.
+- While the view opens, it sends no `resize`. The terminal selector and the draft load
+  after the request. They can change the height of the terminal area. When the open completes, one fit sends a `resize` if the size changed.
 - The view sends each size once on a connection. The frames keep the old size until the
   server applies the `resize`. A fit with the same size in that time sends nothing. The
   size of the request counts as sent.
@@ -3690,8 +3762,7 @@ most one `resize` after the request.
 
 - In a narrow window, the terminal selector can move the message bar to a second row
   after the request. This occurs in the mobile layout and in narrow desktop windows,
-  for example 768 pixels wide. In the mobile layout, **Handoff prompt** can also add a
-  row to the message editor. A session with more than one terminal then gets one
+  for example 768 pixels wide. A session with more than one terminal then gets one
   `resize` when the open completes.
 - xterm.js rounds the cell width for the current number of columns. After a window or
   divider change, the fit at the new size can differ by one column. The view then sends
@@ -3903,7 +3974,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 19. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 20. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -3973,7 +4044,9 @@ WAL is enabled after the schema transaction commits.
 - Format 18 gains the nullable `sessions.pinned_at` column through migration 19. It
   keeps the time of a [pin](#pinned-sessions). Its check allows a pin only on a
   top-level session that is not archived. Existing sessions start without a pin.
-- Format 19 opens without running scripts or rewriting history, settings, or metadata.
+- Format 19 gains `prompts: []`, the [saved prompts](#saved-prompts), in the settings
+  JSON through migration 20. The settings revision and the other values stay.
+- Format 20 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -4531,8 +4604,8 @@ A browser check with the demo instance verified that tool fields do not save on 
 **Add tool** and **Save** saved the requested changes. **Cancel** discarded an edit.
 A rejected command stayed in the editor, and a session default saved during the edit.
 After a reload, the tool and the default showed their saved values. A move changed the
-tool order. A new terminal started the Demo agent. **Put in message editor** inserted
-the handoff prompt, and **Send** delivered it to the simulated agent.
+tool order. A new terminal started the Demo agent. The handoff prompt went into the
+message editor, and **Send** delivered it to the simulated agent.
 
 A later browser check with the demo instance verified the saves in Settings:
 
@@ -4749,6 +4822,52 @@ Text typed in either tab appeared in the other tab within two seconds, with no r
 After a synthetic zsh session started, Send from one tab ran the message. The editor in
 the other tab cleared at the same time. The archive held four draft revisions: two
 edits, the pending send, and the cleared draft. No browser errors were reported.
+
+Fixtures check the [Add to message menu](#add-to-message-menu) and the
+[saved prompts](#saved-prompts):
+
+- Go fixtures check the prompt rules of a settings save. They cover the order, the
+  trimmed names, names that differ only in letter case, the limits, and control
+  characters. A format 19 archive upgrades to an empty prompt list with the same
+  settings revision.
+- Web fixtures check the insert at the cursor and in place of a selection, with and
+  without the browser insert command. No text goes in while a send is pending.
+- Web fixtures check that the menu shows the prompts of the latest read, the items that
+  are off with their note, and a failed read.
+- Web fixtures check the Prompts card: the editor, a revision conflict during an edit,
+  moves, removals, and the toast after **Done**.
+
+A check with headless Chrome 158 and the demo instance used the dark appearance at
+1200 x 836 and the light appearance at 390 x 844:
+
+- **＋** opened the menu above the button, outside the clip of the editor. The menu
+  listed **Attach files…**, **Handoff prompt…**, the three demo prompts, and
+  **Manage prompts…**. The menu fit the phone width.
+- A prompt went in at the cursor after typed text, and in place of a selected word.
+  Undo removed it, and the draft saved. The handoff prompt went in at the start of a
+  draft, and the draft kept its text.
+- **Manage prompts…** opened Settings with the Prompts card below the bar of
+  Settings, and the page did not move. A name that differed only in letter case did not
+  save. A new prompt saved at the end of the list. **↑** moved it and kept the focus.
+  **Remove** asked first. The menu of another session then showed the new order.
+- Escape closed the menu and returned the focus to **＋**. No browser errors were
+  reported.
+
+A second check with headless Chrome 158 and the demo instance used a second connection
+as another view:
+
+- **Insert in message** replaced a selected word with the handoff prompt. The editor
+  had the focus, and Undo restored the word.
+- With the menu open, a pending draft from the other view turned off **Attach files…**
+  and the four saved prompts, and the note told why. The menu stayed open. The release
+  of the lock turned the items on again and hid the note.
+- The lock turned off **Attach files…** while it had the focus. The focus moved to
+  **Manage prompts…**, and Escape then closed the menu.
+- With the lock, Down moved from **Handoff prompt…** to **Manage prompts…**, and Up
+  moved back.
+
+These checks did not use Safari or a real agent CLI. The pending drafts came from the
+other connection. No send in these checks lost its receipt.
 
 ### Checks of sent messages in the terminal
 
@@ -5424,14 +5543,15 @@ The final display kept its recorded width. This check did not run a real agent C
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–18 to format 19
+- Frozen schemas from repository history test upgrades from formats 3–19 to format 20
   and verify that reopen preserves the upgraded data. The format 16 fixture has Codex
   and Code Puppy tools, and the upgrade gives them their types. A blocked preparation
   update rolls back migration 17. The format 17 fixture has both values of remote
   access, and the upgrade turns its switch on. A blocked settings update rolls back
   migration 18. No upgrade pins a session. A `pinned_at` column that exists before the
-  upgrade rolls back migration 19. Four concurrent opens upgrade a format 18 archive
-  once.
+  upgrade rolls back migration 19. Each upgrade adds an empty prompt list, and a blocked
+  settings update rolls back migration 20. Four concurrent opens upgrade a format 19
+  archive once.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.
   They also cover repeated opens, concurrent upgrades, and unsupported formats.

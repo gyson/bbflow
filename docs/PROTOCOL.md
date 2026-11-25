@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/42`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/43`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/42",
+    "protocol": "bbflow/43",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/42",
+    "protocol": "bbflow/43",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -753,6 +753,11 @@ current revision.
   without spaces. A save with another value fails. A save that changes remoteOn or
   either value closes the open connections of remote requests before its reply. Only
   the connection of the save stays open for its reply. See [Remote host](#remote-host).
+- prompts is the list of [saved prompts](SPEC.md#saved-prompts), in the order of the ＋
+  menu of the message editor. Each prompt has `id`, `name`, and `text`. The client
+  gives a new prompt its ID. A save replaces the whole list, and a save without the
+  field removes all prompts. The server removes the spaces around each name. It rejects
+  a list that breaks the [limits](SPEC.md#limits-of-saved-prompts) and saves nothing.
 - Saving requires the current revision. Removing a default tool requires selecting
   another default in the same save.
 - These operations do not install or authenticate tools.
@@ -1272,13 +1277,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/42") {
+    if (message.server.protocol !== "bbflow/43") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/42", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/43", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1404,6 +1409,8 @@ versions.
 - Protocol 42 adds [`session-pin`](#session-pins), the `pinned` field of a session and
   of a session summary, and the `pinned` group of `session-list`. SQLite format 19 adds
   `sessions.pinned_at`. No session has a pin after the upgrade.
+- Protocol 43 adds `prompts`, the [saved prompts](SPEC.md#saved-prompts), to settings.
+  No operation is new. SQLite format 20 adds an empty list.
 
 ## Source files
 

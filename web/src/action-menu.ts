@@ -4,7 +4,8 @@ import { element } from './dom.js';
 // More menu of the session toolbar and the menu of the file header are action menus.
 // The host shows or hides each item. The menu button shows only when an item shows.
 // The page has a box `<id>-box`, a menu button `<id>-open`, a menu `<id>`, and a status
-// element `<id>-status` for each menu.
+// element `<id>-status` for each menu. opened runs before the menu opens, so that the
+// host can update its items.
 export class ActionMenu {
   private readonly box: HTMLElement;
   private readonly button: HTMLButtonElement;
@@ -14,7 +15,7 @@ export class ActionMenu {
   private confirmTimer: ReturnType<typeof setTimeout> | undefined;
   private expanded = false;
 
-  constructor(id: string) {
+  constructor(id: string, private readonly opened?: () => void) {
     this.box = element(`${id}-box`, HTMLElement);
     this.button = element(`${id}-open`, HTMLButtonElement);
     this.menu = element(id, HTMLElement);
@@ -39,11 +40,14 @@ export class ActionMenu {
         this.open(false);
         this.button.focus();
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        // A disabled item takes no focus, so the arrow keys move only between the items
+        // that are on.
         event.preventDefault();
-        const items = this.items();
+        const items = this.items().filter(item => !item.disabled);
         const index = items.indexOf(document.activeElement as HTMLButtonElement);
         const step = event.key === 'ArrowDown' ? 1 : -1;
-        items[(index + step + items.length) % items.length]?.focus();
+        const next = index < 0 ? (step > 0 ? 0 : items.length - 1) : (index + step + items.length) % items.length;
+        items[next]?.focus();
       } else if (event.key === 'Tab') {
         // Close the menu and continue from the menu button. The browser then moves the
         // focus to the control after or before that button.
@@ -85,6 +89,7 @@ export class ActionMenu {
   }
 
   private open(open: boolean): void {
+    if (open && !this.expanded) this.opened?.();
     this.expanded = open;
     this.menu.hidden = !open;
     this.button.setAttribute('aria-expanded', String(open));

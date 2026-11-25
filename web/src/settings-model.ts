@@ -1,4 +1,4 @@
-import type { Settings, TitleTool, Tool } from './protocol.js';
+import type { Prompt, Settings, TitleTool, Tool } from './protocol.js';
 
 // A tool edit applies only the fields that the user changed.
 export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Tool[] {
@@ -112,6 +112,86 @@ export function toolRemoval(id: string, warned: boolean): { change: SettingsChan
     },
     reconfirm: () => reconfirm,
   };
+}
+
+// The limits of the saved prompts. The server checks them too.
+export const maxPrompts = 100;
+export const maxPromptBytes = 16 * 1024;
+
+// duplicatePromptName tells if a prompt other than id has the name, without regard to
+// case. The server rejects such a list, because the ＋ menu shows prompts by name.
+export function duplicatePromptName(prompts: Prompt[], name: string, id: string): boolean {
+  const key = name.toLowerCase();
+  return prompts.some(prompt => prompt.id !== id && prompt.name.toLowerCase() === key);
+}
+
+export const duplicatePromptError = 'Another prompt has this name. Enter a different name.';
+
+// promptProblem checks the entry of the prompt editor before a request. It returns the
+// first problem and the field to correct, or null.
+export function promptProblem(prompts: Prompt[], name: string, text: string, id: string): { field: 'name' | 'text'; message: string } | null {
+  // The server counts the characters of a name as code points, as [...name] does.
+  if (!name) return { field: 'name', message: 'Enter a name.' };
+  if ([...name].length > 200) return { field: 'name', message: 'Use a name of at most 200 characters.' };
+  if (/\p{Cc}/u.test(name)) return { field: 'name', message: 'Remove the control characters from the name, such as a tab.' };
+  if (duplicatePromptName(prompts, name, id)) return { field: 'name', message: duplicatePromptError };
+  if (!text.trim()) return { field: 'text', message: 'Enter the text of the prompt.' };
+  if (new TextEncoder().encode(text).length > maxPromptBytes) return { field: 'text', message: 'The text of a prompt can have at most 16 KiB.' };
+  if (/[\x00-\x08\x0b-\x1f\x7f-\x9f]/.test(text)) return { field: 'text', message: 'Remove the control characters from the text. Tabs and new lines are allowed.' };
+  if (!prompts.some(prompt => prompt.id === id) && prompts.length >= maxPrompts) return { field: 'name', message: `You can save at most ${maxPrompts} prompts. Remove a prompt first.` };
+  return null;
+}
+
+// promptEdit is the change that adds a prompt, or that saves an edit of original. An
+// edit applies only the fields that the user changed, as for the tools. It checks the
+// name against the settings of each attempt, because another view can save the name
+// first. An add can find its own ID when an earlier attempt saved but its reply did not
+// come. The entry of the new attempt then replaces that prompt.
+export function promptEdit(edited: Prompt, original?: Prompt): SettingsChange {
+  return settings => {
+    const prompts = [...settings.prompts];
+    const index = prompts.findIndex(prompt => prompt.id === edited.id);
+    let next = edited;
+    if (original) {
+      const current = prompts[index];
+      if (!current) throw new Error('This prompt was removed in another view.');
+      next = {
+        id: current.id,
+        name: edited.name === original.name ? current.name : edited.name,
+        text: edited.text === original.text ? current.text : edited.text,
+      };
+    }
+    if (next.name !== original?.name && duplicatePromptName(prompts, next.name, next.id)) throw new Error(duplicatePromptError);
+    if (index >= 0) prompts[index] = next;
+    else prompts.push(next);
+    return { ...settings, prompts };
+  };
+}
+
+// promptRemoval is the change that removes a prompt.
+export function promptRemoval(id: string): SettingsChange {
+  return settings => ({ ...settings, prompts: settings.prompts.filter(prompt => prompt.id !== id) });
+}
+
+// promptMove is the change that moves a prompt up, with a negative offset, or down.
+export function promptMove(id: string, offset: number): SettingsChange {
+  return settings => {
+    const prompts = [...settings.prompts];
+    const index = prompts.findIndex(prompt => prompt.id === id);
+    if (index < 0) throw new Error('This prompt was removed in another view.');
+    const destination = index + offset;
+    if (destination < 0 || destination >= prompts.length) return settings;
+    const [prompt] = prompts.splice(index, 1);
+    prompts.splice(destination, 0, prompt!);
+    return { ...settings, prompts };
+  };
+}
+
+export function samePrompts(a: Prompt[], b: Prompt[]): boolean {
+  return a.length === b.length && a.every((prompt, index) => {
+    const other = b[index]!;
+    return prompt.id === other.id && prompt.name === other.name && prompt.text === other.text;
+  });
 }
 
 // The two values of remote access. Each has its own field in Settings.
@@ -289,7 +369,8 @@ export function sameSettings(a: Settings, b: Settings): boolean {
   return a.appearance === b.appearance && a.defaultTool === b.defaultTool && !!a.shellOff === !!b.shellOff &&
     a.worktree === b.worktree && a.base === b.base &&
     a.updateCheck === b.updateCheck && a.port === b.port &&
-    a.remoteOn === b.remoteOn && a.remoteHost === b.remoteHost && a.remoteLogin === b.remoteLogin && sameTools(a.tools, b.tools);
+    a.remoteOn === b.remoteOn && a.remoteHost === b.remoteHost && a.remoteLogin === b.remoteLogin && sameTools(a.tools, b.tools) &&
+    samePrompts(a.prompts ?? [], b.prompts ?? []);
 }
 
 // parsePort reads the Port field. An empty field selects the automatic port, 0. Text

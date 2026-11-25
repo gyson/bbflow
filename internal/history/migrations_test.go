@@ -152,6 +152,9 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 					original["titleEffort"] = "low"
 				}
 			}
+			if _, exists := original["prompts"]; !exists {
+				original["prompts"] = []any{}
+			}
 			if _, exists := original["checkTools"]; !exists {
 				original["tools"], original["checkTools"], original["shellOff"] = upgradedTools(original["tools"].([]any)), true, false
 			}
@@ -261,7 +264,7 @@ func inferredType(command string) string {
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -298,7 +301,7 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			if version >= 17 {
 				remoteHost, remoteLogin = "my-mac.example.ts.net", "user@example.com"
 			}
-			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != remoteHost || settings.RemoteLogin != remoteLogin || settings.RemoteOn != (version >= 17) || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: presetTools(), TitleTool: "none", CheckTools: true, UpdateCheck: true})) {
+			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != remoteHost || settings.RemoteLogin != remoteLogin || settings.RemoteOn != (version >= 17) || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: presetTools(), TitleTool: "none", CheckTools: true, UpdateCheck: true, Prompts: []Prompt{}})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
@@ -543,6 +546,42 @@ func TestRemoteSwitchUpgradeRollsBack(t *testing.T) {
 	assertSnapshot(t, rawDatabase(t, path), before, true)
 }
 
+func TestPromptsUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 19)
+	execSQL(t, db, "CREATE TRIGGER reject_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted blocked prompts update")
+	} else if !strings.Contains(err.Error(), "apply history migration 20") {
+		t.Fatal(err)
+	}
+	assertSnapshot(t, rawDatabase(t, path), before, true)
+}
+
+// Migration 20 adds an empty prompt list. It keeps the other settings and the revision.
+func TestPromptsUpgrade(t *testing.T) {
+	path, db := oldDatabase(t, 19)
+	db.Close()
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings, err := store.Settings()
+	if err != nil || settings.Prompts == nil || len(settings.Prompts) != 0 || settings.Revision != 9 || settings.DefaultTool != "example" {
+		t.Fatal("wrong prompts after the upgrade", settings, err)
+	}
+	if got := sqlRows(t, store.db, "SELECT json_type(data, '$.prompts') FROM settings"); got[0][0] != "array" {
+		t.Fatal("the upgrade saved no prompt list", got)
+	}
+	settings.Prompts = []Prompt{{ID: "review", Name: "Review PR", Text: "Review PR #"}}
+	if saved, err := store.SaveSettings(settings); err != nil || saved.Revision != 10 || len(saved.Prompts) != 1 {
+		t.Fatal("cannot save a prompt after the upgrade", saved, err)
+	}
+}
+
 // Migration 18 turns the switch of remote access on only where both values are saved,
 // because only there remote access was on. It keeps the values and the revision.
 func TestRemoteSwitchUpgrade(t *testing.T) {
@@ -603,7 +642,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17, 18} {
+	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17, 18, 19} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }
