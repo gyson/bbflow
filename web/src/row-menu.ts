@@ -1,10 +1,14 @@
-// A row menu holds the actions of one session row in the sidebar. The ⋯ button of the row
-// opens it, so a single click never runs an action. One row menu opens at a time. While
-// it is open, the host keeps the buttons of the list. Thus a list refresh does not close
-// the menu.
+// A row menu holds the actions of one row in the sidebar: a session row or a project
+// heading. The ⋯ button of the row opens it, so a single click never runs an action. One
+// row menu opens at a time. While it is open, the host keeps the buttons of the list. Thus
+// a list refresh does not close the menu.
 
-// run gets true when the user chose the item with the keyboard.
-export interface RowAction { label: string; run: (keyboard: boolean) => void }
+// run gets true when the user chose the item with the keyboard. danger marks an item that
+// removes something. divider puts a line above the item.
+export interface RowAction { label: string; run: (keyboard: boolean) => void; danger?: boolean; divider?: boolean }
+
+// The class and the text of a ⋯ button that does not use the button of a session row.
+export interface RowButton { className: string; text: string }
 
 interface OpenMenu { box: HTMLElement; button: HTMLButtonElement; menu: HTMLElement }
 
@@ -12,9 +16,12 @@ const dotsIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.5" c
 
 export class RowMenus {
   private current: OpenMenu | null = null;
+  private confirmed: HTMLButtonElement | null = null;
+  private confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
   // closed runs after a menu closes. The host then applies the list changes that it kept.
-  constructor(private readonly closed: () => void) {
+  // A screen reader reads the confirmations from status.
+  constructor(private readonly closed: () => void, private readonly status: HTMLElement) {
     document.addEventListener('click', event => {
       if (this.current && event.target instanceof Node && !this.current.box.contains(event.target)) this.close();
     });
@@ -24,17 +31,18 @@ export class RowMenus {
 
   // Return the ⋯ button of a row and its menu. The returned items are in the order of
   // actions, so that the host can hide an item that stops to apply. focus is the focus
-  // key of the button.
-  create(name: string, focus: string, actions: RowAction[]): { box: HTMLElement; button: HTMLButtonElement; items: HTMLButtonElement[] } {
+  // key of the button. look replaces the button of a session row.
+  create(name: string, focus: string, actions: RowAction[], look?: RowButton): { box: HTMLElement; button: HTMLButtonElement; items: HTMLButtonElement[] } {
     const box = document.createElement('span');
     box.className = 'row-menu-box';
     const button = document.createElement('button');
-    button.className = 'row-menu-button';
+    button.className = look?.className ?? 'row-menu-button';
     button.title = `Actions for ${name}`;
     button.setAttribute('aria-label', button.title);
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
-    button.innerHTML = dotsIcon;
+    if (look) button.textContent = look.text;
+    else button.innerHTML = dotsIcon;
     button.dataset.focus = focus;
     const menu = document.createElement('div');
     menu.className = 'row-menu';
@@ -42,8 +50,14 @@ export class RowMenus {
     menu.setAttribute('aria-label', button.title);
     menu.hidden = true;
     const items = actions.map(item => {
+      if (item.divider) {
+        const line = document.createElement('div');
+        line.setAttribute('role', 'separator');
+        menu.append(line);
+      }
       const choice = document.createElement('button');
       choice.setAttribute('role', 'menuitem');
+      if (item.danger) choice.className = 'danger';
       choice.textContent = item.label;
       choice.onclick = event => {
         // A click from the keyboard has no pointer detail. Move the focus to the menu
@@ -53,9 +67,9 @@ export class RowMenus {
         this.close();
         item.run(keyboard);
       };
+      menu.append(choice);
       return choice;
     });
-    menu.append(...items);
     button.onclick = () => {
       if (this.current?.button === button) this.close();
       else this.show({ box, button, menu });
@@ -84,6 +98,25 @@ export class RowMenus {
     });
     box.append(button, menu);
     return { box, button, items };
+  }
+
+  // Show a short confirmation of an item, such as a copy, as the tooltip of its ⋯ button.
+  confirm(button: HTMLButtonElement, text: string): void {
+    this.clear();
+    button.dataset.tip = this.status.textContent = text;
+    button.classList.add('tip-open');
+    this.confirmed = button;
+    this.confirmTimer = setTimeout(() => this.clear(), 1800);
+  }
+
+  private clear(): void {
+    clearTimeout(this.confirmTimer);
+    if (this.confirmed) {
+      delete this.confirmed.dataset.tip;
+      this.confirmed.classList.remove('tip-open');
+    }
+    this.confirmed = null;
+    this.status.textContent = '';
   }
 
   close(): void {

@@ -71,6 +71,20 @@ that folder.
 
 A new instance has no projects. Add one before your first session.
 
+## Change or remove a project
+
+Click the ⋯ button beside a project. Then click one of these items:
+
+- **Edit** changes the name of the project. The folder of a project cannot change. To
+  use another folder, add a new project.
+- **Copy folder path** copies the folder of the project.
+- **Search this project** searches the recorded output of all sessions of the project.
+- **Remove project** asks first. The sessions of the project move to **Standalone**.
+  bbflow keeps their history, running processes, and files. It does not delete the
+  folder.
+
+See [Project menu](SPEC.md#project-menu) for the rules.
+
 ## Start a session
 
 <img src="images/draft.png" alt="The Prepare a session form of a draft. The session name is first. Below it, the tool Claude Code, its model, and its thinking effort share a row, with the command that bbflow submits. Use worktree, the starting branch, and the Start session button follow. The message editor is below the form.">
