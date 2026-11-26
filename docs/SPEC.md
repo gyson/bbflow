@@ -41,7 +41,7 @@ The Web client section has these features:
 | [Usage limits](#usage-limits) | The Usage dialog, the check of each agent CLI, and the cache of the server. |
 | [Session status](#session-status) | The four statuses, the sidebar icon, the session toolbar, and the More actions menu. |
 | [Session titles](#session-titles) | User titles, derived titles, and the title tools. |
-| [Message editor](#message-editor) | Send, the ＋ menu, saved prompts, the shared draft, sent messages, and attachments. |
+| [Message editor](#message-editor) | Send, the ＋ menu, saved prompts and their groups, the shared draft, sent messages, and attachments. |
 | [Sent messages in the terminal](#sent-messages-in-the-terminal) | The positions of the sent messages in the terminal: the message bar, the marks, the steps, and the jump to another terminal. |
 | [Continue in a new terminal](#continue-in-a-new-terminal) | A new terminal in an ended session, with the handoff folder and prompt. |
 | [Earlier terminals](#earlier-terminals) | The terminal selector and the read-only view of an earlier terminal. |
@@ -1658,7 +1658,7 @@ way:
 | Appearance, default tool, worktree default, update check | At once, on selection. |
 | Starting branch or commit, Port, Tailscale host name, Tailscale login | On Enter, or when the field loses focus. Escape restores the saved value. |
 | Tools | **Add tool** and **Save** in the tool editor. A switch and the move buttons save at once. **Remove** asks first. |
-| Prompts | **Add prompt** and **Save** in the prompt editor. The move buttons save at once. **Remove** asks first. |
+| Prompts | **Add prompt** and **Save** in the prompt editor. **Add group** and **Rename** in the group dialog. The move buttons save at once. **Remove** asks first. |
 | Title tool | After a passed test. See [Title controls in Settings](#title-controls-in-settings). |
 | Remote access switch | At once, on a click. See [Remote access in Settings](#remote-access-in-settings). |
 
@@ -1666,7 +1666,8 @@ The status shows **Saving…** during a save. It shows **All settings saved** wh
 entry is saved. Otherwise it names each entry that is not saved, for example
 **Not saved: Port, New tool**. The names are **Starting branch or commit**, **Port**,
 **Tailscale host name**, **Tailscale login**, **Custom title command**, **New tool**,
-**New prompt**, **Edit of** with the tool or prompt name, and the name of a default
+**New prompt**, **New group**, **Edit of** with the tool or prompt name, **Rename of**
+with the group name, and the name of a default
 that failed to save.
 
 - When the user leaves Settings, the page discards the entries that are not saved. The
@@ -2919,7 +2920,7 @@ edge. It has these items, in this order:
 | --- | --- |
 | **Attach files…** | Opens the file selection of the browser. See [Attachments](#attachments). |
 | **Handoff prompt…** | Opens the dialog of the [handoff prompt](#handoff-prompt). The item shows only when the handoff folder of the session has its README. |
-| Saved prompts | One item for each [saved prompt](#saved-prompts), in the saved order, below the label **Saved prompts**. A click puts the text of the prompt at the cursor. |
+| Saved prompts | Below the label **Saved prompts**: one item for each [saved prompt](#saved-prompts) without a group, then one item for each [prompt group](#groups-in-the-add-to-message-menu) with prompts. A click on a prompt puts its text at the cursor. |
 | **Manage prompts…** | Opens Settings at the **Prompts** card. |
 
 - A saved prompt and the handoff prompt go into the editor at the cursor, or in place
@@ -2930,51 +2931,113 @@ edge. It has these items, in this order:
   Ctrl+Z undoes it where the browser supports the `insertText` editing command.
 - The item of a saved prompt shows the name and up to 120 characters of the text, on one
   line. Its tooltip shows up to 600 characters.
-- The menu reads the saved prompts each time it opens, because another view can change
-  them. Until the reply, it shows the prompts of the last read. Before the first reply,
-  a note tells that the prompts load. A failed read keeps the earlier list.
+- The menu reads the saved prompts and their groups each time it opens, because another
+  view can change them. Until the reply, it shows the prompts of the last read. Before
+  the first reply, a note tells that the prompts load. A failed read keeps the earlier
+  list.
 - While a send may have reached the terminal, the draft is locked. Then **Attach
-  files…** and the saved prompts are off, and a note tells why. **Handoff prompt…** and
-  **Manage prompts…** stay on, so **Copy prompt** still works. An open menu follows each
-  change of the lock, also a send from another view. When the focused item turns off,
-  **Manage prompts…** gets the focus.
-- When another view changes the order of the prompts, the focused prompt keeps the
-  focus. When another view removes it, **Manage prompts…** gets the focus.
-- Up and Down move between the items that are on. Escape and Tab close the menu, as does
-  a click outside it.
+  files…** and the saved prompts are off, and a note tells why. The items of the groups,
+  **Handoff prompt…**, and **Manage prompts…** stay on, so **Copy prompt**
+  still works. An open menu follows each change of the lock, also a send from another
+  view. When the focused item turns off, **Manage prompts…** gets the focus.
+- When another view changes the order of the prompts, the focused prompt or group keeps
+  the focus. When another view removes it, **Manage prompts…** gets the focus.
+- Up and Down move between the items that are on. Escape and Tab close the menu, as
+  does a click outside it. Escape first closes an open group.
+
+#### Groups in the Add to message menu
+
+The item of a group shows its name and **›**. A group without prompts does not show. A group opens in one of two ways, by the room at the
+right of the menu:
+
+| Room | The group opens as |
+| --- | --- |
+| A flyout of 280 px fits at the right of the menu, inside the window. | A flyout at the right of the menu, beside the item of the group. The flyout shows the prompts of the group. The menu stays. The item of the group keeps a mark while its flyout is open. |
+| The flyout does not fit, as on a phone, or in a narrow editor beside the workspace pane. | The prompts of the group replace the saved prompts of the menu. The label **Saved prompts**, **Attach files…**, and **Handoff prompt…** hide. A back item with **‹** and the name of the group comes first, then the prompts. |
+
+- A mouse pointer that rests on the item of a group opens its flyout after 80 ms. A
+  move to another item waits 220 ms, so that a diagonal move into the open flyout does
+  not change it. A pointer on any other item of the menu, such as **Manage prompts…**,
+  closes the flyout after this delay. A pointer in the flyout keeps it open.
+- A pointer that leaves the menu and the flyout cancels an open or a switch that
+  waits. A close of the menu cancels it too.
+- A click or a tap on the item of a group opens the group. Right does the same, and it
+  moves the focus to the first prompt of the group.
+- In a flyout, Up and Down move between its prompts. Left and Escape close it and
+  return the focus to the item of the group. Up and Down on the menu also close it.
+- In a group that replaces the items, the back item, Left, and Escape return to the
+  items of the menu. The item of the group then has the focus.
+- A scroll of the list of the menu closes the flyout.
 
 #### Saved prompts
 
 Saved prompts are global. They are part of the settings in SQLite, so every session,
-view, and device shows the same list. The **Prompts** card of
-[Settings](#settings-page) manages them:
+view, and device shows the same list. A prompt can be in one group, or at the top level
+of the ＋ menu. The **Prompts** card of [Settings](#settings-page) manages them:
 
-- A table shows the **Name** and the start of the **Text** of each prompt. The text
-  shows on two lines at most, with its lines joined. Each row has **Edit**, **↑**, **↓**, and **Remove**. The order of the table is the
-  order of the ＋ menu.
-- **＋ Add prompt** and **Edit** open one editor dialog with **Name** and **Text**.
-  **Add prompt** or **Save** saves the entry. **Cancel** and Escape discard it. The
+- The card has a block for the top level, then one block for each group, in the order
+  of the ＋ menu. The block of the top level has the heading **Top level**. The block
+  of a group has the name of the group as its heading, with **Rename**, **↑**, **↓**,
+  and **Remove**. A block without prompts has only its heading and **＋ Add prompt**.
+- Each row shows the **Name** and the start of the **Text** of a prompt. The text shows
+  on two lines at most, with its lines joined. Each row has **Edit**, **↑**, **↓**, and
+  **Remove**. **↑** and **↓** move a prompt inside its group. A narrow card shows the
+  text below the name and the buttons.
+- **＋ Add prompt** at the end of each block and **Edit** open one editor dialog with
+  **Name**, **Group**, and **Text**. **＋ Add prompt** selects the group of its block.
+  The **Group** list has **None (top level)**, each group, and **New group…**. **New
+  group…** shows the field **Name of the new group**, and the save adds the group with
+  the prompt. A prompt that gets another group goes to the end of that group.
+- **Add prompt** or **Save** saves the entry. **Cancel** and Escape discard it. The
   fields do not save when they lose focus.
+- **＋ Add group** below the blocks and **Rename** open a group dialog with **Name**.
+  **Add group** or **Rename** saves it. A new group goes at the end. A group without
+  prompts stays in Settings, but the ＋ menu hides it.
 - The page checks the entry before the save. It shows a problem in the dialog and
   moves the focus to the field of the problem.
 - An edit applies only the changed fields to the latest saved prompt, as an edit of a
-  tool does. A name that another view saved first stops the save.
-- **Remove** asks first, because a removal has no undo. Drafts and sent messages keep
-  their text.
-- The server removes the spaces around the name. The text keeps its spaces and lines.
+  tool does. A name that another view saved first stops the save. So does a group that
+  another view removed.
+- **Remove** of a prompt asks first, because a removal has no undo. Drafts and sent
+  messages keep their text.
+- The server removes the spaces around the names. The text keeps its spaces and lines.
   The editor changes each CR LF and CR to LF.
+
+#### Removal of a prompt group
+
+**Remove** of a group asks what happens to its prompts. The title of the dialog names
+the group. The dialog has two choices:
+
+| Choice | Effect |
+| --- | --- |
+| **Move its N prompts to** a list of **Top level** and the other groups | The prompts go to the end of the selected place, in their order. This choice is selected when the dialog opens. A focus, a click, or a selection in the list selects it too. |
+| **Remove its N prompts** | The dialog lists the names of the first six prompts, and the number of the others. **Remove group** changes to the danger style. |
+
+- Enter in the dialog keeps the prompts, because the move is selected first.
+- The note **A removal has no undo.** follows the choices.
+- A group without prompts shows no choice.
+- The removal removes only the prompts that the dialog listed. A prompt that another
+  view added to the group after the dialog opened goes to the top level.
+- A destination that another view removed stops the removal, and the card shows the
+  problem.
 
 #### Limits of saved prompts
 
 - At most 100 prompts can be saved. A name has 1 to 200 characters without control
-  characters. Names are unique without regard to letter case. The text of a prompt has
-  at most 16 KiB and at least one character that is not a space. It can have tabs and
-  new lines, but no other control characters. The server rejects a save with another
-  list and saves nothing.
+  characters. Prompt names are unique in all groups, without regard to letter case. The
+  text of a prompt has at most 16 KiB and at least one character that is not a space.
+  It can have tabs and new lines, but no other control characters.
+- At most 50 groups can be saved. A group name has 1 to 200 characters without control
+  characters. Group names are unique without regard to letter case. Groups have one
+  level. A group cannot hold another group.
+- The group of a prompt must be a saved group, or empty for the top level. The server
+  rejects a save with another list and saves nothing.
 - Send needs bracketed paste for a prompt with a new line or a tab, as for other
   multiline text.
-- An open ＋ menu shows a prompt change of another view only after the reply of its
-  read. A view reads the prompts again at the next open of the menu.
+- An open ＋ menu shows a change of another view only after the reply of its read. A
+  view reads the prompts again at the next open of the menu.
+- The flyout needs the room at the right of the menu. The menu does not open a flyout
+  at its left.
 
 #### Send
 
@@ -4526,8 +4589,8 @@ fork ancestry, or inherited history yet.
 ### Database upgrades
 
 The server upgrades the database by itself at start, in one transaction. A failed
-upgrade changes nothing and stops the start. The current format is 22. Formats 3
-through 22 are supported. Format 3 shipped in v0.0.1.
+upgrade changes nothing and stops the start. The current format is 23. Formats 3
+through 23 are supported. Format 3 shipped in v0.0.1.
 
 #### Upgrade transaction
 
@@ -4543,7 +4606,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 22. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 23. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -4624,7 +4687,11 @@ WAL is enabled after the schema transaction commits.
   preparation, through migration 22. The empty [permission mode](#permission-modes) adds
   no option, so each launch submits the same command as before. The order of the tools,
   the settings revision, and the preparation revisions stay.
-- Format 22 opens without running scripts or rewriting history, settings, or metadata.
+- Format 22 gains `promptGroups: []`, the groups of the
+  [saved prompts](#saved-prompts), in the settings JSON through migration 23. Each saved
+  prompt gains `group: ""`, so it stays at the top level of the ＋ menu. The order of
+  the prompts, the settings revision, and the other values stay.
+- Format 23 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -5635,12 +5702,28 @@ Fixtures check the [Add to message menu](#add-to-message-menu) and the
   trimmed names, names that differ only in letter case, the limits, and control
   characters. A format 19 archive upgrades to an empty prompt list with the same
   settings revision.
+- Go fixtures check the group rules of a settings save: the order, the trimmed names,
+  the IDs, names that differ only in letter case, the limit of 50 groups, and a prompt
+  in a group that does not exist. A rename keeps the prompts of the group. A format 22
+  archive upgrades to an empty group list, and each prompt gets the top level, with the
+  same order and settings revision.
 - Web fixtures check the insert at the cursor and in place of a selection, with and
   without the browser insert command. No text goes in while a send is pending.
 - Web fixtures check that the menu shows the prompts of the latest read, the items that
   are off with their note, and a failed read.
+- Web fixtures check the groups of the menu: the prompts without a group first, a group
+  without prompts hidden, the back item with the name of the group, the flyout with room, the group in place of the items without
+  room, and the keys Right, Left, Up, Down, and Escape. They also check that a pointer on
+  **Manage prompts…** closes the flyout, that a pointer in the flyout keeps it open, and
+  that a pointer that leaves the menu or a close of the menu cancels a waiting open.
 - Web fixtures check the Prompts card: the editor, a revision conflict during an edit,
   moves, removals, and the toast after **Done**.
+- Web fixtures check the groups of the Prompts card: a new group, **＋ Add prompt** of a
+  group, **New group…** in the editor, a move to another group, a move inside a group,
+  a rename, and both choices of a group removal. A focus on the destination list
+  selects the move. The model fixtures check that a retry
+  after a lost reply adds a group once, and that a removal keeps a prompt that another
+  view added to the group.
 
 A check with headless Chrome 158 and the demo instance used the dark appearance at
 1200 x 836 and the light appearance at 390 x 844:
@@ -5657,6 +5740,31 @@ A check with headless Chrome 158 and the demo instance used the dark appearance 
   **Remove** asked first. The menu of another session then showed the new order.
 - Escape closed the menu and returned the focus to **＋**. No browser errors were
   reported.
+
+A check of the groups with headless Chrome 158 and the demo instance used the dark
+appearance at 1200 x 836 and the light appearance at 390 x 844:
+
+- At 1200 px, **＋** opened the menu with the focus on **Attach files…**. The menu
+  listed **Summarize the branch**, then **Reviews**, **Checks**, and **Docs**.
+- A mouse pointer that rested on **Reviews** opened its flyout 3 px at the right of the
+  menu, inside the height of the menu, with **Review PR** and **Review for security**.
+- At 390 px, a tap on **Reviews** replaced the items with **‹ Reviews** and the prompts
+  of the group, and **Review PR** had the focus. The menu fit the width. Escape
+  returned to the items of the menu.
+- The Prompts card showed **Top level** and the three groups. At 390 px, the text of
+  each prompt went below its name and buttons.
+- **Remove** of **Checks** with **Remove its 2 prompts** showed the names and
+  **Remove group** in the danger style. No browser errors were reported.
+
+A later check with headless Chrome 158 and the demo instance found these results:
+
+- A pointer that passed over **Reviews** and left the menu within 20 ms opened no
+  flyout. A pointer on **Manage prompts…** closed an open flyout.
+- Right on **Reviews** moved the focus to its first prompt in the flyout. Escape
+  returned the focus to **Reviews**, and a second Escape closed the menu.
+- In the removal dialog of **Checks**, a click on the destination list after **Remove
+  its 2 prompts** selected the move. The list is not inside a `label`. No browser
+  errors were reported.
 
 A second check with headless Chrome 158 and the demo instance used a second connection
 as another view:
@@ -6423,7 +6531,7 @@ The final display kept its recorded width. This check did not run a real agent C
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–21 to format 22
+- Frozen schemas from repository history test upgrades from formats 3–22 to format 23
   and verify that reopen preserves the upgraded data. The format 16 fixture has Codex
   and Code Puppy tools, and the upgrade gives them their types. A blocked preparation
   update rolls back migration 17. The format 17 fixture has both values of remote
@@ -6433,7 +6541,9 @@ The final display kept its recorded width. This check did not run a real agent C
   settings update rolls back migration 20. No upgrade marks an event quiet. A `quiet`
   column that exists before the upgrade rolls back migration 21. Each upgrade gives each
   tool and each preparation the empty permission mode, and a blocked settings or
-  preparation update rolls back migration 22. Four concurrent opens upgrade a format 19,
+  preparation update rolls back migration 22. Each upgrade adds an empty prompt group
+  list and puts each saved prompt at the top level, and a blocked settings update rolls
+  back migration 23. Four concurrent opens upgrade a format 19,
   20, or 21 archive once.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.

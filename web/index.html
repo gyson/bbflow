@@ -108,7 +108,7 @@
         <p id="composer-help" class="sr-only">Enter adds a line. Command+Enter or Ctrl+Enter sends the message.</p>
         <div id="composer-files" aria-label="Attached files"></div>
         <div class="composer-actions"><span id="composer-menu-box" class="action-menu-box"><span id="composer-menu-status" class="sr-only" role="status"></span><button id="composer-menu-open" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="composer-menu" aria-label="Add to message" title="Attach files, or insert a prompt at the cursor">＋</button>
-          <div id="composer-menu" class="action-menu" role="menu" aria-label="Add to message" hidden><button id="composer-attach" type="button" role="menuitem" disabled title="You can also paste or drop files in the message editor.">Attach files…</button><button id="handoff-open" type="button" role="menuitem" hidden title="Show the prompt that points an agent to the earlier terminals of this session.">Handoff prompt…</button><div role="separator"></div><p class="menu-label" id="composer-prompts-label">Saved prompts</p><div id="composer-prompts" role="group" aria-labelledby="composer-prompts-label"></div><p id="composer-prompts-note" class="menu-note" hidden></p><div role="separator"></div><button id="composer-prompts-manage" type="button" role="menuitem">Manage prompts…</button></div></span><input id="composer-picker" type="file" multiple hidden><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled title="Paste the message into the terminal prompt and press Enter (⌘Enter or Ctrl+Enter)">Send<span class="send-keys"> ⌘↵</span></button></div>
+          <div id="composer-menu" class="action-menu" role="menu" aria-label="Add to message" hidden><div id="composer-menu-actions"><button id="composer-attach" type="button" role="menuitem" disabled title="You can also paste or drop files in the message editor.">Attach files…</button><button id="handoff-open" type="button" role="menuitem" hidden title="Show the prompt that points an agent to the earlier terminals of this session.">Handoff prompt…</button><div role="separator"></div></div><p class="menu-label" id="composer-prompts-label">Saved prompts</p><div id="composer-prompts" role="group" aria-labelledby="composer-prompts-label"></div><p id="composer-prompts-note" class="menu-note" hidden></p><div role="separator"></div><button id="composer-prompts-manage" type="button" role="menuitem">Manage prompts…</button><div id="composer-flyout" class="action-menu" role="menu" aria-label="Prompts of the group" hidden></div></div></span><input id="composer-picker" type="file" multiple hidden><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled title="Paste the message into the terminal prompt and press Enter (⌘Enter or Ctrl+Enter)">Send<span class="send-keys"> ⌘↵</span></button></div>
       </section>
     </section>
     <div id="workspace-divider" role="separator" tabindex="0" aria-label="Workspace pane width" aria-orientation="vertical" aria-controls="workspace-pane" title="Drag to resize. Use Left and Right arrow keys when focused." hidden></div>
@@ -197,14 +197,9 @@
         <section id="settings-prompts" class="settings-card" aria-labelledby="settings-prompts-title">
           <div class="settings-heading"><h3 id="settings-prompts-title" tabindex="-1">Prompts</h3></div>
           <p class="form-help">Saved prompts are in the ＋ menu of the message editor, in every session and in this order. A prompt goes in at the cursor. You still send the message.</p>
-          <div class="tool-table-box">
-            <table class="tool-table prompt-table" aria-label="Prompts">
-              <thead><tr><th scope="col">Name</th><th scope="col">Text</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
-              <tbody id="settings-prompt-rows"></tbody>
-            </table>
-          </div>
+          <div id="settings-prompt-groups" class="prompt-groups"></div>
           <p id="prompt-error" class="form-error" role="alert" hidden></p>
-          <button id="prompt-add" type="button" class="tool-add">＋ Add prompt</button>
+          <button id="prompt-group-add" type="button" class="tool-add">＋ Add group</button>
         </section>
         <section id="title-settings" class="settings-card">
           <h3>Automatic titles</h3>
@@ -341,6 +336,8 @@
     <form id="prompt-editor" class="tool-editor" novalidate>
       <div class="dialog-heading"><h2 id="prompt-editor-title">New prompt</h2><button type="button" id="prompt-close" class="text-button" aria-label="Close the prompt editor">✕</button></div>
       <div class="model-field"><label for="prompt-name">Name</label><input id="prompt-name" placeholder="Review PR" autocomplete="off"></div>
+      <div class="model-field"><label for="prompt-group">Group</label><select id="prompt-group"></select></div>
+      <div id="prompt-new-group-field" class="model-field" hidden><label for="prompt-new-group">Name of the new group</label><input id="prompt-new-group" placeholder="Reviews" autocomplete="off"></div>
       <div class="model-field">
         <label for="prompt-text">Text</label>
         <textarea id="prompt-text" rows="8" placeholder="Use the review-loop skill as the reviewer for PR #" spellcheck="true"></textarea>
@@ -354,6 +351,26 @@
       <div class="dialog-heading"><h2 id="prompt-remove-title">Remove this prompt?</h2><button type="button" id="cancel-prompt-remove" class="text-button" aria-label="Close remove prompt">✕</button></div>
       <p id="prompt-remove-summary" class="form-help"></p>
       <button id="prompt-remove-submit" type="submit" class="primary">Remove prompt</button>
+    </form>
+  </dialog>
+  <dialog id="prompt-group-dialog" aria-labelledby="prompt-group-title">
+    <form id="prompt-group-form" class="tool-editor" novalidate>
+      <div class="dialog-heading"><h2 id="prompt-group-title">New group</h2><button type="button" id="prompt-group-close" class="text-button" aria-label="Close the group editor">✕</button></div>
+      <div class="model-field"><label for="prompt-group-name">Name</label><input id="prompt-group-name" placeholder="Reviews" autocomplete="off"></div>
+      <p id="prompt-group-error" class="form-error" role="alert" hidden></p>
+      <div class="tool-editor-actions"><button id="prompt-group-cancel" type="button">Cancel</button><button id="prompt-group-submit" type="submit" class="primary">Add group</button></div>
+    </form>
+  </dialog>
+  <dialog id="prompt-group-remove-dialog" aria-labelledby="prompt-group-remove-title">
+    <form id="prompt-group-remove-form">
+      <div class="dialog-heading"><h2 id="prompt-group-remove-title">Remove this group?</h2><button type="button" id="cancel-prompt-group-remove" class="text-button" aria-label="Close remove group">✕</button></div>
+      <fieldset id="prompt-group-remove-choice" class="group-removal">
+        <legend class="sr-only">The prompts of the group</legend>
+        <div class="group-removal-choice"><input id="prompt-group-keep" type="radio" name="prompt-group-fate" value="keep" checked><span class="group-removal-body"><label id="prompt-group-keep-text" for="prompt-group-keep"></label><select id="prompt-group-destination" aria-label="Move the prompts to"></select></span></div>
+        <label class="group-removal-choice" for="prompt-group-drop"><input id="prompt-group-drop" type="radio" name="prompt-group-fate" value="remove"><span class="group-removal-body"><span id="prompt-group-drop-text"></span><span id="prompt-group-drop-names" class="group-removal-names"></span></span></label>
+        <p class="form-help">A removal has no undo.</p>
+      </fieldset>
+      <button id="prompt-group-remove-submit" type="submit" class="primary">Remove group</button>
     </form>
   </dialog>
   <dialog id="rename-dialog" aria-labelledby="rename-title">

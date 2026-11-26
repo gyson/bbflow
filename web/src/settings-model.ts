@@ -1,4 +1,4 @@
-import type { Prompt, Settings, TitleTool, Tool } from './protocol.js';
+import type { Prompt, PromptGroup, Settings, TitleTool, Tool } from './protocol.js';
 
 // A tool edit applies only the fields that the user changed.
 export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Tool[] {
@@ -115,26 +115,44 @@ export function toolRemoval(id: string, warned: boolean): { change: SettingsChan
   };
 }
 
-// The limits of the saved prompts. The server checks them too.
+// The limits of the saved prompts and their groups. The server checks them too.
 export const maxPrompts = 100;
 export const maxPromptBytes = 16 * 1024;
+export const maxPromptGroups = 50;
 
 // duplicatePromptName tells if a prompt other than id has the name, without regard to
-// case. The server rejects such a list, because the ＋ menu shows prompts by name.
+// case. The server rejects such a list, because the ＋ menu shows prompts by name. The
+// names are unique in all groups, so a move to another group never makes a duplicate.
 export function duplicatePromptName(prompts: Prompt[], name: string, id: string): boolean {
   const key = name.toLowerCase();
   return prompts.some(prompt => prompt.id !== id && prompt.name.toLowerCase() === key);
 }
 
+// duplicateGroupName tells if a group other than id has the name, without regard to case.
+export function duplicateGroupName(groups: PromptGroup[], name: string, id: string): boolean {
+  const key = name.toLowerCase();
+  return groups.some(group => group.id !== id && group.name.toLowerCase() === key);
+}
+
 export const duplicatePromptError = 'Another prompt has this name. Enter a different name.';
+export const duplicateGroupError = 'Another group has this name. Enter a different name.';
+const removedPromptError = 'This prompt was removed in another view.';
+const removedGroupError = 'This group was removed in another view. Choose another group.';
+
+// nameProblem checks a name of a prompt or a group. The server counts the characters of
+// a name as code points, as [...name] does.
+function nameProblem(name: string): string | null {
+  if (!name) return 'Enter a name.';
+  if ([...name].length > 200) return 'Use a name of at most 200 characters.';
+  if (/\p{Cc}/u.test(name)) return 'Remove the control characters from the name, such as a tab.';
+  return null;
+}
 
 // promptProblem checks the entry of the prompt editor before a request. It returns the
 // first problem and the field to correct, or null.
 export function promptProblem(prompts: Prompt[], name: string, text: string, id: string): { field: 'name' | 'text'; message: string } | null {
-  // The server counts the characters of a name as code points, as [...name] does.
-  if (!name) return { field: 'name', message: 'Enter a name.' };
-  if ([...name].length > 200) return { field: 'name', message: 'Use a name of at most 200 characters.' };
-  if (/\p{Cc}/u.test(name)) return { field: 'name', message: 'Remove the control characters from the name, such as a tab.' };
+  const named = nameProblem(name);
+  if (named) return { field: 'name', message: named };
   if (duplicatePromptName(prompts, name, id)) return { field: 'name', message: duplicatePromptError };
   if (!text.trim()) return { field: 'text', message: 'Enter the text of the prompt.' };
   if (new TextEncoder().encode(text).length > maxPromptBytes) return { field: 'text', message: 'The text of a prompt can have at most 16 KiB.' };
@@ -143,29 +161,60 @@ export function promptProblem(prompts: Prompt[], name: string, text: string, id:
   return null;
 }
 
+// groupProblem checks the name of a new or renamed group, or null.
+export function groupProblem(groups: PromptGroup[], name: string, id: string): string | null {
+  const named = nameProblem(name);
+  if (named) return named;
+  if (duplicateGroupName(groups, name, id)) return duplicateGroupError;
+  if (!groups.some(group => group.id === id) && groups.length >= maxPromptGroups) return `You can save at most ${maxPromptGroups} groups. Remove a group first.`;
+  return null;
+}
+
+// groupPrompts lists the prompts of a group, or of the top level for the empty ID, in
+// their order.
+export function groupPrompts(prompts: Prompt[], group: string): Prompt[] {
+  return prompts.filter(prompt => prompt.group === group);
+}
+
+// withGroup adds a new group, unless the settings have it. An earlier attempt of the same
+// save can have added it before its reply was lost.
+function withGroup(groups: PromptGroup[], group: PromptGroup | undefined): PromptGroup[] {
+  if (!group || groups.some(candidate => candidate.id === group.id)) return groups;
+  if (duplicateGroupName(groups, group.name, group.id)) throw new Error(duplicateGroupError);
+  return [...groups, group];
+}
+
 // promptEdit is the change that adds a prompt, or that saves an edit of original. An
 // edit applies only the fields that the user changed, as for the tools. It checks the
 // name against the settings of each attempt, because another view can save the name
 // first. An add can find its own ID when an earlier attempt saved but its reply did not
-// come. The entry of the new attempt then replaces that prompt.
-export function promptEdit(edited: Prompt, original?: Prompt): SettingsChange {
+// come. The entry of the new attempt then replaces that prompt. newGroup is a group that
+// the editor adds for the prompt. A prompt that gets another group goes to the end of
+// that group.
+export function promptEdit(edited: Prompt, original?: Prompt, newGroup?: PromptGroup): SettingsChange {
   return settings => {
     const prompts = [...settings.prompts];
+    const promptGroups = withGroup(settings.promptGroups, newGroup);
     const index = prompts.findIndex(prompt => prompt.id === edited.id);
     let next = edited;
     if (original) {
       const current = prompts[index];
-      if (!current) throw new Error('This prompt was removed in another view.');
+      if (!current) throw new Error(removedPromptError);
       next = {
         id: current.id,
         name: edited.name === original.name ? current.name : edited.name,
         text: edited.text === original.text ? current.text : edited.text,
+        group: edited.group === original.group ? current.group : edited.group,
       };
     }
     if (next.name !== original?.name && duplicatePromptName(prompts, next.name, next.id)) throw new Error(duplicatePromptError);
-    if (index >= 0) prompts[index] = next;
-    else prompts.push(next);
-    return { ...settings, prompts };
+    if (next.group && !promptGroups.some(group => group.id === next.group)) throw new Error(removedGroupError);
+    if (index >= 0 && prompts[index]!.group === next.group) prompts[index] = next;
+    else {
+      if (index >= 0) prompts.splice(index, 1);
+      prompts.push(next);
+    }
+    return { ...settings, prompts, promptGroups };
   };
 }
 
@@ -174,25 +223,76 @@ export function promptRemoval(id: string): SettingsChange {
   return settings => ({ ...settings, prompts: settings.prompts.filter(prompt => prompt.id !== id) });
 }
 
-// promptMove is the change that moves a prompt up, with a negative offset, or down.
+// promptMove is the change that moves a prompt up in its group, with a negative offset,
+// or down. The prompt changes its place with the next prompt of the same group, so the
+// other groups keep their order.
 export function promptMove(id: string, offset: number): SettingsChange {
   return settings => {
     const prompts = [...settings.prompts];
     const index = prompts.findIndex(prompt => prompt.id === id);
-    if (index < 0) throw new Error('This prompt was removed in another view.');
-    const destination = index + offset;
-    if (destination < 0 || destination >= prompts.length) return settings;
-    const [prompt] = prompts.splice(index, 1);
-    prompts.splice(destination, 0, prompt!);
+    if (index < 0) throw new Error(removedPromptError);
+    const prompt = prompts[index]!;
+    const places = prompts.flatMap((candidate, place) => candidate.group === prompt.group ? [place] : []);
+    const destination = places[places.indexOf(index) + offset];
+    if (destination === undefined) return settings;
+    [prompts[index], prompts[destination]] = [prompts[destination]!, prompt];
     return { ...settings, prompts };
+  };
+}
+
+// groupEdit is the change that adds a group, or that renames original.
+export function groupEdit(edited: PromptGroup, original?: PromptGroup): SettingsChange {
+  return settings => {
+    const promptGroups = [...settings.promptGroups];
+    const index = promptGroups.findIndex(group => group.id === edited.id);
+    if (original && index < 0) throw new Error('This group was removed in another view.');
+    if (duplicateGroupName(promptGroups, edited.name, edited.id)) throw new Error(duplicateGroupError);
+    if (index >= 0) promptGroups[index] = edited;
+    else promptGroups.push(edited);
+    return { ...settings, promptGroups };
+  };
+}
+
+// groupMove is the change that moves a group up, with a negative offset, or down.
+export function groupMove(id: string, offset: number): SettingsChange {
+  return settings => {
+    const promptGroups = [...settings.promptGroups];
+    const index = promptGroups.findIndex(group => group.id === id);
+    if (index < 0) throw new Error('This group was removed in another view.');
+    const destination = index + offset;
+    if (destination < 0 || destination >= promptGroups.length) return settings;
+    const [group] = promptGroups.splice(index, 1);
+    promptGroups.splice(destination, 0, group!);
+    return { ...settings, promptGroups };
+  };
+}
+
+// groupRemoval is the change that removes a group. It removes the prompts in remove,
+// which the user confirmed. The other prompts of the group go to the end of destination,
+// a group ID or the top level, in their order. A prompt that another view added to the
+// group after the confirmation thus stays.
+export function groupRemoval(id: string, destination: string, remove: string[] = []): SettingsChange {
+  return settings => {
+    if (!settings.promptGroups.some(group => group.id === id)) return settings;
+    if (destination && !settings.promptGroups.some(group => group.id === destination && group.id !== id)) throw new Error(removedGroupError);
+    const moved = settings.prompts.filter(prompt => prompt.group === id && !remove.includes(prompt.id)).map(prompt => ({ ...prompt, group: destination }));
+    return {
+      ...settings,
+      promptGroups: settings.promptGroups.filter(group => group.id !== id),
+      prompts: [...settings.prompts.filter(prompt => prompt.group !== id), ...moved],
+    };
   };
 }
 
 export function samePrompts(a: Prompt[], b: Prompt[]): boolean {
   return a.length === b.length && a.every((prompt, index) => {
     const other = b[index]!;
-    return prompt.id === other.id && prompt.name === other.name && prompt.text === other.text;
+    return prompt.id === other.id && prompt.name === other.name && prompt.text === other.text && prompt.group === other.group;
   });
+}
+
+export function samePromptGroups(a: PromptGroup[], b: PromptGroup[]): boolean {
+  return a.length === b.length && a.every((group, index) => group.id === b[index]!.id && group.name === b[index]!.name);
 }
 
 // The two values of remote access. Each has its own field in Settings.
@@ -371,7 +471,7 @@ export function sameSettings(a: Settings, b: Settings): boolean {
     a.worktree === b.worktree && a.base === b.base &&
     a.updateCheck === b.updateCheck && a.port === b.port &&
     a.remoteOn === b.remoteOn && a.remoteHost === b.remoteHost && a.remoteLogin === b.remoteLogin && sameTools(a.tools, b.tools) &&
-    samePrompts(a.prompts ?? [], b.prompts ?? []);
+    samePrompts(a.prompts ?? [], b.prompts ?? []) && samePromptGroups(a.promptGroups ?? [], b.promptGroups ?? []);
 }
 
 // parsePort reads the Port field. An empty field selects the automatic port, 0. Text

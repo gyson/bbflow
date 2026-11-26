@@ -145,15 +145,22 @@ func (d *demo) output(t *terminal, text string, count int) {
 	output(d.target, t.session, text, count)
 }
 
-// demoPrompts are the saved prompts of the ＋ menu of the message editor. One has two
+// demoPrompts are the saved prompts of the ＋ menu of the message editor. Group is the
+// name of a group of demoPromptGroups, or empty for the top level. One prompt has two
 // paragraphs, and one is long, for the second line of the menu items.
 var demoPrompts = []history.Prompt{
-	{Name: "Review PR", Text: "Use the review-loop skill as the reviewer for PR #"},
-	{Name: "Run all checks", Text: "Run make test, make check, and make web-check. Report each failure with its output."},
 	{Name: "Summarize the branch", Text: "Summarize the changes on this branch against main.\n\nList the risks and the missing tests. Keep each item to one line, and name the file of each risk."},
+	{Name: "Review PR", Text: "Use the review-loop skill as the reviewer for PR #", Group: "Reviews"},
+	{Name: "Review for security", Text: "Review the change for untrusted input, path traversal, and secrets in logs.", Group: "Reviews"},
+	{Name: "Run all checks", Text: "Run make test, make check, and make web-check. Report each failure with its output.", Group: "Checks"},
+	{Name: "Run the race detector", Text: "Run go test -race ./... and fix each data race that it reports.", Group: "Checks"},
+	{Name: "Update SPEC.md", Text: "Update docs/SPEC.md for this change. Give each fact one owner document.", Group: "Docs"},
 }
 
-// addTools saves the tools and the prompts in Settings and returns the IDs of the
+// demoPromptGroups are the groups of the saved prompts, in the order of the ＋ menu.
+var demoPromptGroups = []string{"Reviews", "Checks", "Docs"}
+
+// addTools saves the tools, the prompts, and their groups in Settings and returns the IDs of the
 // simulated tools. The built-in Claude Code and Codex tools run the real CLIs of the
 // user. The seed never starts them.
 func (d *demo) addTools() (demoAgent, detailAgent, busyAgent string) {
@@ -175,8 +182,13 @@ func (d *demo) addTools() (demoAgent, detailAgent, busyAgent string) {
 	settings.DefaultTool = agent.ID
 	// New drafts in Git folders select Use worktree.
 	settings.Worktree = true
+	groups := map[string]string{}
+	for _, name := range demoPromptGroups {
+		groups[name] = history.ID()
+		settings.PromptGroups = append(settings.PromptGroups, history.PromptGroup{ID: groups[name], Name: name})
+	}
 	for _, prompt := range demoPrompts {
-		prompt.ID = history.ID()
+		prompt.ID, prompt.Group = history.ID(), groups[prompt.Group]
 		settings.Prompts = append(settings.Prompts, prompt)
 	}
 	call[json.RawMessage](d.target, protocol.Request{Operation: "settings-save", Settings: &settings})

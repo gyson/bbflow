@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -54,6 +55,10 @@ INSERT INTO worktrees VALUES('saved','/missing/worktree','/missing/repo','main',
 	if version >= 17 {
 		// From format 17, a preparation has a tool type, a model, and an effort.
 		execSQL(t, db, "UPDATE preparations SET data=json_set(data,'$.toolType','custom','$.model','','$.effort','')")
+	}
+	if version >= 22 {
+		// From format 22, a preparation has a permission mode.
+		execSQL(t, db, "UPDATE preparations SET data=json_set(data,'$.permission','')")
 	}
 	return path, db
 }
@@ -162,6 +167,14 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 			for _, tool := range original["tools"].([]any) {
 				if _, exists := tool.(map[string]any)["permission"]; !exists {
 					tool.(map[string]any)["permission"] = ""
+				}
+			}
+			// Migration 23 adds an empty list of prompt groups, and puts each prompt at the
+			// top level.
+			if _, exists := original["promptGroups"]; !exists {
+				original["promptGroups"] = []any{}
+				for _, prompt := range original["prompts"].([]any) {
+					prompt.(map[string]any)["group"] = ""
 				}
 			}
 			if !reflect.DeepEqual(saved, original) {
@@ -273,7 +286,7 @@ func inferredType(command string) string {
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -310,7 +323,7 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			if version >= 17 {
 				remoteHost, remoteLogin = "my-mac.example.ts.net", "user@example.com"
 			}
-			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != remoteHost || settings.RemoteLogin != remoteLogin || settings.RemoteOn != (version >= 17) || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: presetTools(), TitleTool: "none", CheckTools: true, UpdateCheck: true, Prompts: []Prompt{}})) {
+			if err != nil || settings.Appearance != appearance || settings.TitleTool != titleTool || settings.TitleCommand != titleCommand || settings.UpdateCheck != (version < 12) || settings.Port != port || settings.RemoteHost != remoteHost || settings.RemoteLogin != remoteLogin || settings.RemoteOn != (version >= 17) || (version < 5 && !reflect.DeepEqual(settings, Settings{Appearance: "system", Base: "HEAD", Tools: presetTools(), TitleTool: "none", CheckTools: true, UpdateCheck: true, Prompts: []Prompt{}, PromptGroups: []PromptGroup{}})) {
 				t.Fatal("invalid migrated settings", settings, err)
 			}
 			session, err := store.Session("saved")
@@ -644,6 +657,47 @@ func TestPermissionUpgrade(t *testing.T) {
 	settings.Tools[0].Permission = "approve-for-me"
 	if saved, err := store.SaveSettings(settings); err != nil || saved.Revision != 10 || saved.Tools[0].Permission != "approve-for-me" {
 		t.Fatal("cannot save a permission mode after the upgrade", saved, err)
+	}
+}
+
+// A blocked settings update rolls back migration 23 and keeps format 22.
+func TestPromptGroupsUpgradeRollsBack(t *testing.T) {
+	path, db := oldDatabase(t, 22)
+	execSQL(t, db, "CREATE TRIGGER reject_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted a blocked prompt group update")
+	} else if !strings.Contains(err.Error(), "apply history migration 23") {
+		t.Fatal(err)
+	}
+	assertSnapshot(t, rawDatabase(t, path), before, true)
+}
+
+// Migration 23 adds an empty list of prompt groups and puts each saved prompt at the top
+// level. It keeps the order and the text of the prompts, the other values, and the
+// revision. A prompt can then save a group.
+func TestPromptGroupsUpgrade(t *testing.T) {
+	path, db := oldDatabase(t, 22)
+	db.Close()
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings, err := store.Settings()
+	want := []Prompt{{ID: "review", Name: "Review PR", Text: "Review PR #"}, {ID: "checks", Name: "Run checks", Text: "Run make check."}}
+	if err != nil || !slices.Equal(settings.Prompts, want) || settings.PromptGroups == nil || len(settings.PromptGroups) != 0 || settings.Revision != 9 || settings.Tools[0].Permission != "approve-for-me" {
+		t.Fatal("wrong prompts after the upgrade", settings, err)
+	}
+	if got := sqlRows(t, store.db, "SELECT json_type(data, '$.promptGroups'), json_type(data, '$.prompts[0].group'), json_type(data, '$.prompts[1].group') FROM settings"); got[0][0] != "array" || got[0][1] != "text" || got[0][2] != "text" {
+		t.Fatal("the upgrade saved no prompt groups", got)
+	}
+	settings.PromptGroups = []PromptGroup{{ID: "git", Name: "Git"}}
+	settings.Prompts[1].Group = "git"
+	if saved, err := store.SaveSettings(settings); err != nil || saved.Revision != 10 || saved.Prompts[1].Group != "git" || saved.PromptGroups[0].Name != "Git" {
+		t.Fatal("cannot save a prompt group after the upgrade", saved, err)
 	}
 }
 

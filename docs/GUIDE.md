@@ -184,6 +184,25 @@ already in the editor stays. bbflow does not send the prompt until you click **S
 To change, sort, or remove prompts, click **＋**, then **Manage prompts…**. See
 [Saved prompts](SPEC.md#saved-prompts) for the rules and limits.
 
+### Group your saved prompts
+
+Groups keep a long list of saved prompts short in the **＋** menu. The menu shows the
+prompts without a group first, then one item for each group.
+
+1. Click **Settings**. In **Prompts**, click **＋ Add group**.
+2. Enter a name, for example `Reviews`. Click **Add group**.
+3. In the block of the group, click **＋ Add prompt**. The editor selects the group.
+4. To move a saved prompt to a group, click **Edit**, select the group in **Group**, and
+   click **Save**.
+
+To use a prompt of a group, click **＋**, then point to the group. Its prompts show at
+the right of the menu. Click a prompt. On a phone, tap the group. Its prompts then
+replace the menu, and **‹** with the name of the group goes back.
+
+When you remove a group, bbflow asks what to do with its prompts. By default, they move
+to **Top level** or to another group that you select. The other choice removes them
+too.
+
 ### Pin a session
 
 Pin the sessions that you use often. **Pinned** at the top of the sidebar lists them
