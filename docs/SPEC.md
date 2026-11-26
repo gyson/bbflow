@@ -1339,9 +1339,11 @@ The server rejects a nonempty relative shell path. It accepts names on PATH and 
 paths. Requests cannot override the shell or environment.
 
 A selected tool supplies an optional startup command to submit through that shell. For
-a tool with a type other than Custom, the launch adds the options of the chosen model and
-effort to the end of the command. In a managed worktree, an Antigravity launch also adds
-an option that trusts the workspace. See [Tool types and models](#tool-types-and-models). The
+a tool with a type other than Custom, the launch adds the options of the chosen model,
+effort, and permission mode to the end of the command. In a managed worktree, an
+Antigravity launch also adds an option that trusts the workspace. See
+[Tool types and models](#tool-types-and-models) and
+[Permission modes](#permission-modes). The
 server inherits its startup environment and sets `TERM=xterm-256color`. The launch
 stores the tool name and workspace basename as the derived title, even when the user set
 a title.
@@ -2003,8 +2005,10 @@ the value of the table. The launch adds the options after the model and effort o
   off **Auto** or **Bypass Permissions** of Claude Code. A mode can also ask for a
   confirmation in the terminal.
 - The help of Code Puppy says that `/set yolo_mode` takes precedence over `--yolo`.
-- bbflow does not limit the choice of a mode. **Full Access**, **Bypass Permissions**,
-  **Skip permissions**, and **YOLO on** let the agent run commands without approval.
+- bbflow does not limit the choice of a mode. The help of each CLI says that **Full
+  Access**, **Bypass Permissions**, **Skip permissions**, and **YOLO on** skip its
+  approval or confirmation prompts. For Code Puppy, this is the `/help` text of YOLO
+  mode.
 
 #### Preparation
 
@@ -3244,10 +3248,10 @@ agent to check the current files, summarize where the work stopped, and wait for
 next message.
 
 bbflow records and submits the startup command of the selected tool once, with the
-options of the selected model and effort. In a managed worktree, an Antigravity command
-also gets the trust option. See [Tool types and models](#tool-types-and-models). Shell
-starts without a command. The user can
-copy the handoff prompt from the dialog.
+options of the selected model, effort, and permission mode. In a managed worktree, an
+Antigravity command also gets the trust option. See
+[Tool types and models](#tool-types-and-models). Shell starts without a command. The
+user can copy the handoff prompt from the dialog.
 
 The prompt stays available after the new terminal starts. When the handoff folder of the
 selected session has its README, **Handoff prompt…** appears in the
@@ -5081,24 +5085,27 @@ launches with the model and the effort of its request, and that it rejects the c
 that a draft rejects and a model or an effort for Shell. They verify that a model list
 runs once until a refresh, and that a failed list command keeps no list. Web fixtures cover the model and effort menus of
 each type and the merge of a tool edit. The view and the server build the same command
-for the same cases.
+for the same cases. Interface inspection of Codex 0.171.0, Claude Code 2.1.330,
+Antigravity 1.5.15, and Code Puppy 0.0.969 found the list commands and the options. A
+live run of each list command confirmed the output formats. No fixture starts a real
+agent with a chosen model.
 
 Permission fixtures cover the options of each mode, the order of the options after the
 model and effort options, and the rejection of a mode of another type and of a mode for
 Shell or a Custom tool. Store fixtures save a default mode on a built-in tool and a mode
 on a draft, and keep both after a reopen. Server fixtures verify that a draft copies the
-default mode of its tool, that a draft and a new terminal launch with the options of
-their mode, and that both reject the modes that the store rejects. Web fixtures verify
-the menu of each type, the note and the command in the tool editor, the saved mode, and
-a mode edit that keeps the latest values of the other fields. A live run of Codex CLI
-0.172.0 in a PTY showed `Workspace (Ask for approval)` without options, `Workspace
-(Approve for me)` with `--approve-for-me`, and `Read Only (Ask for approval)` with
-`--sandbox read-only` in `/status`. Its `/permissions` menu listed the four Codex
-choices. The other modes were checked only in the help of each CLI. No fixture starts a
-real agent from a bbflow session with a mode. Interface inspection of Codex 0.171.0, Claude Code 2.1.330,
-Antigravity 1.5.15, and Code Puppy 0.0.969 found the list commands and the options. A
-live run of each list command confirmed the output formats. No fixture starts a real
-agent with a chosen model.
+default mode of its tool, and that a draft and a new terminal launch with the options of
+their mode. They also verify that both reject the modes that the store rejects. Web
+fixtures verify the menu of each type, the note and the command in the tool editor, the
+saved mode, and a mode edit that keeps the latest values of the other fields.
+
+A live run of Codex CLI 0.172.0 in a PTY showed `Workspace (Ask for approval)` without
+options, `Workspace (Approve for me)` with `--approve-for-me`, and `Read Only (Ask for
+approval)` with `--sandbox read-only` in `/status`. Its `/permissions` menu listed the
+four Codex choices. The menu described **Approve for me** as "Only ask for actions
+detected as potentially unsafe." The other modes were checked only in the help of each
+CLI. No check verified what a mode does inside its CLI, and no fixture starts a real
+agent from a bbflow session with a mode.
 
 Web fixtures cover settings comparison, edits that preserve fields changed by another
 view, and repeated add requests. View fixtures run the Settings view on a small fake DOM

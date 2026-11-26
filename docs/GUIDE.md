@@ -60,11 +60,15 @@ click **Refresh list** in the tool editor of Settings.
 
 **Permissions** chooses how the agent asks before it acts. The choices are the modes of
 each CLI, for example **Approve for me** of Codex or **Accept edits** of Claude Code.
-The note below **Default permissions** shows the options that bbflow adds. For fewer
-approval questions in each new Codex session, set **Default permissions** of Codex to
-**Approve for me**. Codex then sends its approval requests to an automatic review. It
-asks you only about actions that the review finds potentially unsafe. **Full Access**, **Bypass Permissions**,
-**Skip permissions**, and **YOLO on** let the agent run commands without approval. See
+The note below **Default permissions** shows the options that bbflow adds. bbflow adds
+only these options. The CLI decides what each mode does. The help of each CLI says that
+**Full Access**, **Bypass Permissions**, **Skip permissions**, and **YOLO on** skip its
+approval or confirmation prompts.
+
+To start each new Codex session in **Approve for me**, set **Default permissions** of
+Codex to **Approve for me**. The help of Codex says that this mode routes approval
+requests through an automatic review. The `/permissions` menu of Codex describes it as
+"Only ask for actions detected as potentially unsafe." See
 [Permission modes](SPEC.md#permission-modes) for the options of each mode.
 
 In a worktree, bbflow also tells Antigravity to trust the session folder for that

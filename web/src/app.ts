@@ -1422,7 +1422,8 @@ async function showContinue(): Promise<void> {
   const groups = toolGroups(settings.tools, !settings.shellOff);
   const choices = [...groups.builtin, ...groups.custom].filter(choice => choice.id);
   // The dialog selects the tool of the latest terminal, the last choice of the user. Its
-  // model and effort are the defaults of the tool, as for a new choice in a draft.
+  // model, effort, and permission mode are the defaults of the tool, as for a new choice
+  // in a draft.
   continueTools = settings.tools.filter(tool => tool.enabled);
   $('continue-tool').value = defaultContinueTool(choices, [terminals[terminals.length - 1]?.toolId, selected.preparation?.toolId, settings.defaultTool], !settings.shellOff);
   selectContinueTool();

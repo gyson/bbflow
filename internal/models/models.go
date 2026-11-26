@@ -72,7 +72,7 @@ var presetArgs = map[string]string{Codex: "--no-alt-screen"}
 
 // BuiltinCommand returns the startup command of a built-in tool: its CLI path, or the
 // plain CLI name when the path is empty, then the fixed arguments of its type. The launch
-// then adds the model and effort options at the end. See Command.
+// then adds the model, effort, and permission options at the end. See Command.
 func BuiltinCommand(kind, path string) string {
 	program := path
 	if program == "" {
