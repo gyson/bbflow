@@ -25,7 +25,7 @@ func TestSessionViewsDoNotChangeActivityOrder(t *testing.T) {
 	first.Close()
 	waitFor(t, func() bool { return sessionInfos(t, 10)[0].Viewers == 0 })
 	second := newShell(t, t.TempDir(), "more recent")
-	before := sessionInfos(t, 10)
+	before := settledInfos(t)
 	if len(before) != 2 || before[0].ID == firstID {
 		t.Fatalf("newer shell is not first: %+v", before)
 	}
@@ -103,9 +103,8 @@ func TestSessionViewsDoNotChangeActivityOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return strings.Contains(recordedOutput(t, store, firstID), "BACKGROUND_ACTIVITY") })
-	if sessionInfos(t, 10)[0].ID != firstID {
-		t.Fatal("detached terminal output did not promote the first session")
-	}
+	// The output counts after the screen stays the same for one second.
+	waitFor(t, func() bool { return sessionInfos(t, 10)[0].ID == firstID })
 }
 
 // idleWait is longer than the idle delay of the server. The server shows idle 10
@@ -179,7 +178,7 @@ func TestOutputThatChangesNothingKeepsTheSessionIdle(t *testing.T) {
 	}
 	waitWithin(t, idleWait, func() bool { return status() == "idle" })
 	newShell(t, t.TempDir(), "newer")
-	before := sessionInfos(t, 10)
+	before := settledInfos(t)
 	if len(before) != 2 || before[0].ID == id {
 		t.Fatalf("the newer shell is not first: %+v", before)
 	}
@@ -235,8 +234,61 @@ func TestUnchangedResizeDoesNotHideApplicationOutput(t *testing.T) {
 	if strings.Contains(view.text(), "RESIZED") {
 		t.Fatalf("an unchanged size reached the application: %q", view.text())
 	}
-	if got := listed(); got != "running" {
-		t.Fatalf("output after an unchanged resize has status %s", got)
+	waitFor(t, func() bool { return listed() == "running" })
+}
+
+// An agent CLI can show a notice while it waits and erase it soon after. The session
+// stays idle. Both frames are quiet, so they do not move the session in the session list.
+func TestNoticeThatIsErasedKeepsTheSessionIdle(t *testing.T) {
+	directory := t.TempDir()
+	startTestServer(t, directory)
+	store := archive(t, directory)
+	trigger := filepath.Join(t.TempDir(), "emit")
+	view := launchAgent(t, t.TempDir(), "notice", trigger)
+	waitFor(t, func() bool { return strings.Contains(view.text(), "READY") })
+	id := sessionInfos(t, 10)[0].ID
+	status := func() string {
+		for _, info := range sessionInfos(t, 10) {
+			if info.ID == id {
+				return info.Status
+			}
+		}
+		return "absent"
+	}
+	waitWithin(t, idleWait, func() bool { return status() == "idle" })
+	newShell(t, t.TempDir(), "newer")
+	before := settledInfos(t)
+	if len(before) != 2 || before[0].ID == id {
+		t.Fatalf("the newer shell is not first: %+v", before)
+	}
+	// frames counts the quiet frames of the notice and of its erase.
+	frames := func() int64 {
+		result, err := store.Query(context.Background(), "SELECT count(*) FROM events WHERE session_id='"+id+"' AND kind='output' AND quiet=1 AND instr(CAST(data AS TEXT),'[24;50H')>0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.Rows[0][0].(int64)
+	}
+	if err := os.WriteFile(trigger, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// List reads at any time must not count the frames.
+	for deadline := time.Now().Add(5 * time.Second); frames() < 2; {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d of the two frames are quiet", frames())
+		}
+		if infos := sessionInfos(t, 10); infos[0].ID == id || status() != "idle" {
+			t.Fatalf("a notice that the application erased changed the session: status %s, list %+v", status(), infos)
+		}
+	}
+	after := sessionInfos(t, 10)
+	for i := range before {
+		if after[i].ID != before[i].ID || after[i].Updated != before[i].Updated {
+			t.Fatalf("the notice changed the order: before=%+v after=%+v", before, after)
+		}
+	}
+	if got := status(); got != "idle" {
+		t.Fatalf("a notice that the application erased gave the status %s", got)
 	}
 }
 
@@ -284,4 +336,29 @@ func (w *statusWatch) of(id string) string {
 		}
 	}
 	return strings.Join(statuses, ",")
+}
+
+// settledInfos returns the session list after the latest output of each session counts.
+// The server knows that a change of the screen is activity only after the screen stays
+// the same for one second.
+func settledInfos(t *testing.T) []protocol.SessionInfo {
+	t.Helper()
+	order := func(infos []protocol.SessionInfo) string {
+		var entries []string
+		for _, info := range infos {
+			entries = append(entries, fmt.Sprint(info.ID, " ", info.Updated))
+		}
+		return strings.Join(entries, ",")
+	}
+	infos := sessionInfos(t, 10)
+	for deadline := time.Now().Add(8 * time.Second); time.Now().Before(deadline); {
+		time.Sleep(1500 * time.Millisecond)
+		next := sessionInfos(t, 10)
+		if order(next) == order(infos) {
+			return next
+		}
+		infos = next
+	}
+	t.Fatal("the session list did not settle")
+	return nil
 }

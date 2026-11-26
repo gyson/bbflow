@@ -85,6 +85,51 @@ func TestApplyChangeFindsAnEraseOfTheHistory(t *testing.T) {
 	step("an erase of an empty history", "\x1b[3J", false, 0)
 }
 
+// SameAsMark finds output that changes what a view shows and then changes it back.
+// Claude Code 2.1.332 shows "Checking for updates…" in its footer every 30 minutes, and
+// it erases the notice about 0.2 seconds later.
+func TestSameAsMarkFindsAChangeThatIsChangedBack(t *testing.T) {
+	state := New(protocol.Size{Cols: 40, Rows: 6})
+	apply := func(kind, data string) {
+		t.Helper()
+		if _, err := state.Apply(history.Event{Kind: kind, Data: []byte(data)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(reason string, want bool) {
+		t.Helper()
+		if got := state.SameAsMark(); got != want {
+			t.Fatalf("%s: SameAsMark is %v, expected %v", reason, got, want)
+		}
+	}
+	check("a state without a mark", false)
+	apply("output", "prompt> ")
+	state.Mark()
+	check("the marked screen", true)
+	apply("output", "\x1b[?25l\x1b[5;20H\x1b[?25h\x07")
+	check("a cursor move and a bell", true)
+	apply("output", "\x1b7\x1b[5;20H\x1b[38;2;153;153;153mChecking for updates…\x1b[39m\x1b8")
+	check("a notice", false)
+	apply("output", "\x1b7\x1b[5;20H\x1b[K\x1b8")
+	check("the erased notice", true)
+	apply("output", "\x1b[1;1H\x1b[31mprompt> \x1b[0m")
+	check("a color", false)
+	apply("output", "\x1b[1;1H\x1b[38;5;1mprompt> \x1b[0m")
+	check("the same color in another SGR form", false)
+	apply("output", "\x1b[1;1Hprompt> ")
+	check("the color changed back", true)
+	apply("output", "\x1b[?1049hmenu")
+	check("a menu on the alternate screen", false)
+	apply("output", "\x1b[?1049l")
+	check("the closed menu", true)
+	// New rows in history stay a change.
+	apply("output", "\x1b[6;1H\n")
+	check("a new row in history", false)
+	state.Mark()
+	apply("resize", `{"cols":30,"rows":6}`)
+	check("a size change", false)
+}
+
 // The comparison of an unchanged screen allocates nothing, also for a row with cells
 // that have extended attributes before plain cells.
 func TestCompareScreenAllocatesNothing(t *testing.T) {
@@ -94,6 +139,10 @@ func TestCompareScreenAllocatesNothing(t *testing.T) {
 	}
 	if allocs := testing.AllocsPerRun(100, func() { state.compareScreen() }); allocs != 0 {
 		t.Fatalf("the comparison of an unchanged screen made %v allocations", allocs)
+	}
+	state.Mark()
+	if allocs := testing.AllocsPerRun(100, func() { state.Mark(); state.SameAsMark() }); allocs != 0 {
+		t.Fatalf("a mark and a comparison of an unchanged screen made %v allocations", allocs)
 	}
 }
 

@@ -58,11 +58,13 @@ type State struct {
 	responses []byte
 	history   Cache
 	shown     shown
+	mark      shown // What a view showed at the latest Mark call.
 }
 
 // shown is a copy of what a view shows after the latest event that ApplyChange compared:
 // the cells of the screen and the range of rows in history. Apply makes the copy out of
-// date, so ApplyChange copies the screen again before its event.
+// date, so ApplyChange copies the screen again before its event. Mark keeps a second
+// copy in the same form.
 type shown struct {
 	current    bool
 	buffer     *xterm.Buffer
@@ -206,10 +208,33 @@ func (s *State) Apply(event history.Event) (responses []byte, err error) {
 // change matters.
 func (s *State) ApplyChange(event history.Event) (responses []byte, changed bool, err error) {
 	if !s.shown.current {
-		s.copyScreen()
+		s.copyScreen(&s.shown)
 	}
 	responses, err = s.apply(event)
 	return responses, s.compareScreen(), err
+}
+
+// Mark keeps a copy of what a view shows now. SameAsMark then tells whether later events
+// changed it, also when they changed it and changed it back.
+func (s *State) Mark() { s.copyScreen(&s.mark) }
+
+// SameAsMark tells whether a view shows the same screen and the same rows in history as
+// at the latest Mark call. It uses the comparison of ApplyChange. It is false without a
+// Mark call.
+func (s *State) SameAsMark() bool {
+	c, t := &s.mark, s.term
+	active := t.Buffer()
+	first, end := s.historyRows()
+	if !c.current || c.buffer != active || c.epoch != s.epoch || c.first != first || c.end != end || len(c.rows) != t.Rows() {
+		return false
+	}
+	for y, saved := range c.rows {
+		line := active.Lines.Get(active.YBase + y)
+		if !c.sameCells(line, saved) && renderLine(line, t.Cols()) != renderLine(saved, t.Cols()) {
+			return false
+		}
+	}
+	return true
 }
 
 // historyRows returns the row numbers of the history of the normal buffer: its first row
@@ -220,10 +245,9 @@ func (s *State) historyRows() (first, end int64) {
 	return s.trim, s.trim + int64(s.term.NormalBuffer().YBase)
 }
 
-// copyScreen copies the rows of the screen into shown. It reuses the copies of earlier
-// rows.
-func (s *State) copyScreen() {
-	c, t := &s.shown, s.term
+// copyScreen copies the rows of the screen into c. It reuses the copies of earlier rows.
+func (s *State) copyScreen(c *shown) {
+	t := s.term
 	active := t.Buffer()
 	c.current, c.buffer, c.epoch = true, active, s.epoch
 	c.first, c.end = s.historyRows()
@@ -243,7 +267,7 @@ func (s *State) compareScreen() bool {
 	first, end := s.historyRows()
 	if !c.current || c.buffer != active || c.epoch != s.epoch || c.first != first || c.end != end || len(c.rows) != t.Rows() {
 		// A reset, another buffer, a reflow, or other history rows.
-		s.copyScreen()
+		s.copyScreen(c)
 		return true
 	}
 	changed := false

@@ -13,6 +13,11 @@ const (
 	// An application redraws after an input, a size change, or a signal from a view.
 	// Output in this time after one of them is not application activity.
 	echoWindow = 300 * time.Millisecond
+	// A change of the screen is application activity only when it lasts. A burst of
+	// changes ends when the screen stays the same for this time, or when the screen keeps
+	// changing for this time. A burst that put the screen back as it was is not activity,
+	// as a notice that an agent CLI shows and erases.
+	settleTime = time.Second
 	// A live terminal without application output for this time is idle. Some agent CLIs
 	// write no output for several seconds while they work.
 	idleAfter = 10 * time.Second
@@ -21,9 +26,9 @@ const (
 )
 
 // activity derives running or idle from the output times of a live terminal. It is not
-// durable. Only output that changes what a view shows counts. Idle means only that there
-// was no such output recently. It does not mean that the application completed its work
-// or is ready for input.
+// durable. Only output that changes what a view shows, and does not change it back,
+// counts. Idle means only that there was no such output recently. It does not mean that
+// the application completed its work or is ready for input.
 type activity struct {
 	output time.Time // The start of the terminal, or its latest application output.
 	view   time.Time // The latest input, size change, or signal from a view.
@@ -35,12 +40,20 @@ func (a *activity) viewAction(now time.Time) { a.view = now }
 // view action.
 func (a *activity) afterEcho(now time.Time) bool { return now.Sub(a.view) >= echoWindow }
 
-// applicationOutput records output that changed what a view shows. Output in the echo
-// window of a view action is not application activity.
-func (a *activity) applicationOutput(now time.Time) {
-	if a.afterEcho(now) {
-		a.output = now
+// applicationOutput records application output at a time. The server knows that output
+// is application output only after its burst ends, so the time can be in the past.
+func (a *activity) applicationOutput(at time.Time) {
+	if at.After(a.output) {
+		a.output = at
 	}
+}
+
+// burst holds the output events that changed the screen after the echo window, until
+// the server knows whether the change lasts. The terminal keeps a mark of the screen
+// before the first of them.
+type burst struct {
+	start, last time.Time // The times of the first and the latest change.
+	events      []int64   // The sequences of the output events that changed the screen.
 }
 
 func (a *activity) status(now time.Time) string {

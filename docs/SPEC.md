@@ -2135,8 +2135,8 @@ the preparation state without change, so `bbflow query` results do not change.
 The server records the time of the latest application output of each live terminal in
 memory. It does this without views too. The detection does not depend on the tool.
 
-Application output is output that changes what a view shows. The server compares its
-terminal screen before and after each output. A change of a character, a color, or a
+Application output is output that changes what a view shows, when the change lasts. The
+server compares its terminal screen before and after each output. A change of a character, a color, or a
 style of a screen cell counts. The server compares the rows that it draws for a view, so
 another SGR form of the same color is not a change. New rows in history count too. A cursor move, a title, an
 input mode, a bell, or a terminal query alone does not count. Thus an agent CLI that
@@ -2147,6 +2147,21 @@ view does not count either. Thus the echo of typed input and the redraw after a 
 change do not make a session `running`. A view that joins or reconnects sends its size
 again. The PTY ignores an unchanged size, so that size does not hide the output that
 follows.
+
+A change counts only when it lasts. The first change after the echo window starts a
+burst. The server keeps a copy of the screen from before the burst. Later changes join
+the burst. The burst ends at the first of these events:
+
+| Event | The burst counts when |
+| --- | --- |
+| The screen stays the same for 1 second. | The screen differs from the copy. |
+| The screen keeps changing for 1 second. | Always. |
+| An input, a PTY size change, or a signal from a view. | The screen differs from the copy before the echo or the redraw. |
+| The end of the terminal. | The screen differs from the copy. |
+
+Thus a notice that an agent CLI shows and erases within 1 second does not make a session
+`running`. Claude Code 2.1.332 shows **Checking for updates…** in its footer for about
+0.2 seconds every 30 minutes. A burst that counts gives the time of its latest change.
 
 The archive marks output that does not count as a quiet event. See
 [session list order](#session-list-order).
@@ -2272,18 +2287,18 @@ process.
 - The session status uses the times of screen changes only. It cannot tell a completed
   task from a permission question. It shows `idle` for a command that works without a
   change on the screen.
-- An application that changes its screen while it waits shows as `running`.
-- The server compares the screen after each read from the PTY. An application frame can
-  arrive in two reads. Then the first part can change the screen and count, even when
-  the whole frame changes nothing.
+- An application that changes its screen while it waits shows as `running`. A notice
+  that stays for more than 1 second counts, also when the application erases it later.
+- `running` shows up to 1 second after a change, when the burst of the change ends. The
+  session list counts the change at the same time.
 - Typed input at short intervals for more than 10 seconds can show `idle` while the
   application works.
 - While the status watch reconnects, the sidebar can show a status change up to five
   seconds late.
 - A start screen that an application draws in the 300 milliseconds after its command
   does not show `running`.
-- The 10 second and 300 millisecond values are not verified with an agent that works on
-  a task.
+- The 10 second, 1 second, and 300 millisecond values are not verified with an agent
+  that works on a task.
 
 ### Session titles
 
@@ -4170,22 +4185,25 @@ activity:
 - A focus report or a mouse report of a view. The server sets the flag when it records
   the input.
 - Output that is not [application output](#activity-detection): output that changes
-  nothing on the screen, and output in the 300 milliseconds after a view action. The
-  server records output before it compares the screen, and it sets the flag just after.
+  nothing on the screen, the output of a burst that leaves the screen as it was, and
+  output in the 300 milliseconds after a view action. The server records output before
+  it compares the screen. It sets the flag just after, or when the burst ends.
 - No other event. Only `input` and `output` events can be quiet. Events from before
   format 21 are not quiet.
 
-The session list does not count the output of a terminal before the server sets its
-flag. For each list read, the server gives the query two bounds:
+The session list does not count the output of a terminal before its flag is final. For
+each list read, the server gives the query two bounds:
 
 1. The sequence of the latest event in the archive, or 0 without events. The server
    reads it first.
-2. For each live terminal, the sequence of the latest event that the server classified.
+2. For each live terminal, the sequence of the latest event with a final flag. During a
+   burst, this is the event before the burst.
 
 The output of a session counts up to its second bound, or up to the first bound when
 the session has no live terminal entry. A terminal that starts during the list read
-records only output after the first bound. A `bbflow query` read can see the output
-with `quiet` 0 before the server sets the flag.
+records only output after the first bound. The server ends each burst before the
+terminal leaves. A `bbflow query` read can see the output with `quiet` 0 for up to 2
+seconds before the server sets the flag.
 
 Viewing, resizing, focus changes, renaming, saving drafts, attachments, terminal replies,
 and saved screens do not change recency. Fresh application output still counts,
@@ -5034,8 +5052,8 @@ A later browser check with the demo instance verified the saves in Settings:
 ### Checks of the session status and toolbar
 
 - Session status fixtures use fixed times and a real PTY.
-- Time fixtures cover the start of a terminal, background output, the idle delay, typed
-  input at short intervals, and output after the echo window.
+- Time fixtures cover the start of a terminal, background output, the idle delay, a
+  burst that ends with an older change, and the echo window.
 - A server fixture covers `draft`, worktree creation, a launch without a process, a
   starting terminal, recent and old output, each stored end status, and a new terminal
   in an ended session.
@@ -5054,10 +5072,22 @@ A later browser check with the demo instance verified the saves in Settings:
   row or for one cell of a row, protected cells, and an erase of an empty history are
   not changes. The comparison of
   an unchanged screen makes no allocation.
+- Mark fixtures check the comparison with the screen before a burst. A cursor move, a
+  bell, a notice and its erase, a color that is changed back, and a menu on the
+  alternate screen that closes leave the screen as it was. A notice, a color, a new
+  row in history, and a size change do not. A mark and a comparison of an unchanged
+  screen make no allocation.
 - A server fixture checks that output without a change keeps `idle` and is quiet. It
   also checks that the reply to a focus report and the echo of typed input are quiet.
+- A server fixture uses the frames of the update notice of Claude Code 2.1.332. The
+  notice and its erase keep `idle`, and they become quiet 1 second after the erase.
+  Until then, the classified sequence stays before the burst. A notice that stays and a
+  blink for 1 second show `running`. An input after an erased notice ends the burst as
+  quiet. An input during a change ends the burst as activity, and the echo stays quiet.
+  The end of the terminal ends a burst at once.
 - A server fixture holds the quiet flag of a frame before the server sets it. A list
-  read in that time does not count the frame. In a second fixture, a terminal starts
+  read in that time does not count the frame. The same fixture checks that a change
+  does not move the session before its burst ends. In a second fixture, a terminal starts
   after a list read took its bounds, and the read does not count its frame either. This
   fixture runs in an empty archive and in an archive with events. A history fixture
   checks both bounds, the bound 0 of an empty archive, and that input after them
@@ -5067,6 +5097,9 @@ A later browser check with the demo instance verified the saves in Settings:
   and a focus report of a view are quiet and do not change the list order. List reads
   without a pause for 3 seconds never put the session first. Output that changes the
   screen then shows `running` and puts the session first.
+- A fourth PTY fixture shows a notice in the footer and erases it 200 milliseconds
+  later. The session stays `idle`, both frames are quiet, and list reads never put the
+  session first.
 - A server fixture checks that only input that the server accepts as a report reaches
   the runtime as a report.
 - A server fixture checks the same rule and a changed size with fixed state.
