@@ -1080,20 +1080,19 @@ of its session, and a mark when the session has an unsent message.
   the sidebar. A long menu scrolls.
 - An item creates a draft in its project and opens the draft, as **＋** beside the
   project does. See [Refresh and selection](#refresh-and-selection).
-- Without a project, Home does not show **＋ New session**. It shows a text that tells
-  how to add the first project. A **＋ Project** button below the text opens the Add
-  project dialog.
+- Without a project, Home shows no **＋ New session** and no groups. It shows **No
+  projects yet.** and a **＋ Project** button, which opens the Add project dialog.
 
 #### Groups of Home
 
 - **Running** lists the sessions with the status `running`. **Idle** lists the sessions
   with the status `idle`. See [Session status](#session-status). Home does not list a
   draft or an ended session.
-- Each group heading shows the number of its sessions and a note on the status. The
-  note of **Idle** tells that idle does not mean that the agent is ready for input.
-- A group without a session shows **No running session.** or **No idle session.**
-- When no session has a live terminal, Home shows a text in place of the groups. The
-  text tells how to start a session and how to continue an earlier session.
+- Each group heading shows the number of its sessions. A group without a session shows
+  only its heading, with **0**. Thus Home shows both headings when no session has a
+  live terminal.
+- Home shows no text on the meaning of a status. The tooltip of a status icon gives it,
+  as in the sidebar, and `docs/GUIDE.md` explains it.
 - The status watch supplies the status, as for the sidebar. A status change moves a row
   to the other group at once.
 - **Running** sorts its rows by title. **Idle** shows the session with the latest
@@ -1106,11 +1105,11 @@ A row has these parts:
 
 | Part | Contents |
 | --- | --- |
-| Status icon | The [sidebar icon](#status-in-the-sidebar) of `running` or `idle`. |
+| Status icon | The [sidebar icon](#status-in-the-sidebar) of `running` or `idle`, with the status text of the sidebar as its tooltip. |
 | Title | The session title, or **Untitled session**. |
-| Time | **now** for a running session. For an idle session, the time since the update time of the session list, such as **12 min**. The tooltip shows that date and time. |
+| Time | For an idle session, the time since the update time of the session list, such as **12 min**. The tooltip shows that date and time. A running session shows no time. |
 | Place | The project name, the tool of the latest terminal, and **worktree** for a managed worktree. A sub-session adds **↳** and the title of its top-level session. A session without a saved project shows its workspace in place of the project name. |
-| Latest message | The text of the latest sent message on one line, and its age, such as **sent 5 min ago**. A message without text shows the number of its attachments. A session without a sent message has no such line. |
+| Latest message | The text of the latest sent message on one line, and its age, such as **5 min ago**. A message without text shows the number of its attachments. A session without a sent message has no such line. |
 | **Unsent message** | A mark for a saved draft that has text or attachments and is not pending. |
 
 A time shows in one unit: **<1 min**, minutes below 1 hour, hours below 1 day, and then
@@ -4982,8 +4981,7 @@ at window widths of 1200, 1600, and 1920 pixels.
 - Web fixtures check the parts of Home that need no browser. They check the two groups
   from the session list and the pushed statuses, a live session outside the list, and
   the order of each group. They also check the unsent draft, the latest sent message,
-  the time spans, the place line, and the text without a project and without a live
-  session.
+  the time spans, the place line, and the text without a project.
 - Web fixtures check the reads of the row data with simulated replies. A row reads
   again only after a status change. It reads its terminals until one reply gives them,
   also when a newer read replaces the first reply and when the first read fails. A row
@@ -5003,6 +5001,10 @@ at window widths of 1200, 1600, and 1920 pixels.
   second check stopped the server of a demo instance while Home showed. In 16 seconds,
   Home showed the failed list refresh above its dimmed groups.
 - The browser console had no errors.
+- After the removal of the status notes and of the other secondary text, a browser
+  check at widths of 1280 and 390 pixels showed Home with four live sessions. It showed
+  both headings with **0** after a server restart, and **No projects yet.** with
+  **＋ Project** in a new instance.
 - Safari in an iPhone 18 Pro simulator with iOS 27.2 showed Home of the demo instance
   with the drawer closed. That check only loaded the page.
 - The checks used simulated agents and a mouse. They did not use a phone, touch input,

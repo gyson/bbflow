@@ -208,8 +208,10 @@ Click the bbflow name in the sidebar to open Home.
 - A row shows the project, the tool, and the latest message that you sent.
 - **Unsent message** marks a session whose message editor holds a message that you did
   not send.
-- **Idle** means only that the screen of the terminal did not change in the last 10
-  seconds. The agent can still work, or it can wait for your answer.
+- **Running** means that the screen of the terminal changed in the last 10 seconds.
+- **Idle** means only that the screen did not change in that time. The agent can still
+  work, or it can wait for your answer.
+- An idle row shows the time since the latest activity of its session.
 - To start a session from Home, click **＋ New session**, then select the project.
 
 See [Home](SPEC.md#home) for the rules.

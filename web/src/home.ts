@@ -2,7 +2,7 @@ import { ActionMenu } from './action-menu.js';
 import { element } from './dom.js';
 import { call, sessionTitle } from './protocol.js';
 import type { ComposerState, Draft, PreparedSession, Project, SentPage, ServerInfo, SessionInfo, TerminalInfo } from './protocol.js';
-import { listStatus } from './session-status.js';
+import { listStatus, listStatusText } from './session-status.js';
 
 // Home lists the sessions that have a live terminal, in two groups.
 export interface HomeGroups { running: SessionInfo[]; idle: SessionInfo[] }
@@ -84,12 +84,10 @@ export function placeLine(session: SessionInfo, projects: Project[], parent: Ses
   ].filter(Boolean).join(' · ');
 }
 
-// Return the text that Home shows in place of the groups, or '' when a session has a
-// live terminal.
-export function homeText(projects: number, liveSessions: number): string {
-  if (!projects) return 'Click ＋ Project to add a folder. Then click ＋ New session to start a session.';
-  if (!liveSessions) return 'No session has a live terminal. Click ＋ New session to start one. To continue an earlier session, select it in the sidebar.';
-  return '';
+// Return the text that Home shows without a project, above its ＋ Project button. With
+// a project, the groups and their counts show the state, so Home needs no text.
+export function homeText(projects: number): string {
+  return projects ? '' : 'No projects yet.';
 }
 
 // Convert the saved data of one session to a row of the session list. The update time
@@ -223,11 +221,6 @@ interface Host {
   addProject(): void;
 }
 
-const groupNotes = {
-  running: 'A screen change in the last 10 seconds.',
-  idle: 'Live, with no screen change in the last 10 seconds. Idle does not mean that the agent is ready for input.',
-};
-
 // HomeView shows Home: the New session menu, and the live sessions of all projects in
 // the groups Running and Idle. The session list and the status watch supply the rows.
 // Home reads the tool, the latest sent message, and the saved draft of each row.
@@ -309,28 +302,29 @@ export class HomeView {
         id: session.id, status,
         title: sessionTitle(session) || 'Untitled session',
         place: placeLine(session, this.projects, session.parentId ? this.rows.session(session.parentId) : undefined, detail?.tool),
-        time: status === 'running' ? 'now' : since(session.updated, now),
-        // The update time of a running session changes with each list read. The row does
-        // not show it, so it must not replace the buttons.
+        // The group tells that a session runs, so only an idle row shows a time. The
+        // update time of a running session changes with each list read. The row does not
+        // show it, so it must not replace the buttons.
+        time: status === 'idle' ? since(session.updated, now) : '',
         updated: status === 'idle' ? session.updated : '',
+        tip: listStatusText(status, session),
         last: detail?.last?.text ?? '',
         sent: detail?.last ? since(detail.last.created, now) : '',
         unsent: !!detail?.unsent,
       };
     };
-    const live = running.length + idle.length;
-    const model = { text: homeText(this.projects.length, live), projects: this.projects.length, running: running.map(session => row(session, 'running')), idle: idle.map(session => row(session, 'idle')) };
+    const model = { text: homeText(this.projects.length), running: running.map(session => row(session, 'running')), idle: idle.map(session => row(session, 'idle')) };
     const fingerprint = JSON.stringify(model);
     if (fingerprint === this.rendered) return;
     this.rendered = fingerprint;
     this.text.textContent = model.text;
     this.empty.hidden = !model.text;
-    this.addProject.hidden = model.projects > 0;
     // New buttons replace the rows. Give the keyboard focus to the new button of the same session.
     const focused = document.activeElement instanceof HTMLElement && this.groups.contains(document.activeElement) ? document.activeElement.dataset.session : undefined;
     this.groups.replaceChildren();
-    this.groups.hidden = !live;
-    if (!live) return;
+    // Without a project, no session can start from Home, so Home shows no groups.
+    this.groups.hidden = !!model.text;
+    if (model.text) return;
     const byId = new Map([...running, ...idle].map(session => [session.id, session]));
     for (const [name, key, rows] of [['Running', 'running', model.running], ['Idle', 'idle', model.idle]] as const) {
       const section = document.createElement('section');
@@ -344,21 +338,19 @@ export class HomeView {
       count.className = 'home-count';
       count.textContent = String(rows.length);
       heading.append(label, ' ', count);
-      const note = document.createElement('p');
-      note.className = 'home-note';
-      note.textContent = groupNotes[key];
-      const head = document.createElement('div');
-      head.className = 'home-group-heading';
-      head.append(heading, note);
+      section.setAttribute('aria-labelledby', heading.id);
+      section.append(heading);
+      // The count of the heading tells that a group has no session.
+      if (!rows.length) { this.groups.append(section); continue; }
       const list = document.createElement('div');
       list.className = 'home-rows';
-      section.setAttribute('aria-labelledby', heading.id);
       for (const item of rows) {
         const button = document.createElement('button');
         button.className = 'home-row';
         button.dataset.session = item.id;
         const icon = document.createElement('span');
         icon.className = `status-icon ${item.status}`;
+        icon.title = item.tip;
         icon.setAttribute('aria-hidden', 'true');
         const body = document.createElement('span');
         body.className = 'home-row-body';
@@ -388,7 +380,7 @@ export class HomeView {
           if (item.sent) {
             const sent = document.createElement('span');
             sent.className = 'home-message-time';
-            sent.textContent = `sent ${item.sent} ago`;
+            sent.textContent = `${item.sent} ago`;
             message.append(' ', sent);
           }
           body.append(message);
@@ -397,7 +389,6 @@ export class HomeView {
           const chip = document.createElement('span');
           chip.className = 'home-chip';
           chip.textContent = 'Unsent message';
-          chip.title = 'The message editor of this session holds a message that is not sent.';
           body.append(chip);
         }
         button.append(icon, body);
@@ -405,13 +396,7 @@ export class HomeView {
         button.onclick = () => this.host.open(session);
         list.append(button);
       }
-      if (!rows.length) {
-        const empty = document.createElement('p');
-        empty.className = 'home-rows-empty';
-        empty.textContent = key === 'running' ? 'No running session.' : 'No idle session.';
-        list.append(empty);
-      }
-      section.append(head, list);
+      section.append(list);
       this.groups.append(section);
     }
     if (focused) [...this.groups.querySelectorAll<HTMLElement>('.home-row')].find(button => button.dataset.session === focused)?.focus({ preventScroll: true });

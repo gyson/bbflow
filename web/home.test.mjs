@@ -79,10 +79,9 @@ test('the place line names the project, the tool, the worktree, and the parent',
   assert.equal(placeLine(session('a'), projects, session('parent', { title: '' })), 'Orbit API · ↳ Untitled session');
 });
 
-test('the Home text tells how to add the first project, and then how to start a session', () => {
-  assert.equal(homeText(0, 0), 'Click ＋ Project to add a folder. Then click ＋ New session to start a session.');
-  assert.equal(homeText(2, 0), 'No session has a live terminal. Click ＋ New session to start one. To continue an earlier session, select it in the sidebar.');
-  assert.equal(homeText(2, 1), '');
+test('Home has a text only without a project', () => {
+  assert.equal(homeText(0), 'No projects yet.');
+  assert.equal(homeText(2), '');
 });
 
 test('the saved data of a session becomes a list row without an update time', () => {

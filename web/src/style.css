@@ -235,7 +235,7 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 .action-menu [role="separator"] { height: 1px; margin: 4px 6px; background: var(--border); }
 .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: var(--accent-text); background: var(--selected); border-radius: 5px; padding: 6px 9px; }
 /* Home has the New session menu, then the live sessions of all projects in two groups.
-   Without a live session, a text in the middle of the page tells how to start. */
+   Without a project, the middle of the page has a text and the Project button. */
 .home { flex: 1; width: 100%; max-width: 920px; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; padding: 26px 30px 40px; }
 .home:has(> .home-empty:not([hidden])) { max-width: none; }
 /* The New session menu opens below its button, at its left edge. A long list of
@@ -246,12 +246,9 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 /* While the page cannot read the session list, the rows can be out of date. */
 .home.stale #home-groups { opacity: .5; }
 #home-groups { width: 100%; display: flex; flex-direction: column; gap: 22px; }
-.home-group-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 0 2px 8px; }
-.home-group-heading h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; }
+.home-group h2 { margin: 0 2px; font-size: 11px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; }
 .home-count { margin-left: 3px; color: var(--text-muted); font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
-.home-note { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
-.home-rows { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
-.home-rows-empty { margin: 0; padding: 12px 14px; color: var(--text-muted); font-size: 12px; }
+.home-rows { margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
 .home-row { width: 100%; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 0; border-top: 1px solid var(--divider); border-radius: 0; background: transparent; text-align: left; white-space: normal; }
 .home-row:first-child { border-top: 0; }
 .home-row:hover:not(:disabled) { background: var(--hover); border-color: var(--divider); }
