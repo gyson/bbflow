@@ -1021,8 +1021,8 @@ the home page shows `bbflow`.
 
 The row menu of a session can stop that session. The row menu of a top-level session
 can also stop the whole family. The stop items are the last items of the row menu, below
-a line. The line shows only while an item above it shows. Archived has no stop items,
-because archived sessions have no live terminal.
+a line. The line shows only while an item shows above it and a stop item shows below it.
+Archived has no stop items, because archived sessions have no live terminal.
 
 - **Stop session** shows while the session of the row has a live terminal. Top-level
   sessions and sub-sessions have it. It stops that session only. The other sessions of
@@ -1032,8 +1032,11 @@ because archived sessions have no live terminal.
   session. See [session families](#session-families).
 - While only the top-level session of a family is live, **Stop family** does not show.
   It would then stop only what **Stop session** stops.
-- Each item first reads the session or the family from the server. When no session to
-  stop has a live terminal then, the list refreshes and no dialog opens.
+- Each item first reads the session or the family from the server. The read also finds
+  a family that another view pinned or unpinned, and a family that moved to Standalone
+  after a project removal. When no session to stop has a live terminal then, the list
+  refreshes and no dialog opens. A session that another view archived has nothing to
+  stop.
 - The family dialog lists the members that are live at that time. If the sub-sessions
   ended after the menu opened, it lists only the top-level session.
 - A dialog asks first, because the view may not show the session. **Stop this
@@ -1048,7 +1051,9 @@ because archived sessions have no live terminal.
   history of each session stays.
 - After the stop, the dialog closes, and the list shows the ended statuses. An error
   shows in the dialog, and the dialog stays open.
-- After a choice with the keyboard, the focus returns to the ⋯ button of the row.
+- After a choice with the keyboard, the focus returns to the ⋯ button of the row. This
+  applies after the stop, after a cancel of the dialog, and when no dialog opens. If the
+  row has no ⋯ button then, the focus goes to the search box.
 
 #### Bottom row
 
@@ -4749,6 +4754,14 @@ at window widths of 1200, 1600, and 1920 pixels.
   parent had both items, and the sub-session had **Stop session** with no line above
   it. **Stop session** on the sub-session stopped only the sub-session. The parent
   continued, and its menu then had no **Stop family**. Other live sessions continued.
+- A fourth browser check simulated another view with separate WebSocket requests. It
+  chose **Stop session** with the keyboard in these cases:
+  - After a cancel and after Escape, the focus returned to the ⋯ button of the row.
+  - When another view had stopped the session, no dialog opened, and the focus returned
+    to the ⋯ button.
+  - When another view had stopped and archived the session, no dialog opened.
+  - When another view had removed the project of the session, the dialog still opened.
+  - After the stop, the focus returned to the ⋯ button.
 
 ### Checks of pinned sessions
 

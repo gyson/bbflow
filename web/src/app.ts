@@ -637,9 +637,9 @@ function sessionRow(session: SessionInfo, options: RowOptions): HTMLElement {
   // its sub-sessions. Archived sessions have no live terminal.
   const stops: { action: RowAction; members: SessionInfo[]; family: boolean }[] = [];
   if (!context && !archivedList) {
-    stops.push({ action: { label: 'Stop session', danger: true, divider: true, run: keyboard => void action(() => showStop(session, false, keyboard), failed('stop', session)) }, members: [session], family: false });
+    stops.push({ action: { label: 'Stop session', danger: true, divider: true, run: keyboard => void stopFromList(session, false, keyboard) }, members: [session], family: false });
     if (!parent && family?.children.length) {
-      stops.push({ action: { label: 'Stop family', danger: true, run: keyboard => void action(() => showStop(session, true, keyboard), failed('stop the family of', session)) }, members: [family.root, ...family.children], family: true });
+      stops.push({ action: { label: 'Stop family', danger: true, run: keyboard => void stopFromList(session, true, keyboard) }, members: [family.root, ...family.children], family: true });
     }
   }
   actions.push(...stops.map(stop => stop.action));
@@ -1554,11 +1554,13 @@ let archiving: { session: ArchiveTarget; members: string[] } | null = null;
 const familyChanged = 'sub-sessions of this family changed';
 
 // Read a top-level session and its sub-sessions that are not archived, with their current
-// status. For a sub-session, read only that session. A pinned family is in Pinned. Another
-// view can pin or unpin it at any time, so read both groups.
+// status. For a sub-session, read only that session. A pinned family is in Pinned, and a
+// family without a saved project is in Standalone. Another view can pin or unpin it, or
+// remove its project, at any time. Thus read these groups and the group of the project.
 async function readFamily(session: ArchiveTarget): Promise<SessionInfo[]> {
   if (!server) return [];
-  const page = await call(server, { operation: 'session-list', groups: [pinnedGroup, groupKey(session.projectId)], limit: 1, session: session.id });
+  const groups = [...new Set([pinnedGroup, groupKey(session.projectId), ''])];
+  const page = await call(server, { operation: 'session-list', groups, limit: 1, session: session.id });
   return page.sessions.filter(item => (item.id === session.id || item.parentId === session.id) && !item.archived);
 }
 
@@ -1579,15 +1581,17 @@ let stopping: { session: SessionInfo; family: boolean; members: string[]; keyboa
 // session to stop has a live terminal now, the list refresh shows that, and no dialog
 // opens.
 async function showStop(session: SessionInfo, family: boolean, keyboard: boolean): Promise<void> {
+  // The read has no session that another view archived, so that session has nothing to
+  // stop.
   const read = await readFamily(session);
-  const current = read.find(member => member.id === session.id) ?? session;
-  const { stop, starting } = stopMembers(family ? read : [current]);
+  const current = read.find(member => member.id === session.id);
+  const { stop, starting } = stopMembers(family ? read : current ? [current] : []);
   if (!stop.length) {
     await refreshSessions();
     return;
   }
   stopping = { session, family, members: stop.map(member => member.id), keyboard };
-  const text = stopText(current, stop, starting, family);
+  const text = stopText(current ?? session, stop, starting, family);
   $('stop-title').textContent = text.title;
   $('stop-summary').textContent = text.summary;
   $('stop-members').replaceChildren(...text.lines.map(line => {
@@ -1601,6 +1605,14 @@ async function showStop(session: SessionInfo, family: boolean, keyboard: boolean
   $('stop-submit').textContent = text.submit;
   $('stop-error').hidden = true;
   showDialog($('stop-dialog'));
+}
+
+// Run a stop item of a row menu. The busy action disables the ⋯ button, so the focus of a
+// keyboard user returns to it here when no dialog opens. The close of the dialog returns
+// it after a cancel.
+async function stopFromList(session: SessionInfo, family: boolean, keyboard: boolean): Promise<void> {
+  await action(() => showStop(session, family, keyboard), failed(family ? 'stop the family of' : 'stop', session));
+  if (keyboard && !$('stop-dialog').open) refocusSidebar(`menu:${session.id}`);
 }
 
 // Show the members of a family in the archive dialog.
@@ -1688,6 +1700,13 @@ async function initialize() {
   }, failed(selected?.pinned ? 'unpin' : 'pin', selected));
   $('cancel-archive').onclick = () => $('archive-dialog').close();
   $('cancel-stop').onclick = () => $('stop-dialog').close();
+  // A cancel, the ✕ button, or Escape closes the dialog. A submit clears stopping before
+  // it closes the dialog, and it returns the focus after the list refresh.
+  $('stop-dialog').addEventListener('close', () => {
+    const closed = stopping;
+    stopping = null;
+    if (closed?.keyboard) refocusSidebar(`menu:${closed.session.id}`);
+  });
   $('stop-form').onsubmit = event => {
     event.preventDefault();
     if (!stopping) return;
@@ -1703,6 +1722,7 @@ async function initialize() {
         await refreshSessions();
         return;
       }
+      stopping = null;
       $('stop-dialog').close();
       // A view of the live terminal gets the exit message. A view of an earlier terminal
       // reads the stored status of the stopped run.
