@@ -1030,6 +1030,7 @@ state changes.
 | `checked` | The end time of the last check, in RFC 3339 format. It is absent before the first check. A check that ends during an update applies only if the update fails. |
 | `error` | The reason that the last check failed. A successful check removes it. |
 | `offer` | The newer release that the last successful check found. It is absent when the server runs the newest release. A failed check keeps it. |
+| `failed` | Why the last update failed: `available`, the release of that update, and `error`, the reason. A check that changes or removes the offer keeps it. The next `update-start` removes it. |
 
 The `offer` object has these fields:
 
@@ -1039,14 +1040,13 @@ The `offer` object has these fields:
 | `version` | The version of the running server. |
 | `available` | The newer release. Send it as `version` with `update-start`. |
 | `installed` | True when the executable already has the release. The update then only restarts the server. |
-| `state` | `available`, `updating` while the server installs the release and restarts, or `failed`. |
-| `error` | The reason of the last failure, for the `failed` state. |
+| `state` | `available`, or `updating` while the server installs the release and restarts. |
 
 The daily check setting does not hide the offer. After the restart, open views reload
 with the UI of the new server.
 
 The executable can change after the check, so that it no longer agrees with the
-confirmed offer. Then `update-start` changes nothing, and the offer shows `failed`. The
+confirmed offer. Then `update-start` changes nothing, and `failed` gives the reason. The
 server checks again at once and sends the new offer with a new revision. Ask the user
 again before you send `update-start` for it. A confirmation of the earlier revision,
 for example from another view, fails.
@@ -1481,7 +1481,8 @@ versions.
   [`session-terminals`](#session-terminals). The start event of each new run records
   `toolId`. The SQLite format does not change.
 - Protocol 46 adds `update-check`. The `release` object of `statuses` messages replaces
-  the `update` field and holds the offer in `offer`. See
+  the `update` field and holds the offer in `offer`. The `failed` state and the `error`
+  field of the offer move to `failed` in the release object. See
   [Release check state](#release-check-state). `update-start` no longer rejects an
   offer while the daily check setting is off. The SQLite format does not change.
 

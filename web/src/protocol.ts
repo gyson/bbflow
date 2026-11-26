@@ -22,15 +22,19 @@ export interface ServerInfo {
 // A newer bbflow release for the server. revision identifies the offer. It changes when
 // a check finds another release or another action. version is the version of the
 // running server. installed means that the executable already has the release, so the
-// update only restarts the server. error tells why the last update failed.
-export interface Update { revision: number; version: string; available: string; installed?: boolean; state: 'available' | 'updating' | 'failed'; error?: string }
+// update only restarts the server.
+export interface Update { revision: number; version: string; available: string; installed?: boolean; state: 'available' | 'updating' }
+
+// Why an update failed. available is the release of that update.
+export interface UpdateFailure { available: string; error: string }
 
 // The release check state of the server. version is the version of the running server.
 // canUpdate is false for a build that cannot check or update, such as a development
 // build. checks counts the checks that ended, so that a view can tell two checks of the
 // same second apart. checked is the end time of the last check, and error tells why
 // that check failed. offer is the newer release that the last successful check found.
-export interface Release { version: string; canUpdate?: boolean; checking?: boolean; checks?: number; checked?: string; error?: string; offer?: Update }
+// failed tells why the last update failed. A new update removes it.
+export interface Release { version: string; canUpdate?: boolean; checking?: boolean; checks?: number; checked?: string; error?: string; offer?: Update; failed?: UpdateFailure }
 
 export interface Project { id: string; name: string; workspace: string; created: string }
 

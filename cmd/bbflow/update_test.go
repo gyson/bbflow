@@ -508,6 +508,12 @@ func TestUpdaterKeepsLockAfterCommandEnds(t *testing.T) {
 // watchOffer returns the first release offer of the server that matches.
 func watchOffer(t *testing.T, target client.Target, match func(*protocol.Update) bool) *protocol.Update {
 	t.Helper()
+	return watchRelease(t, target, func(r protocol.Release) bool { return match(r.Offer) }).Offer
+}
+
+// watchRelease returns the first release check state of the server that matches.
+func watchRelease(t *testing.T, target client.Target, match func(protocol.Release) bool) protocol.Release {
+	t.Helper()
 	watch, err := target.Connect(protocol.Request{Operation: "status-watch"})
 	if err != nil {
 		t.Fatal(err)
@@ -517,10 +523,10 @@ func watchOffer(t *testing.T, target client.Target, match func(*protocol.Update)
 		watch.SetReadDeadline(time.Now().Add(8 * time.Second))
 		message, err := watch.Receive()
 		if err != nil {
-			t.Fatal("no matching release offer:", err)
+			t.Fatal("no matching release state:", err)
 		}
-		if message.Type == "statuses" && message.Release != nil && match(message.Release.Offer) {
-			return message.Release.Offer
+		if message.Type == "statuses" && message.Release != nil && match(*message.Release) {
+			return *message.Release
 		}
 	}
 }
@@ -585,9 +591,9 @@ func TestServerUpdateReportsFailedDownload(t *testing.T) {
 	if _, err = target.Call(protocol.Request{Operation: "update-start", Version: "0.0.2", Revision: 1}); err != nil {
 		t.Fatal(err)
 	}
-	failed := watchOffer(t, target, func(u *protocol.Update) bool { return u != nil && u.State == "failed" })
-	if !strings.HasPrefix(failed.Error, "download failed: bbflow_0.0.2_darwin_") {
-		t.Fatalf("failed offer: %+v", failed)
+	failed := watchRelease(t, target, func(r protocol.Release) bool { return r.Failed != nil })
+	if failed.Failed.Available != "0.0.2" || !strings.HasPrefix(failed.Failed.Error, "download failed: bbflow_0.0.2_darwin_") || failed.Offer == nil || failed.Offer.State != "available" {
+		t.Fatalf("failed update: %+v %+v", failed.Failed, failed.Offer)
 	}
 	if same, err := target.Health(); err != nil || same.Instance != before.Instance || f.installed() != "bbflow 0.0.1" {
 		t.Fatalf("a failed download changed the server or the executable: %+v %v %s", same, err, f.installed())

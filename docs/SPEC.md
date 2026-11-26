@@ -322,8 +322,10 @@ a newer version to the web UI. A setting turns off the daily check.
 - When the setting changes to on after a check is due, the check runs at once.
 - A check that ends during an update applies only if the update fails, because the
   server then continues. Until then, the views show the update in progress and the
-  earlier check. The failure then shows on the offer, also when that check found the
-  same release. A newer release gets a new offer.
+  earlier check. The checks then apply in order. Thus a failed check keeps the offer
+  of a successful check before it.
+- The reason of a failed update stays with the release of that update until the next
+  update starts. A check that changes the offer or removes it keeps the reason.
 - A failed check keeps the offer of the last successful check. It writes its reason to
   `server.log`. The status watch sends the reason, and the **Updates** card shows it.
   The reason is the last message of the installer, as for a failed update.
@@ -384,9 +386,9 @@ it.
 
 #### Dot on Settings
 
-- The **Settings** button of the sidebar shows a dot for an offer that can start. The
-  dot is red after a failed update.
-- The tooltip and the accessible name of the button name the offer.
+- The **Settings** button of the sidebar shows a dot for an offer that can start, and
+  for a failed update. The dot is red for a failed update, also without an offer.
+- The tooltip and the accessible name of the button name the offer or the failure.
 - A click on **Settings** with the dot opens Settings at the **Updates** card.
 - An update in progress shows in the page bar instead of the dot.
 
@@ -442,9 +444,9 @@ with an edit that was not saved keeps the edit and asks the user to reload.
 
 A failure before step 4 leaves the server running. A failure before the rename in step
 3 also leaves the executable unchanged. The card then shows
-**The update to 0.0.15 failed:** and the reason. The dialog shows the reason too, and
-the user can try again.
-If the updater ends while the server still runs, the offer shows that the restart failed
+**The update to 0.0.15 failed:** and the reason. The dialog of the same release shows
+the reason too, and the user can try again.
+If the updater ends while the server still runs, the card shows that the restart failed
 and names `update.log`. A server that stops during the download stops the installer and
 does not start again. If it stops after the rename, the next server start uses the new
 executable.
@@ -4478,10 +4480,11 @@ CLI versions.
   check starts no other check. A view can start the offer of that check.
 - Quick checks with the same result change the status watch by their count, also when
   the watch does not see them run.
-- A check that ends during an update applies after the update fails. The same release
-  keeps the failure, a newer release gets a new offer, and a failed check keeps the
-  offer. Until the failure, the state keeps the update in progress and the earlier
-  check time.
+- The checks that end during an update apply after the update fails. The failure
+  stays with its release when a check finds the same release, a newer release, or no
+  newer release. A failed check keeps the offer of a successful check before it, and
+  a successful check after a failed one applies. Until the failure, the state keeps
+  the update in progress and the earlier check time. At most two held results remain.
 - A development build sends its version and no check state. It rejects `update-check`
   and `update-start`.
 - A newer save can reply first, and an earlier save does not then apply.
@@ -4496,10 +4499,11 @@ CLI versions.
   latest status message and shows the titles of the current list. It also verifies that
   a new offer closes the dialog, that the view confirms the revision of the shown offer,
   and that a lost status watch hides the offer.
-- The fixture verifies the dot on **Settings** and its accessible name. **Check now**
-  shows **Checking…** until the status watch reports the check. A status message from
-  before the request does not end it. A new count of checks ends it, also with the same
-  check time. A failed request shows its reason until a later check.
+- The fixture verifies the dot on **Settings** and its accessible name. A failure stays
+  when the offer changes or goes, and the red dot shows it. **Check now** shows
+  **Checking…** until the status watch reports the check. A status message from before
+  the request does not end it. A new count of checks ends it, also with the same check
+  time. A failed request shows its reason until a later check.
 - A lost watch during a pending start that then fails allows no other attempt.
 - A failed start without a change allows one.
 - A failed settings update in migration 12 rolls back and keeps format 11.

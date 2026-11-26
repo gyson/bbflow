@@ -8,6 +8,8 @@ const now = new Date(2026, 10, 25, 15, 0);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const at = (day, hour, minute) => new Date(2026, 10, day, hour, minute).toISOString();
 // The release check state of a status message, with an offer or without.
+// The failure of an update to 0.0.15.
+const failed = { available: '0.0.15', error: 'download failed' };
 const state = (update, more = {}) => ({ version: '0.0.14', canUpdate: true, checks: 1, checked: at(25, 10, 41), ...(update ? { offer: update } : {}), ...more });
 
 test('a check time names the day of an earlier check', () => {
@@ -40,8 +42,18 @@ test('the card tells a download from a restart and shows progress', () => {
   assert.deepEqual(text({ ...offer, installed: true }), { version: 'bbflow 0.0.14', status: 'bbflow 0.0.15 is installed. A restart starts it. Last checked 10:41 AM.', problem: '', action: 'Restart…' });
   // An update in progress cannot start again. A failed update can.
   assert.deepEqual(text({ ...offer, state: 'updating' }), { version: 'bbflow 0.0.14', status: 'Updating to 0.0.15…', problem: '', action: '' });
-  assert.deepEqual(text({ ...offer, state: 'failed', error: 'download failed' }), {
+  assert.deepEqual(releaseText(state(offer, { failed }), now, 'en-US'), {
     version: 'bbflow 0.0.14', status: 'bbflow 0.0.15 is available. Last checked 10:41 AM.', problem: 'The update to 0.0.15 failed: download failed', action: 'Update…',
+  });
+});
+
+test('the failure stays with the release of the update when a check changes the offer', () => {
+  const newer = { ...offer, revision: 2, available: '0.0.16' };
+  assert.deepEqual(releaseText(state(newer, { failed }), now, 'en-US'), {
+    version: 'bbflow 0.0.14', status: 'bbflow 0.0.16 is available. Last checked 10:41 AM.', problem: 'The update to 0.0.15 failed: download failed', action: 'Update…',
+  });
+  assert.deepEqual(releaseText(state(undefined, { failed }), now, 'en-US'), {
+    version: 'bbflow 0.0.14', status: 'This is the newest version. Last checked 10:41 AM.', problem: 'The update to 0.0.15 failed: download failed', action: '',
   });
 });
 
@@ -120,9 +132,10 @@ function setup() {
       return fail ? Promise.reject(fail) : Promise.resolve();
     },
   });
-  // The tests below send offers. The panel gets them in a release check state.
+  // The tests below send offers. The panel gets them in a release check state. more
+  // adds other fields of the state, such as a failure.
   const notice = {
-    show: (update, live) => panel.show(update ? state(update) : state(), live),
+    show: (update, live, more) => panel.show(state(update, more), live),
     lost: () => panel.lost(),
     sessionsChanged: () => panel.sessionsChanged(),
     get current() { return panel.current; },
@@ -162,7 +175,7 @@ test('the open dialog shows the titles of the current session list', () => {
 });
 
 test('a confirmation applies only to the offer that the dialog shows', async () => {
-  const { notice, starts, dialog, open, confirm } = setup();
+  const { nodes, notice, starts, dialog, open, confirm } = setup();
   notice.show({ ...offer, installed: true }, []);
   open();
   // A new check offers a download. The dialog of the restart closes.
@@ -174,10 +187,14 @@ test('a confirmation applies only to the offer that the dialog shows', async () 
   await new Promise(resolve => setImmediate(resolve));
   assert.ok(!dialog.open);
   assert.deepEqual(starts.map(update => [update.revision, !!update.installed]), [[2, false]]);
-  // A failed attempt keeps the revision, so the open dialog stays.
+  // A failed attempt keeps the revision, so the open dialog stays and shows the reason.
   open();
-  notice.show({ ...offer, revision: 2, state: 'failed', error: 'download failed' }, []);
+  notice.show({ ...offer, revision: 2 }, [], { failed });
   assert.ok(dialog.open);
+  assert.equal(nodes['update-error'].textContent, 'The last attempt failed: download failed');
+  // The reason of an update to another release does not show in this dialog.
+  notice.show({ ...offer, revision: 2 }, [], { failed: { available: '0.0.13', error: 'download failed' } });
+  assert.ok(nodes['update-error'].hidden);
 });
 
 test('a lost status watch hides the offer until the watch sends it again', () => {
@@ -218,9 +235,14 @@ test('the dot on Settings tells of an offer that the user can start', () => {
   assert.equal(settings.title, 'Update available: 0.0.15. bbflow 0.0.14 runs now.');
   assert.ok(!nodes['release-notes'].hidden);
   assert.equal(nodes['release-notes'].href, 'https://github.com/gyson/bbflow/releases/tag/v0.0.15');
-  panel.show(state({ ...offer, state: 'failed', error: 'download failed' }), []);
+  panel.show(state(offer, { failed }), []);
   assert.ok(settings.classList.contains('failed'));
   assert.equal(settings.attributes.get('aria-label'), 'Settings, The update to 0.0.15 failed');
+  // A failure shows also when a later check found no newer release.
+  panel.show(state(undefined, { failed }), []);
+  assert.ok(panel.attention);
+  assert.ok(settings.classList.contains('failed'));
+  assert.equal(settings.title, 'The update to 0.0.15 failed. bbflow 0.0.14 runs now.');
   // The page bar shows an update in progress instead.
   panel.show(state({ ...offer, state: 'updating' }), []);
   assert.ok(!panel.attention);
@@ -349,14 +371,13 @@ test('a failed status before or after the start reply leaves no update bar', asy
     open();
     const start = hold();
     confirm();
-    const failed = { ...offer, state: 'failed', error: 'download failed' };
-    if (order === 'status first') notice.show(failed, []);
+    if (order === 'status first') notice.show(offer, [], { failed });
     start.resolve();
     await settle();
     if (order === 'reply first') {
       notice.show({ ...offer, state: 'updating' }, []);
       assert.match(shown(notice), /^bbflow updates to 0\.0\.15\./, order);
-      notice.show(failed, []);
+      notice.show(offer, [], { failed });
     }
     assert.equal(shown(notice), '', order);
   }
@@ -365,7 +386,7 @@ test('a failed status before or after the start reply leaves no update bar', asy
 test('a late failed status of an earlier attempt does not hide the bar of a retry', () => {
   const { notice } = setup();
   notice.show({ ...offer, state: 'updating' }, []);
-  notice.show({ ...offer, state: 'failed', error: 'download failed' }, []);
+  notice.show(offer, [], { failed });
   assert.equal(shown(notice), '');
   notice.show({ ...offer, revision: 2, state: 'updating' }, []);
   assert.match(shown(notice), /updates to 0\.0\.15/);

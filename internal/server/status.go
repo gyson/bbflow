@@ -102,9 +102,14 @@ func (s *Server) liveStatuses(now time.Time) map[string]string {
 }
 
 func sameRelease(a, b protocol.Release) bool {
-	offers := a.Offer == nil && b.Offer == nil || a.Offer != nil && b.Offer != nil && *a.Offer == *b.Offer
-	a.Offer, b.Offer = nil, nil
-	return offers && a == b
+	pointers := same(a.Offer, b.Offer) && same(a.Failed, b.Failed)
+	a.Offer, b.Offer, a.Failed, b.Failed = nil, nil, nil, nil
+	return pointers && a == b
+}
+
+// same compares the values of two pointers. Two nil pointers are the same.
+func same[T comparable](a, b *T) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }
 
 // watchStatus sends the status of each live terminal, then all of them again after each

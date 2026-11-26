@@ -380,29 +380,36 @@ type TitleToolSet struct {
 // development build. Checking is true while a check runs. Checks counts the checks that
 // ended, so that a view can tell two checks of the same second apart. Checked is the end
 // time of the last check, and Error tells why that check failed. Offer is the newer
-// release that the last successful check found.
+// release that the last successful check found. Failed tells why the last update
+// failed. A new update removes it.
 type Release struct {
-	Version   string  `json:"version"`
-	CanUpdate bool    `json:"canUpdate,omitempty"`
-	Checking  bool    `json:"checking,omitempty"`
-	Checks    int64   `json:"checks,omitempty"`
-	Checked   string  `json:"checked,omitempty"`
-	Error     string  `json:"error,omitempty"`
-	Offer     *Update `json:"offer,omitempty"`
+	Version   string         `json:"version"`
+	CanUpdate bool           `json:"canUpdate,omitempty"`
+	Checking  bool           `json:"checking,omitempty"`
+	Checks    int64          `json:"checks,omitempty"`
+	Checked   string         `json:"checked,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	Offer     *Update        `json:"offer,omitempty"`
+	Failed    *UpdateFailure `json:"failed,omitempty"`
+}
+
+// UpdateFailure tells why an update failed. Available is the release of that update.
+type UpdateFailure struct {
+	Available string `json:"available"`
+	Error     string `json:"error"`
 }
 
 // Update offers a newer bbflow release to the server. Revision identifies the offer.
 // It changes when a check finds another release or another action. Version is the
 // version of the running server. Available is the newer release. Installed reports that
 // the executable already has that release, so the update only restarts the server.
-// State is "available", "updating", or "failed". Error tells why the last update failed.
+// State is "available" or "updating". Release.Failed tells why an update failed.
 type Update struct {
 	Revision  int64  `json:"revision"`
 	Version   string `json:"version"`
 	Available string `json:"available"`
 	Installed bool   `json:"installed,omitempty"`
 	State     string `json:"state"`
-	Error     string `json:"error,omitempty"`
 }
 
 type ServerInfo struct {

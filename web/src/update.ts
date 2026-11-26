@@ -37,7 +37,7 @@ export function releaseText(release: Release | undefined, now: Date, locale?: st
   else if (!release.error) status = 'This is the newest version.';
   if (status && checked && !release.checking && !release.error && offer?.state !== 'updating') status += ` Last checked ${checked}.`;
   const problems: string[] = [];
-  if (offer?.state === 'failed') problems.push(`The update to ${offer.available} failed: ${offer.error || 'unknown error'}`);
+  if (release.failed) problems.push(`The update to ${release.failed.available} failed: ${release.failed.error || 'unknown error'}`);
   if (release.error && !release.checking) problems.push(`The check at ${checked} failed: ${release.error}`);
   const action = !offer || offer.state === 'updating' ? '' : offer.installed ? 'Restart…' : 'Update…';
   return { version, status, problem: problems.join(' '), action };
@@ -189,14 +189,15 @@ export class UpdatePanel {
     this.button.disabled = this.busy;
     this.releaseNotes.hidden = !offer;
     if (offer) this.releaseNotes.href = updateDialog(offer).notes;
-    // The dot shows an offer that the user can start. The page bar shows an update in
-    // progress.
-    this.dot = !!offer && offer.state !== 'updating';
+    // The dot shows an offer that the user can start, or a failed update. The page bar
+    // shows an update in progress.
+    const failed = release?.failed;
+    this.dot = offer?.state !== 'updating' && (!!offer || !!failed);
     this.settings.classList.toggle('has-update', this.dot);
-    this.settings.classList.toggle('failed', offer?.state === 'failed');
-    if (this.dot && offer) {
-      const label = offer.state === 'failed' ? `The update to ${offer.available} failed` : offer.installed ? `Restart to use ${offer.available}` : `Update available: ${offer.available}`;
-      this.settings.title = `${label}. bbflow ${offer.version} runs now.`;
+    this.settings.classList.toggle('failed', this.dot && !!failed);
+    if (this.dot && release) {
+      const label = failed ? `The update to ${failed.available} failed` : offer?.installed ? `Restart to use ${offer.available}` : `Update available: ${offer?.available}`;
+      this.settings.title = `${label}. bbflow ${release.version} runs now.`;
       this.settings.setAttribute('aria-label', `Settings, ${label}`);
     } else {
       this.settings.title = '';
@@ -231,7 +232,8 @@ export class UpdatePanel {
     this.sessions.textContent = restartWarning(names, this.live.length);
     this.notes.href = text.notes;
     this.submit.textContent = text.submit;
-    this.error.textContent = this.startError || (update.state === 'failed' ? `The last attempt failed: ${update.error || 'unknown error'}` : '');
+    const failed = this.release?.failed;
+    this.error.textContent = this.startError || (failed?.available === update.available ? `The last attempt failed: ${failed.error || 'unknown error'}` : '');
     this.error.hidden = !this.error.textContent;
   }
 

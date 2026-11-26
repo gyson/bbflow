@@ -47,9 +47,13 @@ type updates struct {
 	checks   int64 // The checks that ended. Views tell two checks apart by it.
 	checked  time.Time
 	failure  string // The reason that the last check failed.
-	// held is the result of a check that ended during an update. It applies when the
-	// update fails, because the server then continues.
-	held *checkResult
+	// updateFailed tells why the last update failed. A new update removes it.
+	updateFailed *protocol.UpdateFailure
+	// held has the results of the checks that ended during an update. They apply in
+	// order when the update fails, because the server then continues. Only the last
+	// successful result and a later failed result can change the state, so held keeps
+	// at most these two.
+	held []checkResult
 	// A settings save, a check request, or a stale offer wakes the check.
 	wake chan struct{}
 }
@@ -81,6 +85,10 @@ func (u *updates) current() protocol.Release {
 	if u.offer != nil {
 		offer := *u.offer
 		release.Offer = &offer
+	}
+	if u.updateFailed != nil {
+		failed := *u.updateFailed
+		release.Failed = &failed
 	}
 	return release
 }
@@ -133,11 +141,21 @@ func (u *updates) ended(offer *protocol.Update, err error, at time.Time) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.checking, u.checks = u.recheck, u.checks+1
-	if u.offer != nil && u.offer.State == "updating" {
-		u.held = &checkResult{offer: offer, err: err, at: at}
+	result := checkResult{offer: offer, err: err, at: at}
+	if u.offer == nil || u.offer.State != "updating" {
+		u.record(result)
 		return
 	}
-	u.record(checkResult{offer: offer, err: err, at: at})
+	// A successful result replaces the earlier results. A failed result replaces only
+	// a failed result after the last successful one.
+	switch last := len(u.held) - 1; {
+	case err == nil:
+		u.held = []checkResult{result}
+	case last >= 0 && u.held[last].err != nil:
+		u.held[last] = result
+	default:
+		u.held = append(u.held, result)
+	}
 }
 
 // record applies the result of a check. A failed check keeps the offer of the last
@@ -159,14 +177,14 @@ func (u *updates) record(result checkResult) {
 			u.offers++
 			offer.Revision = u.offers
 		}
-		offer.State, offer.Error = "available", ""
+		offer.State = "available"
 	}
 	u.offer = offer
 }
 
 // start marks the offer with this version and revision as in progress and returns a
-// copy of it. Only one update runs at a time. A view cannot start an earlier offer that
-// it confirmed before a new check.
+// copy of it. It removes the reason of an earlier failed update. Only one update runs at
+// a time. A view cannot start an earlier offer that it confirmed before a new check.
 func (u *updates) start(version string, revision int64) (protocol.Update, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -178,22 +196,24 @@ func (u *updates) start(version string, revision int64) (protocol.Update, error)
 	case u.offer.Revision != revision:
 		return protocol.Update{}, fmt.Errorf("the offer for bbflow %s changed after you opened it; open the update again and confirm the new offer", version)
 	}
-	u.offer.State, u.offer.Error = "updating", ""
+	u.offer.State, u.updateFailed = "updating", nil
 	return *u.offer, nil
 }
 
-// failed shows the reason on the offer of version. A check that ended during the
-// update applies first, so the failure shows also when that check found the same
-// release. A stale offer also asks for a new check, which replaces the offer.
+// failed records why the update to version failed. The reason stays with that version,
+// also when a check changes the offer. The offer is available again, and the checks
+// that ended during the update apply. A stale offer also asks for a new check, which
+// replaces the offer.
 func (u *updates) failed(version string, err error) {
 	u.mu.Lock()
-	if u.held != nil {
-		u.record(*u.held)
-		u.held = nil
-	}
 	if u.offer != nil && u.offer.Available == version {
-		u.offer.State, u.offer.Error = "failed", err.Error()
+		u.offer.State = "available"
 	}
+	for _, result := range u.held {
+		u.record(result)
+	}
+	u.held = nil
+	u.updateFailed = &protocol.UpdateFailure{Available: version, Error: err.Error()}
 	stale := errors.Is(err, ErrStaleOffer)
 	if stale {
 		u.recheck, u.checking = true, true

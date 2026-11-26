@@ -188,25 +188,29 @@ func TestServerOffersAndStartsUpdates(t *testing.T) {
 	if err := u.start("0.0.2", 1); err != nil {
 		t.Fatal(err)
 	}
-	if failed := u.next("failed download", func(o *protocol.Update) bool { return o != nil && o.State == "failed" }); failed.Error != "download failed" {
-		t.Fatalf("failed download: %+v", failed)
+	failed := u.state("failed download", func(r protocol.Release) bool { return r.Failed != nil })
+	if *failed.Failed != (protocol.UpdateFailure{Available: "0.0.2", Error: "download failed"}) || failed.Offer == nil || failed.Offer.State != "available" {
+		t.Fatalf("failed download: %+v %+v", failed.Failed, failed.Offer)
 	}
 	// The second attempt starts the updater. It shows as in progress until the updater
-	// ends while this server still runs.
+	// ends while this server still runs. The start removes the earlier failure.
 	ended := make(chan error, 1)
 	releases.set(nil, ended)
 	if err := u.start("0.0.2", 1); err != nil {
 		t.Fatal(err)
 	}
-	u.next("update in progress", func(o *protocol.Update) bool { return o != nil && o.State == "updating" })
+	if progress := u.state("update in progress", func(r protocol.Release) bool { return r.Offer != nil && r.Offer.State == "updating" }); progress.Failed != nil {
+		t.Fatalf("an update in progress shows an earlier failure: %+v", progress.Failed)
+	}
 	if err := u.start("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "already in progress") {
 		t.Fatal("started a second update:", err)
 	}
 	// The off setting controls only the daily check. The offer stays.
 	u.setCheck(false)
 	ended <- errors.New("the restart failed")
-	if failed := u.next("failed restart", func(o *protocol.Update) bool { return o == nil || o.State == "failed" }); failed == nil || failed.Error != "the restart failed" {
-		t.Fatalf("offer after a failed restart: %+v", failed)
+	failed = u.state("failed restart", func(r protocol.Release) bool { return r.Failed != nil })
+	if failed.Failed.Error != "the restart failed" || failed.Offer == nil || failed.Offer.State != "available" {
+		t.Fatalf("state after a failed restart: %+v %+v", failed.Failed, failed.Offer)
 	}
 	// The server checks only once a day.
 	if releases.count() != 1 {
@@ -273,24 +277,34 @@ func TestEachCheckChangesTheStatus(t *testing.T) {
 	}
 }
 
-// A check that ends during an update applies when the update fails, because the server
+// The checks that end during an update apply when the update fails, because the server
 // then continues. Until then, the views show the update in progress and the earlier
-// check time.
-func TestCheckDuringUpdateAppliesAfterFailure(t *testing.T) {
-	before, after := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC), time.Date(2026, 11, 25, 11, 0, 0, 0, time.UTC)
+// check. The failure stays with the release of the update, also when a check changes
+// the offer. A failed check keeps the offer of a successful check before it.
+func TestChecksDuringUpdateApplyAfterFailure(t *testing.T) {
+	at := func(hour int) time.Time { return time.Date(2026, 11, 25, hour, 0, 0, 0, time.UTC) }
 	newer := protocol.Update{Version: "0.0.1", Available: "0.0.3"}
+	down := errors.New("GitHub is down")
+	failure := &protocol.UpdateFailure{Available: "0.0.2", Error: "download failed"}
+	first := &protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", State: "available"}
+	second := &protocol.Update{Revision: 2, Version: "0.0.1", Available: "0.0.3", State: "available"}
 	for _, tc := range []struct {
-		name  string
-		later *protocol.Update
-		err   error
-		want  protocol.Release
+		name   string
+		during []checkResult
+		want   protocol.Release
 	}{
-		{"same release", &offer002, nil, protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z",
-			Offer: &protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", State: "failed", Error: "download failed"}}},
-		{"newer release", &newer, nil, protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z",
-			Offer: &protocol.Update{Revision: 2, Version: "0.0.1", Available: "0.0.3", State: "available"}}},
-		{"failed check", nil, errors.New("GitHub is down"), protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z", Error: "GitHub is down",
-			Offer: &protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", State: "failed", Error: "download failed"}}},
+		{"same release", []checkResult{{&offer002, nil, at(11)}},
+			protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z", Offer: first, Failed: failure}},
+		{"newer release", []checkResult{{&newer, nil, at(11)}},
+			protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z", Offer: second, Failed: failure}},
+		{"no newer release", []checkResult{{nil, nil, at(11)}},
+			protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z", Failed: failure}},
+		{"failed check", []checkResult{{nil, down, at(11)}},
+			protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z", Error: "GitHub is down", Offer: first, Failed: failure}},
+		{"newer release, then a failed check", []checkResult{{&newer, nil, at(11)}, {nil, down, at(12)}, {nil, down, at(13)}},
+			protocol.Release{Checks: 4, Checked: "2026-11-25T13:00:00Z", Error: "GitHub is down", Offer: second, Failed: failure}},
+		{"failed check, then a newer release", []checkResult{{nil, down, at(11)}, {&newer, nil, at(12)}},
+			protocol.Release{Checks: 3, Checked: "2026-11-25T12:00:00Z", Offer: second, Failed: failure}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			u := updates{wake: make(chan struct{}, 1)}
@@ -301,17 +315,22 @@ func TestCheckDuringUpdateAppliesAfterFailure(t *testing.T) {
 				copy := *offer
 				return &copy
 			}
-			u.ended(fresh(&offer002), nil, before)
+			u.ended(fresh(&offer002), nil, at(10))
 			if _, err := u.start("0.0.2", 1); err != nil {
 				t.Fatal(err)
 			}
-			u.ended(fresh(tc.later), tc.err, after)
-			if state := u.current(); state.Checked != "2026-11-25T10:00:00Z" || state.Error != "" || state.Offer.State != "updating" {
+			for _, result := range tc.during {
+				u.ended(fresh(result.offer), result.err, result.at)
+			}
+			if state := u.current(); state.Checked != "2026-11-25T10:00:00Z" || state.Error != "" || state.Failed != nil || state.Offer.State != "updating" {
 				t.Fatalf("state during the update: %+v %+v", state, state.Offer)
+			}
+			if len(u.held) > 2 {
+				t.Fatalf("held %d results", len(u.held))
 			}
 			u.failed("0.0.2", errors.New("download failed"))
 			if state := u.current(); !sameRelease(state, tc.want) {
-				t.Fatalf("state after the failure: %+v %+v", state, state.Offer)
+				t.Fatalf("state after the failure: %+v %+v %+v", state, state.Offer, state.Failed)
 			}
 		})
 	}
