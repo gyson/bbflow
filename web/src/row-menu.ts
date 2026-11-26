@@ -101,9 +101,13 @@ export class RowMenus {
         button.focus();
       }
     });
-    // A focus loss without a new target means that the window lost the focus.
+    // A focus loss without a new target means that the window lost the focus. WebKit does
+    // not focus a pressed button. It moves the focus to the nearest focusable ancestor,
+    // such as the sidebar. A new target that holds the box is thus a press on an item, and
+    // the menu stays open until the click.
     box.addEventListener('focusout', event => {
-      if (this.current?.box === box && event.relatedTarget instanceof Node && !box.contains(event.relatedTarget)) this.close();
+      const next = event.relatedTarget;
+      if (this.current?.box === box && next instanceof Node && !box.contains(next) && !next.contains(box)) this.close();
     });
     box.append(button, menu);
     return { box, button, items };
