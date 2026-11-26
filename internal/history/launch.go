@@ -45,11 +45,22 @@ type Tool struct {
 
 // Prompt is a saved prompt. The ＋ menu of the message editor puts its text at the cursor
 // of the draft. It never sends the text. The prompts are global: every session shows the
-// same list, in the saved order. The client gives each new prompt its ID.
+// same list, in the saved order. The client gives each new prompt its ID. Group is the
+// ID of its PromptGroup, or empty for a prompt at the top level of the menu.
 type Prompt struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Text  string `json:"text"`
+	Group string `json:"group"`
+}
+
+// PromptGroup is a named group of saved prompts. The ＋ menu shows the prompts without a
+// group first, then one item for each group that has prompts, in the saved order of the
+// groups. The client gives each new group its ID, so a rename keeps the prompts of the
+// group.
+type PromptGroup struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	Text string `json:"text"`
 }
 
 type Settings struct {
@@ -89,8 +100,11 @@ type Settings struct {
 	RemoteOn    bool   `json:"remoteOn"`
 	RemoteHost  string `json:"remoteHost"`
 	RemoteLogin string `json:"remoteLogin"`
-	// Prompts are the saved prompts, in the order of the ＋ menu.
+	// Prompts are the saved prompts. Inside the top level and inside each group, the
+	// prompts have the order of this list.
 	Prompts []Prompt `json:"prompts"`
+	// PromptGroups are the groups of the prompts, in the order of the ＋ menu.
+	PromptGroups []PromptGroup `json:"promptGroups"`
 }
 
 // RemoteAccess tells if the settings admit remote requests. The switch must be on, and
@@ -102,17 +116,45 @@ const maxCustomTools = 100
 
 // maxPrompts is the most saved prompts. maxPromptText is the byte limit of the text of
 // one prompt. The message limit of the editor is 64 KiB, so a prompt leaves room for
-// other text in the same message.
+// other text in the same message. maxPromptGroups is the most groups of prompts.
 const (
-	maxPrompts    = 100
-	maxPromptText = 16 << 10
+	maxPrompts      = 100
+	maxPromptText   = 16 << 10
+	maxPromptGroups = 50
 )
 
+// validPromptGroups checks the groups of the prompts and returns them with trimmed
+// names. Names are unique without regard to case, as the names of prompts are.
+func validPromptGroups(groups []PromptGroup) ([]PromptGroup, error) {
+	if len(groups) > maxPromptGroups {
+		return nil, fmt.Errorf("at most %d prompt groups are supported", maxPromptGroups)
+	}
+	result := make([]PromptGroup, 0, len(groups))
+	ids, names := map[string]bool{}, map[string]bool{}
+	for _, group := range groups {
+		if group.ID == "" || len(group.ID) > 100 || ids[group.ID] {
+			return nil, errors.New("prompt groups need unique IDs")
+		}
+		ids[group.ID] = true
+		name, err := validName(group.Name)
+		if err != nil {
+			return nil, err
+		}
+		if names[strings.ToLower(name)] {
+			return nil, fmt.Errorf("another prompt group has the name %q; enter a different name", name)
+		}
+		names[strings.ToLower(name)] = true
+		result = append(result, PromptGroup{ID: group.ID, Name: name})
+	}
+	return result, nil
+}
+
 // validPrompts checks the saved prompts and returns them with trimmed names. Names are
-// unique without regard to case, so that the menu items differ. The text keeps its
-// spaces and lines. It can have tabs and newlines, but no other control characters,
-// because the editor rejects them at Send.
-func validPrompts(prompts []Prompt) ([]Prompt, error) {
+// unique without regard to case in all groups, so that the items of a filtered menu
+// differ. The text keeps its spaces and lines. It can have tabs and newlines, but no
+// other control characters, because the editor rejects them at Send. The group of each
+// prompt must be one of groups, or empty.
+func validPrompts(prompts []Prompt, groups []PromptGroup) ([]Prompt, error) {
 	if len(prompts) > maxPrompts {
 		return nil, fmt.Errorf("at most %d prompts are supported", maxPrompts)
 	}
@@ -139,7 +181,10 @@ func validPrompts(prompts []Prompt) ([]Prompt, error) {
 		case !utf8.ValidString(prompt.Text) || strings.ContainsFunc(prompt.Text, func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\t' }):
 			return nil, fmt.Errorf("the text of the prompt %q has control characters; only tabs and new lines are allowed", name)
 		}
-		result = append(result, Prompt{ID: prompt.ID, Name: name, Text: prompt.Text})
+		if prompt.Group != "" && !slices.ContainsFunc(groups, func(group PromptGroup) bool { return group.ID == prompt.Group }) {
+			return nil, fmt.Errorf("the group of the prompt %q does not exist", name)
+		}
+		result = append(result, Prompt{ID: prompt.ID, Name: name, Text: prompt.Text, Group: prompt.Group})
 	}
 	return result, nil
 }
@@ -370,7 +415,10 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 	if settings.Tools == nil {
 		settings.Tools = []Tool{}
 	}
-	if settings.Prompts, err = validPrompts(settings.Prompts); err != nil {
+	if settings.PromptGroups, err = validPromptGroups(settings.PromptGroups); err != nil {
+		return settings, err
+	}
+	if settings.Prompts, err = validPrompts(settings.Prompts, settings.PromptGroups); err != nil {
 		return settings, err
 	}
 	settings.TitleTool, settings.TitleCommand, settings.CheckTools = saved.TitleTool, saved.TitleCommand, saved.CheckTools

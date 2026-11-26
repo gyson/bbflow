@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fallbackTool, toolSwitch, defaultLabels, duplicateName, duplicateNameError, duplicatePromptError, failedTitleChange, maxPrompts, mergeToolEdit, parsePort, FieldEdit, portStatus, portText, promptEdit, promptMove, promptProblem, promptRemoval, RemoteChanged, remoteStatus, remoteValue, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
+import { fallbackTool, toolSwitch, defaultLabels, duplicateGroupError, duplicateName, duplicateNameError, duplicatePromptError, groupEdit, groupMove, groupProblem, groupRemoval, maxPromptGroups, failedTitleChange, maxPrompts, mergeToolEdit, parsePort, FieldEdit, portStatus, portText, promptEdit, promptMove, promptProblem, promptRemoval, RemoteChanged, remoteStatus, remoteValue, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
 
 const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', permission: '', path: '', builtin: false, enabled: true };
 const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', permission: '', path: '', builtin: false, enabled: true };
@@ -591,33 +591,35 @@ test('turning off the default tool or Shell selects Shell or the first other too
   assert.equal(fallbackTool(last, 'a'), null);
 });
 
-const review = { id: 'p1', name: 'Review PR', text: 'Review PR #' };
-const checks = { id: 'p2', name: 'Run checks', text: 'Run make test.' };
-const prompted = { ...settings, prompts: [review, checks] };
+const review = { id: 'p1', name: 'Review PR', text: 'Review PR #', group: '' };
+const checks = { id: 'p2', name: 'Run checks', text: 'Run make test.', group: '' };
+const prompted = { ...settings, prompts: [review, checks], promptGroups: [] };
 
 test('a prompt change needs a save, and the order counts', () => {
   assert.ok(sameSettings(prompted, structuredClone(prompted)));
   assert.ok(!sameSettings(prompted, { ...prompted, prompts: [checks, review] }));
   assert.ok(!sameSettings(prompted, { ...prompted, prompts: [review, { ...checks, text: 'Run make check.' }] }));
   assert.ok(!sameSettings(prompted, { ...prompted, prompts: [review] }));
+  assert.ok(!sameSettings(prompted, { ...prompted, prompts: [review, { ...checks, group: 'g' }], promptGroups: [{ id: 'g', name: 'Tests' }] }));
+  assert.ok(!sameSettings(prompted, { ...prompted, promptGroups: [{ id: 'g', name: 'Tests' }] }));
 });
 
 test('a prompt edit applies only its changed fields to the latest prompt', () => {
   // Another view renamed the prompt. This edit changed only the text.
   const latest = { ...prompted, prompts: [{ ...review, name: 'Review' }, checks] };
   const edited = promptEdit({ ...review, text: 'Review pull request #' }, review)(latest);
-  assert.deepEqual(edited.prompts, [{ id: 'p1', name: 'Review', text: 'Review pull request #' }, checks]);
+  assert.deepEqual(edited.prompts, [{ id: 'p1', name: 'Review', text: 'Review pull request #', group: '' }, checks]);
   // A new prompt goes at the end. A retry of the same add after a lost reply changes
   // nothing, so the save ends at once.
-  const added = promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize.' })(prompted);
+  const added = promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize.', group: '' })(prompted);
   assert.deepEqual(added.prompts.map(prompt => prompt.id), ['p1', 'p2', 'p3']);
-  assert.ok(sameSettings(promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize.' })(added), added));
+  assert.ok(sameSettings(promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize.', group: '' })(added), added));
   // A retry with a changed entry saves the change, in the place of the earlier attempt.
-  const retried = promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize the branch.' })(added);
-  assert.deepEqual(retried.prompts, [review, checks, { id: 'p3', name: 'Summary', text: 'Summarize the branch.' }]);
+  const retried = promptEdit({ id: 'p3', name: 'Summary', text: 'Summarize the branch.', group: '' })(added);
+  assert.deepEqual(retried.prompts, [review, checks, { id: 'p3', name: 'Summary', text: 'Summarize the branch.', group: '' }]);
   assert.ok(!sameSettings(retried, added));
   // A name that another view saved first stops the save. The case does not count.
-  assert.throws(() => promptEdit({ id: 'p3', name: 'run CHECKS', text: 'x' })(prompted), { message: duplicatePromptError });
+  assert.throws(() => promptEdit({ id: 'p3', name: 'run CHECKS', text: 'x', group: '' })(prompted), { message: duplicatePromptError });
   assert.throws(() => promptEdit({ ...checks, name: 'Review PR' }, checks)(prompted), { message: duplicatePromptError });
   // An edit of a prompt that another view removed stops too.
   assert.throws(() => promptEdit({ ...checks, text: 'x' }, checks)({ ...prompted, prompts: [review] }), /removed in another view/);
@@ -628,8 +630,84 @@ test('a prompt moves within the list and a removal keeps the order of the others
   assert.equal(promptMove('p1', -1)(prompted), prompted, 'the first prompt does not move up');
   assert.equal(promptMove('p2', 1)(prompted), prompted, 'the last prompt does not move down');
   assert.throws(() => promptMove('gone', 1)(prompted), /removed in another view/);
-  const third = { id: 'p3', name: 'Summary', text: 'Summarize.' };
+  const third = { id: 'p3', name: 'Summary', text: 'Summarize.', group: '' };
   assert.deepEqual(promptRemoval('p2')({ ...prompted, prompts: [review, checks, third] }).prompts, [review, third]);
+});
+
+// Settings with two groups. The list mixes the prompts of the groups, as edits leave it.
+const git = { id: 'g', name: 'Git' };
+const tests = { id: 't', name: 'Tests' };
+const commit = { id: 'c', name: 'Commit', text: 'Commit.', group: 'g' };
+const race = { id: 'r', name: 'Race', text: 'Run the race detector.', group: 't' };
+const rebase = { id: 'b', name: 'Rebase', text: 'Rebase on main.', group: 'g' };
+const grouped = { ...settings, prompts: [review, commit, race, checks, rebase], promptGroups: [git, tests] };
+const ids = settings => settings.prompts.map(prompt => `${prompt.id}${prompt.group ? `@${prompt.group}` : ''}`);
+
+test('a prompt moves only inside its group, and the other groups keep their order', () => {
+  assert.deepEqual(ids(promptMove('c', 1)(grouped)), ['p1', 'b@g', 'r@t', 'p2', 'c@g']);
+  assert.deepEqual(ids(promptMove('p2', -1)(grouped)), ['p2', 'c@g', 'r@t', 'p1', 'b@g']);
+  assert.equal(promptMove('b', 1)(grouped), grouped, 'the last prompt of a group does not move down');
+  assert.equal(promptMove('r', -1)(grouped), grouped, 'the only prompt of a group does not move');
+});
+
+test('a prompt that gets another group goes to the end of that group, and the editor can add the group', () => {
+  // The edit changed only the group. A rename from another view stays.
+  const latest = { ...grouped, prompts: grouped.prompts.map(prompt => prompt.id === 'p1' ? { ...prompt, name: 'Review' } : prompt) };
+  const moved = promptEdit({ ...review, group: 't' }, review)(latest);
+  assert.deepEqual(ids(moved), ['c@g', 'r@t', 'p2', 'b@g', 'p1@t']);
+  assert.equal(moved.prompts.at(-1).name, 'Review');
+  // An edit that keeps the group keeps the place.
+  assert.deepEqual(ids(promptEdit({ ...commit, text: 'Commit the work.' }, commit)(grouped)), ids(grouped));
+  // A new prompt with a new group adds the group at the end. A retry after a lost reply
+  // finds the group and adds it once.
+  const docs = { id: 'd', name: 'Docs' };
+  const added = promptEdit({ id: 'n', name: 'Update SPEC', text: 'Update SPEC.md.', group: 'd' }, undefined, docs)(grouped);
+  assert.deepEqual(added.promptGroups, [git, tests, docs]);
+  assert.deepEqual(ids(added).at(-1), 'n@d');
+  assert.deepEqual(promptEdit({ id: 'n', name: 'Update SPEC', text: 'Update SPEC.md.', group: 'd' }, undefined, docs)(added).promptGroups, [git, tests, docs]);
+  // A group name that another view saved first stops the save, and so does a group that
+  // another view removed.
+  assert.throws(() => promptEdit({ id: 'n', name: 'New', text: 'x', group: 'x' }, undefined, { id: 'x', name: 'tests' })(grouped), { message: duplicateGroupError });
+  assert.throws(() => promptEdit({ ...review, group: 't' }, review)({ ...grouped, promptGroups: [git] }), /group was removed in another view/);
+});
+
+test('a group can be added, renamed, and moved, and its prompts keep their group', () => {
+  const renamed = groupEdit({ id: 'g', name: 'Git and PRs' }, git)(grouped);
+  assert.deepEqual(renamed.promptGroups, [{ id: 'g', name: 'Git and PRs' }, tests]);
+  assert.equal(renamed.prompts, grouped.prompts);
+  assert.deepEqual(groupEdit({ id: 'd', name: 'Docs' })(grouped).promptGroups.map(group => group.id), ['g', 't', 'd']);
+  assert.throws(() => groupEdit({ id: 'd', name: 'GIT' })(grouped), { message: duplicateGroupError });
+  assert.throws(() => groupEdit({ id: 'g', name: 'Git' }, git)({ ...grouped, promptGroups: [tests] }), /removed in another view/);
+  assert.deepEqual(groupMove('t', -1)(grouped).promptGroups, [tests, git]);
+  assert.equal(groupMove('g', -1)(grouped), grouped);
+});
+
+test('a group removal keeps its prompts by default, and removes only the prompts that the user confirmed', () => {
+  // The prompts go to the end of the top level or of another group, in their order.
+  assert.deepEqual(ids(groupRemoval('g', '')(grouped)), ['p1', 'r@t', 'p2', 'c', 'b']);
+  const merged = groupRemoval('g', 't')(grouped);
+  assert.deepEqual(ids(merged), ['p1', 'r@t', 'p2', 'c@t', 'b@t']);
+  assert.deepEqual(merged.promptGroups, [tests]);
+  // Another view added a prompt to the group after the confirmation. It stays, at the
+  // top level.
+  const later = { ...grouped, prompts: [...grouped.prompts, { id: 'l', name: 'Later', text: 'Later.', group: 'g' }] };
+  assert.deepEqual(ids(groupRemoval('g', '', ['c', 'b'])(later)), ['p1', 'r@t', 'p2', 'l']);
+  // A second attempt after a lost reply changes nothing. A destination that another view
+  // removed stops the removal.
+  const removed = groupRemoval('g', '')(grouped);
+  assert.equal(groupRemoval('g', '')(removed), removed);
+  assert.throws(() => groupRemoval('g', 't')({ ...grouped, promptGroups: [git] }), /removed in another view/);
+});
+
+test('the group editor names the problem of a group name', () => {
+  assert.equal(groupProblem(grouped.promptGroups, 'Docs', 'd'), null);
+  assert.equal(groupProblem(grouped.promptGroups, '', 'd'), 'Enter a name.');
+  assert.equal(groupProblem(grouped.promptGroups, 'tests', 'd'), duplicateGroupError);
+  assert.equal(groupProblem(grouped.promptGroups, 'Tests', 't'), null, 'a rename can keep the name');
+  assert.equal(groupProblem(grouped.promptGroups, 'A\tB', 'd'), 'Remove the control characters from the name, such as a tab.');
+  const full = Array.from({ length: maxPromptGroups }, (_, index) => ({ id: `g${index}`, name: `Group ${index}` }));
+  assert.match(groupProblem(full, 'Docs', 'd'), /at most 50 groups/);
+  assert.equal(groupProblem(full, 'Group 0', 'g0'), null);
 });
 
 test('the prompt editor names the field of the first problem', () => {
@@ -651,23 +729,27 @@ test('the prompt editor names the field of the first problem', () => {
   assert.equal(problem('Next\u0085line', 'text').field, 'name');
   assert.equal(problem('🚀'.repeat(200), 'text'), null);
   assert.deepEqual(problem('🚀'.repeat(201), 'text'), { field: 'name', message: 'Use a name of at most 200 characters.' });
-  const full = Array.from({ length: maxPrompts }, (_, index) => ({ id: `p${index}`, name: `Prompt ${index}`, text: 'x' }));
+  const full = Array.from({ length: maxPrompts }, (_, index) => ({ id: `p${index}`, name: `Prompt ${index}`, text: 'x', group: '' }));
   assert.match(problem('Summary', 'text', 'new', full).message, /at most 100 prompts/);
   assert.equal(problem('Prompt 0', 'edit', 'p0', full), null, 'an edit saves when the list is full');
 });
 
-test('the Settings page has a prompt table, one editor dialog, and asks before a removal', () => {
+test('the Settings page has prompt blocks, one editor dialog, a group dialog, and asks before a removal', () => {
   const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
-  assert.match(html, /<tbody id="settings-prompt-rows">/);
-  assert.match(html, /<button id="prompt-add" type="button" class="tool-add">＋ Add prompt<\/button>/);
+  assert.match(html, /<div id="settings-prompt-groups" class="prompt-groups"><\/div>/);
+  assert.match(html, /<button id="prompt-group-add" type="button" class="tool-add">＋ Add group<\/button>/);
+  assert.match(html, /<select id="prompt-group"><\/select>/);
+  assert.match(html, /<dialog id="prompt-group-dialog"/);
+  // The removal of a group selects Keep first.
+  assert.match(html, /<input id="prompt-group-keep" type="radio" name="prompt-group-fate" value="keep" checked>/);
   assert.match(html, /<dialog id="prompt-editor-dialog" class="tool-editor-dialog" aria-labelledby="prompt-editor-title">\s*<form id="prompt-editor" class="tool-editor" novalidate>/);
   assert.match(html, /<dialog id="prompt-remove-dialog"/);
   // The server counts code points, so the name field has no maxlength in code units.
   assert.match(html, /<input id="prompt-name" placeholder="Review PR" autocomplete="off">/);
-  // The ＋ menu of the message editor has the file item, the handoff prompt, the saved
-  // prompts, and Manage prompts, in this order.
+  // The ＋ menu of the message editor has the filter, the file item, the handoff prompt,
+  // the saved prompts, Manage prompts, and the flyout of a group, in this order.
   const menu = html.slice(html.indexOf('<div id="composer-menu"'), html.indexOf('<input id="composer-picker"'));
-  const order = ['id="composer-attach"', 'id="handoff-open"', 'id="composer-prompts"', 'id="composer-prompts-note"', 'id="composer-prompts-manage"'].map(id => menu.indexOf(id));
+  const order = ['id="composer-prompt-filter"', 'id="composer-attach"', 'id="handoff-open"', 'id="composer-prompts"', 'id="composer-prompts-note"', 'id="composer-prompts-manage"', 'id="composer-flyout"'].map(id => menu.indexOf(id));
   assert.ok(order.every((index, i) => index >= 0 && (i === 0 || index > order[i - 1])), order.join());
   assert.doesNotMatch(html, /＋ Attach files|Put in message editor/);
 });

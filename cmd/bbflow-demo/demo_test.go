@@ -196,7 +196,12 @@ func TestDemo(t *testing.T) {
 	expect("SELECT group_concat(value->>'name', ',') FROM settings, json_each(data, '$.tools') WHERE value->>'enabled'",
 		"[[Codex,Claude Code,Demo agent,Detail agent,Busy agent]]")
 	expect("SELECT group_concat(value->>'name', ',') FROM settings, json_each(data, '$.prompts')",
-		"[[Review PR,Run all checks,Summarize the branch]]")
+		"[[Summarize the branch,Review PR,Review for security,Run all checks,Run the race detector,Update SPEC.md]]")
+	// Each prompt names its group by ID. The first prompt is at the top level.
+	expect(`SELECT group_concat(coalesce(g.value->>'name', '-'), ',') FROM settings, json_each(data, '$.prompts') AS p
+		LEFT JOIN json_each(data, '$.promptGroups') AS g ON g.value->>'id'=p.value->>'group'`,
+		"[[-,Reviews,Reviews,Checks,Checks,Docs]]")
+	expect("SELECT group_concat(value->>'name', ',') FROM settings, json_each(data, '$.promptGroups')", "[[Reviews,Checks,Docs]]")
 	// The seed calls no model, so it selects no title tool.
 	expect("SELECT data->>'$.titleTool' FROM settings", "[[none]]")
 	expect(`SELECT count(*) FROM events AS input

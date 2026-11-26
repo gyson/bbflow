@@ -166,6 +166,68 @@ func TestPromptSettings(t *testing.T) {
 	}
 }
 
+// Prompt groups keep their order and their IDs. A save trims the names. A prompt names
+// its group by ID, so a group rename keeps its prompts. A save rejects a group that a
+// menu cannot show unambiguously, and a prompt in a group that does not exist.
+func TestPromptGroupSettings(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings, err := store.Settings()
+	if err != nil || settings.PromptGroups == nil || len(settings.PromptGroups) != 0 {
+		t.Fatal("a new database has prompt groups", settings.PromptGroups, err)
+	}
+	settings.PromptGroups = []PromptGroup{{ID: "t", Name: " Tests "}, {ID: "g", Name: "Git"}}
+	settings.Prompts = []Prompt{{ID: "a", Name: "Continue", Text: "Continue."}, {ID: "b", Name: "Commit", Text: "Commit.", Group: "g"}, {ID: "c", Name: "Run checks", Text: "Run make check.", Group: "t"}}
+	if settings, err = store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	wantGroups := []PromptGroup{{ID: "t", Name: "Tests"}, {ID: "g", Name: "Git"}}
+	if saved, err := store.Settings(); err != nil || !slices.Equal(saved.PromptGroups, wantGroups) || !slices.Equal(saved.Prompts, settings.Prompts) || saved.Prompts[1].Group != "g" {
+		t.Fatal("the prompt groups changed", saved.PromptGroups, saved.Prompts, err)
+	}
+	// A rename changes only the group. Its prompts keep the group ID.
+	settings.PromptGroups[1].Name = "Git and PRs"
+	if saved, err := store.SaveSettings(settings); err != nil || saved.PromptGroups[1] != (PromptGroup{ID: "g", Name: "Git and PRs"}) || saved.Prompts[1].Group != "g" {
+		t.Fatal("a rename lost the prompts of the group", saved, err)
+	} else {
+		settings = saved
+	}
+	many := make([]PromptGroup, maxPromptGroups+1)
+	for i := range many {
+		many[i] = PromptGroup{ID: strings.Repeat("x", i+1), Name: "Group " + strings.Repeat("x", i+1)}
+	}
+	for _, test := range []struct {
+		groups  []PromptGroup
+		prompts []Prompt
+		message string
+	}{
+		{many, nil, "at most 50 prompt groups"},
+		{[]PromptGroup{{ID: "", Name: "No ID"}}, nil, "unique IDs"},
+		{[]PromptGroup{{ID: strings.Repeat("x", 101), Name: "Long ID"}}, nil, "unique IDs"},
+		{[]PromptGroup{{ID: "a", Name: "One"}, {ID: "a", Name: "Two"}}, nil, "unique IDs"},
+		{[]PromptGroup{{ID: "a", Name: " "}}, nil, "use a name"},
+		{[]PromptGroup{{ID: "a", Name: "Tab\tname"}}, nil, "use a name"},
+		{[]PromptGroup{{ID: "a", Name: "Tests"}, {ID: "b", Name: "tests "}}, nil, "another prompt group has the name"},
+		{nil, []Prompt{{ID: "a", Name: "Lost", Text: "text", Group: "gone"}}, "the group of the prompt \"Lost\" does not exist"},
+		{[]PromptGroup{{ID: "a", Name: "A"}}, []Prompt{{ID: "p", Name: "Review", Text: "text", Group: "a"}, {ID: "q", Name: "review", Text: "text"}}, "another prompt has the name"},
+	} {
+		next := settings
+		next.PromptGroups, next.Prompts = test.groups, test.prompts
+		if _, err := store.SaveSettings(next); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Fatalf("accepted invalid prompt groups %.80v: %v", test.groups, err)
+		}
+	}
+	// The limit itself saves, and a group can be empty.
+	settings.PromptGroups = slices.Clone(many[:maxPromptGroups])
+	settings.Prompts = []Prompt{{ID: "a", Name: "One", Text: "text", Group: many[0].ID}}
+	if saved, err := store.SaveSettings(settings); err != nil || len(saved.PromptGroups) != maxPromptGroups {
+		t.Fatal("rejected prompt groups at the limit", err)
+	}
+}
+
 func TestRemoteAccessSettings(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
 	if err != nil {

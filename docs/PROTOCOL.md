@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/48`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/49`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/48",
+    "protocol": "bbflow/49",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/48",
+    "protocol": "bbflow/49",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -779,11 +779,18 @@ current revision.
   without spaces. A save with another value fails. A save that changes remoteOn or
   either value closes the open connections of remote requests before its reply. Only
   the connection of the save stays open for its reply. See [Remote host](#remote-host).
-- prompts is the list of [saved prompts](SPEC.md#saved-prompts), in the order of the ＋
-  menu of the message editor. Each prompt has `id`, `name`, and `text`. The client
-  gives a new prompt its ID. A save replaces the whole list, and a save without the
-  field removes all prompts. The server removes the spaces around each name. It rejects
-  a list that breaks the [limits](SPEC.md#limits-of-saved-prompts) and saves nothing.
+- prompts is the list of [saved prompts](SPEC.md#saved-prompts). Each prompt has `id`,
+  `name`, `text`, and `group`. `group` is the ID of a group of promptGroups, or empty
+  for the top level of the ＋ menu of the message editor. Inside the top level and
+  inside each group, the prompts have the order of this list. The client gives a new
+  prompt its ID. A save replaces the whole list, and a save without the field removes
+  all prompts.
+- promptGroups is the list of the groups of the prompts, in the order of the ＋ menu.
+  Each group has `id` and `name`. The client gives a new group its ID. A save replaces
+  the whole list, and a save without the field removes all groups. A prompt of a group
+  that is not in the list makes the save fail.
+- The server removes the spaces around the name of each prompt and group. It rejects
+  lists that break the [limits](SPEC.md#limits-of-saved-prompts) and saves nothing.
 - Saving requires the current revision. Removing a default tool requires selecting
   another default in the same save.
 - These operations do not install or authenticate tools.
@@ -1365,13 +1372,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/48") {
+    if (message.server.protocol !== "bbflow/49") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/48", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/49", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1516,6 +1523,10 @@ versions.
   each tool, to the preparation, to the configuration save of `session-config`, and to
   [`session-continue`](#session-continue). No operation is new. SQLite format 22 gives
   each tool and each preparation the empty mode, which adds no option.
+- Protocol 49 adds `promptGroups`, the groups of the
+  [saved prompts](SPEC.md#saved-prompts), to settings, and `group` to each prompt. No
+  operation is new. SQLite format 23 adds an empty group list and puts each prompt at
+  the top level.
 
 ## Source files
 

@@ -76,14 +76,19 @@ const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-
   'title-builtin', 'title-tool-command', 'title-custom', 'title-custom-command', 'title-custom-save', 'title-test',
   'title-test-result', 'title-test-sample', 'title-test-outcome', 'title-test-detail', 'title-model-save', 'title-models',
   'title-model', 'title-model-other', 'title-model-help', 'title-model-refresh', 'title-effort', 'title-effort-help',
-  'settings-prompts', 'settings-prompts-title', 'settings-prompt-rows', 'prompt-add', 'prompt-error', 'prompt-editor-dialog',
-  'prompt-editor', 'prompt-editor-title', 'prompt-name', 'prompt-text', 'prompt-editor-error', 'prompt-submit', 'prompt-cancel',
-  'prompt-close', 'prompt-remove-dialog', 'prompt-remove-form', 'prompt-remove-summary', 'cancel-prompt-remove'];
+  'settings-prompts', 'settings-prompts-title', 'settings-prompt-groups', 'prompt-group-add', 'prompt-error', 'prompt-editor-dialog',
+  'prompt-editor', 'prompt-editor-title', 'prompt-name', 'prompt-group', 'prompt-new-group-field', 'prompt-new-group', 'prompt-text',
+  'prompt-editor-error', 'prompt-submit', 'prompt-cancel', 'prompt-close', 'prompt-remove-dialog', 'prompt-remove-form',
+  'prompt-remove-summary', 'cancel-prompt-remove', 'prompt-group-dialog', 'prompt-group-form', 'prompt-group-title', 'prompt-group-name',
+  'prompt-group-error', 'prompt-group-submit', 'prompt-group-cancel', 'prompt-group-close', 'prompt-group-remove-dialog',
+  'prompt-group-remove-form', 'prompt-group-remove-title', 'prompt-group-remove-choice', 'prompt-group-keep', 'prompt-group-keep-text',
+  'prompt-group-destination', 'prompt-group-drop', 'prompt-group-drop-text', 'prompt-group-drop-names', 'prompt-group-remove-submit',
+  'cancel-prompt-group-remove'];
 const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', permission: '', builtin: false, enabled: true, path: '' };
 const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', permission: '', builtin: false, enabled: true, path: '' };
 const saved = { revision: 4, appearance: 'system', defaultTool: '', worktree: false, base: 'HEAD', tools: [agent, other],
   titleTool: 'none', titleCommand: '', titleModel: '', titleEffort: '', updateCheck: true, port: 0, remoteOn: false, remoteHost: '', remoteLogin: '',
-  prompts: [{ id: 'p1', name: 'Review PR', text: 'Review PR #' }, { id: 'p2', name: 'Run checks', text: 'Run make test.' }] };
+  prompts: [{ id: 'p1', name: 'Review PR', text: 'Review PR #', group: '' }, { id: 'p2', name: 'Run checks', text: 'Run make test.', group: '' }], promptGroups: [] };
 const server = { protocol: 'test', instance: 'test', port: 50000, dataDir: '/fixture' };
 const event = { preventDefault() {} };
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -95,7 +100,7 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
   forgetModelLists();
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
   nodes['tool-editor-error'].hidden = true;
-  for (const id of ['tool-editor-error', 'settings-port-error', 'settings-remote-error', 'settings-remote-host-error', 'settings-remote-login-error', 'settings-error', 'tool-error', 'title-test-result', 'prompt-error', 'prompt-editor-error']) nodes[id].hidden = true;
+  for (const id of ['tool-editor-error', 'settings-port-error', 'settings-remote-error', 'settings-remote-host-error', 'settings-remote-login-error', 'settings-error', 'tool-error', 'title-test-result', 'prompt-error', 'prompt-editor-error', 'prompt-group-error']) nodes[id].hidden = true;
   nodes['settings-view'].hidden = true;
   for (const [id, node] of Object.entries(nodes)) node.id = id;
   for (const name of ['HTMLElement', 'HTMLFormElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLButtonElement', 'HTMLDialogElement', 'HTMLTextAreaElement']) globalThis[name] = Node;
@@ -108,7 +113,7 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
     body,
     activeElement: body,
     documentElement: new Node('html'),
-    getElementById: id => nodes[id] ?? nodes['settings-tools'].find(id) ?? nodes['settings-builtin-tools'].find(id) ?? nodes['settings-prompt-rows'].find(id),
+    getElementById: id => nodes[id] ?? nodes['settings-tools'].find(id) ?? nodes['settings-builtin-tools'].find(id) ?? nodes['settings-prompt-groups'].find(id),
     createElement: tag => new Node(tag),
   };
   const pending = [];
@@ -983,15 +988,21 @@ test('of two refreshes that overlap, the later one reaches every picker', async 
   assert.ok(models('tool-model').includes('model-c'));
 });
 
-// The rows of the Prompts card, as name and text.
-const promptRows = nodes => nodes['settings-prompt-rows'].children.map(row => row.children.slice(0, 2).map(cell => cell.textContent));
+// The rows of the Prompts card, as name and text, in the blocks of the top level and of
+// each group.
+const promptRows = nodes => nodes['settings-prompt-groups'].children.flatMap(block =>
+  block.children.filter(row => row.className.startsWith('prompt-row')).map(row => row.children.slice(0, 2).map(cell => cell.textContent)));
+// The blocks of the Prompts card, as the heading and the names of the prompts.
+const promptBlocks = nodes => nodes['settings-prompt-groups'].children.map(block => [block.children[0].children[0].textContent,
+  ...block.children.filter(row => row.className.startsWith('prompt-row')).map(row => row.children[0].textContent)]);
 
 test('Add prompt saves a new prompt at the end, and an edit saves only the changed field', async () => {
   const { nodes, view, pending, reply, type } = await setup();
   assert.deepEqual(promptRows(nodes), [['Review PR', 'Review PR #'], ['Run checks', 'Run make test.']]);
-  nodes['prompt-add'].onclick();
+  document.getElementById('prompt-add-top-level').onclick();
   assert.ok(nodes['prompt-editor-dialog'].open);
   assert.equal(nodes['prompt-editor-title'].textContent, 'New prompt');
+  assert.equal(nodes['prompt-group'].value, '');
   assert.equal(document.activeElement, nodes['prompt-name']);
   // An empty entry does not save, and a name that differs only in case is taken.
   nodes['prompt-editor'].onsubmit(event);
@@ -1033,7 +1044,7 @@ test('Add prompt saves a new prompt at the end, and an edit saves only the chang
   await tick();
   await reply('settings-get', renamed);
   const edited = await reply('settings-save');
-  assert.deepEqual(edited.settings.prompts[0], { id: 'p1', name: 'Review', text: 'Review pull request #' });
+  assert.deepEqual(edited.settings.prompts[0], { id: 'p1', name: 'Review', text: 'Review pull request #', group: '' });
 });
 
 test('a prompt moves, a removal asks first, and a failure after Done gives a toast', async () => {
@@ -1074,5 +1085,140 @@ test('a prompt moves, a removal asks first, and a failure after Done gives a toa
   nodes['prompt-remove-form'].onsubmit(event);
   await tick();
   await reply('settings-save');
-  assert.deepEqual(promptRows(nodes), [['None']]);
+  assert.deepEqual(promptRows(nodes), []);
+  assert.deepEqual(nodes['settings-prompt-groups'].children[0].children.map(child => child.className), ['prompt-group-head', 'prompt-add-row']);
+});
+
+test('a group gets its own block, and its Add prompt adds a prompt to the end of the group', async () => {
+  const { nodes, reply, type } = await setup();
+  nodes['prompt-group-add'].onclick();
+  assert.ok(nodes['prompt-group-dialog'].open);
+  assert.equal(nodes['prompt-group-title'].textContent, 'New group');
+  nodes['prompt-group-form'].onsubmit(event);
+  assert.equal(nodes['prompt-group-error'].textContent, 'Enter a name.');
+  type('prompt-group-name', ' Tests ');
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: New group');
+  nodes['prompt-group-form'].onsubmit(event);
+  await tick();
+  const added = await reply('settings-save');
+  const group = added.settings.promptGroups[0];
+  assert.equal(group.name, 'Tests');
+  assert.ok(!nodes['prompt-group-dialog'].open);
+  assert.deepEqual(promptBlocks(nodes), [['Top level', 'Review PR', 'Run checks'], ['Tests']]);
+  // An empty block has only its Add prompt.
+  assert.deepEqual(nodes['settings-prompt-groups'].children[1].children.map(child => child.className), ['prompt-group-head', 'prompt-add-row']);
+  // The new group has no prompts, so the focus goes to its Add prompt. Its first and
+  // only group cannot move.
+  assert.equal(document.activeElement.id, `prompt-add-group-${group.id}`);
+  assert.ok(document.getElementById(`prompt-group-move-up-${group.id}`).disabled);
+  assert.ok(document.getElementById(`prompt-group-move-down-${group.id}`).disabled);
+
+  document.activeElement.onclick();
+  assert.equal(nodes['prompt-group'].value, group.id);
+  assert.deepEqual(nodes['prompt-group'].children.map(option => option.text), ['None (top level)', 'Tests', 'New group…']);
+  type('prompt-name', 'Race');
+  type('prompt-text', 'Run go test -race ./...');
+  nodes['prompt-editor'].onsubmit(event);
+  await tick();
+  const prompt = (await reply('settings-save')).settings.prompts[2];
+  assert.deepEqual({ ...prompt, id: '' }, { id: '', name: 'Race', text: 'Run go test -race ./...', group: group.id });
+  assert.deepEqual(promptBlocks(nodes), [['Top level', 'Review PR', 'Run checks'], ['Tests', 'Race']]);
+
+  // An edit moves Run checks to the group, at its end. Its ↑ then moves it above Race.
+  document.getElementById('prompt-edit-p2').onclick();
+  nodes['prompt-group'].value = group.id;
+  nodes['prompt-group'].onchange();
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Edit of Run checks');
+  nodes['prompt-editor'].onsubmit(event);
+  await tick();
+  await reply('settings-save');
+  assert.deepEqual(promptBlocks(nodes), [['Top level', 'Review PR'], ['Tests', 'Race', 'Run checks']]);
+  assert.ok(document.getElementById('prompt-move-up-p1').disabled && document.getElementById('prompt-move-down-p1').disabled);
+  document.getElementById('prompt-move-up-p2').onclick();
+  await tick();
+  await reply('settings-save');
+  assert.deepEqual(promptBlocks(nodes), [['Top level', 'Review PR'], ['Tests', 'Run checks', 'Race']]);
+});
+
+test('the prompt editor can add a group, and a rename keeps the prompts of the group', async () => {
+  const { nodes, reply, type } = await setup();
+  document.getElementById('prompt-edit-p1').onclick();
+  nodes['prompt-group'].value = '\u0000new';
+  nodes['prompt-group'].onchange();
+  assert.ok(!nodes['prompt-new-group-field'].hidden);
+  assert.equal(document.activeElement, nodes['prompt-new-group']);
+  // The new group needs a name.
+  nodes['prompt-editor'].onsubmit(event);
+  assert.equal(nodes['prompt-editor-error'].textContent, 'Enter a name.');
+  assert.equal(document.activeElement, nodes['prompt-new-group']);
+  type('prompt-new-group', 'Reviews');
+  nodes['prompt-editor'].onsubmit(event);
+  await tick();
+  const saved = (await reply('settings-save')).settings;
+  const group = saved.promptGroups[0];
+  assert.equal(group.name, 'Reviews');
+  assert.equal(saved.prompts.find(prompt => prompt.id === 'p1').group, group.id);
+  assert.deepEqual(promptBlocks(nodes), [['Top level', 'Run checks'], ['Reviews', 'Review PR']]);
+
+  document.getElementById(`prompt-group-rename-${group.id}`).onclick();
+  assert.equal(nodes['prompt-group-title'].textContent, 'Rename of Reviews');
+  assert.equal(nodes['prompt-group-name'].value, 'Reviews');
+  type('prompt-group-name', 'Code review');
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Rename of Reviews');
+  nodes['prompt-group-form'].onsubmit(event);
+  await tick();
+  const renamed = (await reply('settings-save')).settings;
+  assert.deepEqual(renamed.promptGroups, [{ id: group.id, name: 'Code review' }]);
+  assert.deepEqual(renamed.prompts, saved.prompts);
+  assert.equal(document.activeElement.id, `prompt-group-rename-${group.id}`);
+});
+
+test('a group removal keeps the prompts first, and the other choice names and removes them', async () => {
+  const groups = [{ id: 'g', name: 'Git' }, { id: 't', name: 'Tests' }];
+  const prompts = [
+    { id: 'p1', name: 'Review PR', text: 'Review PR #', group: '' },
+    { id: 'c', name: 'Commit', text: 'Commit.', group: 'g' },
+    { id: 'b', name: 'Rebase', text: 'Rebase.', group: 'g' },
+    { id: 'r', name: 'Race', text: 'Race.', group: 't' },
+  ];
+  const { nodes, view, reply } = await setup();
+  view.saves.update({ ...view.saves.saved, revision: view.saves.saved.revision + 1, prompts, promptGroups: groups });
+  view.render();
+  assert.deepEqual(promptBlocks(nodes), [['Top level', 'Review PR'], ['Git', 'Commit', 'Rebase'], ['Tests', 'Race']]);
+
+  document.getElementById('prompt-group-remove-g').onclick();
+  assert.ok(nodes['prompt-group-remove-dialog'].open);
+  assert.equal(nodes['prompt-group-remove-title'].textContent, 'Remove “Git”?');
+  assert.ok(nodes['prompt-group-keep'].checked && !nodes['prompt-group-drop'].checked);
+  assert.equal(document.activeElement, nodes['prompt-group-keep']);
+  assert.equal(nodes['prompt-group-keep-text'].textContent, 'Move its 2 prompts to');
+  assert.deepEqual(nodes['prompt-group-destination'].children.map(option => option.text), ['Top level', 'Tests']);
+  assert.equal(nodes['prompt-group-drop-names'].textContent, 'Commit, Rebase');
+  assert.equal(nodes['prompt-group-remove-submit'].className, 'primary');
+  // A choice of a destination selects Keep. The prompts go to the end of Tests.
+  nodes['prompt-group-drop'].checked = true;
+  nodes['prompt-group-keep'].checked = false;
+  nodes['prompt-group-drop'].onchange();
+  assert.match(nodes['prompt-group-remove-submit'].className, /danger-action/);
+  nodes['prompt-group-destination'].value = 't';
+  nodes['prompt-group-destination'].onchange();
+  assert.ok(nodes['prompt-group-keep'].checked);
+  assert.equal(nodes['prompt-group-remove-submit'].className, 'primary');
+  nodes['prompt-group-remove-form'].onsubmit(event);
+  await tick();
+  const kept = (await reply('settings-save')).settings;
+  assert.deepEqual(kept.promptGroups, [{ id: 't', name: 'Tests' }]);
+  assert.deepEqual(kept.prompts.map(prompt => `${prompt.id}:${prompt.group}`), ['p1:', 'r:t', 'c:t', 'b:t']);
+
+  // The other choice removes the listed prompts with the group.
+  document.getElementById('prompt-group-remove-t').onclick();
+  nodes['prompt-group-keep'].checked = false;
+  nodes['prompt-group-drop'].checked = true;
+  nodes['prompt-group-drop'].onchange();
+  assert.equal(nodes['prompt-group-drop-names'].textContent, 'Race, Commit, Rebase');
+  nodes['prompt-group-remove-form'].onsubmit(event);
+  await tick();
+  const dropped = (await reply('settings-save')).settings;
+  assert.deepEqual(dropped.promptGroups, []);
+  assert.deepEqual(dropped.prompts.map(prompt => prompt.id), ['p1']);
 });
