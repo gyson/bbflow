@@ -69,7 +69,6 @@ export class SettingsView {
   private readonly toolSubmit = element('tool-submit', HTMLButtonElement);
   private readonly toolCancel = element('tool-cancel', HTMLButtonElement);
   private readonly editorError = element('tool-editor-error', HTMLElement);
-  private readonly toolHelp = element('settings-tool-help', HTMLElement);
   private readonly toolModels: ModelPicker;
   // adding reports that the editor holds a new custom tool.
   private adding = false;
@@ -424,7 +423,6 @@ export class SettingsView {
       if (field.input.value !== text) field.input.value = text;
     }
     this.remoteSwitch.setAttribute('aria-checked', String(saved.remoteOn));
-    this.remoteSwitch.textContent = saved.remoteOn ? 'On' : 'Off';
     this.remoteStatus.textContent = remoteStatus(saved.remoteOn, saved.remoteHost, saved.remoteLogin);
     this.remoteSwitch.disabled = this.switchBusy;
     this.titleTool.value = this.settingTool ?? (this.customOpen ? 'custom' : this.titlePending ?? saved.titleTool ?? 'none');
@@ -449,9 +447,6 @@ export class SettingsView {
     const defaultTool = defaults.defaultTool ?? saved.defaultTool;
     this.tool.value = !defaultTool || saved.tools.some(tool => tool.id === defaultTool) ? defaultTool : saved.defaultTool;
     this.prompts.render();
-    const shown = saved.tools.find(tool => tool.id === this.tool.value);
-    this.toolHelp.textContent = shown && typed(shown.type)
-      ? `New drafts select this tool with its default model and effort: ${modelSummary(shown.type, shown.model, shown.effort)}.` : '';
     this.showStatus();
   }
 
@@ -485,7 +480,6 @@ export class SettingsView {
       toggle.setAttribute('role', 'switch');
       toggle.setAttribute('aria-checked', String(tool.enabled));
       toggle.setAttribute('aria-label', `${tool.name} on`);
-      toggle.textContent = tool.enabled ? 'On' : 'Off';
       toggle.disabled = locked;
       toggle.onclick = () => this.switchTool(tool.id, tool.name, tool.enabled);
       cell('tool-on').append(toggle);
@@ -502,9 +496,9 @@ export class SettingsView {
         const command = document.createElement('code');
         command.textContent = tool.command;
         cell('tool-command-cell').append(command);
-      } else cell('tool-command-cell muted-cell', 'Your shell, with no command');
+      } else cell('tool-command-cell muted-cell', '—');
       // Only a built-in tool has a default model. Shell has none.
-      if (tool.builtin) cell(typed(tool.type) ? 'tool-default' : 'tool-default muted-cell', typed(tool.type) ? modelSummary(tool.type, tool.model, tool.effort) : 'None');
+      if (tool.builtin) cell(typed(tool.type) ? 'tool-default' : 'tool-default muted-cell', typed(tool.type) ? modelSummary(tool.type, tool.model, tool.effort) : '—');
       const actions = cell('tool-actions');
       if (!tool.id) return row;
       const action = (label: string, text: string, click: () => void, disabled = false) => {
@@ -537,7 +531,7 @@ export class SettingsView {
       const empty = document.createElement('td');
       empty.className = 'tool-empty';
       empty.colSpan = 4;
-      empty.textContent = 'No custom tools yet. Click ＋ Add custom tool to add one.';
+      empty.textContent = 'None';
       row.append(empty);
       rows.push(row);
     }

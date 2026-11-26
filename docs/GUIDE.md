@@ -50,7 +50,7 @@ built-in tools. To add one, such as a script or a Codex command with other optio
 click **＋ Add custom tool** below that table. In the dialog, enter a name and a startup
 command. bbflow submits the command unchanged, so put all options in it. Check the
 command in **New sessions submit**, then click **Add tool**. To keep a tool but hide it
-for a time, set its switch to **Off**.
+for a time, turn its switch off.
 
 For the built-in tools of Codex, Claude Code, Antigravity, and Code Puppy, bbflow adds
 the model, the effort, and the permission mode as options at the end of the command.
@@ -60,8 +60,8 @@ click **Refresh list** in the tool editor of Settings.
 
 **Permissions** chooses how the agent asks before it acts. The choices are the modes of
 each CLI, for example **Approve for me** of Codex or **Accept edits** of Claude Code.
-The note below **Default permissions** shows the options that bbflow adds. bbflow adds
-only these options. The CLI decides what each mode does. The help of each CLI says that
+**New sessions submit** in the tool editor shows the options that bbflow adds. bbflow
+adds only these options. The CLI decides what each mode does. The help of each CLI says that
 **Full Access**, **Bypass Permissions**, **Skip permissions**, and **YOLO on** skip its
 approval or confirmation prompts.
 
@@ -128,6 +128,9 @@ saves the message as a draft. Click **Send** after the agent is ready.
   terminal and click **Send**.
 - To attach files, click **＋** in the message editor, then **Attach files…**. You can
   also paste or drop files in the editor.
+- Click **Show terminal** in the toolbar, or **Terminal** in a narrow window, to open a
+  shell in the session workspace. bbflow does not record this shell. Search history and
+  the handoff folder cannot read it.
 - Close the tab when you want. The session and its recording continue in the server.
 - To end the session, click **Stop session** in the **More actions** (⋯) menu.
 - To end a session or a sub-session from the sidebar, point to it and click its ⋯
@@ -144,8 +147,9 @@ terminal names the message that you read.
   message. In the terminal, press Command+Up or Command+Down. On other systems, press
   Ctrl+Shift+Up or Ctrl+Shift+Down.
 - Click **Show messages** in the toolbar, or **Messages** in a narrow window, to see
-  the list of the messages. Click **Show in terminal** on a message to scroll the
-  terminal to it. The response follows the message.
+  the list of the messages. The list has only the messages from **Send**. It does not
+  include text that you type directly in the terminal. Click **Show in terminal** on a
+  message to scroll the terminal to it. The response follows the message.
 - The marks in the scroll bar of the terminal show where each message is.
 - Click **Latest output** in the bar to go back to the end of the terminal.
 
@@ -205,10 +209,10 @@ see how much of each limit is left, do these steps:
 3. To ask the agents again, click **Check now**.
 
 bbflow shows Codex, Claude Code, and Antigravity when their tools are on. It asks each
-CLI for the limits of your account. A check starts no agent turn. A limit with less than
-20% left is amber, and an empty limit is red. If a section shows an error, sign in to
-the agent in a terminal, or set its **CLI path** in Settings. See [Usage
-limits](SPEC.md#usage-limits) for the rules.
+CLI for the limits of your account. Checking sends no prompt, so it does not use your
+limits. A limit with less than 20% left is amber, and an empty limit is red. If a section
+shows an error, sign in to the agent in a terminal, or set its **CLI path** in Settings.
+See [Usage limits](SPEC.md#usage-limits) for the rules.
 
 ## Continue with a different agent
 

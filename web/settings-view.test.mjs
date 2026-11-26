@@ -70,7 +70,7 @@ const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-
   'settings-remote-status',
   'settings-error', 'settings-status', 'settings-builtin-tools', 'settings-tools', 'settings-tool-help', 'tool-error', 'tool-add', 'tool-editor-dialog', 'tool-editor', 'tool-close',
   'tool-editor-title', 'tool-name', 'tool-command', 'tool-command-help', 'tool-path-field', 'tool-path', 'tool-path-help', 'tool-builtin-note', 'tool-identity', 'tool-command-field', 'tool-models',
-  'tool-model', 'tool-model-other', 'tool-model-help', 'tool-model-refresh', 'tool-effort', 'tool-effort-help', 'tool-permission', 'tool-permission-help',
+  'tool-model', 'tool-model-other', 'tool-model-help', 'tool-model-refresh', 'tool-effort', 'tool-effort-help', 'tool-permission',
   'tool-preview', 'tool-submit', 'tool-cancel', 'tool-editor-error', 'tool-remove-dialog', 'tool-remove-form',
   'cancel-tool-remove', 'tool-remove-summary', 'tool-remove-default', 'title-settings', 'title-tool', 'title-spinner',
   'title-builtin', 'title-tool-command', 'title-custom', 'title-custom-command', 'title-custom-save', 'title-test',
@@ -386,11 +386,12 @@ test('a removal asks again when the tool became the default tool in another clie
 // key in a field.
 const blur = (nodes, id) => nodes[id].onchange(event);
 const press = (nodes, id, key) => nodes[id].onkeydown({ key, preventDefault() {} });
+// The switch shows its state only by aria-checked. It has no On or Off text.
 const switchState = nodes => [nodes['settings-remote-switch'].getAttribute('aria-checked'), nodes['settings-remote-switch'].textContent];
 
 test('each remote access field saves on Enter or blur, and the switch saves at once', async () => {
   const { nodes, pending, view, toasts, reply, type } = await setup();
-  assert.equal(nodes['settings-remote-status'].textContent, 'Remote access is off.');
+  assert.equal(nodes['settings-remote-status'].textContent, '');
   type('settings-remote-host', ' My-Mac.Example.ts.net ');
   assert.equal(nodes['settings-status'].textContent, 'Not saved: Tailscale host name');
   assert.equal(pending.length, 0);
@@ -414,8 +415,8 @@ test('each remote access field saves on Enter or blur, and the switch saves at o
   const login = await reply('settings-save');
   assert.deepEqual([login.settings.remoteHost, login.settings.remoteLogin], ['my-mac.example.ts.net', 'user@example.com']);
   // The saves do not turn the switch on.
-  assert.equal(nodes['settings-remote-status'].textContent, 'Remote access is off.');
-  assert.deepEqual(switchState(nodes), ['false', 'Off']);
+  assert.equal(nodes['settings-remote-status'].textContent, '');
+  assert.deepEqual(switchState(nodes), ['false', '']);
   assert.equal(nodes['settings-status'].textContent, 'All settings saved');
   assert.ok(!view.unsaved);
 
@@ -426,7 +427,7 @@ test('each remote access field saves on Enter or blur, and the switch saves at o
   const switched = pending[0].request.settings;
   assert.deepEqual([switched.remoteOn, switched.remoteHost, switched.remoteLogin], [true, 'my-mac.example.ts.net', 'user@example.com']);
   await reply('settings-save');
-  assert.deepEqual(switchState(nodes), ['true', 'On']);
+  assert.deepEqual(switchState(nodes), ['true', '']);
   assert.equal(nodes['settings-remote-status'].textContent, 'Remote access is on for my-mac.example.ts.net and the Tailscale user user@example.com.');
   assert.ok(!nodes['settings-remote-switch'].disabled);
 
@@ -442,7 +443,7 @@ test('each remote access field saves on Enter or blur, and the switch saves at o
   await tick();
   const off = await reply('settings-save');
   assert.deepEqual([off.settings.remoteOn, off.settings.remoteHost], [false, 'my-mac.example.ts.net']);
-  assert.equal(nodes['settings-remote-status'].textContent, 'Remote access is off.');
+  assert.equal(nodes['settings-remote-status'].textContent, '');
   assert.equal(nodes['settings-remote-host'].value, 'my-mac.example.ts.net');
   assert.deepEqual(toasts, []);
 });
@@ -469,7 +470,7 @@ test('the remote switch does not turn on for values that another view saved', as
   assert.equal(nodes['settings-remote-error'].textContent, 'Another view changed remote access. The saved host name is my-mac.example.ts.net, and the saved login is other@example.com. Turn the switch on again to use them.');
   assert.ok(!nodes['settings-remote-error'].hidden);
   assert.equal(nodes['settings-remote-login'].value, 'other@example.com');
-  assert.equal(nodes['settings-remote-status'].textContent, 'Remote access is off.');
+  assert.equal(nodes['settings-remote-status'].textContent, '');
   assert.ok(!view.unsaved);
   // A second click turns remote access on for the new login.
   nodes['settings-remote-switch'].onclick();
@@ -638,7 +639,7 @@ test('the switch stays off while a remote field keeps an edit that did not save'
   assert.ok(!nodes['settings-remote-login-error'].hidden);
   // The error of the field tells why the switch stays off, so the switch shows none.
   assert.ok(nodes['settings-remote-error'].hidden);
-  assert.deepEqual(switchState(nodes), ['false', 'Off']);
+  assert.deepEqual(switchState(nodes), ['false', '']);
   assert.equal(nodes['settings-remote-login'].value, 'new @example.com');
   assert.ok(!nodes['settings-remote-switch'].disabled);
   // A second click after the rejection tries the field again. It still does not turn
@@ -687,7 +688,7 @@ test('the switch does not turn on for a login that a field save took from anothe
   assert.equal(pending.length, 0);
   assert.equal(nodes['settings-remote-error'].textContent, 'Another view changed remote access. The saved host name is other.example.ts.net, and the saved login is second@example.com. Turn the switch on again to use them.');
   assert.equal(nodes['settings-remote-login'].value, 'second@example.com');
-  assert.deepEqual(switchState(nodes), ['false', 'Off']);
+  assert.deepEqual(switchState(nodes), ['false', '']);
   // A second click turns remote access on for the login in view.
   nodes['settings-remote-switch'].onclick();
   await tick();
@@ -707,7 +708,7 @@ test('a click that turns the switch off saves before the edit of a field', async
   nodes['settings-remote-switch'].onclick();
   await tick();
   await reply('settings-save');
-  assert.deepEqual(switchState(nodes), ['true', 'On']);
+  assert.deepEqual(switchState(nodes), ['true', '']);
   // The user edits the login and presses the switch. The press keeps the focus in the
   // field, so the field gets no blur before the click, and Off is the first save.
   type('settings-remote-login', 'new@example.com');
@@ -719,7 +720,7 @@ test('a click that turns the switch off saves before the edit of a field', async
   assert.equal(pending.length, 1);
   const off = await reply('settings-save');
   assert.deepEqual([off.settings.remoteOn, off.settings.remoteLogin], [false, 'user@example.com']);
-  assert.deepEqual(switchState(nodes), ['false', 'Off']);
+  assert.deepEqual(switchState(nodes), ['false', '']);
   // The field saves when it loses focus later.
   blur(nodes, 'settings-remote-login');
   await tick();
@@ -759,8 +760,8 @@ test('each tool has a switch, a built-in tool has no Remove or move, and turning
   assert.ok(document.getElementById('tool-remove-a'));
   // The built-in tools and the custom tools have a table each, and a tool of the user has
   // a switch too.
-  assert.match(nodes['settings-builtin-tools'].textContent, /^OnCodex.*Shell/);
-  assert.match(nodes['settings-tools'].textContent, /^OnAgent/);
+  assert.match(nodes['settings-builtin-tools'].textContent, /^Codex.*Shell/);
+  assert.match(nodes['settings-tools'].textContent, /^Agent/);
   // A line divides the built-in tools and the custom tools in the menu.
   assert.deepEqual(nodes['settings-tool'].children.map(child => child.tag), ['option', 'option', 'hr', 'option']);
   assert.equal(document.getElementById('tool-switch-a').getAttribute('aria-checked'), 'true');
@@ -858,13 +859,11 @@ test('a built-in tool shows only its CLI path, model, effort, and permissions, a
   assert.equal(nodes['settings-status'].textContent, 'Not saved: Edit of Codex');
   // Sessions run the path, with the fixed arguments of Codex.
   assert.equal(nodes['tool-preview'].textContent, '/opt/homebrew/bin/codex --no-alt-screen');
-  // Default permissions lists the modes of Codex. The note names the options.
+  // Default permissions lists the modes of Codex. The preview shows the options.
   const permission = nodes['tool-permission'];
   assert.deepEqual(permission.children.map(option => option.text), ['CLI default', 'Ask for approval', 'Approve for me', 'Read Only', 'Full Access']);
-  assert.equal(nodes['tool-permission-help'].textContent, 'bbflow adds no option, so the CLI uses its own setting.');
   permission.value = 'approve-for-me';
   permission.onchange();
-  assert.equal(nodes['tool-permission-help'].textContent, 'bbflow adds --approve-for-me.');
   assert.equal(nodes['tool-preview'].textContent, '/opt/homebrew/bin/codex --no-alt-screen --approve-for-me');
   nodes['tool-editor'].onsubmit(event);
   await tick();
@@ -1067,5 +1066,5 @@ test('a prompt moves, a removal asks first, and a failure after Done gives a toa
   nodes['prompt-remove-form'].onsubmit(event);
   await tick();
   await reply('settings-save');
-  assert.deepEqual(promptRows(nodes), [['No prompts yet. Click ＋ Add prompt to add one.']]);
+  assert.deepEqual(promptRows(nodes), [['None']]);
 });

@@ -1614,7 +1614,7 @@ that failed to save.
 
 #### Remote access in Settings
 
-- In **Remote access**, an On/Off switch next to the title holds the switch of
+- In **Remote access**, a switch next to the title holds the switch of
   [remote access](#remote-access). **Tailscale host name** and **Tailscale login** hold
   the two values. The card tells that a person who can use remote access can run
   commands on the computer.
@@ -1628,9 +1628,9 @@ that failed to save.
   input came after the save started. Then the field shows the saved value, with the host
   name in lower case. Enter and the blur after it save the text once. An input or Escape
   during a save makes the next Enter or blur save again.
-- The status below the fields tells if remote access is on, and for which host name and
-  login. When the switch is on without both values, the status tells that remote access
-  needs both.
+- While the switch is on, the status below the fields tells for which host name and
+  login remote access is on. When the switch is on without both values, the status tells
+  that remote access needs both. While the switch is off, the status is empty.
 - To turn remote access off, the user clicks the switch. The fields keep their values.
 - A value that the server rejects stays in its field, with the server error below that
   field. Each field has its own error. New text in a field hides only its error, and a
@@ -1724,9 +1724,6 @@ available. Otherwise focus goes to **Edit** on the moved row. After a removal, f
 goes to **Edit** on the nearest row. If no custom tool is left, focus goes to **＋ Add
 custom tool**. After a save or **Cancel**, focus goes to **Edit** of the tool, or to
 **＋ Add custom tool**.
-
-In **Session defaults**, the text below **Default tool** names the default model and
-effort that new drafts select.
 
 The page sends one settings save at a time. If another view or the CLI saved first,
 the page applies the requested change to the latest settings. An edit keeps the latest
@@ -1988,9 +1985,9 @@ the value of the table. The launch adds the options after the model and effort o
   type, and a mode for Shell or a Custom tool.
 - A newly selected tool brings its default permission mode, with its default model and
   effort.
-- In the tool editor, the note below **Default permissions** names the options that
-  bbflow adds. A draft and the **Continue in new terminal** dialog show no note. Their
-  **bbflow submits** line shows the command.
+- The permission menus show no note. The **New sessions submit** line of the tool
+  editor and the **bbflow submits** line of a draft and of the **Continue in new
+  terminal** dialog show the command with its options.
 - The title tools have no permission mode. Their commands set their own limits. See
   [Title models](#title-models).
 
@@ -2135,8 +2132,8 @@ errors.
 
 **Usage** in the bottom row of the sidebar opens a dialog with the usage limits of the
 agent tools. For each limit of the plan of the account, the dialog shows the part that
-is left and the reset time. The server asks each agent CLI. A check starts no agent turn
-and sends no history.
+is left and the reset time. The server asks each agent CLI. A check sends no prompt and
+no history.
 
 #### Usage dialog
 
@@ -2928,9 +2925,9 @@ This applies to a send from any view and to the receipt of a send. It also appli
 a send with a lost receipt, because the archive then has the pending revision. The
 list shows that message as **Not confirmed**.
 
-Each message shows its time, text, and attached file names. **Sent** means that the
-editor got an input receipt and then cleared the draft. **Not confirmed** means that
-there was no receipt, or the user unlocked the draft. This status is derived. It does
+Each message shows its time, text, and attached file names. A message without a badge
+is sent: the editor got an input receipt and then cleared the draft. **Not confirmed**
+means that there was no receipt, or the user unlocked the draft. This status is derived. It does
 not confirm that the application accepted the message.
 
 A long message shows its first 8 lines, and the list is the only scroll area. **Show
@@ -3549,8 +3546,7 @@ The sub-sections that follow give the exact rules.
 #### View headers
 
 - Each view has its own selected file and its own filter text.
-- Only the Changes header has the scope button, **Split**, **Unified**, and the file
-  count.
+- Only the Changes header has the scope button, **Split**, and **Unified**.
 - The Files header has **Refresh** and **×** only.
 
 #### Session base
@@ -3975,7 +3971,8 @@ workspace exists.
 - Each session has at most one live side terminal. All views of a session share it.
 - The server does not record the side terminal. SQLite has no events, run, or screen of
   it. Search history, the handoff folder, and `bbflow query` cannot read it. The view
-  shows "Not recorded. Runs in the session workspace."
+  shows no status text while the shell runs. It shows when the shell ended, or when no
+  shell runs.
 - The side terminal does not change the session status, the view count, or the session
   order.
 - Type directly in the view. The message editor sends only to the session terminal.

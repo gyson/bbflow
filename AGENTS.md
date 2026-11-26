@@ -36,6 +36,16 @@ Follow these additional rules in reference text:
 - Use a list for a procedure or a complex set of related items. Use a table for a set
   of values.
 
+Follow these additional rules in UI text:
+
+- Let the layout do the explaining. Avoid unnecessary secondary labels and
+  descriptions.
+- Do not add text that repeats what a heading, a control, its value, or its position
+  already shows. For example, do not put "On" beside a switch.
+- Add help text only for a fact that the user cannot see and needs before an action,
+  such as a risk or a limit.
+- Put explanations of behavior in `docs/GUIDE.md`, not beside each control.
+
 Other text explains reasons and decisions. It includes chat replies, progress updates,
 reviews, commit messages, pull request descriptions, `GOAL.md`, `PLAN.md`, and release
 notes. Use clear, normal prose there. A sentence can give a reason, a condition, or a

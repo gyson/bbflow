@@ -61,7 +61,7 @@
                   <input id="launch-model-other" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Type the full model name" aria-label="Model name" hidden>
                   <p class="model-help"><span id="launch-model-help"></span> <button type="button" id="launch-model-refresh" class="link-button">Refresh list</button></p></div>
                 <div class="model-field"><label for="launch-effort">Thinking effort</label><select id="launch-effort"></select><p id="launch-effort-help" class="model-help"></p></div>
-                <div class="model-field"><label for="launch-permission">Permissions</label><select id="launch-permission"></select><p id="launch-permission-help" class="model-help"></p></div>
+                <div class="model-field"><label for="launch-permission">Permissions</label><select id="launch-permission"></select></div>
               </div>
               <p class="form-help launch-command">bbflow submits <code id="launch-command"></code></p>
             </fieldset>
@@ -69,12 +69,12 @@
             <fieldset id="launch-place" class="wide place-group" hidden>
               <legend>Workspace</legend>
               <label class="place"><input id="launch-place-parent" type="radio" name="launch-place"><span class="place-text"><strong>Parent workspace</strong><small id="launch-parent-path"></small></span></label>
-              <label class="place"><input id="launch-place-worktree" type="radio" name="launch-place"><span class="place-text"><strong>New worktree</strong><small>A new checkout from the starting branch or commit</small></span></label>
+              <label class="place"><input id="launch-place-worktree" type="radio" name="launch-place"><span class="place-text"><strong>New worktree</strong></span></label>
               <p class="form-help place-help">In the parent workspace, both sessions change the same files.</p>
             </fieldset>
             <div id="worktree-options" class="wide launch-grid" hidden>
               <label>Starting branch or commit<input id="launch-base" placeholder="HEAD" maxlength="250"></label>
-              <label>New branch <span class="optional">optional</span><input id="launch-branch" placeholder="Generated automatically" maxlength="250"></label>
+              <label>New branch<input id="launch-branch" placeholder="Generated automatically" maxlength="250"></label>
             </div>
           </div>
           <p id="launch-repository" class="form-help"></p>
@@ -114,7 +114,6 @@
         <span id="diff-controls">
           <button id="diff-scope" type="button" class="scope-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="diff-scope-menu"><span id="diff-scope-id" class="scope-id"></span><span id="diff-scope-label" class="scope-label"></span><span class="scope-arrow" aria-hidden="true">▾</span></button>
           <span class="segmented" role="group" aria-label="Diff layout"><button id="diff-split" type="button" aria-pressed="true">Split</button><button id="diff-unified" type="button" aria-pressed="false">Unified</button></span>
-          <span id="diff-summary"></span>
         </span>
         <button id="diff-refresh" type="button" class="icon-button" title="Read the changes and the files again" aria-label="Refresh">↻</button>
         <button id="diff-close" type="button" class="icon-button" title="Close the pane" aria-label="Close the pane">×</button>
@@ -139,7 +138,6 @@
         <div class="side-toolbar">
           <span class="pane-title">Terminal</span>
           <span id="side-status" role="status"></span>
-          <span id="side-dimensions"></span>
           <button id="side-start" type="button" hidden>Start shell</button>
           <button id="side-stop" type="button" title="End the shell and its running command for every view." hidden>Stop shell</button>
           <button id="side-close" type="button" class="icon-button" title="Close the pane. The shell continues." aria-label="Close the pane">×</button>
@@ -149,7 +147,6 @@
       <section id="messages-pane" aria-label="Sent messages" hidden>
         <div class="side-toolbar">
           <span class="pane-title">Sent messages</span>
-          <span id="sent-help">Text typed directly in the terminal is not included.</span>
           <button id="sent-close" type="button" class="icon-button" title="Close the pane" aria-label="Close the pane">×</button>
         </div>
         <button id="sent-more" hidden>Show older messages</button>
@@ -164,11 +161,9 @@
         <p id="settings-error" class="form-error" role="alert" hidden></p>
         <section class="settings-card"><h3>Appearance</h3>
           <select id="settings-appearance" aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
-          <p class="form-help">System follows the appearance of your device.</p>
         </section>
         <section class="settings-card">
           <div class="settings-heading"><h3>Tools</h3></div>
-          <p class="form-help">A tool starts a session in your shell. A tool that is off stays saved, but it is not a choice for new sessions.</p>
           <h4 class="tool-table-title">Built-in tools</h4>
           <div class="tool-table-box">
             <table class="tool-table" aria-label="Built-in tools">
@@ -189,10 +184,9 @@
         <form id="settings-form">
           <section class="settings-card"><h3>Session defaults</h3>
             <label>Default tool<select id="settings-tool"></select></label>
-            <p id="settings-tool-help" class="form-help tool-default-help"></p>
             <label class="checkbox"><input id="settings-worktree" type="checkbox">Start new Git sessions in a new worktree</label>
             <label>Starting branch or commit for new worktrees<input id="settings-base" placeholder="HEAD" maxlength="250"></label>
-            <p class="form-help">HEAD is the current commit of the project. Uncommitted changes are not included. The field saves when you press Enter or leave it. Press Esc to restore the saved value.</p>
+            <p class="form-help">HEAD is the current commit of the project. Uncommitted changes are not included.</p>
           </section>
         </form>
         <section id="settings-prompts" class="settings-card" aria-labelledby="settings-prompts-title">
@@ -245,11 +239,11 @@
             <label>Port<input id="settings-port" inputmode="numeric" placeholder="Automatic" spellcheck="false" autocomplete="off"></label>
             <p id="settings-port-error" class="form-error" role="alert" hidden></p>
             <p id="settings-port-status" class="form-help" role="status"></p>
-            <p class="form-help">Enter a port from 1024 to 65535, or leave the field empty for an automatic port. The field saves when you press Enter or leave it. Press Esc to restore the saved port. A new port applies after a server restart, which stops all sessions.</p>
+            <p class="form-help">Enter a port from 1024 to 65535, or leave the field empty for an automatic port. A new port applies after a server restart, which stops all sessions.</p>
           </section>
         </form>
         <section class="settings-card">
-          <div class="settings-heading"><h3>Remote access</h3><button id="settings-remote-switch" type="button" class="switch" role="switch" aria-checked="false" aria-label="Remote access">Off</button></div>
+          <div class="settings-heading"><h3>Remote access</h3><button id="settings-remote-switch" type="button" class="switch" role="switch" aria-checked="false" aria-label="Remote access"></button></div>
           <p class="form-help">Remote access lets you open bbflow on another device, such as a phone, through Tailscale Serve on this Mac. It works only while the switch is on and both fields are saved. A person who can use remote access can run commands on this Mac as you.</p>
           <p id="settings-remote-error" class="form-error" role="alert" hidden></p>
           <label>Tailscale host name<input id="settings-remote-host" maxlength="259" placeholder="my-mac.example.ts.net" spellcheck="false" autocomplete="off" autocapitalize="off"></label>
@@ -257,8 +251,7 @@
           <label>Tailscale login<input id="settings-remote-login" maxlength="254" placeholder="you@example.com" spellcheck="false" autocomplete="off" autocapitalize="off"></label>
           <p id="settings-remote-login-error" class="form-error" role="alert" hidden></p>
           <p id="settings-remote-status" class="form-help" role="status"></p>
-          <p class="form-help">The host name is the name of this Mac in your tailnet. The login is the account of your Tailscale devices. Tailscale Serve on this Mac must forward the host name to the port of the server.</p>
-          <p class="form-help">Each field saves when you press Enter or leave it. Press Esc to restore the saved value. The switch saves at once and keeps both fields. A change closes the open remote connections. Thus a remote view that turns the switch off cannot turn it on again.</p>
+          <p class="form-help">A change closes the open remote connections. Thus a remote view that turns the switch off cannot turn it on again.</p>
         </section>
       </div>
     </section>
@@ -266,7 +259,7 @@
   <dialog id="project-dialog" aria-labelledby="project-title">
     <form id="project-form">
       <div class="dialog-heading"><h2 id="project-title">Add project</h2><button type="button" id="cancel-project" class="text-button" aria-label="Close project">✕</button></div>
-      <label>Project name <span id="project-name-hint" class="optional">defaults to folder name</span><input id="project-name" maxlength="200" placeholder="My project"></label>
+      <label>Project name<input id="project-name" maxlength="200" placeholder="Folder name"></label>
       <label id="project-folder">Folder<input id="project-workspace" placeholder="~/projects/my-project" required></label>
       <div id="project-folder-view" class="folder-view" hidden><span>Folder</span><code id="project-folder-path"></code></div>
       <p id="project-help" class="form-help"></p>
@@ -324,7 +317,7 @@
           <input id="tool-model-other" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Type the full model name" aria-label="Default model name" hidden>
           <p class="model-help"><span id="tool-model-help"></span> <button type="button" id="tool-model-refresh" class="link-button">Refresh list</button></p></div>
         <div class="model-field"><label for="tool-effort">Default thinking effort</label><select id="tool-effort"></select><p id="tool-effort-help" class="model-help"></p></div>
-        <div class="model-field"><label for="tool-permission">Default permissions</label><select id="tool-permission"></select><p id="tool-permission-help" class="model-help"></p></div>
+        <div class="model-field"><label for="tool-permission">Default permissions</label><select id="tool-permission"></select></div>
       </div>
       <p class="tool-preview">New sessions submit <code id="tool-preview"></code></p>
       <p id="tool-editor-error" class="form-error" role="alert" hidden></p>
@@ -346,7 +339,6 @@
       <div class="model-field">
         <label for="prompt-text">Text</label>
         <textarea id="prompt-text" rows="8" placeholder="Use the review-loop skill as the reviewer for PR #" spellcheck="true"></textarea>
-        <p class="model-help">The ＋ menu of the message editor puts this text at the cursor. It does not send it.</p>
       </div>
       <p id="prompt-editor-error" class="form-error" role="alert" hidden></p>
       <div class="tool-editor-actions"><button id="prompt-cancel" type="button">Cancel</button><button id="prompt-submit" type="submit" class="primary">Add prompt</button></div>
@@ -381,7 +373,7 @@
             <input id="continue-model-other" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Type the full model name" aria-label="Model name" hidden>
             <p class="model-help"><span id="continue-model-help"></span> <button type="button" id="continue-model-refresh" class="link-button">Refresh list</button></p></div>
           <div class="model-field"><label for="continue-effort">Thinking effort</label><select id="continue-effort"></select><p id="continue-effort-help" class="model-help"></p></div>
-          <div class="model-field"><label for="continue-permission">Permissions</label><select id="continue-permission"></select><p id="continue-permission-help" class="model-help"></p></div>
+          <div class="model-field"><label for="continue-permission">Permissions</label><select id="continue-permission"></select></div>
         </div>
         <p class="form-help launch-command">bbflow submits <code id="continue-command"></code></p>
       </fieldset>
@@ -405,13 +397,12 @@
   </dialog>
   <dialog id="usage-dialog" class="usage-dialog" aria-labelledby="usage-title">
     <div class="dialog-heading"><h2 id="usage-title">Usage</h2><button type="button" id="usage-close" class="text-button" aria-label="Close usage">✕</button></div>
-    <p class="form-help">The usage limits of the built-in agent tools that are on. bbflow asks each CLI for the limits of your account. A check starts no agent turn.</p>
+    <p class="form-help">Checking sends no prompt, so it does not use your limits.</p>
     <div id="usage-list" class="usage-list"></div>
     <div class="dialog-actions"><button id="usage-done" type="button">Close</button><button id="usage-check" type="button" class="primary">Check now</button></div>
   </dialog>
   <dialog id="handoff-dialog" class="continue-dialog" aria-labelledby="handoff-title">
     <div class="dialog-heading"><h2 id="handoff-title">Handoff prompt</h2><button type="button" id="handoff-close" class="text-button" aria-label="Close handoff prompt">✕</button></div>
-    <p class="form-help">This prompt points an agent to the earlier terminals and sent messages of this session.</p>
     <p id="handoff-folder" class="continue-path"></p>
     <textarea id="handoff-text" class="prompt-text" rows="6" readonly aria-label="Handoff prompt"></textarea>
     <p id="handoff-status" class="form-help" role="status"></p>
@@ -421,7 +412,7 @@
     <div class="dialog-heading"><h2 id="history-title">Search history</h2><button id="history-close" class="text-button" aria-label="Close history search">✕</button></div>
     <form id="history-form" class="history-form"><label class="sr-only" for="history-query">Search recorded output</label><input id="history-query" type="search" maxlength="512" placeholder="Search recorded output…" autocomplete="off"><button class="primary" type="submit">Search</button></form>
     <div class="history-filters"><label for="history-scope">Search in <select id="history-scope"><option value="session">This session</option><option value="project">This project</option><option value="all">All sessions</option></select></label><label class="checkbox"><input id="history-case" type="checkbox">Match case</label></div>
-    <div class="history-summary"><span id="history-status" role="status"></span><span id="history-scope-label"></span></div>
+    <div class="history-summary"><span id="history-status" role="status"></span></div>
     <div class="history-body">
       <div class="history-result-column"><ol id="history-results" aria-label="History search results"></ol><button id="history-more" hidden>Show more results</button></div>
       <p id="history-context-empty" class="history-empty">Select a result to read its context.</p>

@@ -448,7 +448,7 @@ export function portStatus(saved: number, current: number): string {
 // remoteStatus tells if the saved switch and values admit remote requests. The switch
 // and the values are independent, so the switch can be on without the values.
 export function remoteStatus(on: boolean, host: string, login: string): string {
-  if (!on) return 'Remote access is off.';
+  if (!on) return '';
   if (host && login) return `Remote access is on for ${host} and the Tailscale user ${login}.`;
   return 'The switch is on, but remote access needs both the host name and the login.';
 }
