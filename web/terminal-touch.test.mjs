@@ -118,6 +118,7 @@ class FakeElement {
 
 function fixture(scrollTop, mode = 'none') {
   const listeners = {};
+  const options = {};
   const frames = [];
   globalThis.Element = FakeElement;
   globalThis.WheelEvent = class { static DOM_DELTA_LINE = 1; constructor(type, init) { Object.assign(this, init); } };
@@ -127,25 +128,35 @@ function fixture(scrollTop, mode = 'none') {
   const container = {
     scrollTop, scrollHeight: 480, clientHeight: 147,
     querySelector: () => ({ clientHeight: 480 }),
-    addEventListener: (type, listener) => { listeners[type] = listener; },
+    addEventListener: (type, listener, option) => { listeners[type] = listener; options[type] = option; },
   };
   const terminal = { rows: 30, lines: 0, modes: { mouseTrackingMode: mode }, scrollLines(count) { this.lines += count; } };
   const stop = touchScroll(container, () => terminal);
+  // The touch events and the frames use one clock, as in a browser.
   let time = 0;
+  performance.now = () => time;
+  // Send a touch event and return it. A touch cancel cannot be canceled.
   const touch = (type, x, y, wait = 16) => {
     time += wait;
     const point = { identifier: 1, clientX: x, clientY: y };
-    listeners[type]({ type, target, timeStamp: time, touches: type === 'touchend' ? [] : [point] });
+    const event = {
+      type, target, timeStamp: time, touches: type === 'touchend' || type === 'touchcancel' ? [] : [point],
+      cancelable: type !== 'touchcancel', defaultPrevented: false,
+      preventDefault() { if (this.cancelable) this.defaultPrevented = true; },
+    };
+    listeners[type](event);
+    return event;
   };
   // Run the frame that the glide asked for last. Return false when no frame waits.
   const frame = elapsed => {
     const callback = frames.at(-1);
     if (!callback) return false;
     frames.push(null);
-    callback(performance.now() + elapsed);
+    time += elapsed;
+    callback(time);
     return true;
   };
-  return { container, terminal, target, stop, touch, frame };
+  return { container, terminal, target, stop, touch, frame, options };
 }
 
 test('a movement across the first shown row scrolls the history with the distance that is left', () => {
@@ -180,7 +191,8 @@ test('a horizontal swipe with a vertical drift moves nothing', () => {
   const { container, terminal, target, touch, frame } = fixture(200);
   touch('touchstart', 100, 100);
   for (let step = 1; step <= 24; step++) touch('touchmove', 100 + 10 * step, 100 + 1.5 * step);
-  touch('touchend', 340, 136);
+  // A horizontal drag keeps its browser behavior.
+  assert.equal(touch('touchend', 340, 136).defaultPrevented, false);
   assert.equal(frame(16), false);
   assert.equal(container.scrollTop, 200);
   assert.equal(terminal.lines, 0);
@@ -214,4 +226,99 @@ test('a touch stops a glide', () => {
   touch('touchstart', 100, 100);
   assert.equal(frame(16), false);
   assert.equal(container.scrollTop, glided);
+});
+
+// The browser follows a touch that it takes as a tap with a click. A click in xterm.js
+// focuses the terminal input, and a phone then shows its keyboard.
+test('a vertical drag cancels the end of its touch, so that no click follows', () => {
+  const { touch, options } = fixture(333);
+  assert.equal(options.touchend.passive, false);
+  touch('touchstart', 100, 100);
+  // A slow drag of 30 pixels starts no glide.
+  touch('touchmove', 100, 115, 100);
+  touch('touchmove', 100, 130, 100);
+  assert.equal(touch('touchend', 100, 130, 100).defaultPrevented, true);
+});
+
+test('a short drag that scrolls no row is not a tap either', () => {
+  const { container, terminal, touch } = fixture(0);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 109);
+  assert.equal(touch('touchend', 100, 109).defaultPrevented, true);
+  assert.equal(container.scrollTop, 0);
+  assert.equal(terminal.lines, 0);
+});
+
+test('a tap keeps its click, also with a movement below 8 pixels', () => {
+  const { touch } = fixture(333);
+  touch('touchstart', 100, 100);
+  assert.equal(touch('touchend', 100, 100).defaultPrevented, false);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 105, 105);
+  assert.equal(touch('touchend', 105, 105).defaultPrevented, false);
+});
+
+test('a touch that stops a glide is not a tap', () => {
+  const { touch, frame } = fixture(333);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 160);
+  touch('touchend', 100, 160);
+  assert.equal(frame(16), true);
+  touch('touchstart', 100, 300);
+  assert.equal(touch('touchend', 100, 300).defaultPrevented, true);
+  assert.equal(frame(16), false);
+  // The glide is over, so the next tap keeps its click.
+  touch('touchstart', 100, 300);
+  assert.equal(touch('touchend', 100, 300).defaultPrevented, false);
+});
+
+test('a touch that stops a glide is not a tap, also when it moves sideways', () => {
+  const { container, touch, frame } = fixture(333);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 160);
+  touch('touchend', 100, 160);
+  assert.equal(frame(16), true);
+  const glided = container.scrollTop;
+  touch('touchstart', 100, 300);
+  touch('touchmove', 108, 304);
+  assert.equal(touch('touchend', 108, 304).defaultPrevented, true);
+  // The horizontal drag does not scroll and starts no glide.
+  assert.equal(container.scrollTop, glided);
+  assert.equal(frame(16), false);
+});
+
+test('a glide ends in the frame that stops its speed, and a tap after it keeps its click', () => {
+  const { touch, frame } = fixture(333);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 160);
+  touch('touchend', 100, 160);
+  // The release speed is 60 pixels in 16 milliseconds. The glide has one frame for each
+  // step until its speed is 0, and no frame after that step.
+  let steps = 0;
+  for (let speed = 60 / 16; speed; speed = glide(speed, 16).speed) steps++;
+  let frames = 0;
+  while (frame(16)) frames++;
+  assert.equal(frames, steps);
+  touch('touchstart', 100, 300);
+  assert.equal(touch('touchend', 100, 300).defaultPrevented, false);
+});
+
+test('a fast drag with mouse reports has no glide, and a tap after it keeps its click', () => {
+  const { container, terminal, target, touch, frame } = fixture(0, 'vt200');
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 160);
+  assert.equal(touch('touchend', 100, 160).defaultPrevented, true);
+  assert.equal(container.scrollTop, 0);
+  assert.equal(terminal.lines, 0);
+  assert.deepEqual(target.wheels, [-1, -1, -1]);
+  assert.equal(frame(16), false);
+  touch('touchstart', 100, 300);
+  assert.equal(touch('touchend', 100, 300).defaultPrevented, false);
+});
+
+test('the handler does not cancel a touch cancel', () => {
+  const { touch } = fixture(333);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 140);
+  assert.equal(touch('touchcancel', 100, 140).defaultPrevented, false);
 });
