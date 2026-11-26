@@ -81,7 +81,12 @@ export class HistorySearch {
     const own = this.scope.querySelector<HTMLOptionElement>('option[value="session"]');
     const project = this.scope.querySelector<HTMLOptionElement>('option[value="project"]');
     if (own) own.disabled = !selection.session;
-    if (project) project.disabled = !selection.project;
+    // The project option names its project. Search this project can select a project
+    // that is not the project of the selected session.
+    if (project) {
+      project.disabled = !selection.project;
+      project.textContent = selection.projectName || 'This project';
+    }
     this.scope.value = scope ?? (selection.session ? 'session' : 'all');
     if (!this.dialog.open) this.dialog.showModal();
     this.query.focus();

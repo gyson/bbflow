@@ -1304,7 +1304,7 @@ these items:
 | --- | --- |
 | **Edit** | Opens the Edit project dialog. The dialog changes only the name. It shows the folder as text. |
 | **Copy folder path** | Copies the saved canonical folder of the project to the clipboard. |
-| **Search this project** | Opens [Search history](#history-search) with the scope **This project**. **This session** is not available there. |
+| **Search this project** | Opens [Search history](#history-search) with the scope of this project. The scope option shows the project name. **This session** is not available there. |
 | **Remove project** | Opens a dialog that asks before the removal. The dialog names the project and its folder. |
 
 - **Remove project** is the last item, below a line. Its text has the danger color.
@@ -1669,17 +1669,18 @@ comes first, then **Custom tools**, the tools that the user added:
 | **Built-in tools** | **On**, **Name**, **Command**, **Default model** | **Edit**. Shell has no Edit. |
 | **Custom tools** | **On**, **Name**, **Command** | **Edit**, **↑**, **↓**, **Remove** |
 
-- Each row starts with a switch, **On** or **Off**. A tool that is off stays saved, and
-  its row is dimmed. See [Built-in tools](#built-in-tools) for the effect.
+- Each row starts with a switch. The switch has no text. `aria-checked` holds its state,
+  and forced colors draw its track and knob with system colors. A tool that is off stays
+  saved, and its row is dimmed. See [Built-in tools](#built-in-tools) for the effect.
 - The default tool has a **DEFAULT** mark beside its name.
 - **Default model** shows the model and the effort, for example **gpt-6-luna ·
-  Medium**. For Shell it shows **None**.
+  Medium**. For Shell, **Command** and **Default model** show **—**.
 - A built-in tool keeps its place and cannot be removed. A custom tool moves only among
   the custom tools.
 - When Settings opens, the page asks the server which CLIs it finds. A built-in tool
   without its CLI gets a **NOT FOUND** mark. See [Tool program](#tool-program).
 - A narrow window scrolls each table sideways. Without a custom tool, the second table
-  tells how to add one.
+  shows **None**.
 - The settings hold at most 100 custom tools. The built-in tools do not count.
 
 **＋ Add custom tool** below the custom tools and **Edit** in a row open the tool editor as a
@@ -2021,8 +2022,11 @@ model, effort, and permission mode of the tool.
 is too narrow. A line above and below the group separates it from the other fields.
 **Model**, **Thinking effort**, and **Permissions** are hidden for Shell and for a Custom
 tool. A change of the model, the effort, or the permission mode applies only to the
-draft. The draft shows no notes about the model list or the options. Settings shows
-them. Only a failed model list shows its error in the draft, with **Refresh list**. At
+draft. The draft shows no notes about the model list or the options. Only a failed
+model list shows its error in the draft, with **Refresh list**. In Settings, the model
+field also shows **Loading the model list…** and **Refresh list**, and the effort notes
+of Antigravity and Code Puppy stay. No form names the source of the model list or the
+options in a note. **bbflow submits** and **New sessions submit** show the options. At
 the end of the group, **bbflow submits** shows the command with its options. For a newly
 selected tool, it shows the command of that tool at once, also before the save. For
 Shell, it shows **(no startup command)**.
@@ -3358,11 +3362,13 @@ to terminal programs. The dialog does not send input, resize the PTY, or change
 sessions. Closing it leaves recording and the active session connection running.
 
 The selected session is the default scope. This scope includes all its earlier
-terminals. **This project** uses current project membership. **All sessions** includes
+terminals. The project option shows the name of the project, or **This project**
+without a name. It uses current project membership. **All sessions** includes
 standalone sessions and other projects. Every scope includes archived sessions. Without
 a selected session, the dialog selects **All sessions** and waits for search text.
-**Search this project** in the [project menu](#project-menu) selects **This project**
-for that project.
+**Search this project** in the [project menu](#project-menu) selects the project option
+for that project. The option then shows the name of that project, also when the selected
+session belongs to another project.
 
 #### Matching
 

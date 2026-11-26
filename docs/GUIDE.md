@@ -32,8 +32,8 @@ Claude Code.
 4. Find the agent in **Tools**. bbflow has a built-in tool for **Codex**, **Claude
    Code**, **Antigravity**, and **Code Puppy**. At its first start, bbflow turns on the
    tools whose CLI it finds.
-5. To use an agent, set its switch to **On**. To hide an agent that you do not have,
-   set it to **Off**. A tool that is off is not a choice for new sessions. **NOT
+5. To use an agent, turn its switch on. To hide an agent that you do not have, turn
+   its switch off. A tool that is off is not a choice for new sessions. **NOT
    FOUND** tells that bbflow cannot find the CLI.
 6. Optional: click **Edit** to set the **Default model**, the **Default thinking
    effort**, or the **Default permissions**. **CLI default** uses the configuration of

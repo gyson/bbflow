@@ -84,6 +84,7 @@ test('the menu of a project opens the search of that project without a selected 
   assert.equal(nodes['history-scope'].value, 'project');
   assert.equal(nodes['history-scope'].options['option[value="session"]'].disabled, true);
   assert.equal(nodes['history-scope'].options['option[value="project"]'].disabled, false);
+  assert.equal(nodes['history-scope'].options['option[value="project"]'].textContent, 'Docs');
   submit('needle');
   assert.deepEqual(pending[0].request.search, { query: 'needle', scope: 'project', project: 'other', matchCase: false });
   search.open({ project: 'other', projectName: 'Docs' });

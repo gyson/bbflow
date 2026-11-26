@@ -68,7 +68,7 @@ const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-
   'settings-update-check', 'settings-port-form', 'settings-port', 'settings-port-error', 'settings-port-status',
   'settings-remote-switch', 'settings-remote-host', 'settings-remote-host-error', 'settings-remote-login', 'settings-remote-login-error', 'settings-remote-error',
   'settings-remote-status',
-  'settings-error', 'settings-status', 'settings-builtin-tools', 'settings-tools', 'settings-tool-help', 'tool-error', 'tool-add', 'tool-editor-dialog', 'tool-editor', 'tool-close',
+  'settings-error', 'settings-status', 'settings-builtin-tools', 'settings-tools', 'tool-error', 'tool-add', 'tool-editor-dialog', 'tool-editor', 'tool-close',
   'tool-editor-title', 'tool-name', 'tool-command', 'tool-command-help', 'tool-path-field', 'tool-path', 'tool-path-help', 'tool-builtin-note', 'tool-identity', 'tool-command-field', 'tool-models',
   'tool-model', 'tool-model-other', 'tool-model-help', 'tool-model-refresh', 'tool-effort', 'tool-effort-help', 'tool-permission',
   'tool-preview', 'tool-submit', 'tool-cancel', 'tool-editor-error', 'tool-remove-dialog', 'tool-remove-form',

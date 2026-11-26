@@ -53,7 +53,7 @@ class Node {
 }
 
 const ids = ['diff-pane', 'diff-title', 'diff-controls', 'diff-scope', 'diff-scope-id', 'diff-scope-label', 'diff-scope-menu',
-  'diff-split', 'diff-unified', 'diff-summary', 'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts',
+  'diff-split', 'diff-unified', 'diff-status', 'diff-filter', 'diff-list', 'diff-path', 'diff-counts',
   'diff-toggle', 'diff-source', 'diff-preview', 'preview-dialog', 'preview-title', 'preview-body', 'diff-note', 'diff-editor',
   'diff-refresh', 'diff-close', 'diff-back', 'preview-close', 'diff-menu-box', 'diff-menu-open', 'diff-menu', 'diff-menu-status'];
 // The items of the file menu, in menu order.
