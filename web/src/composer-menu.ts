@@ -96,14 +96,18 @@ export class ComposerMenu {
       void this.refresh();
     }, () => this.firstFocus());
     this.manageButton.onclick = () => this.host.manage();
+    // A filter shows the matches of all groups, so an open group or flyout closes.
     this.filter.oninput = () => {
       this.query = this.filter.value;
+      this.path = null;
       this.closeFlyout();
       this.render();
       this.list.scrollTop = 0;
     };
     this.menuElement.addEventListener('keydown', event => this.key(event));
-    this.list.addEventListener('pointerover', event => this.hover(event));
+    this.menuElement.addEventListener('pointerover', event => this.hover(event));
+    // A pointer that leaves the menu and the flyout cancels a pending open or switch.
+    this.menuElement.addEventListener('pointerleave', () => clearTimeout(this.flyTimer));
     this.list.addEventListener('scroll', () => this.closeFlyout());
     this.flyout.addEventListener('pointerenter', () => clearTimeout(this.flyTimer));
   }
@@ -136,9 +140,12 @@ export class ComposerMenu {
   // Escape no longer reaches the menu. The editor turns off Attach files, the first item,
   // and the lock turns off the saved prompts. When the focused item of the menu is off,
   // Manage prompts gets the focus, because it is always on.
+  // The filter hides when another view removes the last prompt. Its focus then goes to
+  // Manage prompts too.
   private keepFocus(): void {
     const active = document.activeElement;
-    if (active instanceof HTMLButtonElement && active.disabled && this.menuElement.contains(active)) this.manageButton.focus();
+    const off = active instanceof HTMLButtonElement && active.disabled && this.menuElement.contains(active);
+    if (off || (active === this.filter && this.filterBox.hidden)) this.manageButton.focus();
   }
 
   // refresh reads the saved prompts. A failed read keeps the prompts of the last read.
@@ -223,6 +230,8 @@ export class ComposerMenu {
       else this.closeFlyout();
     }
     this.update();
+    // The browser can move the focus of a hidden filter to the page before keepFocus runs.
+    if (active === this.filter && this.filterBox.hidden) this.manageButton.focus();
     if (focused !== undefined) {
       const item = [...this.list.children, ...this.flyout.children].find(candidate => candidate instanceof HTMLButtonElement && itemKey(candidate) === focused && !candidate.disabled);
       (item instanceof HTMLButtonElement ? item : this.manageButton).focus();
@@ -352,16 +361,22 @@ export class ComposerMenu {
     if (refocus) this.groupRow(id)?.focus();
   }
 
-  // A mouse pointer that rests on a group opens its flyout. A pointer on another item
-  // closes the flyout. Touch screens open a group with a tap.
+  // A mouse pointer that rests on a group opens its flyout. A pointer on another item of
+  // the menu, such as Attach files or Manage prompts, closes the flyout. A pointer in the
+  // flyout keeps it open. Touch screens open a group with a tap.
   private hover(event: PointerEvent): void {
     if (event.pointerType !== 'mouse' || this.query.trim() || this.path !== null) return;
     const item = event.target instanceof Element ? event.target.closest('button') : null;
-    if (!(item instanceof HTMLButtonElement) || !this.list.contains(item)) return;
-    const id = item.dataset.groupId;
+    if (!(item instanceof HTMLButtonElement) || !this.menuElement.contains(item)) return;
     clearTimeout(this.flyTimer);
+    if (this.flyout.contains(item)) return;
+    const id = item.dataset.groupId;
     if (id === undefined ? this.fly === null : id === this.fly || !this.roomForFlyout()) return;
-    this.flyTimer = setTimeout(() => id === undefined ? this.closeFlyout() : this.openFlyout(id, false), this.fly === null ? openDelay : switchDelay);
+    this.flyTimer = setTimeout(() => {
+      if (this.menuElement.hidden) return;
+      if (id === undefined) this.closeFlyout();
+      else this.openFlyout(id, false);
+    }, this.fly === null ? openDelay : switchDelay);
   }
 
   // The items that Up and Down move between: the filter, the items of the menu that show
@@ -423,9 +438,11 @@ export class ComposerMenu {
         handled();
         return;
       case 'Enter':
-        // Enter in the filter inserts the first match.
+        // Enter in the filter inserts the first match. Without filter text, no item shows
+        // as the first match, so Enter does nothing.
         if (inFilter) {
           handled();
+          if (!this.query.trim()) return;
           const first = [...this.list.children].find(item => item instanceof HTMLButtonElement && item.dataset.promptId !== undefined && !item.disabled);
           if (first instanceof HTMLButtonElement) first.click();
         }

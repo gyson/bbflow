@@ -114,8 +114,9 @@ export class PromptSettings {
       if (!this.busy) this.closeGroupEditor();
     };
     this.groupKeep.onchange = this.groupDrop.onchange = () => this.syncGroupRemoval();
-    // A choice of a destination selects Keep.
-    this.groupDestination.onchange = () => {
+    // The destination list selects the move. A choice of the selected place has no
+    // change event, so a focus or a click on the list selects it too.
+    this.groupDestination.onchange = this.groupDestination.onfocus = this.groupDestination.onclick = () => {
       this.groupKeep.checked = true;
       this.groupDrop.checked = false;
       this.syncGroupRemoval();

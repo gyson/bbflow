@@ -361,7 +361,7 @@
       <div class="dialog-heading"><h2 id="prompt-group-remove-title">Remove this group?</h2><button type="button" id="cancel-prompt-group-remove" class="text-button" aria-label="Close remove group">✕</button></div>
       <fieldset id="prompt-group-remove-choice" class="group-removal">
         <legend class="sr-only">The prompts of the group</legend>
-        <label class="group-removal-choice" for="prompt-group-keep"><input id="prompt-group-keep" type="radio" name="prompt-group-fate" value="keep" checked><span class="group-removal-body"><span id="prompt-group-keep-text"></span><select id="prompt-group-destination" aria-label="Move the prompts to"></select></span></label>
+        <div class="group-removal-choice"><input id="prompt-group-keep" type="radio" name="prompt-group-fate" value="keep" checked><span class="group-removal-body"><label id="prompt-group-keep-text" for="prompt-group-keep"></label><select id="prompt-group-destination" aria-label="Move the prompts to"></select></span></div>
         <label class="group-removal-choice" for="prompt-group-drop"><input id="prompt-group-drop" type="radio" name="prompt-group-fate" value="remove"><span class="group-removal-body"><span id="prompt-group-drop-text"></span><span id="prompt-group-drop-names" class="group-removal-names"></span></span></label>
         <p class="form-help">A removal has no undo.</p>
       </fieldset>

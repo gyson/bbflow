@@ -2867,8 +2867,10 @@ right of the menu:
 
 - A mouse pointer that rests on the item of a group opens its flyout after 80 ms. A
   move to another item waits 220 ms, so that a diagonal move into the open flyout does
-  not change it. A pointer on an item without a group closes the flyout after this
-  delay.
+  not change it. A pointer on any other item of the menu, such as **Manage prompts…**,
+  closes the flyout after this delay. A pointer in the flyout keeps it open.
+- A pointer that leaves the menu and the flyout cancels an open or a switch that
+  waits. A close of the menu cancels it too.
 - A click or a tap on the item of a group opens the group. Right does the same, and it
   moves the focus to the first prompt of the group.
 - In a flyout, Up and Down move between its prompts. Left and Escape close it and
@@ -2890,11 +2892,13 @@ The filter searches the saved prompts of all groups at once:
   **Handoff prompt…** hide. The matches show without their groups. An open group
   closes.
 - Enter in the filter inserts the first match. The first match shows as selected while
-  the filter has the focus.
+  the filter has the focus. Without filter text, Enter does nothing.
 - Without a match, the note **No matches.** shows. Escape in a filter with text clears
   it, and the filter keeps the focus.
 - A letter or a digit on an item of the menu moves the focus to the filter, so that the
   user can type at once. Space still selects the item.
+- The filter hides when no prompt is saved. When another view removes the last prompt
+  while the filter has the focus, **Manage prompts…** gets the focus.
 
 #### Saved prompts
 
@@ -2937,7 +2941,7 @@ the group. The dialog has two choices:
 
 | Choice | Effect |
 | --- | --- |
-| **Move its N prompts to** a list of **Top level** and the other groups | The prompts go to the end of the selected place, in their order. This choice is selected when the dialog opens. A selection in the list selects it too. |
+| **Move its N prompts to** a list of **Top level** and the other groups | The prompts go to the end of the selected place, in their order. This choice is selected when the dialog opens. A focus, a click, or a selection in the list selects it too. |
 | **Remove its N prompts** | The dialog lists the names of the first six prompts, and the number of the others. **Remove group** changes to the danger style. |
 
 - Enter in the dialog keeps the prompts, because the move is selected first.
@@ -5595,14 +5599,19 @@ Fixtures check the [Add to message menu](#add-to-message-menu) and the
   are off with their note, and a failed read.
 - Web fixtures check the groups of the menu: the prompts without a group first, a group
   without prompts hidden, the back item with the name of the group, the flyout with room, the group in place of the items without
-  room, and the keys Right, Left, Up, Down, and Escape.
+  room, and the keys Right, Left, Up, Down, and Escape. They also check that a pointer on
+  **Manage prompts…** closes the flyout, that a pointer in the flyout keeps it open, and
+  that a pointer that leaves the menu or a close of the menu cancels a waiting open.
 - Web fixtures check the filter: matches in all groups, the rank of the matches, Enter on the first match, the note without a match, Escape, and a
-  letter that moves the focus to the filter.
+  letter that moves the focus to the filter. They also check that Enter without filter
+  text inserts nothing, that the filter closes an open group, and that the focus goes to
+  **Manage prompts…** when the filter hides.
 - Web fixtures check the Prompts card: the editor, a revision conflict during an edit,
   moves, removals, and the toast after **Done**.
 - Web fixtures check the groups of the Prompts card: a new group, **＋ Add prompt** of a
   group, **New group…** in the editor, a move to another group, a move inside a group,
-  a rename, and both choices of a group removal. The model fixtures check that a retry
+  a rename, and both choices of a group removal. A focus on the destination list
+  selects the move. The model fixtures check that a retry
   after a lost reply adds a group once, and that a removal keeps a prompt that another
   view added to the group.
 
@@ -5638,6 +5647,17 @@ appearance at 1200 x 836 and the light appearance at 390 x 844:
   each prompt went below its name and buttons.
 - **Remove** of **Checks** with **Remove its 2 prompts** showed the names and
   **Remove group** in the danger style. No browser errors were reported.
+
+A later check with headless Chrome 158 and the demo instance found these results:
+
+- At 1200 px, Enter in the empty filter inserted nothing, and the menu stayed open.
+- A pointer that passed over **Reviews** and left the menu within 20 ms opened no
+  flyout. A pointer on **Manage prompts…** closed an open flyout.
+- At 390 px, a filter in the open group **Reviews**, then Escape, showed the items of
+  the menu with **Attach files…**.
+- In the removal dialog of **Checks**, a click on the destination list after **Remove
+  its 2 prompts** selected the move. The list is not inside a `label`. No browser
+  errors were reported.
 
 A second check with headless Chrome 158 and the demo instance used a second connection
 as another view:

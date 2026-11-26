@@ -1200,6 +1200,14 @@ test('a group removal keeps the prompts first, and the other choice names and re
   nodes['prompt-group-keep'].checked = false;
   nodes['prompt-group-drop'].onchange();
   assert.match(nodes['prompt-group-remove-submit'].className, /danger-action/);
+  // A focus on the list selects the move too, because a choice of the selected place
+  // has no change event.
+  nodes['prompt-group-destination'].onfocus();
+  assert.ok(nodes['prompt-group-keep'].checked && !nodes['prompt-group-drop'].checked);
+  assert.equal(nodes['prompt-group-remove-submit'].className, 'primary');
+  nodes['prompt-group-drop'].checked = true;
+  nodes['prompt-group-keep'].checked = false;
+  nodes['prompt-group-drop'].onchange();
   nodes['prompt-group-destination'].value = 't';
   nodes['prompt-group-destination'].onchange();
   assert.ok(nodes['prompt-group-keep'].checked);
