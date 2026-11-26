@@ -132,7 +132,9 @@ function fixture(scrollTop, mode = 'none') {
   };
   const terminal = { rows: 30, lines: 0, modes: { mouseTrackingMode: mode }, scrollLines(count) { this.lines += count; } };
   const stop = touchScroll(container, () => terminal);
+  // The touch events and the frames use one clock, as in a browser.
   let time = 0;
+  performance.now = () => time;
   // Send a touch event and return it. A touch cancel cannot be canceled.
   const touch = (type, x, y, wait = 16) => {
     time += wait;
@@ -150,7 +152,8 @@ function fixture(scrollTop, mode = 'none') {
     const callback = frames.at(-1);
     if (!callback) return false;
     frames.push(null);
-    callback(performance.now() + elapsed);
+    time += elapsed;
+    callback(time);
     return true;
   };
   return { container, terminal, target, stop, touch, frame, options };
@@ -269,13 +272,46 @@ test('a touch that stops a glide is not a tap', () => {
   assert.equal(touch('touchend', 100, 300).defaultPrevented, false);
 });
 
-test('a tap after the end of a glide keeps its click', () => {
+test('a touch that stops a glide is not a tap, also when it moves sideways', () => {
+  const { container, touch, frame } = fixture(333);
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 160);
+  touch('touchend', 100, 160);
+  assert.equal(frame(16), true);
+  const glided = container.scrollTop;
+  touch('touchstart', 100, 300);
+  touch('touchmove', 108, 304);
+  assert.equal(touch('touchend', 108, 304).defaultPrevented, true);
+  // The horizontal drag does not scroll and starts no glide.
+  assert.equal(container.scrollTop, glided);
+  assert.equal(frame(16), false);
+});
+
+test('a glide ends in the frame that stops its speed, and a tap after it keeps its click', () => {
   const { touch, frame } = fixture(333);
   touch('touchstart', 100, 100);
   touch('touchmove', 100, 160);
   touch('touchend', 100, 160);
-  // Run the glide to its end.
-  while (frame(16)) { /* next frame */ }
+  // The release speed is 60 pixels in 16 milliseconds. The glide has one frame for each
+  // step until its speed is 0, and no frame after that step.
+  let steps = 0;
+  for (let speed = 60 / 16; speed; speed = glide(speed, 16).speed) steps++;
+  let frames = 0;
+  while (frame(16)) frames++;
+  assert.equal(frames, steps);
+  touch('touchstart', 100, 300);
+  assert.equal(touch('touchend', 100, 300).defaultPrevented, false);
+});
+
+test('a fast drag with mouse reports has no glide, and a tap after it keeps its click', () => {
+  const { container, terminal, target, touch, frame } = fixture(0, 'vt200');
+  touch('touchstart', 100, 100);
+  touch('touchmove', 100, 160);
+  assert.equal(touch('touchend', 100, 160).defaultPrevented, true);
+  assert.equal(container.scrollTop, 0);
+  assert.equal(terminal.lines, 0);
+  assert.deepEqual(target.wheels, [-1, -1, -1]);
+  assert.equal(frame(16), false);
   touch('touchstart', 100, 300);
   assert.equal(touch('touchend', 100, 300).defaultPrevented, false);
 });

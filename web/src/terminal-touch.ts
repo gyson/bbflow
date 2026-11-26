@@ -78,7 +78,7 @@ export function rowSteps(rest: number, distance: number, cell: number): { rows: 
 // touchScroll makes a one-finger vertical drag in container scroll the terminal in it.
 // view returns the terminal that the container shows. The container keeps its place
 // across terminals, so one call is sufficient. The style sheet stops the vertical pan of
-// the browser in the terminal. A horizontal drag does nothing here. The returned
+// the browser in the terminal. A horizontal drag does not scroll here. The returned
 // function stops a glide. Call it when typed input shows the cursor row, so that the
 // glide does not move the view again.
 //
@@ -98,7 +98,8 @@ export function rowSteps(rest: number, distance: number, cell: number): { rows: 
 // input, and a phone shows its keyboard. Thus the end of such a touch is canceled,
 // and the browser sends no click.
 export function touchScroll(container: HTMLElement, view: () => Terminal | null): () => void {
-  let drag: { id: number; target: Element; x: number; y: number; vertical: boolean; stopped: boolean; rest: number; samples: Sample[] } | null = null;
+  let drag: { id: number; target: Element; x: number; y: number; axis: 'x' | 'y' | undefined; stopped: boolean; rest: number; samples: Sample[] } | null = null;
+  // The animation frame of a glide. It is 0 when no glide moves.
   let frame = 0;
 
   // The mouse wheel of a terminal scrolls its history when no mouse reports are on.
@@ -142,18 +143,18 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
       drag = null;
       return;
     }
-    drag = { id: touch.identifier, target, x: touch.clientX, y: touch.clientY, vertical: false, stopped, rest: 0, samples: [{ time: event.timeStamp, y: touch.clientY }] };
+    drag = { id: touch.identifier, target, x: touch.clientX, y: touch.clientY, axis: undefined, stopped, rest: 0, samples: [{ time: event.timeStamp, y: touch.clientY }] };
   }, { passive: true });
 
   container.addEventListener('touchmove', event => {
     const touch = find(event.touches);
-    if (!drag || !touch || event.touches.length !== 1) return;
-    if (!drag.vertical) {
-      // The first movement of the drag follows when the drag has its direction.
-      const axis = dragAxis(touch.clientX - drag.x, touch.clientY - drag.y);
-      if (axis === 'x') drag = null;
-      if (axis !== 'y' || !drag) return;
-      drag.vertical = true;
+    if (!drag || !touch || event.touches.length !== 1 || drag.axis === 'x') return;
+    if (!drag.axis) {
+      // The first movement of the drag follows when the drag has its direction. A
+      // horizontal drag keeps its browser behavior. When its touch stopped a glide, the
+      // end of the touch is still canceled.
+      drag.axis = dragAxis(touch.clientX - drag.x, touch.clientY - drag.y);
+      if (drag.axis !== 'y') return;
     }
     drag.rest = scroll(drag.target, drag.x, touch.clientY, drag.rest, touch.clientY - drag.y);
     drag.y = touch.clientY;
@@ -164,20 +165,24 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
     const current = drag;
     if (!current || find(event.touches)) return;
     drag = null;
-    if ((current.vertical || current.stopped) && event.type === 'touchend' && event.cancelable) event.preventDefault();
-    if (!current.vertical) return;
-    let speed = event.type === 'touchend' ? releaseSpeed(current.samples, event.timeStamp) : 0;
+    const vertical = current.axis === 'y';
+    if ((vertical || current.stopped) && event.type === 'touchend' && event.cancelable) event.preventDefault();
+    const terminal = view();
+    // A drag with mouse reports has no glide.
+    if (!vertical || event.type !== 'touchend' || !terminal || !scrollsHistory(terminal)) return;
+    let speed = releaseSpeed(current.samples, event.timeStamp);
     let time = performance.now();
     let rest = current.rest;
     const step = (now: number) => {
       // The terminal can go away during a glide, when the page shows another session.
       const terminal = view();
-      if (!speed || !terminal || !scrollsHistory(terminal) || !current.target.isConnected) { frame = 0; return; }
+      if (!terminal || !scrollsHistory(terminal) || !current.target.isConnected) { frame = 0; return; }
       const next = glide(speed, now - time);
       rest = scroll(current.target, current.x, current.y, rest, next.distance);
       speed = next.speed;
       time = now;
-      frame = requestAnimationFrame(step);
+      // The frame that ends the glide asks for no other frame. A touch after it is a tap.
+      frame = speed ? requestAnimationFrame(step) : 0;
     };
     if (speed) frame = requestAnimationFrame(step);
   };
