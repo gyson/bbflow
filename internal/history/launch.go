@@ -150,8 +150,8 @@ func validPromptGroups(groups []PromptGroup) ([]PromptGroup, error) {
 }
 
 // validPrompts checks the saved prompts and returns them with trimmed names. Names are
-// unique without regard to case in all groups, so that the items of a filtered menu
-// differ. The text keeps its spaces and lines. It can have tabs and newlines, but no
+// unique without regard to case in all groups, so that a move to another group never
+// makes two prompts with the same name. The text keeps its spaces and lines. It can have tabs and newlines, but no
 // other control characters, because the editor rejects them at Send. The group of each
 // prompt must be one of groups, or empty.
 func validPrompts(prompts []Prompt, groups []PromptGroup) ([]Prompt, error) {

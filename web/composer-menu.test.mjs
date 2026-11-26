@@ -11,7 +11,7 @@ const settle = async () => { for (let turn = 0; turn < 4; turn++) await new Prom
 // groups. room gives the menu the room for a flyout at its right.
 async function fixture(t, replies, room = false) {
   class Node {
-    hidden = false; disabled = false; textContent = ''; title = ''; className = ''; type = ''; value = '';
+    hidden = false; disabled = false; textContent = ''; title = ''; className = ''; type = '';
     children = []; parent = null; dataset = {}; attributes = new Map(); listeners = {}; style = {}; offsetHeight = 0; scrollTop = 0;
     classList = { toggle: (name, on) => { this.className = on ? `${this.className} ${name}`.trim() : this.className.replace(name, '').trim(); }, remove: name => this.classList.toggle(name, false) };
     append(...nodes) { for (const node of nodes) { node.parent = this; this.children.push(node); } }
@@ -48,7 +48,7 @@ async function fixture(t, replies, room = false) {
     close() { this.readyState = 3; }
   }
   const globals = { WebSocket: Socket, location: { host: 'localhost:1234' }, HTMLElement: Node, HTMLButtonElement: Node,
-    HTMLInputElement: Node, Element: Node,
+    Element: Node,
     document: { getElementById: id => nodes[id], createElement: () => new Node(), addEventListener() {}, activeElement: null, documentElement: { clientWidth: room ? 1200 : 500 } } };
   for (const [name, value] of Object.entries(globals)) {
     const original = Object.getOwnPropertyDescriptor(globalThis, name);

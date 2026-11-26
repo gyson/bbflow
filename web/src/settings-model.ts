@@ -122,7 +122,7 @@ export const maxPromptGroups = 50;
 
 // duplicatePromptName tells if a prompt other than id has the name, without regard to
 // case. The server rejects such a list, because the ＋ menu shows prompts by name. The
-// names are unique in all groups, so the matches of the menu filter differ too.
+// names are unique in all groups, so a move to another group never makes a duplicate.
 export function duplicatePromptName(prompts: Prompt[], name: string, id: string): boolean {
   const key = name.toLowerCase();
   return prompts.some(prompt => prompt.id !== id && prompt.name.toLowerCase() === key);
