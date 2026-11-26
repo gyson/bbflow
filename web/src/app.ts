@@ -382,10 +382,12 @@ function showPageBar() {
   $('page-bar-reload').hidden = !bar.reload;
 }
 
-// The sidebar tells when the session list cannot load. An empty text removes the problem.
+// The sidebar tells when the session list cannot load. Home tells it too, because Home
+// can show without the sidebar. An empty text removes the problem.
 function listProblem(text = '') {
   $('list-problem').textContent = text;
   $('list-problem').hidden = !text;
+  home.problem(text);
 }
 
 // The title of the error toast of a failed action on a session.
@@ -2001,8 +2003,6 @@ async function initialize() {
     const route = parseRoute(location.pathname);
     if (route.page === 'settings') await action(showSettings, 'Could not open Settings.');
     else if (route.page === 'session') await action(() => openSession(sessions.find(s => s.id === route.id) || { id: route.id, title: 'Session', workspace: '', status: 'unknown' }), 'Could not open the session of this address.');
-    // A session or Settings that did not open leaves Home.
-    if (!selected && !showingSettings && !home.visible) home.show(true);
     setInterval(() => {
       if (document.hidden || busy) return;
       refreshSessions();
@@ -2015,6 +2015,9 @@ async function initialize() {
     $('sessions').replaceChildren();
     listProblem(`Cannot connect to the bbflow server. ${errorMessage(error)}`);
   }
+  // A session or Settings that did not open leaves Home. Home also shows a failed
+  // connection, because the sidebar can be closed.
+  if (!selected && !showingSettings && !home.visible) home.show(true);
   controls();
 }
 

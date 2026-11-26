@@ -184,7 +184,7 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .sidebar-actions button { padding: 6px 6px; border-color: transparent; background: transparent; font-size: 12px; }
 .sidebar-actions button[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); }
 /* The sidebar tells when the session list cannot load. The list then can be out of date. */
-#list-problem { margin: 0; padding: 9px 11px; border-radius: 8px; background: var(--danger-surface); color: var(--danger); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+#list-problem, #home-problem { margin: 0; padding: 9px 11px; border-radius: 8px; background: var(--danger-surface); color: var(--danger); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .instance { padding: 12px 8px 0; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
 .instance span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.8; }
 #instance-dir { font-size: 10px; color: var(--text-muted); }
@@ -242,6 +242,9 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
    projects scrolls. */
 .home-new .action-menu { right: auto; left: 0; max-width: min(420px, 100cqi - 28px); max-height: min(340px, 60dvh); overflow-y: auto; }
 .home-new .action-menu > button { flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
+#home-problem { align-self: stretch; font-size: 12px; }
+/* While the page cannot read the session list, the rows can be out of date. */
+.home.stale #home-groups { opacity: .5; }
 #home-groups { width: 100%; display: flex; flex-direction: column; gap: 22px; }
 .home-group-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 0 2px 8px; }
 .home-group-heading h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; }

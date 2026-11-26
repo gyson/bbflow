@@ -784,8 +784,9 @@ about:
   and the button stays off until the page reloads.
 - A handoff folder that is not available shows in the status line of the message editor.
 - A failed list refresh shows above the session list, because the list can then be out
-  of date. A failed connection at page load shows there too. After a server restart,
-  the restart bar replaces it.
+  of date. A failed connection at page load shows there too. [Home](#home) shows the
+  same text at its top, because Home can show while the sidebar does not. After a
+  server restart, the restart bar replaces the text in both places.
 - An update in progress and a server restart show in a bar at the top of the main area.
   The update bar follows the update state of the status watch in each view. Thus a
   failed update removes it, and the **Updates** card of Settings shows the failure. A
@@ -1126,12 +1127,22 @@ its age below.
 - The sidebar list holds only the most recent families of each group. For a live
   session outside that list, Home reads `session-config`.
 - For each row, Home reads `composer-sent` for the latest sent message and
-  `composer-draft` for the saved draft. The first read of a row also reads
-  `session-terminals` for the tool. Before that reply, the row shows the tool of the
-  launch.
+  `composer-draft` for the saved draft. A row also reads `session-terminals` for the
+  tool, until one reply gives the terminals. Before that reply, the row shows the tool
+  of the launch.
 - Home reads this data when Home opens, and for a row when its status changes. A hidden
   Home reads nothing.
 - Home shows a message only as plain text.
+
+#### Unavailable server on Home
+
+- When the page cannot read the session list, Home shows the text of the
+  [failed list refresh](#page-messages) above **＋ New session**. The rows can then be
+  out of date, so Home shows the groups dimmed. The next list read that succeeds
+  removes the text.
+- After a failed connection at page load, Home shows only the text of that failure.
+  The page shows Home for each address then, because no session and no Settings can
+  open.
 
 #### Limits of Home
 
@@ -4973,6 +4984,12 @@ at window widths of 1200, 1600, and 1920 pixels.
   the order of each group. They also check the unsent draft, the latest sent message,
   the time spans, the place line, and the text without a project and without a live
   session.
+- Web fixtures check the reads of the row data with simulated replies. A row reads
+  again only after a status change. It reads its terminals until one reply gives them,
+  also when a newer read replaces the first reply and when the first read fails. A row
+  keeps its data after a failed read. Home reads each row again when it opens. A
+  session that ends leaves Home. A live session outside the list reads its session
+  data first.
 - A browser check used a demo instance at widths of 1280 and 390 pixels. It checked the
   two groups, the New session menu, a draft from the menu, and a click on a row. It
   checked **Unsent message** after a saved draft, and the latest message after a send.
@@ -4981,6 +4998,10 @@ at window widths of 1200, 1600, and 1920 pixels.
   Home kept its four live sessions, without idle times.
 - A browser check with a new instance showed the text without a project. **＋ Project**
   on Home opened the Add project dialog.
+- A browser check at a width of 390 pixels blocked `/client-config`. Home showed the
+  failed connection, for the address of Home and for the address of a session. A
+  second check stopped the server of a demo instance while Home showed. In 16 seconds,
+  Home showed the failed list refresh above its dimmed groups.
 - The browser console had no errors.
 - Safari in an iPhone 18 Pro simulator with iOS 27.2 showed Home of the demo instance
   with the drawer closed. That check only loaded the page.

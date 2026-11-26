@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { elapsedText, homeGroups, homeText, lastMessage, listedSession, placeLine, since, unlisted, unsent } from './dist/home.js';
+import { HomeRows, elapsedText, homeGroups, homeText, lastMessage, listedSession, placeLine, since, unlisted, unsent } from './dist/home.js';
 
 const session = (id, extra = {}) => ({ id, projectId: 'repo', parentId: '', title: id, autoTitle: '', workspace: '/work/repo', updated: '', status: 'ended', archived: false, pinned: false, viewers: 0, ...extra });
 const ids = groups => ({ running: groups.running.map(item => item.id), idle: groups.idle.map(item => item.id) });
@@ -88,4 +88,155 @@ test('the Home text tells how to add the first project, and then how to start a 
 test('the saved data of a session becomes a list row without an update time', () => {
   const row = listedSession({ archived: false, pinned: true, id: 's', projectId: 'repo', title: 'Title', workspace: '/w', status: 'idle', run: { id: 'r', status: 'running' } });
   assert.deepEqual(row, { archived: false, pinned: true, parentId: '', projectId: 'repo', id: 's', title: 'Title', autoTitle: '', workspace: '/w', updated: '', status: 'idle', viewers: 0, runStatus: 'running' });
+});
+
+// The reads of HomeRows, with a log of the requests. answer gives the replies of the
+// oldest read of a row that has no reply yet, or fails that read.
+function fixture() {
+  const log = [], waiting = [];
+  let changes = 0, available = true;
+  const ask = (kind, id) => new Promise((resolve, reject) => { log.push(`${kind}:${id}`); waiting.push({ kind, id, resolve, reject }); });
+  const reads = { session: id => ask('session', id), sent: id => ask('sent', id), draft: id => ask('draft', id), terminals: id => ask('terminals', id) };
+  const rows = new HomeRows(() => available ? reads : null, () => { changes += 1; });
+  const take = (kind, id) => {
+    const index = waiting.findIndex(item => item.kind === kind && item.id === id);
+    return index < 0 ? undefined : waiting.splice(index, 1)[0];
+  };
+  const settled = () => new Promise(resolve => setImmediate(resolve));
+  const answer = async (id, { tools = ['Codex', 'Claude Code'], text = 'Run the tests.', draft = '', fail = false } = {}) => {
+    const sent = take('sent', id), saved = take('draft', id), terminals = take('terminals', id);
+    if (fail) sent.reject(new Error('The read failed.'));
+    else sent.resolve({ messages: text ? [{ revision: 1, created: '2026-11-26T10:00:00Z', text, attachments: [], confirmed: true }] : [], more: false });
+    saved.resolve({ draft: { revision: 2, text: draft, attachments: [], pending: false }, attachments: [] });
+    terminals?.resolve(tools.map((tool, index) => ({ number: index + 1, run: `r${index}`, tool, status: 'running', started: '', ended: '' })));
+    await settled();
+  };
+  return { rows, log, answer, take, settled, changes: () => changes, unavailable: () => { available = false; } };
+}
+const launched = (id, status) => session(id, { status, preparation: { toolName: 'Codex' } });
+
+test('the first read of a row gives the tool of the latest terminal, the latest message, and the draft', async () => {
+  const { rows, log, answer, changes } = fixture();
+  rows.update([launched('a', 'idle')], { a: 'idle' });
+  rows.load();
+  assert.deepEqual(log, ['sent:a', 'draft:a', 'terminals:a']);
+  assert.equal(rows.detail('a'), undefined, 'the row shows the tool of the launch until the reply');
+  await answer('a', { draft: 'Also check the logs.' });
+  assert.deepEqual(rows.detail('a'), { tool: 'Claude Code', unsent: true, last: { text: 'Run the tests.', created: '2026-11-26T10:00:00Z' } });
+  assert.equal(changes(), 1);
+  rows.load();
+  assert.equal(log.length, 3, 'a row reads again only after a status change');
+});
+
+test('a status change reads the message and the draft again, and the terminals only until a reply gives them', async () => {
+  const { rows, log, answer } = fixture();
+  rows.update([launched('a', 'idle')], { a: 'idle' });
+  rows.load();
+  await answer('a');
+  rows.update([launched('a', 'idle')], { a: 'running' });
+  rows.load();
+  assert.deepEqual(log.slice(3), ['sent:a', 'draft:a']);
+  await answer('a', { text: 'Fix the test.' });
+  assert.deepEqual(rows.detail('a'), { tool: 'Claude Code', unsent: false, last: { text: 'Fix the test.', created: '2026-11-26T10:00:00Z' } });
+});
+
+test('a row reads its terminals again when a newer read replaces the first reply', async () => {
+  const { rows, log, answer } = fixture();
+  rows.update([launched('a', 'idle')], { a: 'idle' });
+  rows.load();
+  rows.update([launched('a', 'idle')], { a: 'running' });
+  rows.load();
+  assert.deepEqual(log, ['sent:a', 'draft:a', 'terminals:a', 'sent:a', 'draft:a', 'terminals:a']);
+  await answer('a', { text: 'The reply of the first read.' });
+  assert.equal(rows.detail('a'), undefined, 'the reply of the replaced read does not show');
+  await answer('a');
+  assert.equal(rows.detail('a').tool, 'Claude Code');
+  rows.update([launched('a', 'idle')], { a: 'idle' });
+  rows.load();
+  assert.deepEqual(log.slice(6), ['sent:a', 'draft:a'], 'the tool is known now');
+});
+
+test('a row reads its terminals again after a failed first read', async () => {
+  const { rows, log, answer } = fixture();
+  rows.update([launched('a', 'idle')], { a: 'idle' });
+  rows.load();
+  await answer('a', { fail: true });
+  assert.equal(rows.detail('a'), undefined);
+  rows.load();
+  assert.equal(log.length, 3, 'a failed read waits for the next status change');
+  rows.update([launched('a', 'idle')], { a: 'running' });
+  rows.load();
+  assert.deepEqual(log.slice(3), ['sent:a', 'draft:a', 'terminals:a']);
+  await answer('a');
+  assert.equal(rows.detail('a').tool, 'Claude Code');
+});
+
+test('a row keeps its data when a later read fails', async () => {
+  const { rows, answer } = fixture();
+  rows.update([launched('a', 'idle')], { a: 'idle' });
+  rows.load();
+  await answer('a');
+  rows.update([launched('a', 'idle')], { a: 'running' });
+  rows.load();
+  await answer('a', { fail: true });
+  assert.equal(rows.detail('a').last.text, 'Run the tests.');
+});
+
+test('Home reads each row again when it opens, and the rows keep their data until the replies', async () => {
+  const { rows, log, answer } = fixture();
+  rows.update([launched('a', 'idle')], { a: 'idle' });
+  rows.load();
+  await answer('a');
+  rows.reopen();
+  rows.load();
+  assert.deepEqual(log.slice(3), ['sent:a', 'draft:a', 'terminals:a']);
+  assert.equal(rows.detail('a').tool, 'Claude Code');
+  await answer('a', { tools: ['Codex', 'Claude Code', 'Codex'] });
+  assert.equal(rows.detail('a').tool, 'Codex');
+});
+
+test('a session that ends leaves Home, and a new terminal reads its data again', async () => {
+  const { rows, log, answer } = fixture();
+  rows.update([launched('a', 'idle')], { a: 'idle' });
+  rows.load();
+  await answer('a');
+  rows.update([launched('a', 'ended')], {});
+  rows.load();
+  assert.equal(rows.detail('a'), undefined);
+  assert.deepEqual(rows.groups(), { running: [], idle: [] });
+  rows.update([launched('a', 'ended')], { a: 'running' });
+  rows.load();
+  assert.deepEqual(log.slice(3), ['sent:a', 'draft:a', 'terminals:a']);
+});
+
+test('Home reads a live session outside the list, and then the data of its row', async () => {
+  const { rows, log, answer, take, settled } = fixture();
+  rows.update([], { x: 'idle' });
+  rows.load();
+  rows.load();
+  assert.deepEqual(log, ['session:x'], 'one read asks for the session');
+  take('session', 'x').reject(new Error('The read failed.'));
+  await settled();
+  rows.load();
+  assert.deepEqual(log, ['session:x', 'session:x'], 'the next load asks again after a failed read');
+  take('session', 'x').resolve({ archived: false, pinned: false, id: 'x', projectId: 'repo', parentId: 'p', title: 'Older session', workspace: '/w', status: 'idle' });
+  await settled();
+  assert.deepEqual(rows.groups().idle.map(item => item.id), ['x']);
+  assert.equal(rows.session('x').parentId, 'p');
+  assert.deepEqual(log.slice(2), ['sent:x', 'draft:x', 'terminals:x']);
+  await answer('x');
+  assert.equal(rows.detail('x').tool, 'Claude Code');
+  rows.update([], {});
+  rows.load();
+  assert.deepEqual(rows.groups(), { running: [], idle: [] });
+  assert.equal(rows.session('x'), undefined);
+});
+
+test('Home reads nothing while the server is not known', () => {
+  const { rows, log, unavailable } = fixture();
+  unavailable();
+  rows.update([launched('a', 'idle')], { a: 'idle', x: 'running' });
+  rows.load();
+  assert.deepEqual(log, []);
+  assert.deepEqual(rows.groups().idle.map(item => item.id), ['a']);
 });

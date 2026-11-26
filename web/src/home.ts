@@ -1,7 +1,7 @@
 import { ActionMenu } from './action-menu.js';
 import { element } from './dom.js';
 import { call, sessionTitle } from './protocol.js';
-import type { Draft, PreparedSession, Project, SentPage, ServerInfo, SessionInfo, TerminalInfo } from './protocol.js';
+import type { ComposerState, Draft, PreparedSession, Project, SentPage, ServerInfo, SessionInfo, TerminalInfo } from './protocol.js';
 import { listStatus } from './session-status.js';
 
 // Home lists the sessions that have a live terminal, in two groups.
@@ -105,7 +105,113 @@ export function listedSession(session: PreparedSession): SessionInfo {
 }
 
 // The data of a row that the session list does not hold.
-interface Detail { tool: string; last?: LastMessage; unsent: boolean }
+export interface RowDetail { tool: string; last?: LastMessage; unsent: boolean }
+
+// The reads of that data. HomeView reads from the server.
+export interface HomeReads {
+  session(id: string): Promise<PreparedSession>;
+  sent(id: string): Promise<SentPage>;
+  draft(id: string): Promise<ComposerState>;
+  terminals(id: string): Promise<TerminalInfo[]>;
+}
+
+// HomeRows holds the sessions of Home, and the data that Home reads for each row. It
+// uses no page elements. reads returns null while the server is not known. changed
+// runs after a reply changes a row.
+export class HomeRows {
+  private listed: SessionInfo[] = [];
+  private statuses: Record<string, string> = {};
+  // The live sessions that the session list does not hold, and the IDs that a read
+  // asked for since Home opened.
+  private readonly extra = new Map<string, SessionInfo>();
+  private readonly asked = new Set<string>();
+  private readonly details = new Map<string, RowDetail>();
+  // The status of each row at its latest read, and the number of that read.
+  private readonly read = new Map<string, { status: string; turn: number }>();
+  // The rows whose terminals a reply gave since Home opened.
+  private readonly tools = new Set<string>();
+  private turns = 0;
+
+  constructor(private readonly reads: () => HomeReads | null, private readonly changed: () => void) {}
+
+  // Take the session list and the pushed statuses.
+  update(listed: SessionInfo[], statuses: Record<string, string>): void {
+    this.listed = listed;
+    this.statuses = statuses;
+  }
+
+  // Make the next load read each row again, with its terminals. Home calls it when it
+  // opens. The rows keep their data until the replies arrive.
+  reopen(): void {
+    this.read.clear();
+    this.tools.clear();
+    this.asked.clear();
+  }
+
+  groups(): HomeGroups { return homeGroups(this.listed, [...this.extra.values()], this.statuses); }
+
+  detail(id: string): RowDetail | undefined { return this.details.get(id); }
+
+  // Return a session by its ID, for the top-level session of a row.
+  session(id: string): SessionInfo | undefined { return this.listed.find(session => session.id === id) ?? this.extra.get(id); }
+
+  // Read the data that the rows need. A row reads again when its status changes, because
+  // a send starts output.
+  load(): void {
+    const reads = this.reads();
+    if (!reads) return;
+    for (const id of unlisted(this.listed, this.statuses)) {
+      if (this.asked.has(id)) continue;
+      this.asked.add(id);
+      void reads.session(id).then(session => {
+        if (!(id in this.statuses)) return;
+        this.extra.set(id, listedSession(session));
+        this.load();
+        this.changed();
+      // The next load asks again.
+      }).catch(() => { this.asked.delete(id); });
+    }
+    const { running, idle } = this.groups();
+    const shown = new Set<string>();
+    for (const [status, sessions] of [['running', running], ['idle', idle]] as const) {
+      for (const { id } of sessions) {
+        shown.add(id);
+        if (this.read.get(id)?.status === status) continue;
+        const turn = ++this.turns;
+        this.read.set(id, { status, turn });
+        // The tool changes only with a new terminal, and a new terminal gives a new row.
+        // Thus a row reads its terminals until one reply gives them. A reply that fails,
+        // or that a newer read replaces, gives nothing.
+        void Promise.all([
+          reads.sent(id),
+          reads.draft(id),
+          this.tools.has(id) ? Promise.resolve<TerminalInfo[] | null>(null) : reads.terminals(id),
+        ]).then(([sent, composer, list]) => {
+          if (this.read.get(id)?.turn !== turn) return;
+          if (list) this.tools.add(id);
+          const last = lastMessage(sent);
+          const tool = list ? list.at(-1)?.tool ?? '' : this.details.get(id)?.tool ?? '';
+          this.details.set(id, { tool, unsent: unsent(composer.draft), ...(last ? { last } : {}) });
+          this.changed();
+        // After a failed read, the row keeps its earlier data. The next status change
+        // reads it again.
+        }).catch(() => {});
+      }
+    }
+    // A session that ended leaves Home. A new terminal of it reads its data again.
+    for (const id of [...this.details.keys()]) if (!shown.has(id)) this.details.delete(id);
+    for (const id of [...this.read.keys()]) if (!shown.has(id)) this.read.delete(id);
+    for (const id of [...this.tools]) if (!shown.has(id)) this.tools.delete(id);
+    for (const id of [...this.extra.keys()]) if (!(id in this.statuses)) { this.extra.delete(id); this.asked.delete(id); }
+  }
+}
+
+const serverReads = (server: ServerInfo): HomeReads => ({
+  session: id => call(server, { operation: 'session-config', session: id }),
+  sent: id => call(server, { operation: 'composer-sent', session: id }),
+  draft: id => call(server, { operation: 'composer-draft', session: id }),
+  terminals: id => call(server, { operation: 'session-terminals', session: id }),
+});
 
 interface Host {
   server(): ServerInfo | null;
@@ -127,26 +233,26 @@ const groupNotes = {
 // Home reads the tool, the latest sent message, and the saved draft of each row.
 export class HomeView {
   private readonly view = element('home', HTMLElement);
+  private readonly problemLine = element('home-problem', HTMLElement);
   private readonly groups = element('home-groups', HTMLElement);
   private readonly empty = element('home-empty', HTMLElement);
   private readonly text = element('home-text', HTMLElement);
   private readonly addProject = element('home-add-project', HTMLButtonElement);
   private readonly items = element('home-new', HTMLElement);
   private readonly menu = new ActionMenu('home-new');
+  private readonly rows: HomeRows;
   private projects: Project[] = [];
-  private listed: SessionInfo[] = [];
-  private statuses: Record<string, string> = {};
-  // The first session list arrived. Before it, Home shows nothing.
+  // The first session list arrived. Before it, Home shows only a problem.
   private loaded = false;
-  private readonly extra = new Map<string, SessionInfo>();
-  private readonly details = new Map<string, Detail>();
-  // The status of each row at its latest read, and the number of that read.
-  private readonly read = new Map<string, { status: string; turn: number }>();
-  private turns = 0;
+  private trouble = '';
   private rendered = '';
   private menuProjects = '';
 
   constructor(private readonly host: Host) {
+    this.rows = new HomeRows(() => {
+      const server = host.server();
+      return server ? serverReads(server) : null;
+    }, () => this.render());
     this.addProject.onclick = () => host.addProject();
     // The times of the rows change without a message from the server.
     setInterval(() => this.render(), 30000);
@@ -155,93 +261,54 @@ export class HomeView {
 
   get visible(): boolean { return !this.view.hidden; }
 
-  // Show or hide Home. A shown Home reads the data of each row again, with its terminals.
+  // Show or hide Home. A shown Home reads the data of each row again. A hidden Home
+  // reads nothing.
   show(visible: boolean): void {
     this.view.hidden = !visible;
     if (!visible) return;
-    this.read.clear();
-    this.extra.clear();
+    this.rows.reopen();
     this.refresh();
   }
 
   // Take the session list and the pushed statuses. The host calls it after each change.
   update(projects: Project[], listed: SessionInfo[], statuses: Record<string, string>): void {
     this.projects = projects;
-    this.listed = listed;
-    this.statuses = statuses;
+    this.rows.update(listed, statuses);
     this.loaded = true;
     this.refresh();
+  }
+
+  // Show why the page cannot read the session list, or remove that text with ''. The
+  // sidebar shows the same text, but Home can show without the sidebar. While the text
+  // shows, the rows can be out of date, so Home shows them dimmed.
+  problem(text: string): void {
+    this.trouble = text;
+    this.render();
   }
 
   // Turn the Add project button off while the page cannot add a project.
   controls(off: boolean): void { this.addProject.disabled = off; }
 
-  private rows(): HomeGroups { return homeGroups(this.listed, [...this.extra.values()], this.statuses); }
-
   private refresh(): void {
-    if (!this.loaded) return;
-    if (this.visible) this.load();
+    if (this.loaded && this.visible) this.rows.load();
     this.render();
   }
 
-  // Read the data that a row needs. A row reads again when its status changes, because
-  // a send starts output. A hidden Home reads nothing.
-  private load(): void {
-    const server = this.host.server();
-    if (!server) return;
-    for (const id of unlisted(this.listed, this.statuses)) {
-      if (this.extra.has(id) || this.read.has(`session:${id}`)) continue;
-      const turn = ++this.turns;
-      this.read.set(`session:${id}`, { status: '', turn });
-      void call(server, { operation: 'session-config', session: id }).then(session => {
-        if (this.read.get(`session:${id}`)?.turn !== turn) return;
-        this.extra.set(id, listedSession(session));
-        this.refresh();
-      }).catch(() => { this.read.delete(`session:${id}`); });
-    }
-    const { running, idle } = this.rows();
-    const shown = new Set<string>();
-    for (const [status, sessions] of [['running', running], ['idle', idle]] as const) {
-      for (const session of sessions) {
-        shown.add(session.id);
-        const earlier = this.read.get(session.id);
-        if (earlier?.status === status) continue;
-        // The tool changes only with a new terminal, and a new terminal gives a new row.
-        // Thus only the first read of a row reads the terminals.
-        const turn = ++this.turns;
-        this.read.set(session.id, { status, turn });
-        void Promise.all([
-          call(server, { operation: 'composer-sent', session: session.id }),
-          call(server, { operation: 'composer-draft', session: session.id }),
-          earlier ? Promise.resolve<TerminalInfo[] | null>(null) : call(server, { operation: 'session-terminals', session: session.id }),
-        ]).then(([sent, composer, terminals]) => {
-          if (this.read.get(session.id)?.turn !== turn) return;
-          const last = lastMessage(sent);
-          const tool = terminals ? terminals.at(-1)?.tool ?? '' : this.details.get(session.id)?.tool ?? '';
-          this.details.set(session.id, { tool, unsent: unsent(composer.draft), ...(last ? { last } : {}) });
-          this.render();
-        // After a failed read, the row keeps its earlier data. The next status change
-        // reads it again.
-        }).catch(() => {});
-      }
-    }
-    // A session that ended leaves Home. A new terminal of it reads its data again.
-    for (const id of [...this.details.keys()]) if (!shown.has(id)) { this.details.delete(id); this.read.delete(id); }
-    for (const id of [...this.extra.keys()]) if (!(id in this.statuses)) { this.extra.delete(id); this.read.delete(`session:${id}`); }
-  }
-
   private render(): void {
-    if (!this.loaded || !this.visible) return;
+    if (!this.visible) return;
+    if (this.problemLine.textContent !== this.trouble) this.problemLine.textContent = this.trouble;
+    this.problemLine.hidden = !this.trouble;
+    this.view.classList.toggle('stale', !!this.trouble);
+    if (!this.loaded) return;
     this.renderMenu();
-    const { running, idle } = this.rows();
+    const { running, idle } = this.rows.groups();
     const now = Date.now();
-    const sessions = new Map([...this.listed, ...this.extra.values()].map(session => [session.id, session]));
     const row = (session: SessionInfo, status: string) => {
-      const detail = this.details.get(session.id);
+      const detail = this.rows.detail(session.id);
       return {
         id: session.id, status,
         title: sessionTitle(session) || 'Untitled session',
-        place: placeLine(session, this.projects, sessions.get(session.parentId), detail?.tool),
+        place: placeLine(session, this.projects, session.parentId ? this.rows.session(session.parentId) : undefined, detail?.tool),
         time: status === 'running' ? 'now' : since(session.updated, now),
         // The update time of a running session changes with each list read. The row does
         // not show it, so it must not replace the buttons.
