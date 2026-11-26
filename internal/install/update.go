@@ -60,14 +60,26 @@ func Check(destination string) (Release, error) {
 }
 
 // CheckContext is Check for a caller without a terminal, such as the server. The end
-// of ctx stops the check. See background.
+// of ctx stops the check. See background. The installer still writes its messages to
+// standard error. A failed installer also gives its reason as the error, so that the
+// caller can show it without a terminal.
 func CheckContext(ctx context.Context, destination string) (Release, error) {
-	return check(background(installer(ctx, destination, "--check")))
+	command := background(installer(ctx, destination, "--check"))
+	var stderr bytes.Buffer
+	command.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	release, err := check(command)
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && ctx.Err() == nil {
+		err = installerError(stderr.String(), err)
+	}
+	return release, err
 }
 
 func check(command *exec.Cmd) (Release, error) {
 	var release Release
-	command.Stderr = os.Stderr
+	if command.Stderr == nil {
+		command.Stderr = os.Stderr
+	}
 	output, err := command.Output()
 	if err != nil {
 		return release, err
@@ -146,10 +158,17 @@ func InstallContext(ctx context.Context, destination, version string, output io.
 	command.Stdout, command.Stderr = output, io.MultiWriter(output, &stderr)
 	err := command.Run()
 	if err != nil && ctx.Err() == nil {
-		lines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
-		if reason, ok := strings.CutPrefix(lines[len(lines)-1], "bbflow installer: "); ok {
-			return errors.New(reason)
-		}
+		return installerError(stderr.String(), err)
+	}
+	return err
+}
+
+// installerError gives the reason of a failed installer from the last line of its
+// standard error. Without a reason of the installer, it returns err.
+func installerError(stderr string, err error) error {
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	if reason, ok := strings.CutPrefix(lines[len(lines)-1], "bbflow installer: "); ok {
+		return errors.New(reason)
 	}
 	return err
 }

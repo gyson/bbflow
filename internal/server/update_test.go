@@ -17,17 +17,19 @@ import (
 	"bbflow/internal/protocol"
 )
 
-// fakeReleases gives the offers of offers in order, and then the last one again. Check
-// waits for gate when it is set. Update fails with fail, or returns ended.
+// fakeReleases gives the offers of offers in order, and then the last one again. A nil
+// offer reports the newest release. Check waits for gate when it is set, and it fails
+// with checkFail. Update fails with fail, or returns ended.
 type fakeReleases struct {
-	mu       sync.Mutex
-	offers   []protocol.Update
-	checks   int
-	gate     chan struct{}
-	checking chan struct{} // Check sends on it before it waits for gate.
-	updates  []string
-	fail     error
-	ended    chan error
+	mu        sync.Mutex
+	offers    []*protocol.Update
+	checks    int
+	gate      chan struct{}
+	checking  chan struct{} // Check sends on it before it waits for gate.
+	checkFail error
+	updates   []string
+	fail      error
+	ended     chan error
 }
 
 func (f *fakeReleases) Check(context.Context) (*protocol.Update, error) {
@@ -42,7 +44,14 @@ func (f *fakeReleases) Check(context.Context) (*protocol.Update, error) {
 	defer f.mu.Unlock()
 	offer := f.offers[min(f.checks, len(f.offers)-1)]
 	f.checks++
-	return &offer, nil
+	if f.checkFail != nil {
+		return nil, f.checkFail
+	}
+	if offer == nil {
+		return nil, nil
+	}
+	fresh := *offer
+	return &fresh, nil
 }
 
 func (f *fakeReleases) Update(_ context.Context, offer protocol.Update, instance string) (<-chan error, error) {
@@ -90,7 +99,7 @@ func serveReleases(t *testing.T, releases Releases) *updateServer {
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan error, 1)
 	go func() {
-		_, err := Serve(ctx, listener, store, releases)
+		_, err := Serve(ctx, listener, store, "0.0.1", releases)
 		served <- err
 	}()
 	t.Cleanup(func() {
@@ -115,8 +124,8 @@ func serveReleases(t *testing.T, releases Releases) *updateServer {
 	return u
 }
 
-// next returns the offer of the first statuses message that matches.
-func (u *updateServer) next(reason string, match func(*protocol.Update) bool) *protocol.Update {
+// state returns the release check state of the first statuses message that matches.
+func (u *updateServer) state(reason string, match func(protocol.Release) bool) protocol.Release {
 	u.t.Helper()
 	for {
 		u.watch.SetReadDeadline(time.Now().Add(5 * time.Second))
@@ -124,10 +133,21 @@ func (u *updateServer) next(reason string, match func(*protocol.Update) bool) *p
 		if err != nil {
 			u.t.Fatalf("%s: %v", reason, err)
 		}
-		if message.Type == "statuses" && match(message.Update) {
-			return message.Update
+		if message.Type == "statuses" && message.Release != nil && match(*message.Release) {
+			return *message.Release
 		}
 	}
+}
+
+// next returns the offer of the first statuses message whose offer matches.
+func (u *updateServer) next(reason string, match func(*protocol.Update) bool) *protocol.Update {
+	u.t.Helper()
+	return u.state(reason, func(r protocol.Release) bool { return match(r.Offer) }).Offer
+}
+
+func (u *updateServer) check() error {
+	_, err := u.target.Call(protocol.Request{Operation: "update-check"})
+	return err
 }
 
 func (u *updateServer) start(version string, revision int64) error {
@@ -154,7 +174,7 @@ func (u *updateServer) setCheck(enabled bool) {
 var offer002 = protocol.Update{Version: "0.0.1", Available: "0.0.2"}
 
 func TestServerOffersAndStartsUpdates(t *testing.T) {
-	releases := &fakeReleases{offers: []protocol.Update{offer002}}
+	releases := &fakeReleases{offers: []*protocol.Update{&offer002}}
 	u := serveReleases(t, releases)
 	offer := u.next("offer after start", func(o *protocol.Update) bool { return o != nil })
 	if *offer != (protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", State: "available"}) {
@@ -182,21 +202,13 @@ func TestServerOffersAndStartsUpdates(t *testing.T) {
 	if err := u.start("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "already in progress") {
 		t.Fatal("started a second update:", err)
 	}
-	// An update in progress stays visible when the setting changes to off.
+	// The off setting controls only the daily check. The offer stays.
 	u.setCheck(false)
 	ended <- errors.New("the restart failed")
-	if failed := u.next("failed restart", func(o *protocol.Update) bool { return o == nil || o.State == "failed" }); failed != nil {
-		t.Fatalf("the off setting shows a failed update: %+v", failed)
+	if failed := u.next("failed restart", func(o *protocol.Update) bool { return o == nil || o.State == "failed" }); failed == nil || failed.Error != "the restart failed" {
+		t.Fatalf("offer after a failed restart: %+v", failed)
 	}
-	// The off setting hides the offer, so a view cannot start it.
-	if err := u.start("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "release check is off") {
-		t.Fatal("started a hidden offer:", err)
-	}
-	// The setting shows the earlier result again. The server checks only once a day.
-	u.setCheck(true)
-	if failed := u.next("setting on", func(o *protocol.Update) bool { return o != nil }); failed.State != "failed" || failed.Error != "the restart failed" {
-		t.Fatalf("offer after the setting changed: %+v", failed)
-	}
+	// The server checks only once a day.
 	if releases.count() != 1 {
 		t.Fatalf("the server checked %d times", releases.count())
 	}
@@ -208,33 +220,83 @@ func TestServerOffersAndStartsUpdates(t *testing.T) {
 	}
 }
 
-// A settings save applies at once, also while a slow check runs. The result of that
-// check then stays hidden, and a view cannot start it.
-func TestOffSettingAppliesDuringCheck(t *testing.T) {
-	releases := &fakeReleases{offers: []protocol.Update{offer002}, gate: make(chan struct{}), checking: make(chan struct{})}
+// The views see a running check, its time, and its failure. A failed check keeps the
+// offer of the last successful check.
+func TestStatusShowsTheCheck(t *testing.T) {
+	releases := &fakeReleases{offers: []*protocol.Update{nil, &offer002}, gate: make(chan struct{}), checking: make(chan struct{})}
 	u := serveReleases(t, releases)
 	<-releases.checking
+	if running := u.state("running check", func(r protocol.Release) bool { return r.Checking }); running != (protocol.Release{Version: "0.0.1", CanUpdate: true, Checking: true}) {
+		t.Fatalf("running check: %+v", running)
+	}
+	// Later checks do not wait.
+	releases.mu.Lock()
+	gate := releases.gate
+	releases.gate = nil
+	releases.mu.Unlock()
+	close(gate)
+	newest := u.state("newest release", func(r protocol.Release) bool { return !r.Checking })
+	if newest.Offer != nil || newest.Error != "" {
+		t.Fatalf("check without a newer release: %+v", newest)
+	}
+	if checked, err := time.Parse(time.RFC3339, newest.Checked); err != nil || time.Since(checked) > time.Minute {
+		t.Fatalf("check time %q: %v", newest.Checked, err)
+	}
+	if err := u.check(); err != nil {
+		t.Fatal(err)
+	}
+	u.next("offer of a requested check", func(o *protocol.Update) bool { return o != nil })
+	releases.mu.Lock()
+	releases.checkFail = errors.New("GitHub is down")
+	releases.mu.Unlock()
+	if err := u.check(); err != nil {
+		t.Fatal(err)
+	}
+	failed := u.state("failed check", func(r protocol.Release) bool { return r.Error != "" })
+	if failed.Error != "GitHub is down" || failed.Checking || failed.Offer == nil || failed.Offer.Available != "0.0.2" {
+		t.Fatalf("failed check: %+v", failed)
+	}
+}
+
+// A check request runs at once, also while the setting is off. A running check answers
+// another request. The result shows, and a view can start its offer.
+func TestCheckNowRunsWhileTheSettingIsOff(t *testing.T) {
+	releases := &fakeReleases{offers: []*protocol.Update{nil, &offer002}, gate: make(chan struct{}), checking: make(chan struct{})}
+	u := serveReleases(t, releases)
+	<-releases.checking
+	// A settings save applies at once, also while a slow check runs.
 	u.setCheck(false)
-	close(releases.gate)
-	if err := u.start("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "release check is off") {
-		t.Fatal("started the offer of a check that the setting turned off:", err)
+	releases.gate <- struct{}{}
+	u.state("first check", func(r protocol.Release) bool { return !r.Checking && r.Checked != "" })
+	for range 2 {
+		if err := u.check(); err != nil {
+			t.Fatal(err)
+		}
 	}
-	// When the setting changes to on, the view shows the result of that check. The
-	// server does not check again.
-	u.setCheck(true)
-	if offer := u.next("setting on", func(o *protocol.Update) bool { return o != nil }); offer.State != "available" {
-		t.Fatalf("offer: %+v", offer)
+	<-releases.checking
+	if err := u.check(); err != nil {
+		t.Fatal(err)
 	}
-	if releases.count() != 1 {
+	releases.gate <- struct{}{}
+	state := u.state("offer while the setting is off", func(r protocol.Release) bool { return r.Offer != nil })
+	if state.Checking || *state.Offer != (protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", State: "available"}) {
+		t.Fatalf("state after the check: %+v", state)
+	}
+	if releases.count() != 2 {
 		t.Fatalf("the server checked %d times", releases.count())
 	}
+	releases.set(nil, make(chan error))
+	if err := u.start("0.0.2", 1); err != nil {
+		t.Fatal(err)
+	}
+	u.next("update in progress", func(o *protocol.Update) bool { return o != nil && o.State == "updating" })
 }
 
 // A view confirmed a restart, but the executable changed. The update changes nothing,
 // and the server checks again at once for a new offer.
 func TestStaleOfferChecksAgain(t *testing.T) {
 	restart := protocol.Update{Version: "0.0.1", Available: "0.0.2", Installed: true}
-	releases := &fakeReleases{offers: []protocol.Update{restart, offer002}}
+	releases := &fakeReleases{offers: []*protocol.Update{&restart, &offer002}}
 	u := serveReleases(t, releases)
 	u.next("restart offer", func(o *protocol.Update) bool { return o != nil && o.Installed })
 	releases.set(fmt.Errorf("%w: it has bbflow 0.0.1 now", ErrStaleOffer), nil)
@@ -271,7 +333,7 @@ func TestCheckKeepsTheRevisionOfTheSameOffer(t *testing.T) {
 			fresh := *offer
 			offer = &fresh
 		}
-		u.checked(offer)
+		u.ended(offer, nil, time.Now())
 		if u.offer == nil {
 			return 0
 		}
@@ -294,13 +356,21 @@ func TestUpdateSettingKeepsTheNewestSave(t *testing.T) {
 	u.saved(history.Settings{Revision: 3, UpdateCheck: false})
 	// The reply to an earlier save can come later. It does not apply.
 	u.saved(history.Settings{Revision: 2, UpdateCheck: true})
-	if enabled, _ := u.due(); enabled {
+	if start, enabled := u.next(time.Time{}); start || enabled {
 		t.Fatal("an earlier save turned the check on again")
 	}
 }
 
-func TestDevelopmentBuildCannotStartUpdate(t *testing.T) {
-	if err := (&Server{}).startUpdate("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "cannot update") {
+// A development build shows its version, but it cannot check or update.
+func TestDevelopmentBuildCannotUpdate(t *testing.T) {
+	u := serveReleases(t, nil)
+	if state := u.state("status", func(protocol.Release) bool { return true }); state != (protocol.Release{Version: "0.0.1"}) {
+		t.Fatalf("release state: %+v", state)
+	}
+	if err := u.check(); err == nil || !strings.Contains(err.Error(), "cannot check") {
+		t.Fatal("checked without releases:", err)
+	}
+	if err := u.start("0.0.2", 1); err == nil || !strings.Contains(err.Error(), "cannot update") {
 		t.Fatal("started an update without releases:", err)
 	}
 }

@@ -1,4 +1,4 @@
-import { element } from './dom.js';
+import { element, revealCard } from './dom.js';
 import { errorMessage } from './protocol.js';
 import type { Prompt } from './protocol.js';
 import { promptEdit, promptMove, promptProblem, promptRemoval, samePrompts } from './settings-model.js';
@@ -72,18 +72,8 @@ export class PromptSettings {
   }
 
   // reveal scrolls to the card and moves the focus to its heading. Manage prompts in the
-  // ＋ menu opens Settings here. It scrolls only the nearest scroll area, because
-  // scrollIntoView would also move the page. The bar of Settings stays at the top of that
-  // area, so the card goes below the bar.
-  reveal(): void {
-    let area = this.card.parentElement;
-    while (area && !(area.scrollHeight > area.clientHeight && /auto|scroll/.test(getComputedStyle(area).overflowY))) area = area.parentElement;
-    if (area) {
-      const bar = area.querySelector('.settings-actions')?.getBoundingClientRect().height ?? 0;
-      area.scrollTop += this.card.getBoundingClientRect().top - area.getBoundingClientRect().top - bar;
-    }
-    this.heading.focus({ preventScroll: true });
-  }
+  // ＋ menu opens Settings here.
+  reveal(): void { revealCard(this.card, this.heading); }
 
   // close discards the entries of the card when the user leaves Settings. A running save
   // continues.

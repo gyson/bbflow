@@ -118,7 +118,7 @@ func serve(target client.Target) error {
 			fmt.Fprintln(os.Stderr, "bbflow menu bar unavailable:", err)
 		}
 	}
-	owned, err = server.Serve(ctx, listener, store, newReleases(target))
+	owned, err = server.Serve(ctx, listener, store, version, newReleases(target))
 	return err
 }
 

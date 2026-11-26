@@ -519,8 +519,8 @@ func watchOffer(t *testing.T, target client.Target, match func(*protocol.Update)
 		if err != nil {
 			t.Fatal("no matching release offer:", err)
 		}
-		if message.Type == "statuses" && match(message.Update) {
-			return message.Update
+		if message.Type == "statuses" && message.Release != nil && match(message.Release.Offer) {
+			return message.Release.Offer
 		}
 	}
 }

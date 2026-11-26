@@ -17,7 +17,6 @@
     <p id="list-problem" role="status" hidden></p>
     <nav id="sessions" aria-label="Projects and sessions"><p class="muted">Connecting…</p></nav>
     <span id="row-menu-status" class="sr-only" role="status"></span>
-    <button id="update-open" class="update-notice" aria-haspopup="dialog" hidden></button>
     <div class="sidebar-actions"><button id="add-project" aria-haspopup="dialog" aria-label="Add project" title="Add project">＋ Project</button><button id="archives-open" aria-pressed="false" title="Show archived sessions">Archived</button><span class="sidebar-group"><button id="usage-open" aria-haspopup="dialog" title="Show the usage limits of the agent tools">Usage</button><button id="settings-open">Settings</button></span></div>
     <div class="instance"><span id="connection" role="status">Connecting to server</span><span id="instance-dir" title="Instance directory"></span></div>
   </aside>
@@ -230,10 +229,14 @@
             <li><strong>Apple</strong> uses the on-device model of macOS 27 and keeps your message on this Mac. Before you use Apple, run <code>sudo /usr/bin/fm license</code> and accept the terms.</li>
           </ul>
         </section>
-        <section class="settings-card">
-          <h3>Updates</h3>
+        <section id="settings-updates" class="settings-card" aria-labelledby="settings-updates-title">
+          <h3 id="settings-updates-title" tabindex="-1">Updates</h3>
+          <p id="release-version" class="release-version"></p>
+          <p id="release-status" class="release-status" role="status"></p>
+          <p id="release-problem" class="form-warning" hidden></p>
+          <div class="release-actions"><button id="update-open" type="button" class="primary" aria-haspopup="dialog" hidden></button><button id="release-check" type="button">Check now</button><a id="release-notes" target="_blank" rel="noreferrer" hidden>Release notes ↗</a></div>
           <label class="checkbox"><input id="settings-update-check" type="checkbox">Check for a new version every day</label>
-          <p class="form-help">The server asks GitHub for the latest release at start and once a day. The request sends no history or settings. bbflow updates only after you confirm.</p>
+          <p class="form-help">While this setting is on, the server asks GitHub for the latest release at start and once a day. <strong>Check now</strong> asks at once. A request sends no history or settings. bbflow updates only after you confirm.</p>
         </section>
         <form id="settings-port-form">
           <section class="settings-card">

@@ -36,7 +36,7 @@ import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { launchCommand, ModelPicker, typed } from './model-choice.js';
 import { SettingsView } from './settings.js';
-import { UpdateNotice } from './update.js';
+import { UpdatePanel } from './update.js';
 import { ErrorToasts } from './toasts.js';
 import { pageBar } from './page-bar.js';
 import { TerminalPicker, earlierHint } from './terminal-picker.js';
@@ -311,9 +311,10 @@ const preparation = new PreparationEditor({
   }, failed('start', session)),
 });
 
-// The status watch sends the release offer of the server. An update restarts the server,
-// so save the drafts of this view first. The reload after the restart shows the new UI.
-const updateNotice = new UpdateNotice({
+// The status watch sends the release check state of the server. The Updates card of
+// Settings shows it. An update restarts the server, so save the drafts of this view
+// first. The reload after the restart shows the new UI.
+const updatePanel = new UpdatePanel({
   title(id) {
     const session = sessions.find(item => item.id === id);
     return session ? sessionTitle(session) || 'Untitled session' : undefined;
@@ -323,6 +324,10 @@ const updateNotice = new UpdateNotice({
     await preparation.flush();
     await composer.flush();
     await call(server, { operation: 'update-start', version: offer.available, revision: offer.revision });
+  },
+  async check() {
+    if (!server) throw new Error('The server is not connected.');
+    await call(server, { operation: 'update-check' });
   },
 });
 
@@ -334,7 +339,7 @@ const toasts = new ErrorToasts();
 // watch. Call this after either one changes.
 let restarted = false;
 function showPageBar() {
-  const bar = pageBar(restarted, updateNotice.current);
+  const bar = pageBar(restarted, updatePanel.current);
   $('page-bar').hidden = !bar.text;
   $('page-bar').className = bar.kind;
   $('page-bar-text').textContent = bar.text;
@@ -469,7 +474,7 @@ function controls() {
   $('pin-session').textContent = selected?.pinned ? 'Unpin' : 'Pin';
   if (!showingSettings && selected?.status === 'draft') $('status').textContent = selected.archived ? 'Draft · Archived' : 'Draft';
   $('settings-open').disabled = $('usage-open').disabled = busy || !server;
-  updateNotice.controls(busy || !server);
+  updatePanel.controls(busy || !server);
   $('settings-close').disabled = busy;
   composer.controls(busy, !!connection?.ready && !!connection.peer?.active);
   $('add-project').disabled = busy || !server;
@@ -876,7 +881,7 @@ function watchStatuses(info: ServerInfo) {
       if (id && (id in liveStatuses) !== (id in next)) void loadTerminals(id);
       liveStatuses = next;
       // The update dialog counts the live sessions of the same message as the offer.
-      updateNotice.show(message.update, Object.keys(next));
+      updatePanel.show(message.release, Object.keys(next));
       showPageBar();
       renderSessions();
       // A terminal started or ended, or a session title changed. Read the stored session
@@ -888,7 +893,7 @@ function watchStatuses(info: ServerInfo) {
     // Without the watch, the list refresh supplies each status.
     failed() {
       liveStatuses = {};
-      updateNotice.lost();
+      updatePanel.lost();
       showPageBar();
       renderSessions();
     },
@@ -938,7 +943,7 @@ async function refreshSessions() {
     const merged = mergeSessions(projects, recent, nextWindows, sessionStep, archivedList);
     sessions = merged.sessions;
     moreGroups = new Set(merged.more);
-    updateNotice.sessionsChanged();
+    updatePanel.sessionsChanged();
     // An open draft editor keeps the other fields of the selected session. Another view can
     // still archive, restore, pin, or unpin it, and the toolbar shows these changes.
     if (detail && selected && selected.id === selectedId) {
@@ -1648,7 +1653,12 @@ async function initialize() {
     event.preventDefault();
     void action(showWelcome, 'Could not open Home.');
   };
-  $('settings-open').onclick = () => action(showSettings, 'Could not open Settings.');
+  // The dot on Settings tells of a new release. Then Settings opens at its card.
+  $('settings-open').onclick = () => action(async () => {
+    const updates = updatePanel.attention;
+    await showSettings();
+    if (updates) updatePanel.reveal();
+  }, 'Could not open Settings.');
   $('usage-open').onclick = () => action(() => usageDialog.open(), 'Could not open Usage.');
   $('settings-close').onclick = () => action(async () => {
     settingsView.close(); showingSettings = false;

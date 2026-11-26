@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/45';
+export const VERSION = 'bbflow/46';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -24,6 +24,12 @@ export interface ServerInfo {
 // running server. installed means that the executable already has the release, so the
 // update only restarts the server. error tells why the last update failed.
 export interface Update { revision: number; version: string; available: string; installed?: boolean; state: 'available' | 'updating' | 'failed'; error?: string }
+
+// The release check state of the server. version is the version of the running server.
+// canUpdate is false for a build that cannot check or update, such as a development
+// build. checked is the end time of the last check, and error tells why that check
+// failed. offer is the newer release that the last successful check found.
+export interface Release { version: string; canUpdate?: boolean; checking?: boolean; checked?: string; error?: string; offer?: Update }
 
 export interface Project { id: string; name: string; workspace: string; created: string }
 
@@ -210,6 +216,8 @@ type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
 // The server does what the offer with this version and revision says, then restarts.
 // The restart ends all sessions.
 type UpdateRequest = { operation: 'update-start'; version: string; revision: number };
+// The server checks for a new release at once. The status watch shows the result.
+type UpdateCheckRequest = { operation: 'update-check' };
 // A parent creates a sub-session draft in the family and project of that session.
 type PrepareRequest = { operation: 'project-draft'; project: string } | { operation: 'project-draft'; parent: string };
 type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'model' | 'effort' | 'worktree' | 'base' | 'branch'>; name?: string };
@@ -218,7 +226,7 @@ type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
 // shell stops only that shell. Without shell, the request stops the live shell.
 type StopSideRequest = { operation: 'side-terminal-stop'; session: string; shell?: string };
-type RPCRequest = ToolCheckRequest | ToolModelsRequest | ToolUsageRequest | UpdateRequest | DiffRPC | TitleTestRequest | TitleToolSetRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | PinRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = ToolCheckRequest | ToolModelsRequest | ToolUsageRequest | UpdateRequest | UpdateCheckRequest | DiffRPC | TitleTestRequest | TitleToolSetRequest | TitleToolsRequest | StopSideRequest | HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | PinRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -253,7 +261,7 @@ export type ServerMessage =
   // A status watch gets running or idle for each session that has a live terminal.
   // revision counts session title changes since the server started. update offers a
   // newer release.
-  | { type: 'statuses'; statuses?: Record<string, string>; revision?: number; update?: Update }
+  | { type: 'statuses'; statuses?: Record<string, string>; revision?: number; release?: Release }
   | { type: 'result'; result: unknown }
   | { type: 'error'; error: string };
 
@@ -464,6 +472,7 @@ export function call(server: ServerInfo, request: ToolCheckRequest): Promise<{ i
 export function call(server: ServerInfo, request: ToolUsageRequest): Promise<ToolUsage>;
 export function call(server: ServerInfo, request: InspectRequest): Promise<RepositoryInfo>;
 export function call(server: ServerInfo, request: UpdateRequest): Promise<{ updating: boolean }>;
+export function call(server: ServerInfo, request: UpdateCheckRequest): Promise<{ checking: boolean }>;
 export function call(server: ServerInfo, request: PrepareRequest | ConfigRequest): Promise<PreparedSession>;
 export function call(server: ServerInfo, request: RemoveWorktreeRequest): Promise<{ removed: boolean }>;
 export function call(server: ServerInfo, request: HandoffRequest): Promise<Handoff>;

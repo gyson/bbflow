@@ -163,9 +163,14 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .status-icon.draft::before { width: 8px; height: 8px; background: none; border: 1.5px dashed var(--text-muted); }
 .status-icon.failed::before { background: var(--warning); }
 @media (prefers-reduced-motion: reduce) { .status-icon.running::after { animation: none; opacity: 0; } }
-.update-notice { margin-bottom: -8px; border-color: var(--accent); color: var(--accent-text); background: var(--selected); font-weight: 550; text-align: left; overflow: hidden; text-overflow: ellipsis; }
-.update-notice.failed { border-color: var(--danger); color: var(--danger); background: var(--surface); }
-.update-notice:disabled { cursor: default; opacity: 1; }
+/* A dot on Settings tells of a new release. The Updates card of Settings shows it. */
+#settings-open.has-update::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; background: var(--accent); vertical-align: 1px; }
+#settings-open.has-update.failed::after { background: var(--danger); }
+.release-version { margin: 0 0 6px; font-family: ui-monospace, monospace; font-size: 13px; }
+.release-status { margin: 0 0 14px; font-size: 12px; line-height: 1.6; color: var(--text-muted); }
+.release-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 16px; }
+.release-actions a { font-size: 12px; }
+#release-problem { margin: 0 0 14px; }
 .update-dialog { width: 560px; }
 .update-dialog .form-help { margin: 0 0 14px; }
 .update-dialog .form-warning { margin: 0 0 14px; }

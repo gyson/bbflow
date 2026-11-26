@@ -63,8 +63,9 @@ bbflow update
 An update keeps your history and settings. When a server runs, `bbflow update` asks for
 confirmation first. It then replaces the executable and restarts the server. The restart
 ends active sessions. When no server runs, the command replaces the executable without
-a question. The web UI also shows a newer release above **Settings** in the sidebar. See
-[Update bbflow](docs/COMMANDS.md#update-bbflow).
+a question. The web UI also shows a dot on **Settings** for a newer release. See
+[Update bbflow](docs/COMMANDS.md#update-bbflow) for the command, and the
+[update in the web UI](docs/GUIDE.md#update-bbflow).
 
 bbflow is at an early version. Commands and APIs can still change.
 
@@ -78,9 +79,9 @@ bbflow is at an early version. Commands and APIs can still change.
   name. See [Data that leaves bbflow](docs/SPEC.md#data-that-leaves-bbflow).
 - The recording includes all terminal input and output, including secrets that you
   type. bbflow does not redact or encrypt it.
-- The server asks GitHub for the latest release when it starts and then once a day. The
-  request sends no history or settings. Turn it off with **Check for a new version
-  every day** in Settings.
+- The server asks GitHub for the latest release when it starts, once a day, and when you
+  click **Check now** in Settings. The request sends no history or settings. Turn off
+  the daily check with **Check for a new version every day** in Settings.
 - **Usage** in the sidebar asks each agent CLI for the usage limits of your account.
   bbflow adds no history to the request.
 

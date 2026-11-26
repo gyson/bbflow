@@ -18,7 +18,7 @@ each operation, and each stream. See [COMMANDS.md](COMMANDS.md) for user command
 | [Settings and prepared launches](#settings-and-prepared-launches) | Settings, model lists, usage limits, the preparation of a session, and managed worktrees. |
 | [New terminals in ended sessions](#new-terminals-in-ended-sessions) | `session-continue`, the handoff folder, and `session-terminals`. |
 | [Side terminals](#side-terminals) | The shell of the workspace pane. |
-| [Session status](#session-status) | The derived status, `status-watch`, and release offers. |
+| [Session status](#session-status) | The derived status, `status-watch`, and the release check state. |
 | [Terminal streams](#terminal-streams) | The messages of a live terminal, frames, and receipts. |
 | [Drafts and file references](#drafts-and-file-references) | The message editor operations. |
 | [Browser access](#browser-access) | The Host and Origin rules, the remote host, and the HTTP routes. |
@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/45`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/46`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/45",
+    "protocol": "bbflow/46",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/45",
+    "protocol": "bbflow/46",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -155,10 +155,11 @@ replies.
 | Operation | Additional request fields | Reply |
 | --- | --- | --- |
 | `stop` | `instance`, from the verified greeting | `result`, containing `stopping`. The server then shuts down. |
-| `update-start` | `version` and `revision`, the `available` version and the `revision` of the [release offer](#release-offers) that the user confirmed | `result`, containing `updating`. The server installs the release in the background and then restarts, which ends all live sessions. It rejects another version, an earlier revision, a second update, and an offer that the off setting hides. |
+| `update-check` | None | `result`, containing `checking`. The server starts a [release check](SPEC.md#release-check) at once, also while the daily check setting is off. A running check answers the request. The status watch sends the result. A build that cannot update rejects it. |
+| `update-start` | `version` and `revision`, the `available` version and the `revision` of the [release offer](#release-check-state) that the user confirmed | `result`, containing `updating`. The server installs the release in the background and then restarts, which ends all live sessions. It rejects another version, an earlier revision, and a second update. |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `storage-report` | None | `result`, containing database facts, `total`, `columns`, session counts, and the `kinds`, `days`, `projects`, and `sessions` lists. `sessions` has only the largest sessions. The other lists have one entry for each project, day, or kind. Above 16 MiB, the reply is an `error`. See [storage report](SPEC.md#storage-report). Closing the connection cancels the read. |
-| `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal and the [release offer](#release-offers) first, then all of them again after each change |
+| `status-watch` | None | A stream of `statuses` messages: the [status](#session-status) of each live terminal and the [release check state](#release-check-state) first, then all of them again after each change |
 
 ### Project operations
 
@@ -1014,12 +1015,22 @@ session status.
 - The client sends `ping` at least every 30 seconds and gets `pong`. Closing the stream
   only removes the watch.
 
-### Release offers
+### Release check state
 
-A `statuses` message has an `update` object when the server offers a newer release.
-The server omits it when it runs the newest release, when the
-[release check](SPEC.md#release-check) is off, and in a build that cannot update. The
-server sends the message again when the offer changes.
+Each `statuses` message has a `release` object with the state of the
+[release check](SPEC.md#release-check). The server sends the message again when the
+state changes.
+
+| Field | Meaning |
+| --- | --- |
+| `version` | The version of the running server. |
+| `canUpdate` | True when the build can check and update. A development build, another platform, and a renamed executable omit it. They omit the other fields too. |
+| `checking` | True while a check runs. `update-check` sets it before its reply. |
+| `checked` | The end time of the last check, in RFC 3339 format. It is absent before the first check. |
+| `error` | The reason that the last check failed. A successful check removes it. |
+| `offer` | The newer release that the last successful check found. It is absent when the server runs the newest release. A failed check keeps it. |
+
+The `offer` object has these fields:
 
 | Field | Meaning |
 | --- | --- |
@@ -1030,8 +1041,8 @@ server sends the message again when the offer changes.
 | `state` | `available`, `updating` while the server installs the release and restarts, or `failed`. |
 | `error` | The reason of the last failure, for the `failed` state. |
 
-An update in progress shows also when the check setting changes to off. After the
-restart, open views reload with the UI of the new server.
+The daily check setting does not hide the offer. After the restart, open views reload
+with the UI of the new server.
 
 The executable can change after the check, so that it no longer agrees with the
 confirmed offer. Then `update-start` changes nothing, and the offer shows `failed`. The
@@ -1328,13 +1339,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/45") {
+    if (message.server.protocol !== "bbflow/46") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/45", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/46", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1412,7 +1423,7 @@ versions.
 - Protocol 29 adds `storage-report`. See [storage report](SPEC.md#storage-report). The
   SQLite format does not change.
 - Protocol 30 adds `update-start`, the `version` request field, and the `update` field
-  of `statuses` messages for [release offers](#release-offers). Settings add
+  of `statuses` messages for [release offers](#release-check-state). Settings add
   `updateCheck`. SQLite format 12 adds `updateCheck: true`.
 - Protocol 31 adds session families. `project-draft` accepts `parent`. Session summaries
   add `parentId`, `context`, and `runStatus`. `session-list` limits and offsets count
@@ -1468,6 +1479,10 @@ versions.
   [`session-continue`](#session-continue) and the optional `toolId` of each terminal of
   [`session-terminals`](#session-terminals). The start event of each new run records
   `toolId`. The SQLite format does not change.
+- Protocol 46 adds `update-check`. The `release` object of `statuses` messages replaces
+  the `update` field and holds the offer in `offer`. See
+  [Release check state](#release-check-state). `update-start` no longer rejects an
+  offer while the daily check setting is off. The SQLite format does not change.
 
 ## Source files
 
