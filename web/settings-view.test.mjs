@@ -131,7 +131,9 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
     await tick();
   };
   const toasts = [];
-  const view = new SettingsView(() => server, () => {}, (title, detail) => toasts.push([title, detail]), send);
+  // The tools of each change of the saved settings, as the sidebar gets them for Usage.
+  const savedTools = [];
+  const view = new SettingsView(() => server, () => {}, (title, detail) => toasts.push([title, detail]), settings => savedTools.push(settings.tools), send);
   const opening = view.open();
   await tick();
   await reply('title-tools', { tools: titleTools, sample: 'Sample' });
@@ -151,7 +153,7 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
     await opened;
     if (pending.some(call => call.request.operation === 'tool-check')) await reply('tool-check', { installed: {} });
   };
-  return { nodes, pending, view, toasts, reply, fail, type, reopen };
+  return { nodes, pending, view, toasts, savedTools, reply, fail, type, reopen };
 }
 
 // addTool opens the editor with Add tool and enters a name and a command.
@@ -753,8 +755,11 @@ test('a save of one remote field keeps the error of the other field', async () =
 
 test('each tool has a switch, a built-in tool has no Remove or move, and turning off the default tool selects Shell', async () => {
   const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex', type: 'codex', model: '', effort: '', permission: '', builtin: true, enabled: true, path: '' };
-  const { nodes, reply, view } = await setup();
+  const { nodes, reply, view, savedTools } = await setup();
+  // The read of the open gives the saved tools to the sidebar.
+  assert.deepEqual(savedTools, [saved.tools]);
   view.saves.update({ ...view.saves.saved, revision: 9, tools: [builtin, agent], defaultTool: 'builtin-codex' });
+  assert.deepEqual(savedTools.at(-1), [builtin, agent]);
   assert.equal(document.getElementById('tool-remove-builtin-codex'), null);
   assert.equal(document.getElementById('tool-move-up-builtin-codex'), null);
   assert.ok(document.getElementById('tool-remove-a'));
@@ -777,6 +782,9 @@ test('each tool has a switch, a built-in tool has no Remove or move, and turning
   const request = await reply('settings-save');
   assert.equal(request.settings.tools[0].enabled, false);
   assert.equal(request.settings.defaultTool, '');
+  // The sidebar gets the tools of the reply, so Usage hides without Codex.
+  assert.deepEqual(savedTools.at(-1), request.settings.tools);
+  assert.equal(savedTools.at(-1)[0].enabled, false);
   // A tool that is off is not a choice for the default tool.
   assert.deepEqual(nodes['settings-tool'].children.filter(child => child.tag === 'option').map(option => option.value), ['', 'a']);
   // A tool of the user turns off the same way and stays saved.

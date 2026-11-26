@@ -1,6 +1,6 @@
 import { element } from './dom.js';
 import { call, errorMessage } from './protocol.js';
-import type { ServerInfo, Tool, ToolUsage, UsageWindow } from './protocol.js';
+import type { ServerInfo, Settings, Tool, ToolUsage, UsageWindow } from './protocol.js';
 
 // The tool types that have a usage check.
 const checkedTypes = ['codex', 'claude', 'agy'];
@@ -85,7 +85,8 @@ export class UsageDialog {
   // A close ends the requests of the dialog. Their answers then change nothing.
   private generation = 0;
 
-  constructor(private readonly host: { server(): ServerInfo | null }) {
+  // settings runs with the settings that the dialog reads.
+  constructor(private readonly host: { server(): ServerInfo | null, settings(settings: Settings): void }) {
     element('usage-close', HTMLButtonElement).onclick = element('usage-done', HTMLButtonElement).onclick = () => this.dialog.close();
     this.check.onclick = () => this.load(true);
     this.dialog.addEventListener('close', () => { this.generation++; });
@@ -98,6 +99,7 @@ export class UsageDialog {
     const settings = await call(server, { operation: 'settings-get' });
     this.generation++;
     this.tools = usageTools(settings.tools);
+    this.host.settings(settings);
     this.reports.clear();
     this.failures.clear();
     this.pending.clear();

@@ -208,11 +208,12 @@ see how much of each limit is left, do these steps:
    resets.
 3. To ask the agents again, click **Check now**.
 
-bbflow shows Codex, Claude Code, and Antigravity when their tools are on. It asks each
-CLI for the limits of your account. Checking sends no prompt, so it does not use your
-limits. A limit with less than 20% left is amber, and an empty limit is red. If a section
-shows an error, sign in to the agent in a terminal, or set its **CLI path** in Settings.
-See [Usage limits](SPEC.md#usage-limits) for the rules.
+bbflow shows Codex, Claude Code, and Antigravity when their tools are on, and it hides
+**Usage** when none of them is on. It asks each CLI for the limits of your account.
+Checking sends no prompt, so it does not use your limits. A limit with less than 20%
+left is amber, and an empty limit is red. If a section shows an error, sign in to the
+agent in a terminal, or set its **CLI path** in Settings. See [Usage
+limits](SPEC.md#usage-limits) for the rules.
 
 ## Continue with a different agent
 
