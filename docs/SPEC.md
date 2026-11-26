@@ -1924,6 +1924,13 @@ effort is part of the model ID. Code Puppy has no effort.
 - The session records its startup command, with the options, in its start event. The
   toolbar shows only the tool name. A model change inside the agent, such as `/model`, is
   not recorded.
+- The trust option depends only on the workspace path. bbflow does not read whether
+  Antigravity trusts the project folder. Thus Antigravity starts trusted in each managed
+  worktree, also when the user never trusted the project folder or declined it there.
+  Antigravity can then read, edit, and run the files of the worktree without the
+  question. These files are the committed files of the repository at the base. A remote
+  base can bring commits that the user has not seen locally. See
+  [Base and fetch](#base-and-fetch).
 - Only the built-in Antigravity tool gets the trust option. A Custom tool that runs
   `agy`, and `agy` typed in Shell, still ask about the folder.
 - The launch leaves out the trust option when the option would make the command longer

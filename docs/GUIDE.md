@@ -58,7 +58,10 @@ from the CLI, for example with `agy models`. If the list does not have a model, 
 list** in the tool editor of Settings.
 
 In a worktree, bbflow also tells Antigravity to trust the session folder for that
-session. Thus Antigravity does not ask about each new worktree. See
+session. Thus Antigravity does not ask about each new worktree. It does this also when
+you did not trust the project folder in Antigravity. Antigravity can then read, edit,
+and run the files of the worktree without a question. Use a worktree with Antigravity
+only for a repository whose files you trust. See
 [Tool types and models](SPEC.md#tool-types-and-models).
 
 **Shell** is a built-in tool too. It starts the shell without a command. Turn it off if
