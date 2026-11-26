@@ -71,8 +71,8 @@ is `user@example.com`.
    values does not turn remote access on. Do one of these:
 
    - In the **Remote access** card of Settings, enter both values. Each field saves when
-     you press Enter or leave it. Then click the switch next to the title, so that it
-     shows **On**.
+     you press Enter or leave it. Press Esc to restore the saved value. Then click the
+     switch next to the title to turn it on.
    - Run these commands. The last command prints `Remote access is on.`
 
    ```sh

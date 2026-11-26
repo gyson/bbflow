@@ -13,7 +13,6 @@ export class HistorySearch {
   private readonly matchCase = element('history-case', HTMLInputElement);
   private readonly list = element('history-results', HTMLOListElement);
   private readonly status = element('history-status', HTMLElement);
-  private readonly scopeLabel = element('history-scope-label', HTMLElement);
   private readonly more = element('history-more', HTMLButtonElement);
   private readonly pane = element('history-context', HTMLElement);
   private readonly title = element('history-context-title', HTMLElement);
@@ -82,7 +81,12 @@ export class HistorySearch {
     const own = this.scope.querySelector<HTMLOptionElement>('option[value="session"]');
     const project = this.scope.querySelector<HTMLOptionElement>('option[value="project"]');
     if (own) own.disabled = !selection.session;
-    if (project) project.disabled = !selection.project;
+    // The project option names its project. Search this project can select a project
+    // that is not the project of the selected session.
+    if (project) {
+      project.disabled = !selection.project;
+      project.textContent = selection.projectName || 'This project';
+    }
     this.scope.value = scope ?? (selection.session ? 'session' : 'all');
     if (!this.dialog.open) this.dialog.showModal();
     this.query.focus();
@@ -117,8 +121,6 @@ export class HistorySearch {
     this.invalidate();
     this.reset();
     const scope = this.scope.value as HistoryScope;
-    this.scopeLabel.textContent = scope === 'session' ? `${this.selection.title || 'This session'} · All terminals`
-      : scope === 'project' ? `${this.selection.projectName || 'This project'} · All sessions` : 'All projects · All sessions';
     if (!this.query.value.trim()) { this.message('Enter text to search recorded output.'); return; }
     if (Array.from(this.query.value).length > 256) { this.message('Use at most 256 characters.', true); return; }
     this.filter = { query: this.query.value, scope, matchCase: this.matchCase.checked,

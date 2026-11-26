@@ -64,7 +64,6 @@ const elements = {
   'project-dialog': element('project-dialog', HTMLDialogElement),
   'project-form': element('project-form', HTMLFormElement),
   'project-title': element('project-title', HTMLElement),
-  'project-name-hint': element('project-name-hint', HTMLElement),
   'project-name': element('project-name', HTMLInputElement),
   'project-workspace': element('project-workspace', HTMLInputElement),
   'project-folder': element('project-folder', HTMLElement),
@@ -1498,16 +1497,14 @@ function showProject(project: Project | null = null) {
   $('project-title').textContent = project ? 'Edit project' : 'Add project';
   $('project-name').value = project?.name ?? '';
   $('project-name').required = !!project;
-  $('project-name-hint').hidden = !!project;
   $('project-workspace').value = project?.workspace ?? '';
   $('project-workspace').required = !project;
   // The folder of a saved project cannot change. Edit project shows it as text.
   $('project-folder').hidden = !!project;
   $('project-folder-view').hidden = !project;
   $('project-folder-path').textContent = project?.workspace ?? '';
-  $('project-help').textContent = project
-    ? 'The folder of a project cannot change. To use another folder, add a new project.'
-    : 'Any existing folder works. Git is optional.';
+  $('project-help').textContent = project ? 'The folder of a project cannot change. To use another folder, add a new project.' : '';
+  $('project-help').hidden = !project;
   $('project-error').hidden = true;
   $('project-submit').textContent = project ? 'Save' : 'Add project';
   showDialog($('project-dialog'));

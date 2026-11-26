@@ -268,9 +268,9 @@ test('a remote access change needs a save, and its status needs the switch and b
   assert.ok(!sameSettings(off, { ...off, remoteOn: true }));
   assert.ok(!sameSettings(off, { ...off, remoteHost: host }));
   assert.ok(!sameSettings(off, { ...off, remoteLogin: login }));
-  assert.equal(remoteStatus(false, '', ''), 'Remote access is off.');
+  assert.equal(remoteStatus(false, '', ''), '');
   // The switch keeps remote access off, also with both values.
-  assert.equal(remoteStatus(false, host, login), 'Remote access is off.');
+  assert.equal(remoteStatus(false, host, login), '');
   assert.equal(remoteStatus(true, '', ''), 'The switch is on, but remote access needs both the host name and the login.');
   assert.match(remoteStatus(true, host, ''), /^The switch is on, but remote access needs both/);
   assert.match(remoteStatus(true, '', login), /^The switch is on, but remote access needs both/);

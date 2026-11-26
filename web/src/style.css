@@ -327,7 +327,6 @@ body.resizing-session, body.resizing-session * { cursor: row-resize !important; 
 .composer-file > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-file > button { padding: 3px 8px; background: transparent; border: 0; font-size: 17px; }
 /* The Messages view of the workspace pane. */
-#sent-help { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sent-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; list-style: none; margin: 0; padding: 0; }
 /* A heading stays at the top while the list shows the messages of its terminal. A later
    heading covers an earlier one. The scroll padding keeps a message below the heading. */
@@ -359,7 +358,6 @@ dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(3px); }
 .dialog-heading h2 { font-size: 25px; margin: 0; font-weight: 500; letter-spacing: -.5px; }
 form > label { display: block; font-size: 12px; font-weight: 550; margin-bottom: 17px; }
 form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
-.optional { color: var(--text-muted); font-weight: 400; font-size: 11px; margin-left: 6px; }
 /* The Edit project dialog shows the folder. The folder cannot change. */
 .folder-view { font-size: 12px; font-weight: 550; margin-bottom: 17px; }
 .folder-view code { display: block; margin-top: 8px; padding: 10px 11px; border: 1px solid var(--border); border-radius: 7px; background: var(--inset); color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
@@ -490,14 +488,21 @@ button.link-button { padding: 0; border: 0; background: none; color: var(--link)
 .tool-table-title:first-of-type { margin-top: 4px; }
 .tool-table td.tool-on { width: 1%; white-space: nowrap; }
 .tool-chip.missing { background: var(--warning-surface); color: var(--warning-text); }
-/* A switch is a track with a knob, and the word On or Off. The tools and remote access
-   use it. */
+/* A switch is a track with a knob. aria-checked holds its state, and the button has no
+   text. The tools and remote access use it. */
 button.switch { display: inline-flex; align-items: center; gap: 8px; padding: 4px 2px; border: 0; background: none; font-size: 12px; font-weight: 550; color: var(--text-muted); }
 button.switch:hover:not(:disabled) { background: none; border: 0; }
 .switch::before { content: ""; flex: none; width: 30px; height: 18px; border-radius: 9px; background: radial-gradient(circle at 9px 9px, var(--surface) 6.5px, transparent 7px) var(--inactive); transition: background-color .15s; }
 .switch[aria-checked="true"] { color: var(--text); }
 .switch[aria-checked="true"]::before { background: radial-gradient(circle at 21px 9px, var(--surface) 6.5px, transparent 7px) var(--accent); }
 @media (prefers-reduced-motion: reduce) { .switch::before { transition: none; } }
+/* Forced colors remove the gradient of the knob. The switch then draws its track and its
+   knob with system colors, so the two states still differ in shape. */
+@media (forced-colors: active) {
+  .switch::before { forced-color-adjust: none; box-sizing: border-box; border: 1px solid ButtonText; background: radial-gradient(circle at 8px 8px, ButtonText 5px, transparent 5.5px) Canvas; }
+  .switch[aria-checked="true"]::before { border-color: Highlight; background: radial-gradient(circle at 20px 8px, HighlightText 5px, transparent 5.5px) Highlight; }
+  .switch:disabled::before { border-color: GrayText; }
+}
 .tool-table td.tool-name { min-width: 150px; font-weight: 550; overflow-wrap: anywhere; }
 .tool-table td.tool-default { white-space: nowrap; }
 .tool-table td.tool-default.muted-cell, .tool-table td.tool-empty { color: var(--text-muted); }
@@ -521,7 +526,6 @@ button.tool-add { margin-top: 12px; font-size: 12px; }
 .tool-preview code { display: block; margin-top: 4px; font-family: ui-monospace, monospace; font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
 .tool-editor > .form-error { margin: 0; }
 .tool-editor-actions { display: flex; justify-content: flex-end; gap: 10px; }
-.tool-default-help { margin: -8px 0 17px; }
 /* The status and Done stay in view while the page scrolls. */
 .settings-actions { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 16px 0 10px; background: var(--workspace); }
 #tool-remove-dialog .form-help, #remove-project-dialog .form-help { margin: 0 0 14px; overflow-wrap: anywhere; }
@@ -574,8 +578,11 @@ button.tool-add { margin-top: 12px; font-size: 12px; }
 .history-form input { min-width: 0; margin: 0; background: var(--inset); }
 .history-form button { flex: none; }
 .history-filters { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 24px 18px; font-size: 12px; color: var(--text-muted); }
-.history-filters label { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
-.history-filters select { width: auto; padding: 6px 10px; }
+/* The project option shows the project name, which can be long. The scope menu then
+   shrinks, and Match case keeps its width. */
+.history-filters label { display: flex; align-items: center; gap: 9px; white-space: nowrap; min-width: 0; }
+.history-filters label.checkbox { flex: none; }
+.history-filters select { width: auto; min-width: 0; max-width: 100%; padding: 6px 10px; text-overflow: ellipsis; }
 .history-filters input { margin: 0; }
 .history-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; border-block: 1px solid var(--border); padding: 11px 24px; background: var(--workspace); font-size: 11px; color: var(--text-muted); }
 #history-status { color: var(--text); }
@@ -682,7 +689,6 @@ body.resizing-diff, body.resizing-diff * { cursor: col-resize !important; user-s
 .segmented button:first-child { border-radius: 7px 0 0 7px; }
 .segmented button:last-child { border-radius: 0 7px 7px 0; margin-left: -1px; }
 .segmented button[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); position: relative; }
-#diff-summary { margin-left: auto; min-width: 4.8em; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .icon-button { padding: 3px 8px; font-size: 15px; line-height: 1.2; }
 #diff-status { margin: 0; padding: 8px 12px; background: var(--warning-surface); color: var(--warning-text); font-size: 12px; line-height: 1.5; }
 /* A drag on the divider sets --file-list-width. The divider has a column without width

@@ -37,7 +37,6 @@ export class DiffPane {
   private readonly scopeMenu = element('diff-scope-menu', HTMLElement);
   private readonly splitButton = element('diff-split', HTMLButtonElement);
   private readonly unifiedButton = element('diff-unified', HTMLButtonElement);
-  private readonly summary = element('diff-summary', HTMLElement);
   private readonly status = element('diff-status', HTMLElement);
   private readonly filter = element('diff-filter', HTMLInputElement);
   private readonly list = element('diff-list', HTMLElement);
@@ -197,7 +196,6 @@ export class DiffPane {
     this.setReading(false);
     this.clearFile();
     this.list.replaceChildren();
-    this.summary.textContent = '';
     this.setStatus('');
     this.show();
   }
@@ -519,8 +517,6 @@ export class DiffPane {
     // Keep the menu open to its notice of omitted commits.
     this.scopeButton.disabled = !changes?.repository || (commits.length === 0 && !changes.base && !changes.moreCommits);
     if (this.scopeButton.disabled) this.menuOpen = false;
-    const files = changes?.files ?? [];
-    this.summary.textContent = changes?.repository ? `${files.length} ${files.length === 1 ? 'file' : 'files'}` : '';
     this.renderMenu();
   }
 

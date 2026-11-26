@@ -30,7 +30,7 @@ class Node {
 }
 
 const ids = ['history-dialog', 'history-form', 'history-query', 'history-scope', 'history-case', 'history-results',
-  'history-status', 'history-scope-label', 'history-more', 'history-context', 'history-context-title', 'history-context-meta',
+  'history-status', 'history-more', 'history-context', 'history-context-title', 'history-context-meta',
   'history-context-text', 'history-source', 'history-before', 'history-after', 'history-previous', 'history-next',
   'history-copy', 'history-context-status', 'history-close', 'history-context-empty'];
 const server = { protocol: 'test', instance: 'test', port: 1234, dataDir: '/fixture' };
@@ -84,7 +84,7 @@ test('the menu of a project opens the search of that project without a selected 
   assert.equal(nodes['history-scope'].value, 'project');
   assert.equal(nodes['history-scope'].options['option[value="session"]'].disabled, true);
   assert.equal(nodes['history-scope'].options['option[value="project"]'].disabled, false);
-  assert.equal(nodes['history-scope-label'].textContent, 'Docs · All sessions');
+  assert.equal(nodes['history-scope'].options['option[value="project"]'].textContent, 'Docs');
   submit('needle');
   assert.deepEqual(pending[0].request.search, { query: 'needle', scope: 'project', project: 'other', matchCase: false });
   search.open({ project: 'other', projectName: 'Docs' });

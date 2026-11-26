@@ -219,12 +219,15 @@ export class SentHistory {
     item.dataset.created = message.created;
     const meta = document.createElement('div');
     meta.className = 'sent-meta';
-    const state = document.createElement('span');
-    state.className = message.confirmed ? 'badge' : 'badge unconfirmed';
-    state.textContent = message.confirmed ? 'Sent' : 'Not confirmed';
-    state.title = message.confirmed
-      ? 'The terminal received this message. bbflow cannot confirm that the application accepted it.'
-      : 'bbflow did not get a receipt for this message. Check the terminal output.';
+    // Only a message without a receipt gets a badge. The pane lists sent messages, so a
+    // confirmed message needs no label.
+    if (!message.confirmed) {
+      const state = document.createElement('span');
+      state.className = 'badge unconfirmed';
+      state.textContent = 'Not confirmed';
+      state.title = 'bbflow did not get a receipt for this message. Check the terminal output.';
+      meta.append(state);
+    }
     const time = document.createElement('time');
     time.dateTime = message.created;
     time.textContent = new Date(message.created).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -245,7 +248,7 @@ export class SentHistory {
     go.textContent = 'Show in terminal';
     go.onclick = () => this.show(message);
     this.items.set(message.revision, { item, go, created: message.created });
-    meta.append(state, time, go, copy);
+    meta.append(time, go, copy);
     const text = document.createElement('div');
     text.className = 'sent-text';
     text.textContent = message.text || 'No text';

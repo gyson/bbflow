@@ -130,7 +130,7 @@ export class PromptSettings {
       const empty = document.createElement('td');
       empty.className = 'tool-empty';
       empty.colSpan = 3;
-      empty.textContent = 'No prompts yet. Click ＋ Add prompt to add one.';
+      empty.textContent = 'None';
       row.append(empty);
       rows.push(row);
     }

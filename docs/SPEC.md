@@ -1304,7 +1304,7 @@ these items:
 | --- | --- |
 | **Edit** | Opens the Edit project dialog. The dialog changes only the name. It shows the folder as text. |
 | **Copy folder path** | Copies the saved canonical folder of the project to the clipboard. |
-| **Search this project** | Opens [Search history](#history-search) with the scope **This project**. **This session** is not available there. |
+| **Search this project** | Opens [Search history](#history-search) with the scope of this project. The scope option shows the project name. **This session** is not available there. |
 | **Remove project** | Opens a dialog that asks before the removal. The dialog names the project and its folder. |
 
 - **Remove project** is the last item, below a line. Its text has the danger color.
@@ -1614,7 +1614,7 @@ that failed to save.
 
 #### Remote access in Settings
 
-- In **Remote access**, an On/Off switch next to the title holds the switch of
+- In **Remote access**, a switch next to the title holds the switch of
   [remote access](#remote-access). **Tailscale host name** and **Tailscale login** hold
   the two values. The card tells that a person who can use remote access can run
   commands on the computer.
@@ -1628,9 +1628,9 @@ that failed to save.
   input came after the save started. Then the field shows the saved value, with the host
   name in lower case. Enter and the blur after it save the text once. An input or Escape
   during a save makes the next Enter or blur save again.
-- The status below the fields tells if remote access is on, and for which host name and
-  login. When the switch is on without both values, the status tells that remote access
-  needs both.
+- While the switch is on, the status below the fields tells for which host name and
+  login remote access is on. When the switch is on without both values, the status tells
+  that remote access needs both. While the switch is off, the status is empty.
 - To turn remote access off, the user clicks the switch. The fields keep their values.
 - A value that the server rejects stays in its field, with the server error below that
   field. Each field has its own error. New text in a field hides only its error, and a
@@ -1669,17 +1669,18 @@ comes first, then **Custom tools**, the tools that the user added:
 | **Built-in tools** | **On**, **Name**, **Command**, **Default model** | **Edit**. Shell has no Edit. |
 | **Custom tools** | **On**, **Name**, **Command** | **Edit**, **↑**, **↓**, **Remove** |
 
-- Each row starts with a switch, **On** or **Off**. A tool that is off stays saved, and
-  its row is dimmed. See [Built-in tools](#built-in-tools) for the effect.
+- Each row starts with a switch. The switch has no text. `aria-checked` holds its state,
+  and forced colors draw its track and knob with system colors. A tool that is off stays
+  saved, and its row is dimmed. See [Built-in tools](#built-in-tools) for the effect.
 - The default tool has a **DEFAULT** mark beside its name.
 - **Default model** shows the model and the effort, for example **gpt-6-luna ·
-  Medium**. For Shell it shows **None**.
+  Medium**. For Shell, **Command** and **Default model** show **—**.
 - A built-in tool keeps its place and cannot be removed. A custom tool moves only among
   the custom tools.
 - When Settings opens, the page asks the server which CLIs it finds. A built-in tool
   without its CLI gets a **NOT FOUND** mark. See [Tool program](#tool-program).
 - A narrow window scrolls each table sideways. Without a custom tool, the second table
-  tells how to add one.
+  shows **None**.
 - The settings hold at most 100 custom tools. The built-in tools do not count.
 
 **＋ Add custom tool** below the custom tools and **Edit** in a row open the tool editor as a
@@ -1724,9 +1725,6 @@ available. Otherwise focus goes to **Edit** on the moved row. After a removal, f
 goes to **Edit** on the nearest row. If no custom tool is left, focus goes to **＋ Add
 custom tool**. After a save or **Cancel**, focus goes to **Edit** of the tool, or to
 **＋ Add custom tool**.
-
-In **Session defaults**, the text below **Default tool** names the default model and
-effort that new drafts select.
 
 The page sends one settings save at a time. If another view or the CLI saved first,
 the page applies the requested change to the latest settings. An edit keeps the latest
@@ -1907,8 +1905,7 @@ folder:
 
 The server keeps each list in memory until **Refresh list** or a server restart. A failed
 command keeps no list, and its error shows below the menu. **Other…** still works then.
-The tool editor in Settings also tells where each list comes from, and it has **Refresh
-list**. A draft and the **Continue in new terminal** dialog show only the error of a
+The tool editor in Settings also has **Refresh list**. A draft and the **Continue in new terminal** dialog show only the error of a
 failed list. A refresh also updates each other
 model menu of the type that is in view. A chosen model stays, also when the new list does
 not have it. When two refreshes overlap, only the later one updates the menus.
@@ -1988,9 +1985,9 @@ the value of the table. The launch adds the options after the model and effort o
   type, and a mode for Shell or a Custom tool.
 - A newly selected tool brings its default permission mode, with its default model and
   effort.
-- In the tool editor, the note below **Default permissions** names the options that
-  bbflow adds. A draft and the **Continue in new terminal** dialog show no note. Their
-  **bbflow submits** line shows the command.
+- The permission menus show no note. The **New sessions submit** line of the tool
+  editor and the **bbflow submits** line of a draft and of the **Continue in new
+  terminal** dialog show the command with its options.
 - The title tools have no permission mode. Their commands set their own limits. See
   [Title models](#title-models).
 
@@ -2024,8 +2021,11 @@ model, effort, and permission mode of the tool.
 is too narrow. A line above and below the group separates it from the other fields.
 **Model**, **Thinking effort**, and **Permissions** are hidden for Shell and for a Custom
 tool. A change of the model, the effort, or the permission mode applies only to the
-draft. The draft shows no notes about the model list or the options. Settings shows
-them. Only a failed model list shows its error in the draft, with **Refresh list**. At
+draft. The draft shows no notes about the model list or the options. Only a failed
+model list shows its error in the draft, with **Refresh list**. In Settings, the model
+field also shows **Loading the model list…** and **Refresh list**, and the effort notes
+of Antigravity and Code Puppy stay. No form names the source of the model list or the
+options in a note. **bbflow submits** and **New sessions submit** show the options. At
 the end of the group, **bbflow submits** shows the command with its options. For a newly
 selected tool, it shows the command of that tool at once, also before the save. For
 Shell, it shows **(no startup command)**.
@@ -2135,8 +2135,8 @@ errors.
 
 **Usage** in the bottom row of the sidebar opens a dialog with the usage limits of the
 agent tools. For each limit of the plan of the account, the dialog shows the part that
-is left and the reset time. The server asks each agent CLI. A check starts no agent turn
-and sends no history.
+is left and the reset time. The server asks each agent CLI. A check sends no prompt and
+no history.
 
 #### Usage dialog
 
@@ -2928,9 +2928,9 @@ This applies to a send from any view and to the receipt of a send. It also appli
 a send with a lost receipt, because the archive then has the pending revision. The
 list shows that message as **Not confirmed**.
 
-Each message shows its time, text, and attached file names. **Sent** means that the
-editor got an input receipt and then cleared the draft. **Not confirmed** means that
-there was no receipt, or the user unlocked the draft. This status is derived. It does
+Each message shows its time, text, and attached file names. A message without a badge
+is sent: the editor got an input receipt and then cleared the draft. **Not confirmed**
+means that there was no receipt, or the user unlocked the draft. This status is derived. It does
 not confirm that the application accepted the message.
 
 A long message shows its first 8 lines, and the list is the only scroll area. **Show
@@ -3361,11 +3361,14 @@ to terminal programs. The dialog does not send input, resize the PTY, or change
 sessions. Closing it leaves recording and the active session connection running.
 
 The selected session is the default scope. This scope includes all its earlier
-terminals. **This project** uses current project membership. **All sessions** includes
+terminals. The project option shows the name of the project, or **This project**
+without a name. A long name shrinks the menu to the width of the dialog, and **Match
+case** keeps its place. The option uses current project membership. **All sessions** includes
 standalone sessions and other projects. Every scope includes archived sessions. Without
 a selected session, the dialog selects **All sessions** and waits for search text.
-**Search this project** in the [project menu](#project-menu) selects **This project**
-for that project.
+**Search this project** in the [project menu](#project-menu) selects the project option
+for that project. The option then shows the name of that project, also when the selected
+session belongs to another project.
 
 #### Matching
 
@@ -3549,8 +3552,7 @@ The sub-sections that follow give the exact rules.
 #### View headers
 
 - Each view has its own selected file and its own filter text.
-- Only the Changes header has the scope button, **Split**, **Unified**, and the file
-  count.
+- Only the Changes header has the scope button, **Split**, and **Unified**.
 - The Files header has **Refresh** and **×** only.
 
 #### Session base
@@ -3975,7 +3977,8 @@ workspace exists.
 - Each session has at most one live side terminal. All views of a session share it.
 - The server does not record the side terminal. SQLite has no events, run, or screen of
   it. Search history, the handoff folder, and `bbflow query` cannot read it. The view
-  shows "Not recorded. Runs in the session workspace."
+  shows no status text while the shell runs. It shows when the shell ended, or when no
+  shell runs.
 - The side terminal does not change the session status, the view count, or the session
   order.
 - Type directly in the view. The message editor sends only to the session terminal.

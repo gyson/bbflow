@@ -141,10 +141,10 @@ export function effortChoices(type: string, list: ToolModels | null, model: stri
   };
   switch (type) {
     case 'codex':
-      if (known) return { show: true, choices: choices(known.efforts, known.default ? `Model default (${effortName(known.default)})` : 'Model default'), note: 'bbflow adds -c model_reasoning_effort.' };
-      return { show: true, choices: choices(list?.efforts.length ? list.efforts : defaultEfforts, 'CLI default'), note: 'bbflow adds -c model_reasoning_effort.' };
+      if (known) return { show: true, choices: choices(known.efforts, known.default ? `Model default (${effortName(known.default)})` : 'Model default'), note: '' };
+      return { show: true, choices: choices(list?.efforts.length ? list.efforts : defaultEfforts, 'CLI default'), note: '' };
     case 'claude':
-      return { show: true, choices: choices(list?.efforts.length ? list.efforts : defaultEfforts, 'CLI default'), note: 'bbflow adds --effort.' };
+      return { show: true, choices: choices(list?.efforts.length ? list.efforts : defaultEfforts, 'CLI default'), note: '' };
     case 'agy':
       if (other) return { show: false, choices: [], note: 'Type the whole model ID, with its effort.' };
       if (!model) return { show: false, choices: [], note: 'Choose a model to choose its effort.' };
@@ -211,7 +211,6 @@ export class ModelPicker {
   private readonly effortSelect: HTMLSelectElement;
   private readonly effortHelp: HTMLElement;
   private readonly permissionSelect: HTMLSelectElement | null = null;
-  private readonly permissionHelp: HTMLElement | null = null;
   private type = '';
   private chosen = '';
   private chosenEffort = '';
@@ -252,7 +251,6 @@ export class ModelPicker {
     this.effortSelect.onchange = () => { this.chosenEffort = this.effortSelect.value; this.render(); this.host.changed(); };
     if (host.permission) {
       const select = this.permissionSelect = element(`${prefix}-permission`, HTMLSelectElement);
-      this.permissionHelp = element(`${prefix}-permission-help`, HTMLElement);
       select.onchange = () => { this.chosenPermission = select.value; this.render(); this.host.changed(); };
     }
     this.refresh.onclick = () => void this.load(true);
@@ -338,8 +336,6 @@ export class ModelPicker {
       this.refresh.hidden = !this.error;
     } else if (this.loading) this.help.textContent = 'Loading the model list…';
     else if (this.error) this.help.textContent = `${this.error} Choose Other to type a model name.`;
-    else if (builtin) this.help.textContent = 'Built-in suggestions. Claude Code has no command that lists models. Choose Other to type any full name.';
-    else if (this.list) this.help.textContent = `Suggestions from ${this.list.source}.`;
     else this.help.textContent = '';
     const efforts = effortChoices(type, this.list, this.chosen, this.chosenEffort, this.other);
     this.effortSelect.hidden = !efforts.show;
@@ -351,14 +347,11 @@ export class ModelPicker {
     if (note) note.hidden = !this.help.textContent && this.refresh.hidden;
     this.effortHelp.hidden = !this.effortHelp.textContent;
     this.modelSelect.disabled = this.otherInput.disabled = this.effortSelect.disabled = this.refresh.disabled = this.locked;
-    const select = this.permissionSelect, help = this.permissionHelp;
-    if (select && help) {
+    const select = this.permissionSelect;
+    if (select) {
       select.replaceChildren(...permissionChoices(type, this.chosenPermission).map(choice => new Option(choice.label, choice.value)));
       select.value = this.chosenPermission;
       select.disabled = this.locked;
-      const options = permissionOptions(type, this.chosenPermission);
-      help.textContent = quiet ? '' : options ? `bbflow adds ${options}.` : 'bbflow adds no option, so the CLI uses its own setting.';
-      help.hidden = !help.textContent;
     }
   }
 }

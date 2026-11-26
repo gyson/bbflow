@@ -18,7 +18,6 @@ import { touchScroll } from './terminal-touch.js';
 export class SideTerminal {
   private readonly screen = element('side-screen', HTMLElement);
   private readonly status = element('side-status', HTMLElement);
-  private readonly dimensions = element('side-dimensions', HTMLElement);
   private readonly startButton = element('side-start', HTMLButtonElement);
   private readonly stopButton = element('side-stop', HTMLButtonElement);
 
@@ -107,7 +106,7 @@ export class SideTerminal {
             const ended = !message.active && !!this.shell;
             this.live = !!message.active;
             if (message.shell) this.shell = message.shell;
-            this.setStatus(this.live ? 'Not recorded. Runs in the session workspace.' : ended ? 'The shell ended.' : 'No shell runs in this session.');
+            this.setStatus(this.live ? '' : ended ? 'The shell ended.' : 'No shell runs in this session.');
             if (this.live && focus) view.focus();
             focus = false;
             break;
@@ -141,7 +140,6 @@ export class SideTerminal {
     this.view?.dispose();
     this.view = null;
     this.screen.replaceChildren();
-    this.dimensions.textContent = '';
   }
 
   private async stop(): Promise<void> {
@@ -178,9 +176,7 @@ export class SideTerminal {
     view.open(host);
     const fitted = fitSize(view);
     if (fitted) view.resize(fitted.cols, fitted.rows);
-    this.dimensions.textContent = `${view.cols} × ${view.rows}`;
-    view.onResize(({ rows, cols }) => {
-      this.dimensions.textContent = `${cols} × ${rows}`;
+    view.onResize(() => {
       // Another view can change the PTY size. Then the rows of this view change.
       if (keyboardShown()) showCursor(this.screen, view);
     });
