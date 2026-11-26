@@ -57,6 +57,10 @@ from the CLI, for example with `agy models`. If the list does not have a model, 
 **Other…** and type its name. After you install a new CLI version, click **Refresh
 list** in the tool editor of Settings.
 
+In a worktree, bbflow also tells Antigravity to trust the session folder for that
+session. Thus Antigravity does not ask about each new worktree. See
+[Tool types and models](SPEC.md#tool-types-and-models).
+
 **Shell** is a built-in tool too. It starts the shell without a command. Turn it off if
 you do not want it in the menus of new sessions.
 

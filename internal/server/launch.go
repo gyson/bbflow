@@ -176,6 +176,9 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 		}
 		session.Worktree = &worktree
 	}
+	// The workspace is known only now. A sub-session without its own worktree can start
+	// in the managed worktree of its parent.
+	run.Command = s.trustWorktree(p.ToolType, run.Command, run.Workspace)
 	// Each launch records the derived title, also under a user title. A session from
 	// before the upgrade has none, so it never gets an automatic title. The title names
 	// the project folder, also for a sub-session in the workspace of its parent.

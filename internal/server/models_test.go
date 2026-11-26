@@ -91,14 +91,14 @@ func TestDraftsTakeToolDefaultsAndLaunchWithTheChosenModel(t *testing.T) {
 		{"script", "", "", "Script", "echo script"},
 		{"", "", "", "Shell", ""},
 	} {
-		name, command, err := s.continueTool(c.tool, c.model, c.effort)
+		name, command, err := s.continueTool(c.tool, c.model, c.effort, project.Workspace)
 		if err != nil || name != c.name || command != c.command {
 			t.Fatalf("continue %q %q %q: %q %q %v", c.tool, c.model, c.effort, name, command, err)
 		}
 	}
 	// A new terminal rejects the same choices as a draft. Shell has no model or effort.
 	for _, invalid := range [][3]string{{"builtin-codex", "gpt; id", ""}, {"builtin-code-puppy", "codex-gpt-6-luna", "high"}, {"script", "gpt-6-luna", ""}, {"", "gpt-6-luna", ""}, {"", "", "high"}} {
-		if _, _, err = s.continueTool(invalid[0], invalid[1], invalid[2]); err == nil {
+		if _, _, err = s.continueTool(invalid[0], invalid[1], invalid[2], project.Workspace); err == nil {
 			t.Fatalf("a new terminal accepted %q", invalid)
 		}
 	}
