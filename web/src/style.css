@@ -144,6 +144,9 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .row-menu button { margin: 1px 0; padding: 6px 10px; border-color: transparent; background: transparent; text-align: left; font-size: 12px; }
 .row-menu button:hover:not(:disabled), .row-menu button:focus-visible { background: var(--selected); border-color: var(--selected-border); }
 .row-menu [role="separator"] { height: 1px; margin: 4px 6px; background: var(--border); }
+/* A line shows only when an item above it and an item below it show. */
+.row-menu [role="separator"]:not(button:not([hidden]) ~ *),
+.row-menu [role="separator"]:not(:has(~ button:not([hidden]))) { display: none; }
 .session-item.selected { background: var(--selected); border-color: var(--border); box-shadow: 0 2px 4px var(--shadow-soft); }
 /* A row has one line: the status icon, the title, and an optional worktree mark. A
    second line aligns with the title. */

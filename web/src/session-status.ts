@@ -79,3 +79,55 @@ export function statusText(status: string, reason = ''): string {
   if (status === 'ended' && reason) return `Ended · ${reason}`;
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
+
+type Member = { title: string; autoTitle?: string; status: string; preparation?: { state: string } };
+
+// Split the sessions of a stop from the sidebar. A session with a live terminal stops. A
+// session that creates its worktree has no terminal yet, so it cannot stop.
+export function stopMembers<T extends Member>(members: T[]): { stop: T[]; starting: T[] } {
+  return {
+    stop: members.filter(member => hasTerminal(member)),
+    starting: members.filter(member => live(member.status) && !hasTerminal(member)),
+  };
+}
+
+// Tell whether a stop item of the sidebar shows. members holds the sessions that the item
+// can stop. For Stop family, family is true and members holds the top-level session first.
+// Stop session shows while its session has a live terminal. Stop family shows while a
+// sub-session has a live terminal. Otherwise it stops only what Stop session stops.
+export function stopShows(members: Member[], family: boolean): boolean {
+  return (family ? members.slice(1) : members).some(member => hasTerminal(member));
+}
+
+const title = (member: Member) => member.title || member.autoTitle || 'Untitled session';
+const quoted = (member: Member) => `“${title(member)}”`;
+
+function names(members: Member[]): string {
+  const all = members.map(quoted);
+  return all.length < 3 ? all.join(' and ') : `${all.slice(0, -1).join(', ')}, and ${all.at(-1)}`;
+}
+
+// The text of the stop dialog. lines has one line for each session that stops. It is
+// empty for Stop session, because the summary names the session. note names the sessions
+// that cannot stop, or it is empty.
+export interface StopText { title: string; summary: string; lines: string[]; note: string; submit: string }
+
+// Return the text of the stop dialog. family is true for Stop family, which stops the
+// sessions in stop, and then session is the top-level session. Otherwise the dialog is for
+// Stop session, and stop holds session only.
+export function stopText(session: Member, stop: Member[], starting: Member[], family: boolean): StopText {
+  if (!family) {
+    return { title: 'Stop this session?', summary: `This stops ${quoted(session)}. It is ${session.status}.`, lines: [], note: '', submit: 'Stop session' };
+  }
+  const count = stop.length === 1 ? '1 session' : `${stop.length} sessions`;
+  let note = '';
+  if (starting.length === 1) note = `${names(starting)} creates its worktree and has no terminal yet. It does not stop.`;
+  else if (starting.length) note = `${names(starting)} create their worktrees and have no terminals yet. They do not stop.`;
+  return {
+    title: 'Stop this family?',
+    summary: `This stops ${count} of the family ${quoted(session)}:`,
+    lines: stop.map(member => `${title(member)} · ${statusText(member.status)}`),
+    note,
+    submit: 'Stop family',
+  };
+}

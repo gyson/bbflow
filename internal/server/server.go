@@ -341,7 +341,7 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		err := s.store.SetSessionPinned(request.Session, request.Pinned)
 		s.reply(conn, map[string]bool{"pinned": request.Pinned}, err)
 	case "session-stop":
-		result, err := s.stopSession(request.Session)
+		result, err := s.stopSession(request.Session, request.Members)
 		s.reply(conn, result, err)
 	case "query":
 		result, err := s.store.Query(ctx, request.SQL)

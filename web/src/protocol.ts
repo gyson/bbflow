@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/46';
+export const VERSION = 'bbflow/47';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -198,7 +198,9 @@ type ListRequest = { operation: 'session-list'; limit?: number; groups: string[]
 type ArchiveRequest = { operation: 'session-archive'; session: string; archived: boolean; members?: string[] };
 // A pin moves the family of a top-level session to the Pinned group. Archive removes it.
 type PinRequest = { operation: 'session-pin'; session: string; pinned: boolean };
-type StopSessionRequest = { operation: 'session-stop'; session: string };
+// With members, a stop ends these sessions of the family of a top-level session. They can
+// include the session itself. Other live sessions of the family continue.
+type StopSessionRequest = { operation: 'session-stop'; session: string; members?: string[] };
 type ProjectListRequest = { operation: 'project-list' };
 type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: string };
 type RenameRequest = { operation: 'project-rename'; project: string; name: string } | { operation: 'session-rename'; session: string; name: string };
