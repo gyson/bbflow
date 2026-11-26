@@ -349,8 +349,8 @@ terminal, so Ctrl+C in that terminal stops the installer.
 ### Update from the web UI
 
 The **Updates** card of Settings shows the release check state of the server. A dot on
-**Settings** in the sidebar tells of a newer version. **Update…** opens a confirmation
-dialog. After confirmation, the server installs the release and restarts itself. The
+**Settings** in the sidebar tells of a newer version or a failed update. **Update…**, or
+**Restart…** for an installed version, opens a confirmation dialog. After confirmation, the server installs the release and restarts itself. The
 restart stops all live sessions.
 
 #### Updates card
@@ -388,7 +388,8 @@ it.
 
 - The **Settings** button of the sidebar shows a dot for an offer that can start, and
   for a failed update. The dot is red for a failed update, also without an offer.
-- The tooltip and the accessible name of the button name the offer or the failure.
+- The tooltip and the accessible name of the button name the failed update, if there is
+  one. Otherwise they name the offer.
 - A click on **Settings** with the dot opens Settings at the **Updates** card.
 - An update in progress shows in the page bar instead of the dot.
 
@@ -1019,9 +1020,9 @@ the home page shows `bbflow`.
 
 Below the list, a row holds **＋ Project**, **Archived**, **Usage**, and **Settings**.
 In a narrow sidebar, **Usage** and **Settings** go to a second line together. **Usage**
-opens the [Usage dialog](#usage-dialog). A newer release shows as a
-[dot on Settings](#dot-on-settings). The instance directory shows below the row. The sidebar shows the server connection only
-while the server is unavailable.
+opens the [Usage dialog](#usage-dialog). A newer release or a failed update shows as a
+[dot on Settings](#dot-on-settings). The instance directory shows below the row. The
+sidebar shows the server connection only while the server is unavailable.
 
 ### Session families
 
