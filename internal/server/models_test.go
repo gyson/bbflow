@@ -137,24 +137,28 @@ func TestCodeModeInDraftsAndNewTerminals(t *testing.T) {
 	if err != nil || !draft.Preparation.CodeMode || draft.Preparation.Command != "claude" {
 		t.Fatalf("the draft did not copy Code Mode: %+v %v", draft.Preparation, err)
 	}
-	save := func(tool string, codeMode bool) (history.Session, error) {
+	save := func(tool, model string, codeMode bool) (history.Session, error) {
 		current, err := s.store.Session(draft.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return s.savePreparation(&protocol.Request{Session: draft.ID, Preparation: &protocol.PreparationConfig{
-			Revision: current.Preparation.Revision, ToolID: tool, Model: "opus", CodeMode: codeMode}})
+			Revision: current.Preparation.Revision, ToolID: tool, Model: model, CodeMode: codeMode}})
 	}
+	// Code Mode alone makes the save fail: the same save without it succeeds.
 	for _, tool := range []string{"builtin-codex", ""} {
-		if _, err = save(tool, true); err == nil {
+		if _, err = save(tool, "", true); err == nil {
 			t.Fatalf("a draft of %q accepted Code Mode", tool)
 		}
+		if _, err = save(tool, "", false); err != nil {
+			t.Fatalf("a draft of %q without Code Mode did not save: %v", tool, err)
+		}
 	}
-	saved, err := save("builtin-claude", false)
+	saved, err := save("builtin-claude", "opus", false)
 	if err != nil || saved.Preparation.CodeMode {
 		t.Fatalf("the draft did not turn Code Mode off: %+v %v", saved.Preparation, err)
 	}
-	if saved, err = save("builtin-claude", true); err != nil || !saved.Preparation.CodeMode {
+	if saved, err = save("builtin-claude", "opus", true); err != nil || !saved.Preparation.CodeMode {
 		t.Fatalf("the draft did not turn Code Mode on: %+v %v", saved.Preparation, err)
 	}
 	_, run, err := s.launchPrepared(context.Background(), draft.ID, saved.Preparation.Revision, protocol.Size{Rows: 24, Cols: 80})
