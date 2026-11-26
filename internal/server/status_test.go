@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -239,45 +240,163 @@ func TestChangeThatIsChangedBackIsQuiet(t *testing.T) {
 	settle(false)
 	check("the settled notice", "running", 3, 1, 2)
 
+	// A burst counts settleTime after its first change, also when a later change came
+	// less than settleTime before.
+	wait(time.Minute)
+	idle()
+	publish("\x1b7\x1b[2;1HReading files\x1b8") // 4
+	wait(900 * time.Millisecond)
+	publish("\x1b7\x1b[3;1HRead 2 files\x1b8") // 5
+	wait(settleTime - 900*time.Millisecond - time.Millisecond)
+	settle(false)
+	check("two changes before one second", "idle", 3, 1, 2)
+	wait(time.Millisecond)
+	settle(false)
+	check("two changes after one second", "running", 5, 1, 2)
+
 	// A blink that keeps changing the screen for settleTime is activity, also when the
 	// screen is then as it was.
 	wait(time.Minute)
 	idle()
-	for _, cell := range []string{" ", "●", " ", "●", " ", "●"} { // 4 to 9
+	for _, cell := range []string{" ", "●", " ", "●", " ", "●"} { // 6 to 11
 		publish("\x1b7\x1b[1;1H" + cell + "\x1b8")
 		wait(200 * time.Millisecond)
 	}
-	check("a blink for one second", "running", 9, 1, 2)
+	check("a blink for one second", "running", 11, 1, 2)
 
-	// A view action ends a burst before the echo. The burst is quiet when the screen
-	// was back as it was.
+	// The echo after a view action ends a burst, when the echo comes before the view
+	// action ends the burst. The burst is quiet when the screen was back as it was.
 	wait(time.Minute)
 	idle()
-	publish(notice) // 10
+	publish(notice) // 12
 	wait(200 * time.Millisecond)
-	publish(erase) // 11
+	publish(erase) // 13
 	wait(300 * time.Millisecond)
 	r.activity.viewAction(now)
 	wait(50 * time.Millisecond)
-	publish("x") // 12, the echo
-	check("an input after the erased notice", "idle", 12, 1, 2, 10, 11, 12)
+	publish("x") // 14, the echo
+	check("an input after the erased notice", "idle", 14, 1, 2, 12, 13, 14)
 	// The burst is activity when its change still shows. The echo stays quiet.
 	wait(time.Minute)
-	publish("\x1b7\x1b[4;1H? for shortcuts\x1b8") // 13
+	publish("\x1b7\x1b[4;1H? for shortcuts\x1b8") // 15
 	r.activity.viewAction(now)
 	wait(50 * time.Millisecond)
-	publish("\x08 \x08") // 14, the echo
-	check("an input during the change", "running", 14, 1, 2, 10, 11, 12, 14)
+	publish("\x08 \x08") // 16, the echo
+	check("an input during the change", "running", 16, 1, 2, 12, 13, 14, 16)
 
 	// The end of the terminal ends a burst at once.
 	wait(time.Minute)
 	idle()
-	publish(notice) // 15
+	publish(notice) // 17
 	wait(100 * time.Millisecond)
-	publish(erase) // 16
-	check("a burst at the end of the terminal", "idle", 14, 1, 2, 10, 11, 12, 14)
+	publish(erase) // 18
+	check("a burst at the end of the terminal", "idle", 16, 1, 2, 12, 13, 14, 16)
 	settle(true)
-	check("the end of the terminal", "idle", 16, 1, 2, 10, 11, 12, 14, 15, 16)
+	check("the end of the terminal", "idle", 18, 1, 2, 12, 13, 14, 16, 17, 18)
+}
+
+// A view action ends a burst when the server accepts it, also when the application
+// writes no echo.
+func TestViewActionEndsABurst(t *testing.T) {
+	size := protocol.Size{Cols: 80, Rows: 24}
+	var quiet []int64
+	r := &runningSession{id: "fixture", controls: make(chan agent.Control, 16), done: make(chan struct{}), terminal: terminal.New(size),
+		quiet: func(seq int64) error { quiet = append(quiet, seq); return nil }}
+	view := r.subscribe(nil, size)
+	idle := time.Now().Add(-time.Minute)
+	r.activity = activity{output: idle, view: idle}
+	publish := func(seq int64, data string) {
+		t.Helper()
+		// The output comes now, or after the echo window of the latest view action.
+		at := time.Now()
+		r.mu.Lock()
+		if after := r.activity.view.Add(echoWindow); after.After(at) {
+			at = after
+		}
+		r.mu.Unlock()
+		if _, err := r.publishAt(history.Event{Seq: seq, Kind: "output", Data: []byte(data)}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := func() {
+		t.Helper()
+		r.control(view, protocol.Message{Type: "input", Data: []byte("x")})
+		if control := <-r.controls; control.Type != "input" {
+			t.Fatalf("the runtime got %+v", control)
+		}
+	}
+	check := func(reason, status string, classified int64, marked ...int64) {
+		t.Helper()
+		r.mu.Lock()
+		got := r.classified
+		r.mu.Unlock()
+		if s := r.status(time.Now()); s != status || got != classified || fmt.Sprint(quiet) != fmt.Sprint(marked) {
+			t.Fatalf("%s: status %s, classified %d, quiet events %v; expected %s, %d, %v", reason, s, got, quiet, status, classified, marked)
+		}
+	}
+	// A notice, and an erase after the input. The input ends the burst while the notice
+	// shows, so the notice counts. The erase is a change that lasts too.
+	publish(1, "\x1b7\x1b[24;50Hnotice\x1b8")
+	input()
+	check("an input during the notice", "running", 1)
+	publish(2, "\x1b7\x1b[24;50H\x1b[K\x1b8")
+	if err := r.settle(time.Now().Add(time.Minute), false); err != nil {
+		t.Fatal(err)
+	}
+	check("the erase after the input", "running", 2)
+	// A notice and its erase before the input. The burst is quiet.
+	r.activity.output = idle
+	publish(3, "\x1b7\x1b[24;50Hnotice\x1b8")
+	publish(4, "\x1b7\x1b[24;50H\x1b[K\x1b8")
+	input()
+	check("an input after the erased notice", "idle", 4, 3, 4)
+}
+
+// A quiet flag that the server cannot write stays pending. The session list does not
+// count the output until a later write succeeds.
+func TestFailedQuietFlagIsWrittenLater(t *testing.T) {
+	var quiet []int64
+	failed := false
+	r := &runningSession{id: "fixture", terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
+		quiet: func(seq int64) error {
+			if seq == 2 && !failed {
+				failed = true
+				return errors.New("injected failure")
+			}
+			quiet = append(quiet, seq)
+			return nil
+		}}
+	now := time.Unix(1000, 0)
+	r.activity = activity{output: now.Add(-time.Minute), view: now.Add(-time.Minute)}
+	publish := func(seq int64, data string) error {
+		_, err := r.publishAt(history.Event{Seq: seq, Kind: "output", Data: []byte(data)}, now)
+		return err
+	}
+	check := func(reason string, classified int64, marked ...int64) {
+		t.Helper()
+		r.mu.Lock()
+		got := r.classified
+		r.mu.Unlock()
+		if got != classified || fmt.Sprint(quiet) != fmt.Sprint(marked) {
+			t.Fatalf("%s: classified %d, quiet events %v; expected %d, %v", reason, got, quiet, classified, marked)
+		}
+	}
+	if publish(1, "\x1b7\x1b[24;50Hnotice\x1b8") != nil || publish(2, "\x1b7\x1b[24;50H\x1b[K\x1b8") != nil {
+		t.Fatal("publish failed")
+	}
+	now = now.Add(settleTime)
+	if err := r.settle(now, false); err == nil {
+		t.Fatal("the injected failure did not reach settle")
+	}
+	check("a failed flag", 1, 1)
+	// A frame that changes nothing writes the pending flag first.
+	if err := publish(3, "\x1b[?25h"); err != nil {
+		t.Fatal(err)
+	}
+	check("the next publish", 3, 1, 2, 3)
+	if got := r.status(now); got != "idle" {
+		t.Fatalf("the erased notice gave the status %s", got)
+	}
 }
 
 // The runtime records output before the server compares the screen and sets the quiet

@@ -2152,16 +2152,19 @@ A change counts only when it lasts. The first change after the echo window start
 burst. The server keeps a copy of the screen from before the burst. Later changes join
 the burst. The burst ends at the first of these events:
 
-| Event | The burst counts when |
+| Event | Result |
 | --- | --- |
-| The screen stays the same for 1 second. | The screen differs from the copy. |
-| The screen keeps changing for 1 second. | Always. |
-| An input, a PTY size change, or a signal from a view. | The screen differs from the copy before the echo or the redraw. |
-| The end of the terminal. | The screen differs from the copy. |
+| 1 second after the first change, the screen differs from the copy. | The burst counts. |
+| The screen changes 1 second or more after the first change. | The burst counts. |
+| The screen is as in the copy, and it stays the same for 1 second. | The burst does not count. |
+| The server accepts an input, a PTY size change, or a signal from a view. | The burst counts when the screen differs from the copy. The PTY gets the control after this comparison. |
+| The terminal ends. | The burst counts when the screen differs from the copy. |
 
 Thus a notice that an agent CLI shows and erases within 1 second does not make a session
 `running`. Claude Code 2.1.332 shows **Checking for updates…** in its footer for about
 0.2 seconds every 30 minutes. A burst that counts gives the time of its latest change.
+The quiet flags of a burst that does not count are final up to 2 seconds after its first
+change.
 
 The archive marks output that does not count as a quiet event. See
 [session list order](#session-list-order).
@@ -2289,8 +2292,8 @@ process.
   change on the screen.
 - An application that changes its screen while it waits shows as `running`. A notice
   that stays for more than 1 second counts, also when the application erases it later.
-- `running` shows up to 1 second after a change, when the burst of the change ends. The
-  session list counts the change at the same time.
+- `running` shows up to 1 second after the first change of a burst, when the burst
+  ends. The session list counts the change at the same time.
 - Typed input at short intervals for more than 10 seconds can show `idle` while the
   application works.
 - While the status watch reconnects, the sidebar can show a status change up to five
@@ -4197,13 +4200,19 @@ each list read, the server gives the query two bounds:
 1. The sequence of the latest event in the archive, or 0 without events. The server
    reads it first.
 2. For each live terminal, the sequence of the latest event with a final flag. During a
-   burst, this is the event before the burst.
+   burst, this is the event before the burst. It is also before each quiet flag that
+   the server did not write yet.
 
 The output of a session counts up to its second bound, or up to the first bound when
 the session has no live terminal entry. A terminal that starts during the list read
 records only output after the first bound. The server ends each burst before the
 terminal leaves. A `bbflow query` read can see the output with `quiet` 0 for up to 2
 seconds before the server sets the flag.
+
+If the server cannot write a quiet flag when a burst ends on its own, it tries again
+with the next output of the terminal or at the end of the next burst. A failed write
+while the server handles new output stops the terminal, as a failed record does. A
+flag that is not written when the terminal ends stays 0, so that output counts.
 
 Viewing, resizing, focus changes, renaming, saving drafts, attachments, terminal replies,
 and saved screens do not change recency. Fresh application output still counts,
@@ -5082,9 +5091,15 @@ A later browser check with the demo instance verified the saves in Settings:
 - A server fixture uses the frames of the update notice of Claude Code 2.1.332. The
   notice and its erase keep `idle`, and they become quiet 1 second after the erase.
   Until then, the classified sequence stays before the burst. A notice that stays and a
-  blink for 1 second show `running`. An input after an erased notice ends the burst as
-  quiet. An input during a change ends the burst as activity, and the echo stays quiet.
+  blink for 1 second show `running`. Two changes 900 milliseconds apart show `running`
+  1 second after the first change. An echo after an erased notice ends the burst as
+  quiet. An echo during a change ends the burst as activity, and the echo stays quiet.
   The end of the terminal ends a burst at once.
+- A server fixture sends an input that the application does not echo. The input ends
+  the burst of a notice that still shows, and the notice counts. An input after a
+  notice and its erase ends the burst as quiet.
+- A server fixture fails the write of one quiet flag at the end of a burst. The
+  classified sequence stays before that event, and the next output writes the flag.
 - A server fixture holds the quiet flag of a frame before the server sets it. A list
   read in that time does not count the frame. The same fixture checks that a change
   does not move the session before its burst ends. In a second fixture, a terminal starts

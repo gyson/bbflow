@@ -999,7 +999,7 @@ keeps the times in memory and tracks them without views. Application output chan
 what a view shows: a cell of the screen, or the rows in history. A cursor move, a
 title, or a bell alone is not application output. A burst of changes that leaves the
 screen as it was within 1 second is not application output either, so the server
-knows about a change up to 1 second after it. See
+knows about a change up to 1 second after the first change of its burst. See
 [activity detection](SPEC.md#activity-detection). Output in the 300 milliseconds after
 an `input`, a `resize` that changes the PTY size, or a `signal` is not application
 output. This excludes the echo of typed input and the redraw after a size change. A

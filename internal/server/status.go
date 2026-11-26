@@ -13,9 +13,10 @@ const (
 	// An application redraws after an input, a size change, or a signal from a view.
 	// Output in this time after one of them is not application activity.
 	echoWindow = 300 * time.Millisecond
-	// A change of the screen is application activity only when it lasts. A burst of
-	// changes ends when the screen stays the same for this time, or when the screen keeps
-	// changing for this time. A burst that put the screen back as it was is not activity,
+	// A change of the screen is application activity only when it lasts. This time after
+	// the first change of a burst, the burst counts when the screen differs from the
+	// screen before the burst. A change after this time also counts. A burst that put the
+	// screen back as it was is quiet when the screen then stays the same for this time,
 	// as a notice that an agent CLI shows and erases.
 	settleTime = time.Second
 	// A live terminal without application output for this time is idle. Some agent CLIs
