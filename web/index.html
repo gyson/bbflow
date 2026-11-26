@@ -43,8 +43,13 @@
     </header>
     <div id="view-switch" class="segmented" role="group" aria-label="View" hidden><button id="view-session" type="button" aria-pressed="true">Session</button><button id="view-messages" type="button" aria-pressed="false">Messages</button><button id="view-changes" type="button" aria-pressed="false">Changes</button><button id="view-files" type="button" aria-pressed="false">Files</button><button id="view-terminal" type="button" aria-pressed="false">Terminal</button></div>
     <div id="toasts" aria-label="Errors"></div>
-    <section id="welcome" class="welcome">
-      <p id="welcome-text">Select a session in the sidebar, or click ＋ beside a project to start one.</p>
+    <section id="home" class="home" aria-label="Home">
+      <p id="home-problem" role="status" hidden></p>
+      <span id="home-new-box" class="action-menu-box home-new"><span id="home-new-status" class="sr-only" role="status"></span><button id="home-new-open" class="primary" aria-haspopup="menu" aria-expanded="false" aria-controls="home-new" hidden>＋ New session</button>
+        <div id="home-new" class="action-menu" role="menu" aria-label="Project of the new session" hidden></div></span>
+      <button id="home-add-project" class="primary" aria-haspopup="dialog" hidden>＋ Project</button>
+      <div id="home-groups" hidden></div>
+      <p id="home-text" class="home-empty" hidden></p>
     </section>
     <div id="session-row">
     <section id="session-view" hidden>

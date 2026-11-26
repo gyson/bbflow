@@ -73,7 +73,7 @@ class Node {
   }
 }
 
-function setup({ narrow = true, home = false } = {}) {
+function setup({ narrow = true } = {}) {
   const nodes = Object.fromEntries(['sidebar', 'sidebar-scrim', 'sidebar-divider', 'sidebar-toggle'].map(id => [id, new Node()]));
   const main = new Node();
   main.add(nodes['sidebar-toggle']);
@@ -92,7 +92,7 @@ function setup({ narrow = true, home = false } = {}) {
     addEventListener(type, listener) { listeners.document.push([type, listener]); },
   };
   globalThis.matchMedia = () => ({ matches: narrow, addEventListener() {} });
-  new Sidebar(() => home);
+  new Sidebar();
   // Send a keydown event to the listeners of the window or the document.
   const key = (target, init) => {
     const event = { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, repeat: false, defaultPrevented: false, ...init };
@@ -105,7 +105,7 @@ function setup({ narrow = true, home = false } = {}) {
 
 test('the open drawer takes the focus, and the main area under it takes no input', () => {
   const { nodes, main, terminal, row, key, commandB } = setup();
-  assert.equal(nodes.sidebar.hidden, true, 'the drawer starts closed outside the welcome view');
+  assert.equal(nodes.sidebar.hidden, true, 'the drawer starts closed');
   terminal.focus();
 
   commandB();

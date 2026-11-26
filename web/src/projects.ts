@@ -68,14 +68,6 @@ export function sessionGroups(projects: Project[], sessions: SessionInfo[], filt
   return groups;
 }
 
-// The welcome view tells how to start a session. Without a project, it tells how to add
-// the first one.
-export function welcomeText(projects: Project[]): string {
-  return projects.length
-    ? 'Select a session in the sidebar, or click ＋ beside a project to start one.'
-    : 'Click ＋ Project to add a folder. Then click ＋ beside the project to start a session.';
-}
-
 // Tell where a sub-session works, for its row in the list.
 export function placeText(session: SessionInfo, parent: SessionInfo): string {
   if (session.status === 'draft') return session.preparation?.worktree ? 'new worktree' : 'parent workspace';

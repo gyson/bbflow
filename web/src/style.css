@@ -184,7 +184,7 @@ input, textarea, select { width: 100%; border: 1px solid var(--border); backgrou
 .sidebar-actions button { padding: 6px 6px; border-color: transparent; background: transparent; font-size: 12px; }
 .sidebar-actions button[aria-pressed="true"] { background: var(--selected); border-color: var(--selected-border); }
 /* The sidebar tells when the session list cannot load. The list then can be out of date. */
-#list-problem { margin: 0; padding: 9px 11px; border-radius: 8px; background: var(--danger-surface); color: var(--danger); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+#list-problem, #home-problem { margin: 0; padding: 9px 11px; border-radius: 8px; background: var(--danger-surface); color: var(--danger); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .instance { padding: 12px 8px 0; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
 .instance span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.8; }
 #instance-dir { font-size: 10px; color: var(--text-muted); }
@@ -234,7 +234,46 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 .action-menu .menu-note { max-width: 240px; margin: 0 10px 6px; color: var(--text-muted); font-size: 11px; line-height: 1.5; white-space: normal; }
 .action-menu [role="separator"] { height: 1px; margin: 4px 6px; background: var(--border); }
 .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: var(--accent-text); background: var(--selected); border-radius: 5px; padding: 6px 9px; }
-.welcome { margin: auto; padding: 60px 40px; text-align: center; color: var(--text-muted); line-height: 1.7; }
+/* Home has the New session menu, then the live sessions of all projects in two groups.
+   Without a project, the Project button takes the place of the menu. Without a project
+   and without a live session, a text is in the middle of the page. */
+.home { flex: 1; width: 100%; max-width: 920px; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; padding: 26px 30px 40px; }
+.home:has(> .home-empty:not([hidden])) { max-width: none; }
+/* The New session menu opens below its button, at its left edge. A long list of
+   projects scrolls. Without a project, the button does not show, and its box takes no
+   place. */
+.home-new:has(> #home-new-open[hidden]) { display: none; }
+.home-new .action-menu { right: auto; left: 0; max-width: min(420px, 100cqi - 28px); max-height: min(340px, 60dvh); overflow-y: auto; }
+.home-new .action-menu > button { flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
+#home-problem { align-self: stretch; font-size: 12px; }
+/* While the page cannot read the session list, the rows can be out of date. */
+.home.stale #home-groups { opacity: .5; }
+#home-groups { width: 100%; display: flex; flex-direction: column; gap: 22px; }
+.home-group h2 { margin: 0 2px; font-size: 11px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; }
+.home-count { margin-left: 3px; color: var(--text-muted); font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.home-rows { margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.home-row { width: 100%; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 0; border-top: 1px solid var(--divider); border-radius: 0; background: transparent; text-align: left; white-space: normal; }
+.home-row:first-child { border-top: 0; }
+.home-row:hover:not(:disabled) { background: var(--hover); border-color: var(--divider); }
+.home-row:focus-visible { outline-offset: -2px; }
+.home-row > .status-icon { margin-top: 4px; }
+.home-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.home-row-top { align-self: stretch; display: flex; align-items: baseline; gap: 10px; }
+.home-row-top strong { flex: 1; min-width: 0; font-size: 13px; font-weight: 550; overflow-wrap: anywhere; }
+.home-time, .home-message-time { flex: none; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.home-place { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+/* The latest sent message takes one line. A longer message ends with an ellipsis. */
+.home-message { align-self: stretch; display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-top: 3px; padding-left: 8px; border-left: 2px solid var(--border); font-size: 12px; }
+.home-message-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-chip { margin-top: 3px; padding: 2px 8px; border-radius: 999px; background: var(--info-surface); color: var(--info); font-size: 11px; font-weight: 600; }
+.home-empty { margin: auto; padding: 30px 10px; text-align: center; color: var(--text-muted); line-height: 1.7; }
+/* In a narrow main area, the message takes two lines, with its time below. */
+@container main (max-width: 560px) {
+  .home { gap: 18px; padding: 16px 14px 28px; }
+  .home-row { padding: 14px 12px; }
+  .home-message { flex-direction: column; gap: 2px; }
+  .home-message-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; }
+}
 /* The page bar shows a state of the whole page, such as a restart of the server. */
 #page-bar { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 10px 30px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 #page-bar.info { background: var(--info-surface); color: var(--info); }
@@ -368,7 +407,6 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 @media (max-width: 950px) { .sidebar { width: var(--sidebar-width, 240px); } .toolbar { padding: 18px; flex-wrap: wrap; } #page-bar { padding: 10px 18px; } #session-view { padding: 16px; } .actions { flex-wrap: wrap; } }
-@media (max-width: 620px) { .welcome { padding: 36px 24px; } }
 
 .project-group { margin-bottom: 16px; }
 .project-heading { display: flex; align-items: center; gap: 2px; }

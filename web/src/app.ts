@@ -30,7 +30,8 @@ import { fitSize } from './terminal-fit.js';
 import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
-import { familyGroup, mergeSessions, pinLimit, pinnedGroup, placeText, sessionGroups, sessionWindow, shownChildren, welcomeText } from './projects.js';
+import { familyGroup, mergeSessions, pinLimit, pinnedGroup, placeText, sessionGroups, sessionWindow, shownChildren } from './projects.js';
+import { HomeView, serverReads } from './home.js';
 import type { Family } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
@@ -145,8 +146,6 @@ const elements = {
   'status': element('status', HTMLElement),
   'terminal-hint': element('terminal-hint', HTMLElement),
   'terminal-announce': element('terminal-announce', HTMLElement),
-  'welcome': element('welcome', HTMLElement),
-  'welcome-text': element('welcome-text', HTMLElement),
   'session-view': element('session-view', HTMLElement),
   'instance-dir': element('instance-dir', HTMLElement),
 };
@@ -307,7 +306,16 @@ const sentHistory: SentHistory = new SentHistory(() => server, {
 });
 const workspacePane = new WorkspacePane(diffPane, sideTerminal, sentHistory);
 // The address tells the view before a session of the address is open.
-const sidebar = new Sidebar(() => parseRoute(location.pathname).page === 'home');
+const sidebar = new Sidebar();
+// Home shows the live sessions of all projects. It stays hidden while the page opens the
+// session or Settings of its URL.
+const home = new HomeView({
+  reads: () => server ? serverReads(server) : null,
+  open: session => void action(() => openSession(session), failed('open', session)),
+  draft: project => void action(() => showLaunch(project.id), `Could not add a draft to ${project.name}.`),
+  addProject: () => showProject(),
+});
+home.show(parseRoute(location.pathname).page === 'home');
 const mobileLayout = matchMedia(mobileQuery);
 new FileListWidth();
 
@@ -374,10 +382,12 @@ function showPageBar() {
   $('page-bar-reload').hidden = !bar.reload;
 }
 
-// The sidebar tells when the session list cannot load. An empty text removes the problem.
+// The sidebar tells when the session list cannot load. Home tells it too, because Home
+// can show without the sidebar. An empty text removes the problem.
 function listProblem(text = '') {
   $('list-problem').textContent = text;
   $('list-problem').hidden = !text;
+  home.problem(text);
 }
 
 // The title of the error toast of a failed action on a session.
@@ -507,6 +517,7 @@ function controls() {
   $('settings-close').disabled = busy;
   composer.controls(busy, !!connection?.ready && !!connection.peer?.active);
   $('add-project').disabled = busy || !server;
+  home.controls(busy || !server);
   // Worktree creation shows as running, but only a terminal can stop or reconnect.
   const terminalLive = !!connection?.peer?.active || hasTerminal(selected);
   const shownRun = terminalPicker.shownRun;
@@ -794,13 +805,13 @@ function showListStatuses() {
 }
 
 function renderSessions() {
+  home.update(projects, sessions, liveStatuses);
   const query = $('filter').value.toLowerCase();
   // A status is not part of the fingerprint. A status change must not replace the buttons.
   const fingerprint = JSON.stringify([projects, sessions, query, archivedList, [...moreGroups], selected?.id, showingSettings, [...collapsedProjects], [...shownFamilies]]);
   // An open row menu keeps the buttons of the list. Its close renders the list again.
   if (fingerprint === renderedSidebar || rowMenus.open) { showListStatuses(); controls(); return; }
   renderedSidebar = fingerprint;
-  $('welcome-text').textContent = welcomeText(projects);
   // New buttons replace the list. Give the keyboard focus to the new button of the same item.
   const focused = document.activeElement instanceof HTMLElement && $('sessions').contains(document.activeElement) ? document.activeElement.dataset.focus : undefined;
   statusMarks.length = 0;
@@ -1224,7 +1235,7 @@ async function showSession(session: SessionView, launch?: Launch, run = ''): Pro
     archivedList = !!session.archived; $('filter').value = '';
     await refreshSessions();
   }
-  $('welcome').hidden = true;
+  home.show(false);
   $('session-view').hidden = false;
   const preparing = session.status === 'draft' && !start;
   workspacePane.select(preparing ? '' : session.id ?? '');
@@ -1476,7 +1487,7 @@ async function showSubLaunch(parent: string): Promise<void> {
   revealFamily(session.id);
 }
 
-async function showWelcome(): Promise<void> {
+async function showHome(): Promise<void> {
   await leaveView();
   settingsView.close(); showingSettings = false;
   await preparation.close();
@@ -1488,13 +1499,13 @@ async function showWelcome(): Promise<void> {
   terminal?.dispose(); terminal = null;
   sessionSplit.setEnabled(false);
   $('session-view').hidden = true;
-  $('welcome').hidden = false;
+  home.show(true);
   heading('Home', 'bbflow');
   showWorkspace('');
   $('status').hidden = true;
   history.replaceState(null, '', homePath);
   renderSessions();
-  sidebar.setDrawer(true);
+  sidebar.setDrawer(false);
 }
 
 async function showSettings(): Promise<void> {
@@ -1503,7 +1514,8 @@ async function showSettings(): Promise<void> {
   sidebar.setDrawer(false);
   showingSettings = true;
   workspacePane.select('');
-  $('session-view').hidden = $('welcome').hidden = true;
+  $('session-view').hidden = true;
+  home.show(false);
   heading('Settings');
   showWorkspace('');
   $('status').hidden = true;
@@ -1681,7 +1693,7 @@ async function requestArchive(session: ArchiveTarget, archived: boolean): Promis
 
 // Archive or restore a session. The selected session first saves its launch choices and
 // message editor. Its view then closes, or opens in the normal list after a restore.
-// Settings stays open. Done then opens the welcome view or the restored session.
+// Settings stays open. Done then opens Home or the restored session.
 async function setArchived(id: string, archived: boolean, family = false, members?: string[]): Promise<void> {
   if (!server) return;
   // The archive of a family also archives a selected sub-session of that family.
@@ -1697,7 +1709,7 @@ async function setArchived(id: string, archived: boolean, family = false, member
     if (archived) current.pinned = false;
     if (showingSettings) {
       if (archived) selected = null;
-    } else if (archived) await showWelcome();
+    } else if (archived) await showHome();
     else {
       archivedList = false; $('filter').value = '';
       await openSession(current);
@@ -1806,7 +1818,7 @@ async function initialize() {
     // Keep a plain click in this page so drafts save. Let modified clicks open a new tab.
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    void action(showWelcome, 'Could not open Home.');
+    void action(showHome, 'Could not open Home.');
   };
   // The dot on Settings tells of a new release. Then Settings opens at its card.
   $('settings-open').onclick = () => action(async () => {
@@ -1818,7 +1830,7 @@ async function initialize() {
   $('settings-close').onclick = () => action(async () => {
     settingsView.close(); showingSettings = false;
     if (selected) await openSession(selected);
-    else await showWelcome();
+    else await showHome();
   }, 'Could not leave Settings.');
   $('remove-worktree').onclick = () => action(async () => {
     if (!server || !selected?.id) return;
@@ -2003,6 +2015,9 @@ async function initialize() {
     $('sessions').replaceChildren();
     listProblem(`Cannot connect to the bbflow server. ${errorMessage(error)}`);
   }
+  // A session or Settings that did not open leaves Home. Home also shows a failed
+  // connection, because the sidebar can be closed.
+  if (!selected && !showingSettings && !home.visible) home.show(true);
   controls();
 }
 

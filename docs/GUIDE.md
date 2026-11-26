@@ -111,7 +111,8 @@ See [Project menu](SPEC.md#project-menu) for the rules.
 
 <img src="images/draft.png" alt="The Prepare a session form of a draft. The session name is first. Below it, the tool Claude Code, its model, its thinking effort, and its permissions share a row, with the command that bbflow submits. Use worktree, the starting branch, and the Start session button follow. The message editor is below the form.">
 
-1. Click **＋** beside a project to create a draft.
+1. Click **＋** beside a project to create a draft. As an alternative, click
+   **＋ New session** on Home, then select the project.
 2. Select a tool. The draft selects the default model, effort, and permissions of the
    tool.
 3. Optional: select another **Model**, **Thinking effort**, or **Permissions** for this
@@ -197,6 +198,23 @@ of its project below its title. The newest pin comes first. To return a session 
 project, click **Unpin** in the same menu. **Pin** and **Unpin** are also in the
 **More actions** (⋯) menu of the toolbar. Archive removes the pin. See
 [Pinned sessions](SPEC.md#pinned-sessions) for the rules and limits.
+
+## See the live sessions on Home
+
+Click the bbflow name in the sidebar to open Home.
+
+- **Running** and **Idle** list the sessions of all projects that have a live terminal.
+  Click a row to open its session.
+- A row shows the project, the tool, and the latest message that you sent.
+- **Unsent message** marks a session whose message editor holds a message that you did
+  not send.
+- **Running** means that the screen of the terminal changed in the last 10 seconds.
+- **Idle** means only that the screen did not change in that time. The agent can still
+  work, or it can wait for your answer.
+- An idle row shows the time since the latest activity of its session.
+- To start a session from Home, click **＋ New session**, then select the project.
+
+See [Home](SPEC.md#home) for the rules.
 
 ## Check your usage limits
 

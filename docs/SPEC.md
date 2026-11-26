@@ -32,6 +32,7 @@ The Web client section has these features:
 | [Page messages](#page-messages) | The place of each warning and error. |
 | [Mobile layout](#mobile-layout) | The layout of a very narrow window: the sidebar drawer, the short toolbar, the message editor, the file list, and the on-screen keyboard. |
 | [Sidebar](#sidebar) | Projects, session groups, width, search, refresh, and stops from the row menu. |
+| [Home](#home) | The page at `/`: the New session menu, and the live sessions of all projects in the groups Running and Idle. |
 | [Session families](#session-families) | Sub-sessions and their parent. |
 | [Pinned sessions](#pinned-sessions) | The Pinned group at the top of the sidebar, and the pin rules. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
@@ -783,8 +784,9 @@ about:
   and the button stays off until the page reloads.
 - A handoff folder that is not available shows in the status line of the message editor.
 - A failed list refresh shows above the session list, because the list can then be out
-  of date. A failed connection at page load shows there too. After a server restart,
-  the restart bar replaces it.
+  of date. A failed connection at page load shows there too. [Home](#home) shows the
+  same text at its top, because Home can show while the sidebar does not. After a
+  server restart, the restart bar replaces the text in both places.
 - An update in progress and a server restart show in a bar at the top of the main area.
   The update bar follows the update state of the status watch in each view. Thus a
   failed update removes it, and the **Updates** card of Settings shows the failure. A
@@ -841,9 +843,8 @@ once and keeps the selected session and the shown view.
   else the drawer. The main area under the drawer takes no focus and no input.
 - When the drawer closes, the focus goes back to the control that had it before. If that
   control is gone, the toolbar button gets the focus.
-- The drawer closes when a session or Settings opens.
-- The drawer is open on the welcome view, and closed in each other view, after a page
-  load and after a change to the mobile layout.
+- The drawer closes when a session, Settings, or [Home](#home) opens.
+- The drawer is closed after a page load and after a change to the mobile layout.
 - The drawer has a width of 86% of the window, at most 330 pixels. The sidebar divider
   is not available.
 - The state of the drawer is separate from the visibility of the sidebar in the regular
@@ -1008,11 +1009,8 @@ move a session into or out of the shown part of a group.
 - Each project's **＋** creates and selects a new draft entry. A click on an existing
   entry reopens it by session ID. The URL keeps that ID as `/sessions/<id>` through
   reload and launch.
-- The welcome view is the home page at `/`. Its toolbar title is **Home**, and it shows
-  one line that tells how to start a session. Without a project, the line tells how to
-  add the first project with **＋ Project**.
-- The bbflow name in the sidebar returns to the welcome view. It also opens when no
-  session is selected, for example after the archive of the selected session.
+- The bbflow name in the sidebar opens [Home](#home), the page at `/`. Home also opens
+  when no session is selected, for example after the archive of the selected session.
 
 The browser tab title shows the session or draft name. Settings shows `Settings`, and
 the home page shows `bbflow`.
@@ -1068,6 +1066,103 @@ opens the [Usage dialog](#usage-dialog), and it shows only when a tool with a
 [usage check](#usage-limits) is on. A newer release or a failed update shows as a
 [dot on Settings](#dot-on-settings). The instance directory shows below the row. The
 sidebar shows the server connection only while the server is unavailable.
+
+### Home
+
+Home is the page at `/`. Its toolbar title is **Home**. Home shows the **＋ New
+session** menu and the sessions of all projects that have a live terminal. These
+sessions are in the groups **Running** and **Idle**. A row shows the latest sent message
+of its session, and a mark when the session has an unsent message.
+
+#### New session menu
+
+- **＋ New session** opens a menu with one item for each saved project, in the order of
+  the sidebar. A long menu scrolls.
+- An item creates a draft in its project and opens the draft, as **＋** beside the
+  project does. See [Refresh and selection](#refresh-and-selection).
+- Without a project, a **＋ Project** button takes the place of **＋ New session**. It
+  opens the Add project dialog.
+- Without a project and without a live session, Home shows **No projects yet.** in
+  place of the groups. A session of a removed project stays live, so Home can show rows
+  without a project.
+- The buttons of Home are off while an action runs, as the buttons of the sidebar are.
+  This applies to **＋ New session**, **＋ Project**, and each row.
+
+#### Groups of Home
+
+- **Running** lists the sessions with the status `running`. **Idle** lists the sessions
+  with the status `idle`. See [Session status](#session-status). Home does not list a
+  draft or an ended session.
+- Each group heading shows the number of its sessions. A group without a session shows
+  only its heading, with **0**. Thus Home shows both headings when no session has a
+  live terminal.
+- Home shows no text on the meaning of a status. The tooltip of a status icon gives it,
+  as in the sidebar, and `docs/GUIDE.md` explains it.
+- The status watch supplies the status, as for the sidebar. A status change moves a row
+  to the other group at once.
+- **Running** sorts its rows by title. **Idle** shows the session with the latest
+  activity first. Thus a row keeps its place while its session writes output.
+- A click on a row opens the session.
+
+#### Rows of Home
+
+A row has these parts:
+
+| Part | Contents |
+| --- | --- |
+| Status icon | The [sidebar icon](#status-in-the-sidebar) of `running` or `idle`, with the status text of the sidebar as its tooltip. |
+| Title | The session title, or **Untitled session**. |
+| Time | For an idle session, the time since the update time of the session list, such as **12 min**. The tooltip shows that date and time. A running session shows no time. |
+| Place | The project name, the tool of the latest terminal, and **worktree** for a managed worktree. A sub-session adds **↳** and the title of its top-level session. A session without a saved project shows its workspace in place of the project name. |
+| Latest message | The text of the latest sent message on one line, and its age, such as **5 min ago**. A message without text shows the number of its attachments. A session without a sent message has no such line. |
+| **Unsent message** | A mark for a saved draft that has text or attachments and is not pending. |
+
+A time shows in one unit: **<1 min**, minutes below 1 hour, hours below 1 day, and then
+days. The times change while Home shows.
+
+In a main area of 560 pixels or less, the latest message takes at most two lines, with
+its age below.
+
+#### Data of Home
+
+- The session list supplies the title, the project, the worktree, and the update time
+  of each row. The update time is the time of the latest session activity. See
+  [Session list order](#session-list-order).
+- The sidebar list holds only the most recent families of each group. For a live
+  session outside that list, Home reads `session-config`.
+- A row of a sub-session shows the title of its top-level session. When that session
+  has no live terminal and the list does not hold it, Home reads `session-config` for
+  it. That session does not become a row.
+- For each row, Home reads `composer-sent` for the latest sent message and
+  `composer-draft` for the saved draft. A row also reads `session-terminals` for the
+  tool, until one reply gives the terminals. Before that reply, the row shows the tool
+  of the launch.
+- Home reads this data when Home opens, and for a row when its status changes. A hidden
+  Home reads nothing, also when a reply arrives after Home hides.
+- Home shows a message only as plain text.
+
+#### Unavailable server on Home
+
+- When the page cannot read the session list, Home shows the text of the
+  [failed list refresh](#page-messages) above **＋ New session**. The rows can then be
+  out of date, so Home shows the groups dimmed. The next list read that succeeds
+  removes the text.
+- After a failed connection at page load, Home shows only the text of that failure.
+  The page shows Home for each address then, because no session and no Settings can
+  open.
+
+#### Limits of Home
+
+- A message that another view sends shows on Home at the next status change of its
+  session, or when Home opens again. A draft that another view saves shows at the same
+  times.
+- A live session outside the sidebar list shows no idle time.
+- Without the status watch, Home lists only the live sessions of the sidebar list.
+- When a read of the row data fails, the row keeps its earlier data. Home shows no
+  error for it.
+- Home has no actions for a row. Stop, pin, and archive stay in the sidebar and in the
+  session.
+- Home does not show drafts, ended sessions, or usage limits.
 
 ### Session families
 
@@ -1240,7 +1335,7 @@ all recorded data. There is no permanent delete action.
   [session families](#session-families).
 - Archive removes the [pin](#pinned-sessions) of a session.
 - Archive of the selected session first saves the launch choices and message editor.
-  Then the welcome view opens. A family archive does the same when the selected session
+  Then Home opens. A family archive does the same when the selected session
   is in the family. Archive of another session keeps the current view.
 
 #### Archived list
@@ -1254,7 +1349,7 @@ the selected session opens it in the normal list. A restore of another session k
 the archived list.
 
 While Settings is open, an archive or restore from a row menu keeps Settings open. When
-the row is the session behind Settings, **Done** then opens the welcome view
+the row is the session behind Settings, **Done** then opens Home
 after an archive, or the restored session. After an archive or restore with the
 keyboard, focus moves to the nearest later session row that shows, or else the nearest
 earlier one. Rows of a collapsed group do not count. Without such a row, focus moves to
@@ -3536,7 +3631,7 @@ the main area. In the [mobile layout](#mobile-layout), it uses the full width.
   each view. The switch and the icons use the same [pane state](#pane-state). Thus a
   change of the window width keeps the shown view.
 - The sidebar stays, except in the [mobile layout](#mobile-layout).
-- Drafts, Settings, and the welcome view have no switch.
+- Drafts, Settings, and Home have no switch.
 
 #### Pane state
 
@@ -4889,6 +4984,51 @@ at window widths of 1200, 1600, and 1920 pixels.
 - No browser errors were reported.
 - The tests used synthetic shells, not a real agent CLI.
 
+### Checks of Home
+
+- Web fixtures check the parts of Home that need no browser. They check the two groups
+  from the session list and the pushed statuses, a live session outside the list, and
+  the order of each group. They also check the unsent draft, the latest sent message,
+  the time spans, the place line, and the text without a project.
+- Web fixtures check the reads of the row data with simulated replies. A row reads
+  again only after a status change. It reads its terminals until one reply gives them,
+  also when a newer read replaces the first reply and when the first read fails. A row
+  keeps its data after a failed read. Home reads each row again when it opens. A
+  session that ends leaves Home. A live session outside the list reads its session
+  data first. A row reads its top-level session when no list holds that session.
+- Web fixtures run the view of Home with a small page of simulated elements. They check
+  the rows of a removed project with **＋ Project** in place of **＋ New session**, the
+  text without a project and without a live session, and both headings with **0**. They
+  check that a hidden Home starts no read when a reply arrives. They check that the
+  buttons are off while an action runs, also on new rows, and the text of an
+  unavailable server.
+- A browser check used a demo instance at widths of 1280 and 390 pixels. It checked the
+  two groups, the New session menu, a draft from the menu, and a click on a row. It
+  checked **Unsent message** after a saved draft, and the latest message after a send.
+  It checked that Home shows with the drawer closed in the mobile layout.
+- The same check entered a sidebar search without a match, and then opened Archived.
+  Home kept its four live sessions, without idle times.
+- A browser check with a new instance showed the text without a project. **＋ Project**
+  on Home opened the Add project dialog.
+- A browser check at a width of 390 pixels blocked `/client-config`. Home showed the
+  failed connection, for the address of Home and for the address of a session. A
+  second check stopped the server of a demo instance while Home showed. In 16 seconds,
+  Home showed the failed list refresh above its dimmed groups.
+- The browser console had no errors.
+- After the removal of the status notes and of the other secondary text, a browser
+  check at widths of 1280 and 390 pixels showed Home with four live sessions. It showed
+  both headings with **0** after a server restart, and **No projects yet.** with
+  **＋ Project** in a new instance.
+- A browser check with a demo instance started a sub-session, stopped its top-level
+  session, and opened Archived. The row of the sub-session kept **↳** with the title of
+  the top-level session. The check then removed both projects while four sessions were
+  live. Home showed the four rows with their workspaces, and **＋ Project** in place of
+  **＋ New session**.
+- Safari in an iPhone 18 Pro simulator with iOS 27.2 showed Home of the demo instance
+  with the drawer closed. That check only loaded the page.
+- The checks used simulated agents and a mouse. They did not use a phone, touch input,
+  or a real agent CLI. No check used a project with more than five live sessions.
+
 ### Checks of session families
 
 - Family fixtures verify family order by the latest member, paging by family, an
@@ -4902,7 +5042,7 @@ at window widths of 1200, 1600, and 1920 pixels.
 - Web fixtures verify the families of the list, context families, the place labels, and
   the merge of pages without a repeated family.
 - A browser check of a demo instance with the Demo agent verified a start in the parent
-  workspace, the family archive dialog, the welcome view after the archive of a selected
+  workspace, the family archive dialog, Home after the archive of a selected
   sub-session, restore of the family, and search context.
 - No real agent CLI was used.
 - Web fixtures also verify the status icons and texts and the first 5 sub-sessions of a
@@ -5980,8 +6120,8 @@ repository, and a folder outside Git, each with a shell session.
 - A browser check of the mobile layout used a demo instance at a width of 390 pixels.
   It checked that the page does not scroll, the drawer with its three ways to close, the
   four views of the switch, the file list and **← Back**, **Stop session** and
-  **Continue in new terminal** in the More actions menu, a draft, Settings, and the
-  welcome view. The browser console was empty. The check used a desktop browser with a
+  **Continue in new terminal** in the More actions menu, a draft, Settings, and
+  Home. The browser console was empty. The check used a desktop browser with a
   mouse. It did not use a phone, touch input, or an on-screen keyboard.
 - Web fixtures check the parts of the touch scroll: the whole rows of a drag and the
   rest for the next movement, the release speed from the last 100 milliseconds, no
