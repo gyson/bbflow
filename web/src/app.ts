@@ -125,6 +125,7 @@ const elements = {
   'continue-model': element('continue-model', HTMLSelectElement),
   'continue-model-other': element('continue-model-other', HTMLInputElement),
   'continue-effort': element('continue-effort', HTMLSelectElement),
+  'continue-permission': element('continue-permission', HTMLSelectElement),
   'continue-command': element('continue-command', HTMLElement),
   'continue-prompt': element('continue-prompt', HTMLTextAreaElement),
   'continue-warning': element('continue-warning', HTMLElement),
@@ -170,7 +171,7 @@ interface SessionView {
 }
 
 // start claims a prepared draft. continue starts a new terminal in an ended session.
-type Launch = { kind: 'start' } | { kind: 'continue'; tool: string; model: string; effort: string };
+type Launch = { kind: 'start' } | { kind: 'continue'; tool: string; model: string; effort: string; permission: string };
 
 let server: ServerInfo | null = null;
 let connection: SessionConnection | null = null;
@@ -371,7 +372,7 @@ function failed(what: string, session?: { title: string; autoTitle?: string } | 
 const dialogEdits = new DialogEdits([
   { dialog: $('project-dialog'), fields: [$('project-name'), $('project-workspace')] },
   { dialog: $('rename-dialog'), fields: [$('rename-name')] },
-  { dialog: $('continue-dialog'), fields: [$('continue-tool'), $('continue-model'), $('continue-model-other'), $('continue-effort')] },
+  { dialog: $('continue-dialog'), fields: [$('continue-tool'), $('continue-model'), $('continue-model-other'), $('continue-effort'), $('continue-permission')] },
 ]);
 const dialogErrors = new Map([
   [$('project-dialog'), $('project-error')],
@@ -1234,7 +1235,7 @@ async function showSession(session: SessionView, launch?: Launch, run = ''): Pro
   if (launch?.kind === 'start' && session.id && session.preparation) {
     request = { operation: 'session-start', session: session.id, revision: session.preparation.revision, size: size(view) };
   } else if (launch?.kind === 'continue' && session.id && session.run) {
-    request = { operation: 'session-continue', session: session.id, latestRun: session.run.id, tool: launch.tool, model: launch.model, effort: launch.effort, size: size(view) };
+    request = { operation: 'session-continue', session: session.id, latestRun: session.run.id, tool: launch.tool, model: launch.model, effort: launch.effort, permission: launch.permission, size: size(view) };
   } else if (session.id) {
     request = { operation: 'session-resume', session: session.id, size: size(view), ...(run ? { run } : {}) };
   } else {
@@ -1372,27 +1373,29 @@ async function loadTerminals(id: string, opening = false): Promise<void> {
   controls();
 }
 
-// The Continue dialog has the model and effort fields of a draft. The dialog shows no
-// notes about the model list, as a draft does.
-const continueModels = new ModelPicker('continue', { server: () => server, changed: previewContinue, quiet: true });
+// The Continue dialog has the model, effort, and permission fields of a draft. The dialog
+// shows no notes about the model list, as a draft does.
+const continueModels = new ModelPicker('continue', { server: () => server, changed: previewContinue, quiet: true, permission: true });
 
 // The tool that the Continue dialog selects. Shell has no tool.
 function continueTool(): Tool | undefined {
   return continueTools.find(tool => tool.id === $('continue-tool').value);
 }
 
-// A newly selected tool brings its default model and effort, as in a draft.
+// A newly selected tool brings its default model, effort, and permission mode, as in a
+// draft.
 function selectContinueTool(): void {
   const tool = continueTool();
-  continueModels.set(tool?.type ?? '', tool?.model ?? '', tool?.effort ?? '');
+  continueModels.set(tool?.type ?? '', tool?.model ?? '', tool?.effort ?? '', tool?.permission ?? '');
   previewContinue();
 }
 
 // Show the command that the new terminal submits.
 function previewContinue(): void {
   const tool = continueTool(), type = tool?.type ?? '';
-  $('continue-command').textContent = launchCommand(type, tool?.command ?? '',
-    typed(type) ? continueModels.model : '', typed(type) ? continueModels.effort : '') || '(no startup command)';
+  const agent = typed(type);
+  $('continue-command').textContent = launchCommand(type, tool?.command ?? '', agent ? continueModels.model : '',
+    agent ? continueModels.effort : '', agent ? continueModels.permission : '') || '(no startup command)';
 }
 
 async function showContinue(): Promise<void> {
@@ -1934,9 +1937,11 @@ async function initialize() {
       if (restarted || continueDialogProblem(continuation, selected.run?.id, continueRun)) return;
       const tool = $('continue-tool').value;
       const type = continueTool()?.type ?? '';
-      const model = typed(type) ? continueModels.model : '', effort = typed(type) ? continueModels.effort : '';
+      const agent = typed(type);
+      const model = agent ? continueModels.model : '', effort = agent ? continueModels.effort : '';
+      const permission = agent ? continueModels.permission : '';
       $('continue-dialog').close();
-      await openSession(selected, { kind: 'continue', tool, model, effort });
+      await openSession(selected, { kind: 'continue', tool, model, effort, permission });
     }, failed('start a new terminal in', selected));
   };
   $('stop-session').onclick = () => action(async () => {

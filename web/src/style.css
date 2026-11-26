@@ -435,10 +435,12 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
 .title-models { margin-bottom: 17px; }
 button.link-button { padding: 0; border: 0; background: none; color: var(--link); font-size: 11px; text-decoration: underline; }
 .launch-command { margin: 0; }
-/* The tool, its model, and its effort form one group of the draft. A line above and
+/* The tool, its model, effort, and permissions form one group of the draft. A line above and
    below separates it from the other fields, on the background of the form. Tool, Model,
-   and Thinking effort share a row. The default of the tool and the command span it. */
-.launch-tool-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; align-items: start;
+   Thinking effort, and Permissions share a row when the row is wide enough, for example
+   in a draft in a window of 1200 px. The fields wrap in a narrower row. The default of the tool and the
+   command span it. A narrow window keeps the wider columns. */
+.launch-tool-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 20px; align-items: start;
   min-width: 0; margin: 0; padding: 18px 0; border: 0; border-block: 1px solid var(--divider); }
 .launch-tool-group .launch-command code { overflow-wrap: anywhere; }
 .launch-tool-group > .model-fields { display: contents; }
@@ -525,7 +527,7 @@ button.tool-add { margin-top: 12px; font-size: 12px; }
 #tool-remove-dialog .form-help, #remove-project-dialog .form-help { margin: 0 0 14px; overflow-wrap: anywhere; }
 .settings-content { padding-bottom: 30px; }
 #settings-error { margin: 16px 0 0; }
-@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid, .place-group, .model-fields { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 0 16px 16px; } }
+@media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid, .place-group, .model-fields { grid-template-columns: 1fr; } .launch-tool-group { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 0 16px 16px; } }
 .continue-dialog { width: 620px; }
 /* The Usage dialog shows a bar for each usage limit. The bar shows the part that is left. */
 .usage-dialog { width: 560px; }

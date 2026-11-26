@@ -35,8 +35,9 @@ Claude Code.
 5. To use an agent, set its switch to **On**. To hide an agent that you do not have,
    set it to **Off**. A tool that is off is not a choice for new sessions. **NOT
    FOUND** tells that bbflow cannot find the CLI.
-6. Optional: click **Edit** to set the **Default model** or the **Default thinking
-   effort**. **CLI default** uses the configuration of the CLI. Then click **Save**.
+6. Optional: click **Edit** to set the **Default model**, the **Default thinking
+   effort**, or the **Default permissions**. **CLI default** uses the configuration of
+   the CLI. Then click **Save**.
 
 bbflow keeps the name and the command of a built-in tool. If **NOT FOUND** shows for a
 CLI that you have, click **Edit** and enter its full path in **CLI path**, for example
@@ -52,10 +53,19 @@ command in **New sessions submit**, then click **Add tool**. To keep a tool but 
 for a time, set its switch to **Off**.
 
 For the built-in tools of Codex, Claude Code, Antigravity, and Code Puppy, bbflow adds
-the model and the effort as options at the end of the command. bbflow gets the models
-from the CLI, for example with `agy models`. If the list does not have a model, select
-**Other…** and type its name. After you install a new CLI version, click **Refresh
-list** in the tool editor of Settings.
+the model, the effort, and the permission mode as options at the end of the command.
+bbflow gets the models from the CLI, for example with `agy models`. If the list does not
+have a model, select **Other…** and type its name. After you install a new CLI version,
+click **Refresh list** in the tool editor of Settings.
+
+**Permissions** chooses how the agent asks before it acts. The choices are the modes of
+each CLI, for example **Approve for me** of Codex or **Accept edits** of Claude Code.
+The note below **Default permissions** shows the options that bbflow adds. For fewer
+approval questions in each new Codex session, set **Default permissions** of Codex to
+**Approve for me**. Codex then sends its approval requests to an automatic review. It
+asks you only about actions that the review finds potentially unsafe. **Full Access**, **Bypass Permissions**,
+**Skip permissions**, and **YOLO on** let the agent run commands without approval. See
+[Permission modes](SPEC.md#permission-modes) for the options of each mode.
 
 In a worktree, bbflow also tells Antigravity to trust the session folder for that
 session. Thus Antigravity does not ask about each new worktree. It does this also when
@@ -95,12 +105,13 @@ See [Project menu](SPEC.md#project-menu) for the rules.
 
 ## Start a session
 
-<img src="images/draft.png" alt="The Prepare a session form of a draft. The session name is first. Below it, the tool Claude Code, its model, and its thinking effort share a row, with the command that bbflow submits. Use worktree, the starting branch, and the Start session button follow. The message editor is below the form.">
+<img src="images/draft.png" alt="The Prepare a session form of a draft. The session name is first. Below it, the tool Claude Code, its model, its thinking effort, and its permissions share a row, with the command that bbflow submits. Use worktree, the starting branch, and the Start session button follow. The message editor is below the form.">
 
 1. Click **＋** beside a project to create a draft.
-2. Select a tool. The draft selects the default model and effort of the tool.
-3. Optional: select another **Model** or **Thinking effort** for this session.
-   **bbflow submits** shows the command that starts the agent.
+2. Select a tool. The draft selects the default model, effort, and permissions of the
+   tool.
+3. Optional: select another **Model**, **Thinking effort**, or **Permissions** for this
+   session. **bbflow submits** shows the command that starts the agent.
 4. To give the session independent files, select **Use worktree**.
 5. Click **Start session**.
 
@@ -202,9 +213,10 @@ limit. To find an agent with usage left, first [check your usage
 limits](#check-your-usage-limits).
 
 1. Click **Continue in new terminal**. The dialog selects the tool of the latest
-   terminal, with the default model and thinking effort of that tool.
+   terminal, with the default model, thinking effort, and permissions of that tool.
 2. If that agent reached its usage limit, select another **Tool**.
-3. Optional: change **Model** and **Thinking effort**, as in a new session.
+3. Optional: change **Model**, **Thinking effort**, and **Permissions**, as in a new
+   session.
 4. Click **Start new terminal**. bbflow writes a read-only handoff folder with the
    earlier terminals and messages. Then it starts the tool.
 5. Wait until the new agent is ready.

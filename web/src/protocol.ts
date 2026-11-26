@@ -1,7 +1,7 @@
 import { replaces, restartedMessage, serverReplaced } from './restart.js';
 
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bbflow/47';
+export const VERSION = 'bbflow/48';
 
 // After a lost connection, a view tries again with increasing delays up to this limit.
 // A short limit lets open tabs find a restarted server soon.
@@ -38,15 +38,15 @@ export interface Release { version: string; canUpdate?: boolean; checking?: bool
 
 export interface Project { id: string; name: string; workspace: string; created: string }
 
-// type is codex, claude, agy, code-puppy, or custom. model and effort are the defaults of
-// new drafts. An empty value selects the default of the CLI. builtin marks the preset of
+// type is codex, claude, agy, code-puppy, or custom. model, effort, and permission are the
+// defaults of new drafts and new terminals. An empty value selects the default of the CLI. builtin marks the preset of
 // an agent type, which the server owns. enabled is false for a built-in tool that is off.
 // A tool that is off is not a choice for new sessions. path is the optional CLI path of a
 // built-in tool. The server runs it for the model list, the check for the CLI, and the
 // title tool. An empty path selects the plain CLI name.
 // A saved prompt. The ＋ menu of the message editor puts its text at the cursor.
 export interface Prompt { id: string; name: string; text: string }
-export interface Tool { id: string; name: string; command: string; type: string; model: string; effort: string; builtin: boolean; enabled: boolean; path: string }
+export interface Tool { id: string; name: string; command: string; type: string; model: string; effort: string; permission: string; builtin: boolean; enabled: boolean; path: string }
 // One choice of a model list. efforts lists its thinking efforts. default is the effort of
 // the CLI when bbflow adds no effort option.
 export interface ToolModel { id: string; name: string; efforts: string[]; default?: string }
@@ -78,8 +78,9 @@ export interface Settings { revision: number; appearance: string; defaultTool: s
 export interface TitleTool { id: string; name: string; command: string; type?: string; prefix?: string; suffix?: string; model?: string; effort?: string }
 // sample is the message that a title test sends to the title tool.
 export interface TitleTools { tools: TitleTool[]; sample: string }
-// toolType is empty for Shell. The launch adds the options of model and effort to command.
-export interface Preparation { revision: number; state: string; toolId: string; toolName: string; toolType: string; command: string; model: string; effort: string; worktree: boolean; base: string; branch: string }
+// toolType is empty for Shell. The launch adds the options of model, effort, and
+// permission to command.
+export interface Preparation { revision: number; state: string; toolId: string; toolName: string; toolType: string; command: string; model: string; effort: string; permission: string; worktree: boolean; base: string; branch: string }
 export interface Worktree { path: string; repository: string; base: string; commit: string; branch: string; state: string }
 export interface Run { id: string; status: string }
 // One terminal of a session. number counts from 1 in start order. A new terminal has an
@@ -227,7 +228,7 @@ type UpdateRequest = { operation: 'update-start'; version: string; revision: num
 type UpdateCheckRequest = { operation: 'update-check' };
 // A parent creates a sub-session draft in the family and project of that session.
 type PrepareRequest = { operation: 'project-draft'; project: string } | { operation: 'project-draft'; parent: string };
-type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'model' | 'effort' | 'worktree' | 'base' | 'branch'>; name?: string };
+type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'model' | 'effort' | 'permission' | 'worktree' | 'base' | 'branch'>; name?: string };
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
 type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
@@ -239,8 +240,8 @@ export type StreamRequest =
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
   | { operation: 'session-resume'; session: string; size: Size; run?: string }
   // latestRun is the latest run that this view saw. An empty tool selects Shell. An empty
-  // model or effort selects the default of the CLI.
-  | { operation: 'session-continue'; session: string; latestRun: string; tool: string; model: string; effort: string; size: Size }
+  // model, effort, or permission selects the default of the CLI.
+  | { operation: 'session-continue'; session: string; latestRun: string; tool: string; model: string; effort: string; permission: string; size: Size }
   // A side terminal is an unrecorded shell in the session workspace. Open starts a shell
   // when none runs. Resume only joins a live shell.
   | { operation: 'side-terminal-open'; session: string; size: Size }

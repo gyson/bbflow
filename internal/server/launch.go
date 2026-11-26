@@ -46,7 +46,8 @@ func (s *Server) prepareProject(ctx context.Context, projectID, parentID string)
 	p := history.Preparation{ToolID: settings.DefaultTool, ToolName: "Shell", Base: settings.Base}
 	for _, tool := range settings.Tools {
 		if tool.ID == p.ToolID {
-			p.ToolName, p.ToolType, p.Command, p.Model, p.Effort = tool.Name, tool.Type, tool.Command, tool.Model, tool.Effort
+			p.ToolName, p.ToolType, p.Command = tool.Name, tool.Type, tool.Command
+			p.Model, p.Effort, p.Permission = tool.Model, tool.Effort, tool.Permission
 		}
 	}
 	workspace, err := agent.Canonical(project.Workspace)
@@ -95,8 +96,8 @@ func (s *Server) savePreparation(request *protocol.Request) (history.Session, er
 		return history.Session{}, errors.New("session already started; reload the session")
 	}
 	p, edit := *session.Preparation, request.Preparation
-	// A change of the tool copies its name, type, and command. The view sends the model
-	// and the effort, also the defaults of a newly selected tool.
+	// A change of the tool copies its name, type, and command. The view sends the model,
+	// the effort, and the permission mode, also the defaults of a newly selected tool.
 	if edit.ToolID != p.ToolID {
 		p.ToolID, p.ToolName, p.ToolType, p.Command = edit.ToolID, "Shell", "", ""
 		settings, err := s.store.Settings()
@@ -116,7 +117,7 @@ func (s *Server) savePreparation(request *protocol.Request) (history.Session, er
 		}
 	}
 	p.Revision, p.Worktree, p.Base, p.Branch = edit.Revision, edit.Worktree, edit.Base, edit.Branch
-	p.Model, p.Effort = edit.Model, edit.Effort
+	p.Model, p.Effort, p.Permission = edit.Model, edit.Effort, edit.Permission
 	return s.store.SavePreparation(session.ID, request.Name, p)
 }
 
@@ -148,7 +149,7 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 		}
 		workspace = parent.Workspace
 	}
-	command := models.Command(p.ToolType, p.Command, p.Model, p.Effort)
+	command := models.Command(p.ToolType, p.Command, p.Model, p.Effort, p.Permission)
 	run, err := prepareRun(&protocol.Run{Workspace: workspace, Title: session.Title, Command: command, Size: size})
 	if err != nil {
 		return session, nil, err

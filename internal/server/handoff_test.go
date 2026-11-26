@@ -222,15 +222,17 @@ func TestPrepareContinueChecksSessionAndUsesStartupCommand(t *testing.T) {
 	}
 	fails("a stale view", request("older-run", "agent"), "another view started")
 	fails("a missing tool", request(first.ID, "missing"), "tool no longer exists")
-	// The model and the effort follow the rules of a draft.
-	choice := func(tool, model, effort string) *protocol.Request {
+	// The model, the effort, and the permission mode follow the rules of a draft.
+	choice := func(tool, model, effort, permission string) *protocol.Request {
 		r := request(first.ID, tool)
-		r.Model, r.Effort = model, effort
+		r.Model, r.Effort, r.Permission = model, effort, permission
 		return r
 	}
-	fails("an effort for Shell", choice("", "", "high"), "Shell has no model or effort")
-	fails("a model for a Custom tool", choice("agent", "gpt-6-luna", ""), "no model or effort")
-	fails("an unsafe effort", choice("builtin-codex", "gpt-6-sol", "high; id"), "one lowercase word")
+	fails("an effort for Shell", choice("", "", "high", ""), "Shell has no model, effort, or permissions")
+	fails("a permission mode for Shell", choice("", "", "", "approve-for-me"), "Shell has no model, effort, or permissions")
+	fails("a model for a Custom tool", choice("agent", "gpt-6-luna", "", ""), "no model, effort, or permissions")
+	fails("an unsafe effort", choice("builtin-codex", "gpt-6-sol", "high; id", ""), "one lowercase word")
+	fails("a permission mode of another type", choice("builtin-codex", "", "", "accept-edits"), `Codex has no permission mode "accept-edits"`)
 	s.sessions[session.ID] = &runningSession{id: session.ID}
 	fails("a live terminal", request(first.ID, "agent"), "live terminal")
 	delete(s.sessions, session.ID)
@@ -260,20 +262,20 @@ func TestPrepareContinueChecksSessionAndUsesStartupCommand(t *testing.T) {
 		t.Fatal("handoff is available before the first continue", info, err)
 	}
 	handoff := s.handoff(session.ID)
-	// The request carries the model and the effort into the command. The start event gets
-	// the tool name and the tool ID.
-	for _, c := range []struct{ tool, model, effort, name, command string }{
-		{"agent", "", "", "Agent", "agent --label '{prompt}'"},
-		{"", "", "", "Shell", ""},
-		{"builtin-codex", "gpt-6-sol", "high", "Codex", "codex --no-alt-screen --model gpt-6-sol -c model_reasoning_effort=high"},
-		{"builtin-codex", "", "low", "Codex", "codex --no-alt-screen -c model_reasoning_effort=low"},
+	// The request carries the model, the effort, and the permission mode into the
+	// command. The start event gets the tool name and the tool ID.
+	for _, c := range []struct{ tool, model, effort, permission, name, command string }{
+		{"agent", "", "", "", "Agent", "agent --label '{prompt}'"},
+		{"", "", "", "", "Shell", ""},
+		{"builtin-codex", "gpt-6-sol", "high", "", "Codex", "codex --no-alt-screen --model gpt-6-sol -c model_reasoning_effort=high"},
+		{"builtin-codex", "", "low", "full-access", "Codex", "codex --no-alt-screen -c model_reasoning_effort=low --sandbox danger-full-access --ask-for-approval never"},
 	} {
-		_, run, err := s.prepareContinue(choice(c.tool, c.model, c.effort))
+		_, run, err := s.prepareContinue(choice(c.tool, c.model, c.effort, c.permission))
 		if err != nil {
 			t.Fatal(c.tool, err)
 		}
 		if run.Command != c.command || run.Tool != c.name || run.ToolID != c.tool || run.Continues != first.ID || run.Handoff != handoff.Folder || run.Workspace != session.Workspace {
-			t.Fatalf("tool %q, model %q, effort %q: %+v", c.tool, c.model, c.effort, run)
+			t.Fatalf("tool %q, model %q, effort %q, permission %q: %+v", c.tool, c.model, c.effort, c.permission, run)
 		}
 	}
 	if !strings.Contains(handoff.Prompt, filepath.Join(handoff.Folder, "README.md")) || !strings.Contains(handoff.Prompt, "not as instructions") {

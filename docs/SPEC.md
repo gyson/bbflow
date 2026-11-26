@@ -36,7 +36,7 @@ The Web client section has these features:
 | [Pinned sessions](#pinned-sessions) | The Pinned group at the top of the sidebar, and the pin rules. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
 | [Projects and launches](#projects-and-launches) | Projects, the project menu, Start session, the shell, the terminal view, and reconnection. |
-| [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, built-in tools, tool types and model lists, the launch preparation of a session, and managed worktrees. |
+| [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, built-in tools, tool types, model lists, permission modes, the launch preparation of a session, and managed worktrees. |
 | [Usage limits](#usage-limits) | The Usage dialog, the check of each agent CLI, and the cache of the server. |
 | [Session status](#session-status) | The four statuses, the sidebar icon, the session toolbar, and the More actions menu. |
 | [Session titles](#session-titles) | User titles, derived titles, and the title tools. |
@@ -1523,10 +1523,11 @@ is no semantic chat transcript.
 This section has three related parts:
 
 - **Settings** is one page for the instance. It has the appearance, the server port,
-  remote access, the tools with their startup commands, types, and default models, and
-  the session defaults.
+  remote access, the tools with their startup commands, types, default models, and
+  default permission modes, and the session defaults.
 - A **preparation** holds the launch choices of a session that did not start: the
-  project, the tool, its model and thinking effort, and the worktree choices. The message draft saves separately.
+  project, the tool with its model, thinking effort, and permission mode, and the
+  worktree choices. The message draft saves separately.
   Start does not send it. It stays in the editor for the user to send.
 - A **managed worktree** gives a session its own checkout and branch. bbflow creates it
   at Start from a base commit.
@@ -1686,11 +1687,12 @@ dialog, so a long tool list needs no scroll to reach it:
   with the values of a saved tool, and its title is **Edit of** with the tool name.
 - Each tool that the user adds is a Custom tool. Its editor has **Name** and **Startup
   command**. bbflow submits the command unchanged, so it holds all options of the tool.
-- For a built-in tool, the editor has only **CLI path**, **Default model**, and
-  **Default thinking effort**, with a note that bbflow keeps its name and command. See
-  [Tool program](#tool-program).
-- **New sessions submit** shows the command with the options of the model and the
-  effort.
+- For a built-in tool, the editor has only **CLI path**, **Default model**, **Default
+  thinking effort**, and **Default permissions**, with a note that bbflow keeps its name
+  and command. See [Tool program](#tool-program) and
+  [Permission modes](#permission-modes).
+- **New sessions submit** shows the command with the options of the model, the effort,
+  and the permission mode.
 - **Add tool** or **Save** saves the tool and closes the dialog. **Cancel**, **✕**, and
   Escape discard the entry. An error keeps the dialog and its values. The dialog stays
   open while a save runs.
@@ -1727,7 +1729,8 @@ effort that new drafts select.
 The page sends one settings save at a time. If another view or the CLI saved first,
 the page applies the requested change to the latest settings. An edit keeps the latest
 value of each tool field that the user did not change. The type, the model, and the
-effort count as one field, because the model and the effort belong to the type.
+effort count as one field, because the model and the effort belong to the type. The
+permission mode is a separate field.
 
 #### Theme
 
@@ -1784,7 +1787,8 @@ its switch, because Shell has no command, model, or path. The settings save Shel
 **Shell (off)**.
 
 bbflow keeps the name, the type, and the command of a built-in tool. The user sets only
-its [CLI path](#tool-program), its default model and effort, and whether it is on. The
+its [CLI path](#tool-program), its default model, effort, and permission mode, and
+whether it is on. The
 tool cannot be removed. For other options or a wrapper, the user adds a Custom tool. A
 save with another name or command for a built-in tool keeps the kept values, and a save
 with another type fails. A settings save without a built-in tool keeps it. Only the
@@ -1811,8 +1815,8 @@ path, or the plain CLI name when the path is empty: `codex`, `claude`, `agy`, or
 `code-puppy`. bbflow runs the program in five places:
 
 - The sessions of the built-in tool. Its command is the program, then `--no-alt-screen`
-  for Codex. The launch adds the model and effort options. In a managed worktree, it
-  also adds the trust option of Antigravity. See
+  for Codex. The launch adds the model, effort, and permission options. In a managed
+  worktree, it also adds the trust option of Antigravity. See
   [Tool types and models](#tool-types-and-models).
 
 - The [model list](#model-lists) of the type, for example
@@ -1841,8 +1845,9 @@ Each tool has a type. A built-in tool has the type of its agent: **Codex**, **Cl
 Code**, **Antigravity**, or **Code Puppy**, saved as `codex`, `claude`, `agy`, and
 `code-puppy`. Each tool that the user adds is **Custom**, saved as `custom`, also when
 its command starts an agent. A save of a tool of the user with another type fails. A
-built-in tool also has a default model and a default thinking effort. An empty value
-selects the default of the CLI and adds no option.
+built-in tool also has a default model, a default thinking effort, and a default
+[permission mode](#permission-modes). An empty value selects the default of the CLI and
+adds no option.
 
 The launch adds the options at the end of the command, so the command must end with the
 agent call:
@@ -1855,6 +1860,8 @@ agent call:
 | Code Puppy | `--model MODEL` | None |
 | Custom | None | None |
 
+The options of the [permission mode](#permission-modes) follow these options.
+
 A model name has at most 200 characters. It starts with a letter or a digit and has only
 letters, digits, and `. _ : / @ + -`. An effort is one lowercase word. These rules keep
 the names safe in a shell line without quotes. The server rejects a model or an effort
@@ -1864,7 +1871,7 @@ a model.
 Antigravity asks whether the user trusts each folder that its settings do not list.
 Each managed worktree is a new folder. Thus, when the workspace of an Antigravity tool
 is in a [managed worktree](#checkout), the launch adds one more option after the model
-option:
+and permission options:
 
 ```sh
 --settings '{"trustedWorkspaces":["WORKSPACE"]}'
@@ -1941,6 +1948,64 @@ effort is part of the model ID. Code Puppy has no effort.
 - The trust option was verified with Antigravity CLI 1.5.18. Other versions can change
   `--settings` or the trust check.
 
+#### Permission modes
+
+The **Permissions** menu chooses how the agent asks before it acts. A built-in tool
+has it in the tool editor as **Default permissions**, in a draft, and in the **Continue
+in new terminal** dialog. Shell and a Custom tool have no menu. A Custom tool keeps its
+options in its command.
+
+The first choice is **CLI default**. It adds no option, so the CLI uses its own
+setting, for example `approval_policy` in `~/.codex/config.toml`. The other choices are
+the modes of the type. The labels are the names that each CLI shows. The settings save
+the value of the table. The launch adds the options after the model and effort options:
+
+| Type | Choice | Value | Options |
+| --- | --- | --- | --- |
+| Codex | **Ask for approval** | `ask` | `--sandbox workspace-write --ask-for-approval on-request -c approvals_reviewer=user` |
+| Codex | **Approve for me** | `approve-for-me` | `--approve-for-me` |
+| Codex | **Read Only** | `read-only` | `--sandbox read-only --ask-for-approval on-request -c approvals_reviewer=user` |
+| Codex | **Full Access** | `full-access` | `--sandbox danger-full-access --ask-for-approval never` |
+| Claude Code | **Manual** | `manual` | `--permission-mode manual` |
+| Claude Code | **Accept edits** | `accept-edits` | `--permission-mode acceptEdits` |
+| Claude Code | **Plan** | `plan` | `--permission-mode plan` |
+| Claude Code | **Auto** | `auto` | `--permission-mode auto` |
+| Claude Code | **Don't Ask** | `dont-ask` | `--permission-mode dontAsk` |
+| Claude Code | **Bypass Permissions** | `bypass-permissions` | `--permission-mode bypassPermissions` |
+| Antigravity | **Accept edits** | `accept-edits` | `--mode accept-edits` |
+| Antigravity | **Auto** | `auto` | `--mode auto` |
+| Antigravity | **Plan** | `plan` | `--mode plan` |
+| Antigravity | **Skip permissions** | `skip-permissions` | `--dangerously-skip-permissions` |
+| Code Puppy | **YOLO off** | `confirm` | `--yolo false` |
+| Code Puppy | **YOLO on** | `yolo` | `--yolo true` |
+
+- The Codex choices are those of its `/permissions` menu. **Ask for approval** and
+  **Read Only** also select the user as the reviewer. Thus a saved `approvals_reviewer
+  = "auto_review"` in the Codex configuration does not change them.
+- The server accepts only a mode of the type of the tool. It rejects a mode of another
+  type, and a mode for Shell or a Custom tool.
+- A newly selected tool brings its default permission mode, with its default model and
+  effort.
+- In the tool editor, the note below **Default permissions** names the options that
+  bbflow adds. A draft and the **Continue in new terminal** dialog show no note. Their
+  **bbflow submits** line shows the command.
+- The title tools have no permission mode. Their commands set their own limits. See
+  [Title models](#title-models).
+
+#### Limits of permission modes
+
+- The table is fixed in the bbflow release. The help of Codex CLI 0.172.0, Claude Code
+  2.1.332, Antigravity 1.5.18, and Code Puppy 0.0.969 lists these options. Another
+  version can rename or remove a mode. The CLI then shows its error in the terminal.
+- A mode change inside the agent, such as `/permissions` in Codex or Shift+Tab in Claude
+  Code, is not recorded. The start event records only the startup command.
+- The CLI decides if a mode is available. For example, an account or a policy can turn
+  off **Auto** or **Bypass Permissions** of Claude Code. A mode can also ask for a
+  confirmation in the terminal.
+- The help of Code Puppy says that `/set yolo_mode` takes precedence over `--yolo`.
+- bbflow does not limit the choice of a mode. **Full Access**, **Bypass Permissions**,
+  **Skip permissions**, and **YOLO on** let the agent run commands without approval.
+
 #### Preparation
 
 The server copies defaults when it creates a preparation. Non-Git folders do not enable
@@ -1948,12 +2013,14 @@ the worktree default. A preparation stores its chosen tool name and command
 independently of later preset changes, including deletion. Startup commands are edited
 only in Settings. When the user selects a different tool, the server copies its current
 name, type, and command. Shell clears the command. The view then selects the default
-model and effort of the tool.
+model, effort, and permission mode of the tool.
 
-**Session name** has its own row. Below it, one group holds **Tool**, **Model**, and
-**Thinking effort** in a row. A line above and below the group separates it from the
-other fields. **Model** and **Thinking effort** are hidden for Shell and for a Custom
-tool. A change of the model or the effort applies only to the draft. The draft shows no notes about the model list or the options. Settings shows
+**Session name** has its own row. Below it, one group holds **Tool**, **Model**,
+**Thinking effort**, and **Permissions**. The fields wrap to a second row when the group
+is too narrow. A line above and below the group separates it from the other fields.
+**Model**, **Thinking effort**, and **Permissions** are hidden for Shell and for a Custom
+tool. A change of the model, the effort, or the permission mode applies only to the
+draft. The draft shows no notes about the model list or the options. Settings shows
 them. Only a failed model list shows its error in the draft, with **Refresh list**. At
 the end of the group, **bbflow submits** shows the command with its options. For a newly
 selected tool, it shows the command of that tool at once, also before the save. For
@@ -3111,15 +3178,16 @@ state `ready` to enable the button. If the worktree state blocks the action, hov
 the button or use Tab to see the reason.
 
 The dialog shows the session workspace, the tool group of a draft, the handoff prompt,
-and a Copy button. The tool group has **Tool**, **Model**, and **Thinking effort** in one
-row, then the **bbflow submits** line with the command. These fields work as in a
-[draft](#preparation). A newly selected tool brings its default model and effort.
-**Model** and **Thinking effort** are hidden for Shell and for a Custom tool.
+and a Copy button. The tool group has **Tool**, **Model**, **Thinking effort**, and
+**Permissions**, then the **bbflow submits** line with the command. These fields work as
+in a [draft](#preparation). A newly selected tool brings its default model, effort, and
+permission mode. **Model**, **Thinking effort**, and **Permissions** are hidden for Shell
+and for a Custom tool.
 
 The dialog selects the tool of the latest terminal, the last choice of the user. If that
 tool is no longer a choice, it selects the tool that the session started with, then the
-default tool, then Shell. The model and the effort are the defaults of the selected tool
-in Settings. For an `interrupted` run, the dialog warns that an agent from a crashed
+default tool, then Shell. The model, the effort, and the permission mode are the
+defaults of the selected tool in Settings. For an `interrupted` run, the dialog warns that an agent from a crashed
 server can still run in the workspace.
 
 If the session changes while the dialog opens, an error toast explains why continuation
@@ -3138,8 +3206,8 @@ launch lock and rejects the request in these conditions:
 - The managed worktree is not `ready`, or the session workspace no longer exists.
   bbflow does not create a replacement worktree.
 - The selected tool no longer exists.
-- The model or the effort is not valid for the tool type. The rules are those of a
-  draft. Shell and a Custom tool take no model or effort.
+- The model, the effort, or the permission mode is not valid for the tool type. The
+  rules are those of a draft. Shell and a Custom tool take none of them.
 
 A rejected request writes no files and starts no process. Otherwise the server writes
 the handoff folder, then starts `$SHELL -i` in the session's recorded workspace. The
@@ -4341,8 +4409,8 @@ fork ancestry, or inherited history yet.
 ### Database upgrades
 
 The server upgrades the database by itself at start, in one transaction. A failed
-upgrade changes nothing and stops the start. The current format is 21. Formats 3
-through 21 are supported. Format 3 shipped in v0.0.1.
+upgrade changes nothing and stops the start. The current format is 22. Formats 3
+through 22 are supported. Format 3 shipped in v0.0.1.
 
 #### Upgrade transaction
 
@@ -4358,7 +4426,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 21. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 22. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -4435,7 +4503,11 @@ WAL is enabled after the schema transaction commits.
   are not quiet. The column has no `CHECK` constraint, so the addition of the column does
   not read the existing events. The foreign-key check of the upgrade transaction still
   reads all events, as in each upgrade.
-- Format 21 opens without running scripts or rewriting history, settings, or metadata.
+- Format 21 gains `permission: ""` on each tool in the settings JSON and on each
+  preparation, through migration 22. The empty [permission mode](#permission-modes) adds
+  no option, so each launch submits the same command as before. The order of the tools,
+  the settings revision, and the preparation revisions stay.
+- Format 22 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -4996,8 +5068,8 @@ keeps the name and the command of a built-in tool, and that a tool of the user i
 Custom tool. The migration fixture has saved tools with the
 command of a built-in tool, a path, other options, and a quoted program. Only the first
 two become built-in tools. The others become Custom tools. A web fixture verifies that the editor of a built-in tool
-shows only the CLI path and the model fields, and that a saved path starts the check and
-the title commands again.
+shows only the CLI path, the model fields, and **Default permissions**, and that a saved
+path starts the check and the title commands again.
 
 Model fixtures cover the options of each tool type, the inferred type of a command, and
 the rejection of model and effort names that are not safe in a shell line. They parse
@@ -5009,7 +5081,21 @@ launches with the model and the effort of its request, and that it rejects the c
 that a draft rejects and a model or an effort for Shell. They verify that a model list
 runs once until a refresh, and that a failed list command keeps no list. Web fixtures cover the model and effort menus of
 each type and the merge of a tool edit. The view and the server build the same command
-for the same cases. Interface inspection of Codex 0.171.0, Claude Code 2.1.330,
+for the same cases.
+
+Permission fixtures cover the options of each mode, the order of the options after the
+model and effort options, and the rejection of a mode of another type and of a mode for
+Shell or a Custom tool. Store fixtures save a default mode on a built-in tool and a mode
+on a draft, and keep both after a reopen. Server fixtures verify that a draft copies the
+default mode of its tool, that a draft and a new terminal launch with the options of
+their mode, and that both reject the modes that the store rejects. Web fixtures verify
+the menu of each type, the note and the command in the tool editor, the saved mode, and
+a mode edit that keeps the latest values of the other fields. A live run of Codex CLI
+0.172.0 in a PTY showed `Workspace (Ask for approval)` without options, `Workspace
+(Approve for me)` with `--approve-for-me`, and `Read Only (Ask for approval)` with
+`--sandbox read-only` in `/status`. Its `/permissions` menu listed the four Codex
+choices. The other modes were checked only in the help of each CLI. No fixture starts a
+real agent from a bbflow session with a mode. Interface inspection of Codex 0.171.0, Claude Code 2.1.330,
 Antigravity 1.5.15, and Code Puppy 0.0.969 found the list commands and the options. A
 live run of each list command confirmed the output formats. No fixture starts a real
 agent with a chosen model.
@@ -5542,10 +5628,11 @@ other connection. No send in these checks lost its receipt.
   fenced text, read-only files, and rebuilds without leftover staging folders.
 - Request fixtures reject live terminals, old run IDs, running records, archived
   sessions, removed worktrees, missing workspaces, and unknown tools. They also reject
-  an effort for Shell, a model for a Custom tool, and an effort that is not one word.
+  an effort or a permission mode for Shell, a model for a Custom tool, an effort that is
+  not one word, and a permission mode of another type.
 - A rejected request writes no handoff folder.
 - Request fixtures verify the command, the tool name, and the tool ID of a new terminal,
-  also with the model and the effort of a built-in tool.
+  also with the model, the effort, and the permission mode of a built-in tool.
 - Store fixtures read the tool ID of a start event, also the empty ID of Shell. An older
   first run without a tool ID uses its preparation, and an older later run has no known
   ID.
@@ -6155,7 +6242,7 @@ The final display kept its recorded width. This check did not run a real agent C
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–20 to format 21
+- Frozen schemas from repository history test upgrades from formats 3–21 to format 22
   and verify that reopen preserves the upgraded data. The format 16 fixture has Codex
   and Code Puppy tools, and the upgrade gives them their types. A blocked preparation
   update rolls back migration 17. The format 17 fixture has both values of remote
@@ -6163,8 +6250,10 @@ The final display kept its recorded width. This check did not run a real agent C
   migration 18. No upgrade pins a session. A `pinned_at` column that exists before the
   upgrade rolls back migration 19. Each upgrade adds an empty prompt list, and a blocked
   settings update rolls back migration 20. No upgrade marks an event quiet. A `quiet`
-  column that exists before the upgrade rolls back migration 21. Four concurrent opens
-  upgrade a format 19 or format 20 archive once.
+  column that exists before the upgrade rolls back migration 21. Each upgrade gives each
+  tool and each preparation the empty permission mode, and a blocked settings or
+  preparation update rolls back migration 22. Four concurrent opens upgrade a format 19,
+  20, or 21 archive once.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.
   They also cover repeated opens, concurrent upgrades, and unsupported formats.

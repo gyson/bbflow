@@ -116,7 +116,7 @@ func describeTitleTool(tools protocol.TitleTools, choice history.TitleChoice) (n
 			if tool.Type == "" {
 				return tool.Name, tool.Command
 			}
-			return tool.Name, models.Command(tool.Type, tool.Prefix, choice.Model, choice.Effort) + tool.Suffix
+			return tool.Name, models.Command(tool.Type, tool.Prefix, choice.Model, choice.Effort, "") + tool.Suffix
 		}
 	}
 	return "", ""

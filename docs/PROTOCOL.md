@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/47`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/48`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/47",
+    "protocol": "bbflow/48",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/47",
+    "protocol": "bbflow/48",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -187,7 +187,7 @@ replies.
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
 | `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, an optional `toolId`, `status`, `started`, and `ended`. |
 | `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
-| `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), optional `model` and `effort`, terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
+| `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), optional `model`, `effort`, and `permission`, terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
 
 ### History operations
 
@@ -740,7 +740,7 @@ current revision.
 
 - Settings contain revision, defaultTool (empty means Shell), worktree, base (default
   HEAD), and an ordered tools array. Each tool has a stable client-generated id, name,
-  command, type, model, effort, builtin, enabled, and path.
+  command, type, model, effort, permission, builtin, enabled, and path.
 - path is the optional [CLI path](SPEC.md#tool-program) of a built-in tool. A save with
   a path for another tool fails.
 - A save holds at most 100 custom tools. The built-in tools do not count.
@@ -754,10 +754,13 @@ current revision.
   while shellOff is true. `session-config` and `session-continue` reject Shell that is
   off as a new choice.
 - type is `codex`, `claude`, `agy`, or `code-puppy` for a built-in tool, and `custom`
-  for each other tool. A save with an empty type for another tool saves `custom`. model
-  and effort of a built-in tool are the defaults of new drafts. An empty value selects the default of the CLI. See
+  for each other tool. A save with an empty type for another tool saves `custom`. model,
+  effort, and permission of a built-in tool are the defaults of new drafts and new
+  terminals. An empty value selects the default of the CLI. See
   [Tool types and models](SPEC.md#tool-types-and-models) for the options that each type
-  adds and for the accepted names.
+  adds and for the accepted names. permission is a value of the table in
+  [Permission modes](SPEC.md#permission-modes), such as `approve-for-me` for Codex. A
+  save with a mode of another type, or with a mode for a Custom tool, fails.
 - A startup command is one shell line of at most 1,000 bytes, without control
   characters. The server submits it once after the PTY opens. It records the command as
   input, separate from the composer draft.
@@ -855,13 +858,14 @@ server](SPEC.md#cache-of-the-server).
 ### Preparation
 
 A prepared session includes preparation with revision, state, toolId, toolName,
-toolType, command, model, effort, worktree, base, and branch. Configuration saves send
-the current preparation revision with toolId, model, effort, worktree, base, and branch,
-plus name for the session title. Project, workspace, toolName, toolType, command, and
-state are not writable configuration fields. A change to toolId copies the name, type,
-and command of the selected tool from Settings. The save takes model and effort from the
-request, also for a new toolId, so the client sends the defaults of a newly selected
-tool. An omitted model or effort is empty. The server rejects a model or an effort that
+toolType, command, model, effort, permission, worktree, base, and branch. Configuration
+saves send the current preparation revision with toolId, model, effort, permission,
+worktree, base, and branch, plus name for the session title. Project, workspace,
+toolName, toolType, command, and state are not writable configuration fields. A change
+to toolId copies the name, type, and command of the selected tool from Settings. The
+save takes model, effort, and permission from the request, also for a new toolId, so
+the client sends the defaults of a newly selected tool. An omitted model, effort, or
+permission is empty. The server rejects a model, an effort, or a permission mode that
 the type does not accept. Start adds their options to the command. In a managed
 worktree, an Antigravity start also adds an option that trusts the workspace. See
 [Tool types and models](SPEC.md#tool-types-and-models).
@@ -907,10 +911,11 @@ when a terminal is live, when `latestRun` is not the latest run, or when that ru
 not ended. It also rejects archived sessions, sessions without a run, a managed worktree
 that is not `ready`, a missing workspace, and an unknown tool.
 
-`model` and `effort` are the choices of the new terminal. An empty value selects the
-default of the CLI, as in the `preparation` of a draft. The server checks them with the
-rules of a draft. It rejects a model or an effort for Shell and for a Custom tool. The
-web UI sends the defaults of the selected tool, unless the user changes them.
+`model`, `effort`, and `permission` are the choices of the new terminal. An empty value
+selects the default of the CLI, as in the `preparation` of a draft. The server checks
+them with the rules of a draft. It rejects a model, an effort, or a permission mode for
+Shell and for a Custom tool. The web UI sends the defaults of the selected tool, unless
+the user changes them.
 
 A rejected request writes no files and starts no process. A repeated request with the
 same `latestRun` fails after the first request started a terminal. After a lost
@@ -918,12 +923,12 @@ response, read session-config. If its latest run changed, use session-resume to 
 the new terminal. Do not send session-continue again only because a response was lost.
 
 The server records and submits the `command` of the selected tool once, with the
-options of the model and the effort. In a managed worktree, an Antigravity command also
-gets the trust option of [Tool types and models](SPEC.md#tool-types-and-models). Shell
-submits nothing. The client shows the handoff
-prompt for the user to send. The start event of the new run records `tool`, `toolId`
-(the empty ID for Shell), `continues` (the previous run ID), and `handoff` (the
-folder).
+options of the model, the effort, and the permission mode. In a managed worktree, an
+Antigravity command also gets the trust option of
+[Tool types and models](SPEC.md#tool-types-and-models). Shell submits nothing. The
+client shows the handoff prompt for the user to send. The start event of the new run
+records `tool`, `toolId` (the empty ID for Shell), `continues` (the previous run ID),
+and `handoff` (the folder).
 
 ### Handoff folder
 
@@ -1360,13 +1365,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/47") {
+    if (message.server.protocol !== "bbflow/48") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/47", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/48", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1507,6 +1512,10 @@ versions.
   offer while the daily check setting is off. The SQLite format does not change.
 - Protocol 47 adds the optional `members` field of [`session-stop`](#session-stop). One
   request stops several sessions of a family. The SQLite format does not change.
+- Protocol 48 adds `permission`, the [permission mode](SPEC.md#permission-modes), to
+  each tool, to the preparation, to the configuration save of `session-config`, and to
+  [`session-continue`](#session-continue). No operation is new. SQLite format 22 gives
+  each tool and each preparation the empty mode, which adds no option.
 
 ## Source files
 

@@ -150,7 +150,7 @@ export class SettingsView {
   // call. A fixture replaces it to control the time of each reply.
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void,
     private readonly report: (title: string, detail: string) => void, private readonly send: typeof call = call) {
-    this.toolModels = new ModelPicker('tool', { server: () => this.server(), changed: () => this.editorChanged(), send: this.send });
+    this.toolModels = new ModelPicker('tool', { server: () => this.server(), changed: () => this.editorChanged(), send: this.send, permission: true });
     this.toolName.oninput = this.toolCommand.oninput = this.toolPath.oninput = () => this.editorChanged();
     this.toolAdd.onclick = () => this.openEditor(null);
     this.toolCancel.onclick = this.toolClose.onclick = () => this.closeEditor();
@@ -349,6 +349,7 @@ export class SettingsView {
     if (this.adding && (this.toolName.value || this.toolCommand.value)) names.add('New tool');
     if (this.editing && (this.toolName.value !== this.editing.name || this.toolCommand.value !== this.editing.command ||
       this.toolModels.model !== this.editing.model || this.toolModels.effort !== this.editing.effort ||
+      this.toolModels.permission !== this.editing.permission ||
       this.toolPath.value.trim() !== this.editing.path)) {
       names.add(`Edit of ${this.editing.name}`);
     }
@@ -527,7 +528,7 @@ export class SettingsView {
       return row;
     };
     // Shell is a built-in tool without a command. Its row has only its switch.
-    const shell: Tool = { id: '', name: 'Shell', command: '', type: 'shell', model: '', effort: '', builtin: true, enabled: !this.saved?.shellOff, path: '' };
+    const shell: Tool = { id: '', name: 'Shell', command: '', type: 'shell', model: '', effort: '', permission: '', builtin: true, enabled: !this.saved?.shellOff, path: '' };
     // The built-in tools are sorted by name, as in the tool menus.
     this.builtinTools.replaceChildren(...sortedBuiltins([shell, ...tools.filter(tool => tool.builtin)]).map(toolRow));
     const rows = own.map(toolRow);
@@ -601,7 +602,7 @@ export class SettingsView {
     // Code Puppy has no usage check.
     const uses = type === 'code-puppy' ? 'the check for the CLI, and automatic titles' : 'the check for the CLI, automatic titles, and the usage check';
     this.toolPathHelp.textContent = `Leave it empty to run ${type} from the PATH of the server. bbflow runs this program for sessions, the model list, ${uses}.`;
-    this.toolModels.set(type, original?.model ?? '', original?.effort ?? '');
+    this.toolModels.set(type, original?.model ?? '', original?.effort ?? '', original?.permission ?? '');
     this.editorError.hidden = true;
     if (!this.editorDialog.open) this.editorDialog.showModal();
     this.renderTools();
@@ -619,9 +620,11 @@ export class SettingsView {
   // editorChanged shows the command that new sessions submit, and the status.
   private editorChanged(): void {
     const type = this.editorType();
-    const model = typed(type) ? this.toolModels.model : '', effort = typed(type) ? this.toolModels.effort : '';
+    const agent = typed(type);
+    const model = agent ? this.toolModels.model : '', effort = agent ? this.toolModels.effort : '';
+    const permission = agent ? this.toolModels.permission : '';
     const command = this.editing?.builtin ? builtinCommand(type, this.toolPath.value.trim()) : this.toolCommand.value;
-    this.toolPreview.textContent = launchCommand(type, command, model, effort) || '(no startup command)';
+    this.toolPreview.textContent = launchCommand(type, command, model, effort, permission) || '(no startup command)';
     this.toolCommandHelp.textContent = 'bbflow submits this command unchanged. Put all options of the tool in it.';
     this.showStatus();
   }
@@ -667,9 +670,11 @@ export class SettingsView {
       return;
     }
     const failure = original ? `The edit of “${original.name}” did not save.` : `The new tool “${name}” did not save.`;
-    const type = this.editorType(), model = typed(type) ? this.toolModels.model : '', effort = typed(type) ? this.toolModels.effort : '';
+    const type = this.editorType(), agent = typed(type);
+    const model = agent ? this.toolModels.model : '', effort = agent ? this.toolModels.effort : '';
+    const permission = agent ? this.toolModels.permission : '';
     const path = original?.builtin ? this.toolPath.value.trim() : '';
-    void this.changeTool(toolEdit({ id, name, command, type, model, effort, builtin: original?.builtin ?? false, enabled: original?.enabled ?? true, path }, original ?? undefined), failure, this.editorError, () => {
+    void this.changeTool(toolEdit({ id, name, command, type, model, effort, permission, builtin: original?.builtin ?? false, enabled: original?.enabled ?? true, path }, original ?? undefined), failure, this.editorError, () => {
       this.closeEditor(id);
       // The CLI path of a built-in tool is the program of its model list, the check for
       // its CLI, and its title tool.
