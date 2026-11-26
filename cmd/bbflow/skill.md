@@ -164,7 +164,7 @@ One row for each session that has launch choices.
 | `session_id` | Session of the choices. |
 | `revision` | Revision of the choices. |
 | `state` | Launch state. `draft` is a session that has not started. |
-| `data` | JSON with the selected tool, its type and command, the chosen `model` and `effort`, and the worktree choices. The launch adds the options of the model and the effort to the command. In a managed worktree, an Antigravity launch also adds a `--settings` option that trusts the workspace. |
+| `data` | JSON with the selected tool, its type and command, the chosen `model`, `effort`, and `permission`, and the worktree choices. The launch adds the options of the model, the effort, and the permission mode to the command. In a managed worktree, an Antigravity launch also adds a `--settings` option that trusts the workspace. |
 
 ### `settings`
 
@@ -175,7 +175,7 @@ access, and saved prompts of the instance.
 | --- | --- |
 | `id` | Always `1`. |
 | `revision` | Revision of the settings. |
-| `data` | JSON with the appearance, launch defaults, tools, `titleTool`, `titleCommand`, `updateCheck`, `port`, `remoteOn`, `remoteHost`, and `remoteLogin`. Each tool has an ID, name, startup command, `type`, a default `model` and `effort`, `builtin` for the built-in tool of an agent type, `enabled`, which is false for a tool that is off, and `path`, the optional CLI path of a built-in tool. `shellOff` is true when the built-in Shell is off. `titleTool` is `none`, a built-in title tool ID, or `custom`. `titleCommand` is the command of the custom title tool, or empty. `titleModel` and `titleEffort` are the model and the effort of the Claude, Codex, or Code Puppy title tool. `port` is the port of the next server start, or `0` for the automatic port. `remoteOn` is the switch of remote access, and `remoteHost` and `remoteLogin` are its host name and Tailscale login. Remote access is on only while `remoteOn` is true and both values are set. `prompts` lists the saved prompts of the ＋ menu of the message editor, in their order. Each has an `id`, a `name`, and its `text`. |
+| `data` | JSON with the appearance, launch defaults, tools, `titleTool`, `titleCommand`, `updateCheck`, `port`, `remoteOn`, `remoteHost`, and `remoteLogin`. Each tool has an ID, name, startup command, `type`, a default `model`, `effort`, and `permission` mode, `builtin` for the built-in tool of an agent type, `enabled`, which is false for a tool that is off, and `path`, the optional CLI path of a built-in tool. `shellOff` is true when the built-in Shell is off. `titleTool` is `none`, a built-in title tool ID, or `custom`. `titleCommand` is the command of the custom title tool, or empty. `titleModel` and `titleEffort` are the model and the effort of the Claude, Codex, or Code Puppy title tool. `port` is the port of the next server start, or `0` for the automatic port. `remoteOn` is the switch of remote access, and `remoteHost` and `remoteLogin` are its host name and Tailscale login. Remote access is on only while `remoteOn` is true and both values are set. `prompts` lists the saved prompts of the ＋ menu of the message editor, in their order. Each has an `id`, a `name`, and its `text`. |
 
 ### `server`
 

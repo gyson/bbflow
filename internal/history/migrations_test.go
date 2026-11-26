@@ -158,6 +158,12 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 			if _, exists := original["checkTools"]; !exists {
 				original["tools"], original["checkTools"], original["shellOff"] = upgradedTools(original["tools"].([]any)), true, false
 			}
+			// Migration 22 gives each tool the empty permission mode, the CLI default.
+			for _, tool := range original["tools"].([]any) {
+				if _, exists := tool.(map[string]any)["permission"]; !exists {
+					tool.(map[string]any)["permission"] = ""
+				}
+			}
 			if !reflect.DeepEqual(saved, original) {
 				t.Fatal("migration changed existing settings", saved, original)
 			}
@@ -178,6 +184,9 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 					if id, _ := original["toolId"].(string); id == "" {
 						original["toolType"] = ""
 					}
+				}
+				if _, exists := original["permission"]; !exists {
+					original["permission"] = ""
 				}
 				if !reflect.DeepEqual(saved, original) {
 					t.Fatal("migration changed an existing preparation", saved, original)
@@ -264,7 +273,7 @@ func inferredType(command string) string {
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -332,7 +341,7 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			if version == 5 && (session.Preparation.Command != "old-tool --interactive" || session.Worktree.Commit != "abcdef") {
 				t.Fatal("lost launch metadata", session)
 			}
-			if version >= 5 && (session.Preparation.ToolType != "custom" || session.Preparation.Model != "" || session.Preparation.Effort != "") {
+			if version >= 5 && (session.Preparation.ToolType != "custom" || session.Preparation.Model != "" || session.Preparation.Effort != "" || session.Preparation.Permission != "") {
 				t.Fatal("wrong tool type of an old preparation", session.Preparation)
 			}
 			if version == 16 {
@@ -586,6 +595,58 @@ func TestPromptsUpgrade(t *testing.T) {
 	}
 }
 
+// A blocked settings or preparation update rolls back migration 22 and keeps format 21.
+func TestPermissionUpgradeRollsBack(t *testing.T) {
+	for _, table := range []string{"settings", "preparations"} {
+		t.Run(table, func(t *testing.T) {
+			path, db := oldDatabase(t, 21)
+			execSQL(t, db, "CREATE TRIGGER reject_update BEFORE UPDATE ON "+table+" BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+			before := snapshotDatabase(t, db)
+			db.Close()
+			if store, err := Open(path); err == nil {
+				store.Close()
+				t.Fatal("accepted a blocked permission update")
+			} else if !strings.Contains(err.Error(), "apply history migration 22") {
+				t.Fatal(err)
+			}
+			assertSnapshot(t, rawDatabase(t, path), before, true)
+		})
+	}
+}
+
+// Migration 22 gives each tool and each preparation the empty permission mode, the CLI
+// default. It keeps the order of the tools, the other values, and the revisions. A tool
+// can then save a permission mode.
+func TestPermissionUpgrade(t *testing.T) {
+	path, db := oldDatabase(t, 21)
+	db.Close()
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings, err := store.Settings()
+	if err != nil || settings.Revision != 9 || len(settings.Tools) != 5 || settings.Tools[0].Model != "gpt-6-luna" || settings.Tools[4].ID != "example" {
+		t.Fatal("wrong tools after the upgrade", settings, err)
+	}
+	if got := sqlRows(t, store.db, "SELECT json_extract(t.value, '$.id'), json_type(t.value, '$.permission') FROM settings, json_each(settings.data, '$.tools') AS t ORDER BY t.key"); len(got) != 5 || got[0][0] != "builtin-codex" || got[4][0] != "example" {
+		t.Fatal("the upgrade changed the tool list", got)
+	} else {
+		for _, row := range got {
+			if row[1] != "text" {
+				t.Fatal("a tool has no permission mode", got)
+			}
+		}
+	}
+	if got := sqlRows(t, store.db, "SELECT revision, json_extract(data, '$.permission') FROM preparations"); len(got) != 1 || got[0][0] != int64(7) || got[0][1] != "" {
+		t.Fatal("wrong preparation after the upgrade", got)
+	}
+	settings.Tools[0].Permission = "approve-for-me"
+	if saved, err := store.SaveSettings(settings); err != nil || saved.Revision != 10 || saved.Tools[0].Permission != "approve-for-me" {
+		t.Fatal("cannot save a permission mode after the upgrade", saved, err)
+	}
+}
+
 // Migration 18 turns the switch of remote access on only where both values are saved,
 // because only there remote access was on. It keeps the values and the revision.
 func TestRemoteSwitchUpgrade(t *testing.T) {
@@ -646,7 +707,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17, 18, 19, 20} {
+	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17, 18, 19, 20, 21} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }

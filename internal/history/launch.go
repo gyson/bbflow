@@ -16,8 +16,9 @@ import (
 
 // Tool is a named startup command. Type is one of models.Types. A built-in tool has the
 // type of its agent. A tool that the user adds is custom. For a type other than custom,
-// Model and Effort are the defaults of new drafts. An empty Model or Effort selects the
-// default of the CLI.
+// Model, Effort, and Permission are the defaults of new drafts and new terminals. An
+// empty value selects the default of the CLI. Permission is a value of the permission
+// modes of the type. See models.Validate.
 //
 // Builtin marks the one preset of each agent type. The server owns this flag. A save
 // cannot remove a built-in tool or change its type. The built-in tools come first in the
@@ -25,20 +26,21 @@ import (
 // drafts and new terminals. A tool that the user adds starts on.
 //
 // A built-in tool has a fixed name, type, and command. The user sets only its optional
-// CLI path, its default model and effort, and whether it is on. Path is the CLI path. The
+// CLI path, its default model, effort, and permission mode, and whether it is on. Path is the CLI path. The
 // server builds Command from it. See models.BuiltinCommand. The server also runs the
 // path for the model list, the check for the CLI, and the title tool of the type. An
 // empty path selects the plain CLI name. A tool that the user added has no Path.
 type Tool struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Command string `json:"command"`
-	Type    string `json:"type"`
-	Model   string `json:"model"`
-	Effort  string `json:"effort"`
-	Builtin bool   `json:"builtin"`
-	Enabled bool   `json:"enabled"`
-	Path    string `json:"path"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Command    string `json:"command"`
+	Type       string `json:"type"`
+	Model      string `json:"model"`
+	Effort     string `json:"effort"`
+	Permission string `json:"permission"`
+	Builtin    bool   `json:"builtin"`
+	Enabled    bool   `json:"enabled"`
+	Path       string `json:"path"`
 }
 
 // Prompt is a saved prompt. The ＋ menu of the message editor puts its text at the cursor
@@ -155,20 +157,21 @@ var TitleTools = []string{"none", "claude", "codex", "code-puppy", "apple", "cus
 
 // Preparation stores a snapshot of the selected preset. Preset changes never rewrite a
 // prepared or launched session. The server owns this state. ToolType is the type of the
-// tool, or empty for Shell. Model and Effort are the choices of the draft. The launch
-// adds their options to Command. See models.Command.
+// tool, or empty for Shell. Model, Effort, and Permission are the choices of the draft.
+// The launch adds their options to Command. See models.Command.
 type Preparation struct {
-	Revision int64  `json:"revision"`
-	State    string `json:"state"`
-	ToolID   string `json:"toolId"`
-	ToolName string `json:"toolName"`
-	ToolType string `json:"toolType"`
-	Command  string `json:"command"`
-	Model    string `json:"model"`
-	Effort   string `json:"effort"`
-	Worktree bool   `json:"worktree"`
-	Base     string `json:"base"`
-	Branch   string `json:"branch"`
+	Revision   int64  `json:"revision"`
+	State      string `json:"state"`
+	ToolID     string `json:"toolId"`
+	ToolName   string `json:"toolName"`
+	ToolType   string `json:"toolType"`
+	Command    string `json:"command"`
+	Model      string `json:"model"`
+	Effort     string `json:"effort"`
+	Permission string `json:"permission"`
+	Worktree   bool   `json:"worktree"`
+	Base       string `json:"base"`
+	Branch     string `json:"branch"`
 }
 
 type Worktree struct {
@@ -203,12 +206,13 @@ func FallbackTool(settings Settings, leaving string) (string, bool) {
 	return "", false
 }
 
-// validPreparation checks the command, the model, and the effort of a draft.
+// validPreparation checks the command, the model, the effort, and the permission mode of
+// a draft.
 func validPreparation(p Preparation) error {
 	if err := ValidateCommand(p.Command); err != nil {
 		return err
 	}
-	return models.Validate(p.ToolType, p.Model, p.Effort)
+	return models.Validate(p.ToolType, p.Model, p.Effort, p.Permission)
 }
 
 func (s *Store) Settings() (Settings, error) {
@@ -312,7 +316,7 @@ func (s *Store) SaveSettings(settings Settings) (Settings, error) {
 		if !slices.Contains(models.Types, tool.Type) {
 			return settings, errors.New("tool type must be codex, claude, agy, code-puppy, or custom")
 		}
-		if err = models.Validate(tool.Type, tool.Model, tool.Effort); err != nil {
+		if err = models.Validate(tool.Type, tool.Model, tool.Effort, tool.Permission); err != nil {
 			return settings, err
 		}
 	}
@@ -520,7 +524,7 @@ func (s *Store) SetTitleTool(next, from TitleChoice) (Settings, error) {
 	if !slices.Contains(TitleTools, next.Tool) {
 		return Settings{}, fmt.Errorf("title tool must be one of %s", strings.Join(TitleTools, ", "))
 	}
-	if err := models.Validate(TitleType(next.Tool), next.Model, next.Effort); err != nil {
+	if err := models.Validate(TitleType(next.Tool), next.Model, next.Effort, ""); err != nil {
 		return Settings{}, fmt.Errorf("only the title tools of Claude, Codex, and Code Puppy take a model and an effort: %w", err)
 	}
 	var row *sql.Row

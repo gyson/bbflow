@@ -8,48 +8,98 @@ import (
 
 func TestCommand(t *testing.T) {
 	for _, test := range []struct {
-		kind, command, model, effort, want string
+		kind, command, model, effort, permission, want string
 	}{
-		{Codex, "codex --no-alt-screen", "gpt-6-luna", "medium", "codex --no-alt-screen --model gpt-6-luna -c model_reasoning_effort=medium"},
-		{Codex, "codex", "", "high", "codex -c model_reasoning_effort=high"},
-		{Codex, "codex", "", "", "codex"},
-		{Claude, "claude ", "opus", "high", "claude --model opus --effort high"},
-		{Claude, "claude", "", "max", "claude --effort max"},
-		{Agy, "agy", "gemini-4-neon", "high", "agy --model gemini-4-neon-high"},
-		{Agy, "agy", "gemini-pro-orchestrator-neon", "", "agy --model gemini-pro-orchestrator-neon"},
-		{CodePuppy, "code-puppy", "codex-gpt-6-luna", "", "code-puppy --model codex-gpt-6-luna"},
-		{Custom, "./review.sh", "", "", "./review.sh"},
-		{"", "", "", "", ""},
+		{Codex, "codex --no-alt-screen", "gpt-6-luna", "medium", "", "codex --no-alt-screen --model gpt-6-luna -c model_reasoning_effort=medium"},
+		{Codex, "codex", "", "high", "", "codex -c model_reasoning_effort=high"},
+		{Codex, "codex", "", "", "", "codex"},
+		{Claude, "claude ", "opus", "high", "", "claude --model opus --effort high"},
+		{Claude, "claude", "", "max", "", "claude --effort max"},
+		{Agy, "agy", "gemini-4-neon", "high", "", "agy --model gemini-4-neon-high"},
+		{Agy, "agy", "gemini-pro-orchestrator-neon", "", "", "agy --model gemini-pro-orchestrator-neon"},
+		{CodePuppy, "code-puppy", "codex-gpt-6-luna", "", "", "code-puppy --model codex-gpt-6-luna"},
+		{Custom, "./review.sh", "", "", "", "./review.sh"},
+		{"", "", "", "", "", ""},
+		// The permission options follow the model and effort options.
+		{Codex, "codex --no-alt-screen", "gpt-6-luna", "high", "approve-for-me", "codex --no-alt-screen --model gpt-6-luna -c model_reasoning_effort=high --approve-for-me"},
+		{Codex, "codex --no-alt-screen", "", "", "ask", "codex --no-alt-screen --sandbox workspace-write --ask-for-approval on-request -c approvals_reviewer=user"},
+		{Codex, "codex", "", "", "read-only", "codex --sandbox read-only --ask-for-approval on-request -c approvals_reviewer=user"},
+		{Codex, "codex", "", "", "full-access", "codex --sandbox danger-full-access --ask-for-approval never"},
+		{Claude, "claude", "opus", "", "accept-edits", "claude --model opus --permission-mode acceptEdits"},
+		{Claude, "claude", "", "", "manual", "claude --permission-mode manual"},
+		{Claude, "claude", "", "", "dont-ask", "claude --permission-mode dontAsk"},
+		{Claude, "claude", "", "", "bypass-permissions", "claude --permission-mode bypassPermissions"},
+		{Agy, "agy", "gemini-4-neon", "high", "plan", "agy --model gemini-4-neon-high --mode plan"},
+		{Agy, "agy", "", "", "skip-permissions", "agy --dangerously-skip-permissions"},
+		{CodePuppy, "code-puppy", "", "", "yolo", "code-puppy --yolo true"},
+		{CodePuppy, "code-puppy", "", "", "confirm", "code-puppy --yolo false"},
+		// A mode of another type adds nothing. Validate rejects it before a launch.
+		{Codex, "codex", "", "", "plan", "codex"},
+		{Custom, "./review.sh", "", "", "yolo", "./review.sh"},
 	} {
-		if got := Command(test.kind, test.command, test.model, test.effort); got != test.want {
-			t.Errorf("Command(%q, %q, %q, %q) = %q, want %q", test.kind, test.command, test.model, test.effort, got, test.want)
+		if got := Command(test.kind, test.command, test.model, test.effort, test.permission); got != test.want {
+			t.Errorf("Command(%q, %q, %q, %q, %q) = %q, want %q", test.kind, test.command, test.model, test.effort, test.permission, got, test.want)
 		}
 	}
 }
 
 func TestValidate(t *testing.T) {
 	for _, test := range []struct {
-		kind, model, effort string
-		ok                  bool
+		kind, model, effort, permission string
+		ok                              bool
 	}{
-		{Codex, "gpt-6-luna", "medium", true},
-		{Codex, "", "", true},
-		{Claude, "claude-opus-5-5", "max", true},
-		{Agy, "gemini-4-neon", "high", true},
-		{Agy, "", "high", false},
-		{CodePuppy, "codex-gpt-6-luna", "", true},
-		{CodePuppy, "codex-gpt-6-luna", "low", false},
-		{Custom, "", "", true},
-		{Custom, "gpt-6-luna", "", false},
-		{"", "", "", true},
-		{"other", "", "", false},
-		{Codex, "gpt; rm -rf ~", "", false},
-		{Codex, "$(id)", "", false},
-		{Codex, "gpt-6-luna", "High", false},
-		{Codex, "-o", "", false},
+		{Codex, "gpt-6-luna", "medium", "", true},
+		{Codex, "", "", "", true},
+		{Claude, "claude-opus-5-5", "max", "", true},
+		{Agy, "gemini-4-neon", "high", "", true},
+		{Agy, "", "high", "", false},
+		{CodePuppy, "codex-gpt-6-luna", "", "", true},
+		{CodePuppy, "codex-gpt-6-luna", "low", "", false},
+		{Custom, "", "", "", true},
+		{Custom, "gpt-6-luna", "", "", false},
+		{"", "", "", "", true},
+		{"other", "", "", "", false},
+		{Codex, "gpt; rm -rf ~", "", "", false},
+		{Codex, "$(id)", "", "", false},
+		{Codex, "gpt-6-luna", "High", "", false},
+		{Codex, "-o", "", "", false},
+		{Codex, "", "", "approve-for-me", true},
+		{Codex, "gpt-6-luna", "high", "full-access", true},
+		{Claude, "", "", "bypass-permissions", true},
+		{Agy, "", "", "accept-edits", true},
+		{CodePuppy, "", "", "yolo", true},
+		// Each type accepts only its own modes, and Custom and Shell accept none.
+		{Codex, "", "", "plan", false},
+		{Claude, "", "", "approve-for-me", false},
+		{Claude, "", "", "acceptEdits", false},
+		{CodePuppy, "", "", "ask", false},
+		{Custom, "", "", "approve-for-me", false},
+		{"", "", "", "approve-for-me", false},
+		{Codex, "", "", "ask; rm -rf ~", false},
 	} {
-		if err := Validate(test.kind, test.model, test.effort); (err == nil) != test.ok {
-			t.Errorf("Validate(%q, %q, %q) = %v, want ok %v", test.kind, test.model, test.effort, err, test.ok)
+		if err := Validate(test.kind, test.model, test.effort, test.permission); (err == nil) != test.ok {
+			t.Errorf("Validate(%q, %q, %q, %q) = %v, want ok %v", test.kind, test.model, test.effort, test.permission, err, test.ok)
+		}
+	}
+}
+
+// Each typed tool has permission modes. The values are unique in each type, and the
+// options are fixed words that the shell does not interpret.
+func TestPermissions(t *testing.T) {
+	for _, kind := range Types {
+		modes := permissions[kind]
+		if Typed(kind) != (len(modes) > 0) {
+			t.Errorf("%s has %d permission modes", kind, len(modes))
+		}
+		seen := map[string]bool{}
+		for _, mode := range modes {
+			if mode.Value == "" || seen[mode.Value] || strings.Trim(mode.Value, "abcdefghijklmnopqrstuvwxyz-") != "" {
+				t.Errorf("%s has an invalid or repeated mode %q", kind, mode.Value)
+			}
+			seen[mode.Value] = true
+			if mode.Options == "" || strings.Trim(mode.Options, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_=- ") != "" {
+				t.Errorf("%s mode %q has options %q", kind, mode.Value, mode.Options)
+			}
 		}
 	}
 }

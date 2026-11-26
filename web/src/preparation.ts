@@ -50,7 +50,7 @@ export class PreparationEditor {
     start(session: PreparedSession): Promise<void>;
   }) {
     // The draft shows no notes about the model list. Settings shows them.
-    this.models = new ModelPicker('launch', { server: () => this.host.server(), changed: () => this.changed(), quiet: true });
+    this.models = new ModelPicker('launch', { server: () => this.host.server(), changed: () => this.changed(), quiet: true, permission: true });
     this.form.oninput = () => this.changed();
     this.worktree.onchange = () => { this.options.hidden = !this.worktree.checked; this.changed(); };
     this.placeParent.onchange = this.placeWorktree.onchange = () => {
@@ -99,11 +99,11 @@ export class PreparationEditor {
     }
     this.tool.value = p.toolId;
     this.tools = tools;
-    this.models.set(p.toolType, p.model, p.effort);
-    // A newly selected tool brings its default model and effort.
+    this.models.set(p.toolType, p.model, p.effort, p.permission);
+    // A newly selected tool brings its default model, effort, and permission mode.
     this.tool.onchange = () => {
       const tool = this.selectedTool();
-      this.models.set(tool?.type ?? '', tool?.model ?? '', tool?.effort ?? '');
+      this.models.set(tool?.type ?? '', tool?.model ?? '', tool?.effort ?? '', tool?.permission ?? '');
       this.changed();
     };
     this.worktree.checked = p.worktree;
@@ -173,7 +173,7 @@ export class PreparationEditor {
   private preview(): void {
     const p = this.session?.preparation;
     if (!p) return;
-    this.command.textContent = draftCommand(p, this.tool.value, this.tools, this.models.model, this.models.effort) || '(no startup command)';
+    this.command.textContent = draftCommand(p, this.tool.value, this.tools, this.models.model, this.models.effort, this.models.permission) || '(no startup command)';
   }
 
   private changed(): void {
@@ -199,7 +199,7 @@ export class PreparationEditor {
       while (this.edits !== this.saved) {
         const version = this.edits;
         const preparation = { revision: session.preparation!.revision, toolId: this.tool.value,
-          model: this.models.model, effort: this.models.effort,
+          model: this.models.model, effort: this.models.effort, permission: this.models.permission,
           worktree: this.worktree.checked, base: this.base.value, branch: this.branch.value };
         const updated = await call(server, { operation: 'session-config', session: session.id,
           preparation, name: this.name.value });

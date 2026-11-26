@@ -1,10 +1,11 @@
-// Package models knows the agent CLIs that bbflow can start with a chosen model and
-// thinking effort. It builds the model and effort options of a startup command, and it
-// reads the model list of each CLI.
+// Package models knows the agent CLIs that bbflow can start with a chosen model, thinking
+// effort, and permission mode. It builds the options of a startup command, and it reads
+// the model list of each CLI.
 package models
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -71,7 +72,7 @@ var presetArgs = map[string]string{Codex: "--no-alt-screen"}
 
 // BuiltinCommand returns the startup command of a built-in tool: its CLI path, or the
 // plain CLI name when the path is empty, then the fixed arguments of its type. The launch
-// then adds the model and effort options at the end. See Command.
+// then adds the model, effort, and permission options at the end. See Command.
 func BuiltinCommand(kind, path string) string {
 	program := path
 	if program == "" {
@@ -90,15 +91,15 @@ var (
 	effortPattern = regexp.MustCompile(`^[a-z]{1,20}$`)
 )
 
-// Validate checks a tool type with its model and effort. An empty model or effort
-// selects the default of the CLI.
-func Validate(kind, model, effort string) error {
+// Validate checks a tool type with its model, effort, and permission mode. An empty
+// model, effort, or permission mode selects the default of the CLI.
+func Validate(kind, model, effort, permission string) error {
 	if kind != "" && kind != Custom && !Typed(kind) {
 		return errors.New("tool type must be codex, claude, agy, code-puppy, or custom")
 	}
 	if !Typed(kind) {
-		if model != "" || effort != "" {
-			return errors.New("a custom tool has no model or effort; put them in its command")
+		if model != "" || effort != "" || permission != "" {
+			return errors.New("a custom tool has no model, effort, or permissions; put them in its command")
 		}
 		return nil
 	}
@@ -113,14 +114,68 @@ func Validate(kind, model, effort string) error {
 		return errors.New("Code Puppy has no effort option")
 	case kind == Agy && effort != "" && model == "":
 		return errors.New("choose an Antigravity model before its effort")
+	case permission != "" && permissionOptions(kind, permission) == "":
+		return fmt.Errorf("%s has no permission mode %q", Name(kind), permission)
 	}
 	return nil
 }
 
-// Command returns the startup command with the model and effort options of the type.
-// The options go at the end, so the command must end with the agent call. An empty
-// model or effort adds no option.
-func Command(kind, command, model, effort string) string {
+// Permission is one choice of the Permissions menu of a tool type. Value is the saved
+// value. Options are the options that the launch adds. The web view has the same list,
+// with a label for each value.
+type Permission struct {
+	Value   string
+	Options string
+}
+
+// permissions lists the permission modes of each type, in the order of the menu. An empty
+// value, the CLI default, adds no option, so the CLI uses its own setting.
+//
+// The Codex modes are the choices of its /permissions menu. Ask for approval and Read Only
+// also select the user as the reviewer, because the Codex configuration of the user can
+// set approvals_reviewer to auto_review, which is Approve for me.
+var permissions = map[string][]Permission{
+	Codex: {
+		{"ask", "--sandbox workspace-write --ask-for-approval on-request -c approvals_reviewer=user"},
+		{"approve-for-me", "--approve-for-me"},
+		{"read-only", "--sandbox read-only --ask-for-approval on-request -c approvals_reviewer=user"},
+		{"full-access", "--sandbox danger-full-access --ask-for-approval never"},
+	},
+	Claude: {
+		{"manual", "--permission-mode manual"},
+		{"accept-edits", "--permission-mode acceptEdits"},
+		{"plan", "--permission-mode plan"},
+		{"auto", "--permission-mode auto"},
+		{"dont-ask", "--permission-mode dontAsk"},
+		{"bypass-permissions", "--permission-mode bypassPermissions"},
+	},
+	Agy: {
+		{"accept-edits", "--mode accept-edits"},
+		{"auto", "--mode auto"},
+		{"plan", "--mode plan"},
+		{"skip-permissions", "--dangerously-skip-permissions"},
+	},
+	CodePuppy: {
+		{"confirm", "--yolo false"},
+		{"yolo", "--yolo true"},
+	},
+}
+
+// permissionOptions returns the options of a permission mode, or an empty string when the
+// type has no such mode.
+func permissionOptions(kind, permission string) string {
+	for _, p := range permissions[kind] {
+		if p.Value == permission {
+			return p.Options
+		}
+	}
+	return ""
+}
+
+// Command returns the startup command with the model, effort, and permission options of
+// the type. The options go at the end, so the command must end with the agent call. An
+// empty model, effort, or permission mode adds no option.
+func Command(kind, command, model, effort, permission string) string {
 	var options []string
 	switch kind {
 	case Codex:
@@ -148,6 +203,9 @@ func Command(kind, command, model, effort string) string {
 		if model != "" {
 			options = append(options, "--model "+model)
 		}
+	}
+	if mode := permissionOptions(kind, permission); mode != "" {
+		options = append(options, mode)
 	}
 	if len(options) == 0 {
 		return command

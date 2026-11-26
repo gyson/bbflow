@@ -134,7 +134,8 @@ To capture the screenshots again, do these steps:
 8. Open the draft **Plan release notes**. Select the tool **Claude Code**. The seed selects
    **Demo agent** for this draft.
 9. Capture each view with the viewport of the table. Use the dark color scheme and a
-   device scale factor of 2.
+   device scale factor of 2. Hide the scroll bars, because headless Chrome draws them
+   in each scroll area. In the DevTools protocol, use `Emulation.setScrollbarsHidden`.
 10. Remove the demo instance.
 
    ```sh

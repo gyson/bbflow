@@ -54,6 +54,22 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A draft keeps the permission mode of its type. A mode of another type, or a mode
+	// for Shell, does not save.
+	codex := Preparation{ToolID: "builtin-codex", ToolName: "Codex", ToolType: "codex", Command: "codex --no-alt-screen", Permission: "approve-for-me"}
+	agent, err := store.CreatePreparation("Codex draft", project.Workspace, project.ID, codex)
+	if err != nil || agent.Preparation.Permission != "approve-for-me" {
+		t.Fatal("lost the permission mode of a draft", agent.Preparation, err)
+	}
+	for _, p := range []Preparation{{ToolID: "builtin-codex", ToolType: "codex", Command: "codex", Permission: "plan"}, {Permission: "approve-for-me"}} {
+		if _, err := store.CreatePreparation("Invalid", project.Workspace, project.ID, p); err == nil {
+			t.Fatal("accepted a permission mode", p)
+		}
+		p.Revision = agent.Preparation.Revision
+		if _, err := store.SavePreparation(agent.ID, "", p); err == nil {
+			t.Fatal("saved a permission mode", p)
+		}
+	}
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +85,9 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 	restored, err := store.Session(session.ID)
 	if err != nil || restored.Preparation == nil || restored.Preparation.Command != "echo saved" || restored.Preparation.State != "draft" || restored.Run != nil {
 		t.Fatal("preparation changed on reopen", restored, err)
+	}
+	if restored, err = store.Session(agent.ID); err != nil || restored.Preparation.Permission != "approve-for-me" {
+		t.Fatal("the permission mode of a draft changed on reopen", restored.Preparation, err)
 	}
 	// The default tool is the first tool after the four built-in tools.
 	got.Tools = slices.Delete(slices.Clone(got.Tools), 4, 5)
@@ -327,6 +346,7 @@ func TestToolTypesModelsAndEfforts(t *testing.T) {
 	// A tool that the user adds is a Custom tool, also when its command starts an agent.
 	settings.Tools = append(settings.Tools, Tool{ID: "search", Name: "Codex search", Command: "codex --search"}, Tool{ID: "script", Name: "Script", Command: "./run.sh"})
 	settings.Tools[1].Model, settings.Tools[1].Effort = "opus", "high"
+	settings.Tools[0].Permission, settings.Tools[1].Permission = "approve-for-me", "accept-edits"
 	if settings, err = store.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -336,11 +356,18 @@ func TestToolTypesModelsAndEfforts(t *testing.T) {
 	if settings.Tools[1].Model != "opus" || settings.Tools[1].Effort != "high" {
 		t.Fatal("the built-in tool lost its model", settings.Tools[1])
 	}
+	if saved, err := store.Settings(); err != nil || saved.Tools[0].Permission != "approve-for-me" || saved.Tools[1].Permission != "accept-edits" || saved.Tools[2].Permission != "" {
+		t.Fatal("the built-in tools lost their permission modes", saved.Tools, err)
+	}
 	for _, change := range []func(*Settings){
 		func(s *Settings) { s.Tools[4].Type = "codex" },
 		func(s *Settings) { s.Tools[4].Model = "gpt-6-luna" },
 		func(s *Settings) { s.Tools[0].Model = "gpt 6" },
 		func(s *Settings) { s.Tools[3].Effort = "high" },
+		// A permission mode belongs to the type of the tool. A Custom tool has none.
+		func(s *Settings) { s.Tools[0].Permission = "accept-edits" },
+		func(s *Settings) { s.Tools[4].Permission = "approve-for-me" },
+		func(s *Settings) { s.Tools[1].Permission = "bypassPermissions" },
 	} {
 		changed := settings
 		changed.Tools = slices.Clone(settings.Tools)

@@ -12,14 +12,14 @@ import (
 	"bbflow/internal/protocol"
 )
 
-func TestDraftsTakeToolDefaultsAndLaunchWithTheChosenModel(t *testing.T) {
+func TestDraftsTakeToolDefaultsAndLaunchWithTheChosenModelAndPermissions(t *testing.T) {
 	s, _ := composerServer(t)
 	project, err := s.addProject("Model project", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The built-in Codex and Code Puppy tools have default models. Script is a tool of the
-	// user.
+	// The built-in Codex and Code Puppy tools have default models. Codex also has a default
+	// permission mode. Script is a tool of the user.
 	settings, err := s.store.Settings()
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestDraftsTakeToolDefaultsAndLaunchWithTheChosenModel(t *testing.T) {
 		tool.Enabled = true
 		switch tool.Type {
 		case models.Codex:
-			tool.Model, tool.Effort = "gpt-6-luna", "medium"
+			tool.Model, tool.Effort, tool.Permission = "gpt-6-luna", "medium", "approve-for-me"
 		case models.CodePuppy:
 			tool.Model = "codex-gpt-6-luna"
 		}
@@ -44,33 +44,34 @@ func TestDraftsTakeToolDefaultsAndLaunchWithTheChosenModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := draft.Preparation
-	if p.ToolType != models.Codex || p.Model != "gpt-6-luna" || p.Effort != "medium" || p.Command != "codex --no-alt-screen" {
+	if p.ToolType != models.Codex || p.Model != "gpt-6-luna" || p.Effort != "medium" || p.Permission != "approve-for-me" || p.Command != "codex --no-alt-screen" {
 		t.Fatalf("the draft did not copy the tool defaults: %+v", p)
 	}
-	save := func(tool, model, effort string) (history.Session, error) {
+	save := func(tool, model, effort, permission string) (history.Session, error) {
 		current, err := s.store.Session(draft.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return s.savePreparation(&protocol.Request{Session: draft.ID, Preparation: &protocol.PreparationConfig{
-			Revision: current.Preparation.Revision, ToolID: tool, Model: model, Effort: effort}})
+			Revision: current.Preparation.Revision, ToolID: tool, Model: model, Effort: effort, Permission: permission}})
 	}
 	// The draft keeps its choice. Settings keep the defaults.
-	saved, err := save("builtin-codex", "gpt-6-sol", "high")
-	if err != nil || saved.Preparation.Model != "gpt-6-sol" || saved.Preparation.Effort != "high" {
+	saved, err := save("builtin-codex", "gpt-6-sol", "high", "read-only")
+	if err != nil || saved.Preparation.Model != "gpt-6-sol" || saved.Preparation.Effort != "high" || saved.Preparation.Permission != "read-only" {
 		t.Fatalf("the draft did not save its model: %+v %v", saved.Preparation, err)
 	}
-	for _, invalid := range [][3]string{{"builtin-codex", "gpt; id", ""}, {"builtin-code-puppy", "codex-gpt-6-luna", "high"}, {"script", "gpt-6-luna", ""}, {"", "gpt-6-luna", ""}} {
-		if _, err = save(invalid[0], invalid[1], invalid[2]); err == nil {
+	for _, invalid := range [][4]string{{"builtin-codex", "gpt; id", "", ""}, {"builtin-code-puppy", "codex-gpt-6-luna", "high", ""}, {"script", "gpt-6-luna", "", ""}, {"", "gpt-6-luna", "", ""},
+		{"builtin-codex", "", "", "accept-edits"}, {"script", "", "", "yolo"}, {"", "", "", "approve-for-me"}} {
+		if _, err = save(invalid[0], invalid[1], invalid[2], invalid[3]); err == nil {
 			t.Fatalf("accepted %q", invalid)
 		}
 	}
 	// A new tool brings its own type and command.
-	saved, err = save("script", "", "")
+	saved, err = save("script", "", "", "")
 	if err != nil || saved.Preparation.ToolType != models.Custom || saved.Preparation.Command != "echo script" {
 		t.Fatalf("the tool change did not copy the type: %+v %v", saved.Preparation, err)
 	}
-	saved, err = save("builtin-codex", "gpt-6-sol", "high")
+	saved, err = save("builtin-codex", "gpt-6-sol", "high", "approve-for-me")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,27 +79,31 @@ func TestDraftsTakeToolDefaultsAndLaunchWithTheChosenModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "codex --no-alt-screen --model gpt-6-sol -c model_reasoning_effort=high"; run.Command != want || run.Tool != "Codex" {
+	if want := "codex --no-alt-screen --model gpt-6-sol -c model_reasoning_effort=high --approve-for-me"; run.Command != want || run.Tool != "Codex" {
 		t.Fatalf("launch command %q, tool %q; want %q", run.Command, run.Tool, want)
 	}
-	// A new terminal of an ended session launches with the model and the effort of the
-	// view, as a draft does. The view sends the defaults of the tool, unless the user
-	// changes them. An empty value selects the default of the CLI.
-	for _, c := range []struct{ tool, model, effort, name, command string }{
-		{"builtin-code-puppy", "codex-gpt-6-luna", "", "Code Puppy", "code-puppy --model codex-gpt-6-luna"},
-		{"builtin-codex", "gpt-6-sol", "high", "Codex", "codex --no-alt-screen --model gpt-6-sol -c model_reasoning_effort=high"},
-		{"builtin-codex", "", "", "Codex", "codex --no-alt-screen"},
-		{"script", "", "", "Script", "echo script"},
-		{"", "", "", "Shell", ""},
+	// A new terminal of an ended session launches with the model, the effort, and the
+	// permission mode of the view, as a draft does. The view sends the defaults of the
+	// tool, unless the user changes them. An empty value selects the default of the CLI.
+	for _, c := range []struct{ tool, model, effort, permission, name, command string }{
+		{"builtin-code-puppy", "codex-gpt-6-luna", "", "", "Code Puppy", "code-puppy --model codex-gpt-6-luna"},
+		{"builtin-codex", "gpt-6-sol", "high", "", "Codex", "codex --no-alt-screen --model gpt-6-sol -c model_reasoning_effort=high"},
+		{"builtin-codex", "", "", "", "Codex", "codex --no-alt-screen"},
+		{"builtin-codex", "", "", "approve-for-me", "Codex", "codex --no-alt-screen --approve-for-me"},
+		{"builtin-claude", "", "", "plan", "Claude Code", "claude --permission-mode plan"},
+		{"script", "", "", "", "Script", "echo script"},
+		{"", "", "", "", "Shell", ""},
 	} {
-		name, command, err := s.continueTool(c.tool, c.model, c.effort, project.Workspace)
+		name, command, err := s.continueTool(c.tool, c.model, c.effort, c.permission, project.Workspace)
 		if err != nil || name != c.name || command != c.command {
-			t.Fatalf("continue %q %q %q: %q %q %v", c.tool, c.model, c.effort, name, command, err)
+			t.Fatalf("continue %q %q %q %q: %q %q %v", c.tool, c.model, c.effort, c.permission, name, command, err)
 		}
 	}
-	// A new terminal rejects the same choices as a draft. Shell has no model or effort.
-	for _, invalid := range [][3]string{{"builtin-codex", "gpt; id", ""}, {"builtin-code-puppy", "codex-gpt-6-luna", "high"}, {"script", "gpt-6-luna", ""}, {"", "gpt-6-luna", ""}, {"", "", "high"}} {
-		if _, _, err = s.continueTool(invalid[0], invalid[1], invalid[2], project.Workspace); err == nil {
+	// A new terminal rejects the same choices as a draft. Shell has no model, effort, or
+	// permission mode.
+	for _, invalid := range [][4]string{{"builtin-codex", "gpt; id", "", ""}, {"builtin-code-puppy", "codex-gpt-6-luna", "high", ""}, {"script", "gpt-6-luna", "", ""}, {"", "gpt-6-luna", "", ""}, {"", "", "high", ""},
+		{"builtin-codex", "", "", "plan"}, {"script", "", "", "approve-for-me"}, {"", "", "", "yolo"}} {
+		if _, _, err = s.continueTool(invalid[0], invalid[1], invalid[2], invalid[3], project.Workspace); err == nil {
 			t.Fatalf("a new terminal accepted %q", invalid)
 		}
 	}

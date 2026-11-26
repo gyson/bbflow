@@ -7,7 +7,7 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
   const current = tools[index];
   if (!current) throw new Error('This tool was removed in another view.');
   const updated = [...tools];
-  const field = <K extends 'name' | 'command' | 'type' | 'path'>(key: K) => edited[key] === original[key] ? current[key] : edited[key];
+  const field = <K extends 'name' | 'command' | 'type' | 'path' | 'permission'>(key: K) => edited[key] === original[key] ? current[key] : edited[key];
   // The model and the effort belong to the type. An edit of one of the three saves all
   // three from the edit.
   const modelEdited = edited.type !== original.type || edited.model !== original.model || edited.effort !== original.effort;
@@ -17,6 +17,7 @@ export function mergeToolEdit(tools: Tool[], edited: Tool, original?: Tool): Too
     command: field('command'),
     type: field('type'),
     path: field('path'),
+    permission: field('permission'),
     model: modelEdited ? edited.model : current.model,
     effort: modelEdited ? edited.effort : current.effort,
   };
@@ -456,7 +457,7 @@ export function sameTools(a: Tool[], b: Tool[]): boolean {
   return a.length === b.length && a.every((tool, index) => {
     const other = b[index]!;
     return tool.id === other.id && tool.name === other.name && tool.command === other.command &&
-      tool.type === other.type && tool.model === other.model && tool.effort === other.effort &&
+      tool.type === other.type && tool.model === other.model && tool.effort === other.effort && tool.permission === other.permission &&
       tool.builtin === other.builtin && tool.enabled === other.enabled && tool.path === other.path;
   });
 }

@@ -22,8 +22,54 @@ export function builtinCommand(type: string, path: string): string {
   return type === 'codex' ? `${program} --no-alt-screen` : program;
 }
 
-// launchCommand adds the model and effort options of the type to the command.
-export function launchCommand(type: string, command: string, model: string, effort: string): string {
+interface PermissionMode { value: string; label: string; options: string }
+
+// The permission modes of each type, in the order of the menu. The values and the options
+// match internal/models. The labels are the names that each CLI shows.
+const permissionModes: Record<string, readonly PermissionMode[]> = {
+  codex: [
+    { value: 'ask', label: 'Ask for approval', options: '--sandbox workspace-write --ask-for-approval on-request -c approvals_reviewer=user' },
+    { value: 'approve-for-me', label: 'Approve for me', options: '--approve-for-me' },
+    { value: 'read-only', label: 'Read Only', options: '--sandbox read-only --ask-for-approval on-request -c approvals_reviewer=user' },
+    { value: 'full-access', label: 'Full Access', options: '--sandbox danger-full-access --ask-for-approval never' },
+  ],
+  claude: [
+    { value: 'manual', label: 'Manual', options: '--permission-mode manual' },
+    { value: 'accept-edits', label: 'Accept edits', options: '--permission-mode acceptEdits' },
+    { value: 'plan', label: 'Plan', options: '--permission-mode plan' },
+    { value: 'auto', label: 'Auto', options: '--permission-mode auto' },
+    { value: 'dont-ask', label: "Don't Ask", options: '--permission-mode dontAsk' },
+    { value: 'bypass-permissions', label: 'Bypass Permissions', options: '--permission-mode bypassPermissions' },
+  ],
+  agy: [
+    { value: 'accept-edits', label: 'Accept edits', options: '--mode accept-edits' },
+    { value: 'auto', label: 'Auto', options: '--mode auto' },
+    { value: 'plan', label: 'Plan', options: '--mode plan' },
+    { value: 'skip-permissions', label: 'Skip permissions', options: '--dangerously-skip-permissions' },
+  ],
+  'code-puppy': [
+    { value: 'confirm', label: 'YOLO off', options: '--yolo false' },
+    { value: 'yolo', label: 'YOLO on', options: '--yolo true' },
+  ],
+};
+
+// permissionChoices lists the permission modes of a type. The first choice, the CLI
+// default, adds no option. A saved mode that the list does not have stays a choice, so
+// that the view shows it.
+export function permissionChoices(type: string, permission = ''): Choice[] {
+  const choices: Choice[] = [{ value: '', label: 'CLI default' }];
+  for (const mode of permissionModes[type] ?? []) choices.push({ value: mode.value, label: mode.label });
+  if (permission && !choices.some(choice => choice.value === permission)) choices.push({ value: permission, label: permission });
+  return choices;
+}
+
+// permissionOptions returns the options of a permission mode, or an empty string.
+export function permissionOptions(type: string, permission: string): string {
+  return permissionModes[type]?.find(mode => mode.value === permission)?.options ?? '';
+}
+
+// launchCommand adds the model, effort, and permission options of the type to the command.
+export function launchCommand(type: string, command: string, model: string, effort: string, permission = ''): string {
   const options: string[] = [];
   if (type === 'codex') {
     if (model) options.push(`--model ${model}`);
@@ -37,6 +83,8 @@ export function launchCommand(type: string, command: string, model: string, effo
   } else if (type === 'code-puppy') {
     if (model) options.push(`--model ${model}`);
   }
+  const mode = permissionOptions(type, permission);
+  if (mode) options.push(mode);
   return options.length ? `${command.replace(/ +$/, '')} ${options.join(' ')}` : command;
 }
 
@@ -44,14 +92,15 @@ export function launchCommand(type: string, command: string, model: string, effo
 // its saved tool. A newly selected tool, which is not saved yet, brings its own type and
 // command. Shell, with the empty ID, has no command.
 export function draftCommand(saved: { toolId: string; toolType: string; command: string }, selected: string,
-  tools: readonly { id: string; type: string; command: string }[], model: string, effort: string): string {
+  tools: readonly { id: string; type: string; command: string }[], model: string, effort: string, permission: string): string {
   let type = saved.toolType, command = saved.command;
   if (selected !== saved.toolId) {
     const tool = tools.find(candidate => candidate.id === selected);
     type = tool?.type ?? '';
     command = tool?.command ?? '';
   }
-  return launchCommand(type, command, typed(type) ? model : '', typed(type) ? effort : '');
+  const agent = typed(type);
+  return launchCommand(type, command, agent ? model : '', agent ? effort : '', agent ? permission : '');
 }
 
 // modelSummary is the short text of a model and an effort, such as "gpt-6-luna · Medium".
@@ -148,10 +197,11 @@ function loadList(server: ServerInfo, type: string, refresh: boolean, send: type
   return list;
 }
 
-// ModelPicker shows the model and effort controls with one prefix. The fields element
-// holds all controls. It is hidden for Shell and for a Custom tool. changed runs after
-// each change by the user. A quiet picker shows no notes about the list and the
-// options. It shows only a failure of the list, with Refresh list.
+// ModelPicker shows the model and effort controls with one prefix. With permission, it
+// also shows the Permissions menu. The fields element holds all controls. It is hidden
+// for Shell and for a Custom tool. changed runs after each change by the user. A quiet
+// picker shows no notes about the list and the options. It shows only a failure of the
+// list, with Refresh list.
 export class ModelPicker {
   private readonly fields: HTMLElement;
   private readonly modelSelect: HTMLSelectElement;
@@ -160,9 +210,12 @@ export class ModelPicker {
   private readonly refresh: HTMLButtonElement;
   private readonly effortSelect: HTMLSelectElement;
   private readonly effortHelp: HTMLElement;
+  private readonly permissionSelect: HTMLSelectElement | null = null;
+  private readonly permissionHelp: HTMLElement | null = null;
   private type = '';
   private chosen = '';
   private chosenEffort = '';
+  private chosenPermission = '';
   private other = false;
   private list: ToolModels | null = null;
   private error = '';
@@ -173,7 +226,7 @@ export class ModelPicker {
   // shared list, and the next set reads the new one.
   private from: Promise<ToolModels> | undefined;
 
-  constructor(prefix: string, private readonly host: { server(): ServerInfo | null; changed(): void; send?: typeof call; quiet?: boolean }) {
+  constructor(prefix: string, private readonly host: { server(): ServerInfo | null; changed(): void; send?: typeof call; quiet?: boolean; permission?: boolean }) {
     this.fields = element(`${prefix}-models`, HTMLElement);
     this.modelSelect = element(`${prefix}-model`, HTMLSelectElement);
     this.otherInput = element(`${prefix}-model-other`, HTMLInputElement);
@@ -197,17 +250,24 @@ export class ModelPicker {
     };
     this.otherInput.oninput = () => { this.chosen = this.otherInput.value.trim(); this.render(); this.host.changed(); };
     this.effortSelect.onchange = () => { this.chosenEffort = this.effortSelect.value; this.render(); this.host.changed(); };
+    if (host.permission) {
+      const select = this.permissionSelect = element(`${prefix}-permission`, HTMLSelectElement);
+      this.permissionHelp = element(`${prefix}-permission-help`, HTMLElement);
+      select.onchange = () => { this.chosenPermission = select.value; this.render(); this.host.changed(); };
+    }
     this.refresh.onclick = () => void this.load(true);
     pickers.add(this);
   }
 
   get model(): string { return this.chosen; }
   get effort(): string { return this.chosenEffort; }
+  get permission(): string { return this.chosenPermission; }
 
-  // set shows the type with a model and an effort, and loads the model list of the type.
-  set(type: string, model: string, effort: string): void {
+  // set shows the type with a model, an effort, and a permission mode, and loads the model
+  // list of the type.
+  set(type: string, model: string, effort: string, permission = ''): void {
     const sameType = type === this.type;
-    this.type = type; this.chosen = model; this.chosenEffort = effort; this.other = false;
+    this.type = type; this.chosen = model; this.chosenEffort = effort; this.chosenPermission = permission; this.other = false;
     this.otherInput.value = '';
     const server = this.host.server();
     const shared = server && typed(type) ? lists.get(listKey(server, type)) : undefined;
@@ -291,5 +351,14 @@ export class ModelPicker {
     if (note) note.hidden = !this.help.textContent && this.refresh.hidden;
     this.effortHelp.hidden = !this.effortHelp.textContent;
     this.modelSelect.disabled = this.otherInput.disabled = this.effortSelect.disabled = this.refresh.disabled = this.locked;
+    const select = this.permissionSelect, help = this.permissionHelp;
+    if (select && help) {
+      select.replaceChildren(...permissionChoices(type, this.chosenPermission).map(choice => new Option(choice.label, choice.value)));
+      select.value = this.chosenPermission;
+      select.disabled = this.locked;
+      const options = permissionOptions(type, this.chosenPermission);
+      help.textContent = quiet ? '' : options ? `bbflow adds ${options}.` : 'bbflow adds no option, so the CLI uses its own setting.';
+      help.hidden = !help.textContent;
+    }
   }
 }
