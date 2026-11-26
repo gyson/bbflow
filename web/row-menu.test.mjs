@@ -20,12 +20,19 @@ class Element {
   append(...children) { this.children.push(...children); }
   setAttribute(key, value) { this.attributes.set(key, value); }
   getAttribute(key) { return this.attributes.get(key) ?? null; }
-  addEventListener() {}
+  listeners = new Map();
+  addEventListener(type, listener) { this.listeners.set(type, listener); }
+  contains(node) { return node === this || this.children.some(child => child.contains?.(node)); }
+  closest() { return null; }
+  getBoundingClientRect() { return { top: 0, bottom: 0, height: 0 }; }
+  querySelector() { return null; }
+  focus() {}
 }
 
 // The page holds the boxes of the shown list. A list refresh replaces them.
 function setup() {
   let shown = [];
+  globalThis.Node = Element;
   globalThis.document = {
     createElement: tag => new Element(tag),
     addEventListener() {},
@@ -98,4 +105,20 @@ test('a confirmation marks the button that shows now', () => {
     menus.confirm('project-menu:p2', 'Folder path copied');
     assert.equal(menu.button.dataset.tip, undefined);
   } finally { mock.timers.reset(); }
+});
+
+test('a press on an item keeps the menu open when the focus moves to the sidebar', () => {
+  const { menus, render } = setup();
+  const { menu } = render();
+  const sidebar = new Element('aside');
+  sidebar.append(menu.box);
+  menu.button.onclick();
+  assert.equal(menus.open, true);
+  // WebKit does not focus a pressed button. The focus goes to the sidebar, which holds
+  // the menu, and the click on the item follows.
+  menu.box.listeners.get('focusout')({ relatedTarget: sidebar });
+  assert.equal(menus.open, true);
+  // A move of the focus to a control outside the menu closes it.
+  menu.box.listeners.get('focusout')({ relatedTarget: new Element('button') });
+  assert.equal(menus.open, false);
 });

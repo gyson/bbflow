@@ -1331,6 +1331,9 @@ all recorded data. There is no permanent delete action.
   changes after the menu closes.
 - Escape, a choice, or a click outside the menu closes it. The Up and Down arrow keys
   move between the items.
+- A move of the focus to a control outside the menu also closes it. A press on an item
+  does not close it. Safari does not focus a pressed button, and it moves the focus to
+  the sidebar.
 - Archive of a top-level session with sub-sessions archives the whole family. See
   [session families](#session-families).
 - Archive removes the [pin](#pinned-sessions) of a session.
@@ -5156,6 +5159,15 @@ at window widths of 1200, 1600, and 1920 pixels.
     a toast, and the focus returned to the ⋯ button. Without the close, the error
     showed in the open dialog and no toast showed.
   - When the dialog opened, the ✕ button was enabled and had the focus.
+- A sixth check used real taps in Safari on an iPhone 18 Pro simulator with iOS 27.2.
+  An XCUITest bundle sent the taps. Before the fix, a tap on any item of a row menu
+  only closed the menu. The focus moved to the sidebar before the click, and the click
+  reached the row below. After the fix, taps on **Stop session**, **Stop family**,
+  **Pin**, and **Edit** of a project ran the item. Each stop dialog then stopped its
+  sessions after a tap on its submit button. A tap outside an open menu still closed
+  it.
+- A web fixture verifies that a focus move to the sidebar keeps a row menu open, and
+  that a focus move to a control outside it closes the menu.
 
 ### Checks of pinned sessions
 
