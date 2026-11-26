@@ -44,10 +44,21 @@ type updates struct {
 	revision int64 // The settings revision of enabled.
 	recheck  bool  // Check at once, also while the setting is off.
 	checking bool  // A check runs, or a requested check starts soon.
+	checks   int64 // The checks that ended. Views tell two checks apart by it.
 	checked  time.Time
 	failure  string // The reason that the last check failed.
+	// held is the result of a check that ended during an update. It applies when the
+	// update fails, because the server then continues.
+	held *checkResult
 	// A settings save, a check request, or a stale offer wakes the check.
 	wake chan struct{}
+}
+
+// checkResult is the result of one check.
+type checkResult struct {
+	offer *protocol.Update
+	err   error
+	at    time.Time
 }
 
 // load reads the update check setting when the server starts. Later saves apply
@@ -63,7 +74,7 @@ func (u *updates) load(store *history.Store) {
 func (u *updates) current() protocol.Release {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	release := protocol.Release{Checking: u.checking, Error: u.failure}
+	release := protocol.Release{Checking: u.checking, Checks: u.checks, Error: u.failure}
 	if !u.checked.IsZero() {
 		release.Checked = u.checked.UTC().Format(time.RFC3339)
 	}
@@ -116,22 +127,31 @@ func (u *updates) next(due time.Time) (start, enabled bool) {
 	return false, u.enabled
 }
 
-// ended records the end of a check at the time at. A failed check keeps the offer of
-// the last successful check. A successful check replaces the offer, but it keeps an
-// update in progress. The same release and action keep their revision, so an open
-// dialog stays valid. Another release or another action gets a new revision.
+// ended records the end of a check at the time at. During an update, it holds the
+// result until the update fails.
 func (u *updates) ended(offer *protocol.Update, err error, at time.Time) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.checking, u.checked = u.recheck, at
-	if err != nil {
-		u.failure = err.Error()
+	u.checking, u.checks = u.recheck, u.checks+1
+	if u.offer != nil && u.offer.State == "updating" {
+		u.held = &checkResult{offer: offer, err: err, at: at}
+		return
+	}
+	u.record(checkResult{offer: offer, err: err, at: at})
+}
+
+// record applies the result of a check. A failed check keeps the offer of the last
+// successful check. A successful check replaces the offer. The same release and action
+// keep their revision, so an open dialog stays valid. Another release or another action
+// gets a new revision.
+func (u *updates) record(result checkResult) {
+	u.checked = result.at
+	if result.err != nil {
+		u.failure = result.err.Error()
 		return
 	}
 	u.failure = ""
-	if u.offer != nil && u.offer.State == "updating" {
-		return
-	}
+	offer := result.offer
 	if offer != nil {
 		if u.offer != nil && u.offer.Version == offer.Version && u.offer.Available == offer.Available && u.offer.Installed == offer.Installed {
 			offer.Revision = u.offer.Revision
@@ -162,10 +182,15 @@ func (u *updates) start(version string, revision int64) (protocol.Update, error)
 	return *u.offer, nil
 }
 
-// failed shows the reason on the offer of version. A stale offer also asks for a new
-// check, which replaces the offer.
+// failed shows the reason on the offer of version. A check that ended during the
+// update applies first, so the failure shows also when that check found the same
+// release. A stale offer also asks for a new check, which replaces the offer.
 func (u *updates) failed(version string, err error) {
 	u.mu.Lock()
+	if u.held != nil {
+		u.record(*u.held)
+		u.held = nil
+	}
 	if u.offer != nil && u.offer.Available == version {
 		u.offer.State, u.offer.Error = "failed", err.Error()
 	}

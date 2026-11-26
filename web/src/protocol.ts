@@ -27,9 +27,10 @@ export interface Update { revision: number; version: string; available: string; 
 
 // The release check state of the server. version is the version of the running server.
 // canUpdate is false for a build that cannot check or update, such as a development
-// build. checked is the end time of the last check, and error tells why that check
-// failed. offer is the newer release that the last successful check found.
-export interface Release { version: string; canUpdate?: boolean; checking?: boolean; checked?: string; error?: string; offer?: Update }
+// build. checks counts the checks that ended, so that a view can tell two checks of the
+// same second apart. checked is the end time of the last check, and error tells why
+// that check failed. offer is the newer release that the last successful check found.
+export interface Release { version: string; canUpdate?: boolean; checking?: boolean; checks?: number; checked?: string; error?: string; offer?: Update }
 
 export interface Project { id: string; name: string; workspace: string; created: string }
 
@@ -259,8 +260,8 @@ export type ServerMessage =
   | { type: 'history-end' }
   | { type: 'draft'; session: string; composer: ComposerState }
   // A status watch gets running or idle for each session that has a live terminal.
-  // revision counts session title changes since the server started. update offers a
-  // newer release.
+  // revision counts session title changes since the server started. release has the
+  // release check state of the server.
   | { type: 'statuses'; statuses?: Record<string, string>; revision?: number; release?: Release }
   | { type: 'result'; result: unknown }
   | { type: 'error'; error: string };

@@ -377,13 +377,15 @@ type TitleToolSet struct {
 
 // Release is the release check state of the server. Version is the version of the
 // running server. CanUpdate is false for a build that cannot check or update, such as a
-// development build. Checking is true while a check runs. Checked is the end time of the
-// last check, and Error tells why that check failed. Offer is the newer release that the
-// last successful check found.
+// development build. Checking is true while a check runs. Checks counts the checks that
+// ended, so that a view can tell two checks of the same second apart. Checked is the end
+// time of the last check, and Error tells why that check failed. Offer is the newer
+// release that the last successful check found.
 type Release struct {
 	Version   string  `json:"version"`
 	CanUpdate bool    `json:"canUpdate,omitempty"`
 	Checking  bool    `json:"checking,omitempty"`
+	Checks    int64   `json:"checks,omitempty"`
 	Checked   string  `json:"checked,omitempty"`
 	Error     string  `json:"error,omitempty"`
 	Offer     *Update `json:"offer,omitempty"`

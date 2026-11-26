@@ -1026,7 +1026,8 @@ state changes.
 | `version` | The version of the running server. |
 | `canUpdate` | True when the build can check and update. A development build, another platform, and a renamed executable omit it. They omit the other fields too. |
 | `checking` | True while a check runs. `update-check` sets it before its reply. |
-| `checked` | The end time of the last check, in RFC 3339 format. It is absent before the first check. |
+| `checks` | The number of checks that ended since the server started. Two checks can end in the same second with the same result. Compare `checks` to tell them apart. |
+| `checked` | The end time of the last check, in RFC 3339 format. It is absent before the first check. A check that ends during an update applies only if the update fails. |
 | `error` | The reason that the last check failed. A successful check removes it. |
 | `offer` | The newer release that the last successful check found. It is absent when the server runs the newest release. A failed check keeps it. |
 

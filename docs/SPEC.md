@@ -320,6 +320,10 @@ a newer version to the web UI. A setting turns off the daily check.
 - While the setting is off, the server sends no request by itself. The result of the
   last check stays, and a view can start its update.
 - When the setting changes to on after a check is due, the check runs at once.
+- A check that ends during an update applies only if the update fails, because the
+  server then continues. Until then, the views show the update in progress and the
+  earlier check. The failure then shows on the offer, also when that check found the
+  same release. A newer release gets a new offer.
 - A failed check keeps the offer of the last successful check. It writes its reason to
   `server.log`. The status watch sends the reason, and the **Updates** card shows it.
   The reason is the last message of the installer, as for a failed update.
@@ -405,8 +409,7 @@ it.
 - A confirmation applies only to the offer that the dialog showed.
 - After confirmation, the view saves its message draft and its project draft form. Then
   it sends `update-start` with the version and the revision of that offer.
-- The server rejects another version, an earlier revision, a second update, and an
-  offer that the off setting hides.
+- The server rejects another version, an earlier revision, and a second update.
 - The offer can change, or the status watch can lose its connection, while the drafts
   save. Then the dialog stays open but does not change.
 - If the start fails, the dialog shows the error and allows no other attempt. The user
@@ -4473,6 +4476,12 @@ CLI versions.
   a failed check, which keeps the earlier offer.
 - `update-check` runs a check while the setting is off. A request during a running
   check starts no other check. A view can start the offer of that check.
+- Quick checks with the same result change the status watch by their count, also when
+  the watch does not see them run.
+- A check that ends during an update applies after the update fails. The same release
+  keeps the failure, a newer release gets a new offer, and a failed check keeps the
+  offer. Until the failure, the state keeps the update in progress and the earlier
+  check time.
 - A development build sends its version and no check state. It rejects `update-check`
   and `update-start`.
 - A newer save can reply first, and an earlier save does not then apply.
@@ -4489,8 +4498,8 @@ CLI versions.
   and that a lost status watch hides the offer.
 - The fixture verifies the dot on **Settings** and its accessible name. **Check now**
   shows **Checking…** until the status watch reports the check. A status message from
-  before the request does not end it. A failed request shows its reason until a later
-  check.
+  before the request does not end it. A new count of checks ends it, also with the same
+  check time. A failed request shows its reason until a later check.
 - A lost watch during a pending start that then fails allows no other attempt.
 - A failed start without a change allows one.
 - A failed settings update in migration 12 rolls back and keeps format 11.

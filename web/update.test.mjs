@@ -8,7 +8,7 @@ const now = new Date(2026, 10, 25, 15, 0);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const at = (day, hour, minute) => new Date(2026, 10, day, hour, minute).toISOString();
 // The release check state of a status message, with an offer or without.
-const state = (update, more = {}) => ({ version: '0.0.14', canUpdate: true, checked: at(25, 10, 41), ...(update ? { offer: update } : {}), ...more });
+const state = (update, more = {}) => ({ version: '0.0.14', canUpdate: true, checks: 1, checked: at(25, 10, 41), ...(update ? { offer: update } : {}), ...more });
 
 test('a check time names the day of an earlier check', () => {
   assert.equal(checkedTime(at(25, 10, 41), now, 'en-US'), '10:41 AM');
@@ -244,10 +244,23 @@ test('Check now shows the check as running until the status watch reports it', a
   assert.ok(button.disabled);
   panel.show(state(undefined, { checking: true }), []);
   assert.equal(button.textContent, 'Checking…');
-  panel.show(state(offer, { checked: at(25, 14, 59) }), []);
+  panel.show(state(offer, { checks: 2, checked: at(25, 14, 59) }), []);
   assert.equal(button.textContent, 'Check now');
   assert.ok(!button.disabled);
   assert.equal(nodes['update-open'].textContent, 'Update…');
+});
+
+test('a check that ends in the same second as the last one ends Check now', async () => {
+  const { nodes, panel, check } = setup();
+  const button = nodes['release-check'];
+  panel.show(state(), []);
+  check();
+  await tick();
+  // The watch did not see the check run, and the check time and the result are the same.
+  // The count of checks still tells that the check ended.
+  panel.show(state(undefined, { checks: 2 }), []);
+  assert.equal(button.textContent, 'Check now');
+  assert.ok(!button.disabled);
 });
 
 test('a failed check request shows its reason until a later check', async () => {
@@ -261,7 +274,7 @@ test('a failed check request shows its reason until a later check', async () => 
   assert.ok(!nodes['release-problem'].hidden);
   panel.show(state(), []);
   assert.ok(!nodes['release-problem'].hidden);
-  panel.show(state(undefined, { checked: at(25, 14, 59) }), []);
+  panel.show(state(undefined, { checks: 2 }), []);
   assert.ok(nodes['release-problem'].hidden);
 });
 

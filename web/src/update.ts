@@ -102,9 +102,9 @@ export class UpdatePanel {
   private stale = false;
   // The error of a start from this dialog. It stays until the dialog opens again.
   private startError = '';
-  // The check time that the view knew when it asked for a check. The card shows the
+  // The count of checks that the view knew when it asked for a check. The card shows the
   // check as running until the status watch reports it or a later check.
-  private pending: string | undefined;
+  private pending: number | undefined;
   // The error of the last check request from this view. A later check removes it.
   private checkError = '';
   // The dot on Settings shows.
@@ -129,10 +129,11 @@ export class UpdatePanel {
   // start the update. Then the card shows its progress. During a pending start, the
   // dialog becomes stale instead, so that it can still show the result of the start.
   show(release: Release | undefined, live: readonly string[]): void {
-    if (release?.checking || release?.checked !== this.release?.checked) this.checkError = '';
+    const checks = release?.checks ?? 0;
+    if (release?.checking || checks !== (this.release?.checks ?? 0)) this.checkError = '';
     this.release = release;
     this.live = live;
-    if (!release || release.checking || (release.checked ?? '') !== this.pending) this.pending = undefined;
+    if (!release || release.checking || checks !== this.pending) this.pending = undefined;
     this.render();
     const update = release?.offer;
     if (!this.dialog.open || this.stale) return;
@@ -205,7 +206,7 @@ export class UpdatePanel {
 
   private async checkNow(): Promise<void> {
     if (this.pending !== undefined || this.release?.checking) return;
-    this.pending = this.release?.checked ?? '';
+    this.pending = this.release?.checks ?? 0;
     this.checkError = '';
     this.render();
     try {

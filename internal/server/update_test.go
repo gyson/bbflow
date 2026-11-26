@@ -258,6 +258,65 @@ func TestStatusShowsTheCheck(t *testing.T) {
 	}
 }
 
+// Two checks can end in the same second, with the same result, and so fast that the
+// status watch does not see them run. The count of checks still changes the status, so
+// that a view sees the end of its check.
+func TestEachCheckChangesTheStatus(t *testing.T) {
+	releases := &fakeReleases{offers: []*protocol.Update{nil}}
+	u := serveReleases(t, releases)
+	u.state("first check", func(r protocol.Release) bool { return r.Checks == 1 && !r.Checking })
+	for want := int64(2); want <= 4; want++ {
+		if err := u.check(); err != nil {
+			t.Fatal(err)
+		}
+		u.state(fmt.Sprint("check ", want), func(r protocol.Release) bool { return r.Checks == want && !r.Checking })
+	}
+}
+
+// A check that ends during an update applies when the update fails, because the server
+// then continues. Until then, the views show the update in progress and the earlier
+// check time.
+func TestCheckDuringUpdateAppliesAfterFailure(t *testing.T) {
+	before, after := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC), time.Date(2026, 11, 25, 11, 0, 0, 0, time.UTC)
+	newer := protocol.Update{Version: "0.0.1", Available: "0.0.3"}
+	for _, tc := range []struct {
+		name  string
+		later *protocol.Update
+		err   error
+		want  protocol.Release
+	}{
+		{"same release", &offer002, nil, protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z",
+			Offer: &protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", State: "failed", Error: "download failed"}}},
+		{"newer release", &newer, nil, protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z",
+			Offer: &protocol.Update{Revision: 2, Version: "0.0.1", Available: "0.0.3", State: "available"}}},
+		{"failed check", nil, errors.New("GitHub is down"), protocol.Release{Checks: 2, Checked: "2026-11-25T11:00:00Z", Error: "GitHub is down",
+			Offer: &protocol.Update{Revision: 1, Version: "0.0.1", Available: "0.0.2", State: "failed", Error: "download failed"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := updates{wake: make(chan struct{}, 1)}
+			fresh := func(offer *protocol.Update) *protocol.Update {
+				if offer == nil {
+					return nil
+				}
+				copy := *offer
+				return &copy
+			}
+			u.ended(fresh(&offer002), nil, before)
+			if _, err := u.start("0.0.2", 1); err != nil {
+				t.Fatal(err)
+			}
+			u.ended(fresh(tc.later), tc.err, after)
+			if state := u.current(); state.Checked != "2026-11-25T10:00:00Z" || state.Error != "" || state.Offer.State != "updating" {
+				t.Fatalf("state during the update: %+v %+v", state, state.Offer)
+			}
+			u.failed("0.0.2", errors.New("download failed"))
+			if state := u.current(); !sameRelease(state, tc.want) {
+				t.Fatalf("state after the failure: %+v %+v", state, state.Offer)
+			}
+		})
+	}
+}
+
 // A check request runs at once, also while the setting is off. A running check answers
 // another request. The result shows, and a view can start its offer.
 func TestCheckNowRunsWhileTheSettingIsOff(t *testing.T) {
