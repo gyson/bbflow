@@ -103,7 +103,7 @@ func titleCommand(tool protocol.TitleTool, model, effort string) string {
 	if tool.Type == "" {
 		return tool.Command
 	}
-	return models.Command(tool.Type, tool.Prefix, model, effort, "") + tool.Suffix
+	return models.Command(tool.Type, tool.Prefix, model, effort, "", false) + tool.Suffix
 }
 
 // pathMask replaces the characters that start or separate a local path in the message.
@@ -125,7 +125,7 @@ func findTitleTool(choice history.TitleChoice) (protocol.TitleTool, error) {
 // findTitleToolWith is findTitleTool with the programs of the agent types.
 func findTitleToolWith(choice history.TitleChoice, programs map[string]string) (protocol.TitleTool, error) {
 	id, command := choice.Tool, choice.Command
-	if err := models.Validate(history.TitleType(id), choice.Model, choice.Effort, ""); err != nil {
+	if err := models.Validate(history.TitleType(id), choice.Model, choice.Effort, "", false); err != nil {
 		return protocol.TitleTool{}, fmt.Errorf("only the title tools of Claude, Codex, and Code Puppy take a model and an effort: %w", err)
 	}
 	if id == "custom" {

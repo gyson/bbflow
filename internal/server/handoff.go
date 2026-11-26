@@ -95,7 +95,7 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 	if _, err = agent.Canonical(session.Workspace); err != nil {
 		return session, nil, fmt.Errorf("the session workspace is not available: %w", err)
 	}
-	tool, command, err := s.continueTool(request.Tool, request.Model, request.Effort, request.Permission, session.Workspace)
+	tool, command, err := s.continueTool(request.Tool, request.Model, request.Effort, request.Permission, request.CodeMode, session.Workspace)
 	if err != nil {
 		return session, nil, err
 	}
@@ -111,18 +111,18 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 }
 
 // continueTool returns the tool name and its startup command, with the options of the
-// model, the effort, and the permission mode. An empty value selects the default of the
-// CLI, as in a draft. The view sends the defaults of the tool, unless the user changes
+// model, the effort, the permission mode, and Code Mode. An empty value or false selects
+// the default of the CLI, as in a draft. The view sends the defaults of the tool, unless the user changes
 // them. In a managed worktree, an Antigravity command also trusts the workspace. See
 // trustWorktree.
-func (s *Server) continueTool(id, model, effort, permission, workspace string) (name, command string, err error) {
+func (s *Server) continueTool(id, model, effort, permission string, codeMode bool, workspace string) (name, command string, err error) {
 	settings, err := s.store.Settings()
 	if err != nil {
 		return "", "", err
 	}
 	if id == "" {
-		if model != "" || effort != "" || permission != "" {
-			return "", "", errors.New("Shell has no model, effort, or permissions")
+		if model != "" || effort != "" || permission != "" || codeMode {
+			return "", "", errors.New("Shell has no model, effort, permissions, or Code Mode")
 		}
 		return "Shell", "", shellChoice(settings)
 	}
@@ -130,10 +130,10 @@ func (s *Server) continueTool(id, model, effort, permission, workspace string) (
 	if err != nil {
 		return "", "", err
 	}
-	if err = models.Validate(tool.Type, model, effort, permission); err != nil {
+	if err = models.Validate(tool.Type, model, effort, permission, codeMode); err != nil {
 		return "", "", err
 	}
-	return tool.Name, s.trustWorktree(tool.Type, models.Command(tool.Type, tool.Command, model, effort, permission), workspace), nil
+	return tool.Name, s.trustWorktree(tool.Type, models.Command(tool.Type, tool.Command, model, effort, permission, codeMode), workspace), nil
 }
 
 // handoffTerminal is one earlier terminal in the handoff folder. Number counts from 1 in

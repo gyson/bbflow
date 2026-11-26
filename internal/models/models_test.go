@@ -37,7 +37,7 @@ func TestCommand(t *testing.T) {
 		{Codex, "codex", "", "", "plan", "codex"},
 		{Custom, "./review.sh", "", "", "yolo", "./review.sh"},
 	} {
-		if got := Command(test.kind, test.command, test.model, test.effort, test.permission); got != test.want {
+		if got := Command(test.kind, test.command, test.model, test.effort, test.permission, false); got != test.want {
 			t.Errorf("Command(%q, %q, %q, %q, %q) = %q, want %q", test.kind, test.command, test.model, test.effort, test.permission, got, test.want)
 		}
 	}
@@ -77,8 +77,46 @@ func TestValidate(t *testing.T) {
 		{"", "", "", "approve-for-me", false},
 		{Codex, "", "", "ask; rm -rf ~", false},
 	} {
-		if err := Validate(test.kind, test.model, test.effort, test.permission); (err == nil) != test.ok {
+		if err := Validate(test.kind, test.model, test.effort, test.permission, false); (err == nil) != test.ok {
 			t.Errorf("Validate(%q, %q, %q, %q) = %v, want ok %v", test.kind, test.model, test.effort, test.permission, err, test.ok)
+		}
+	}
+}
+
+// Code Mode puts the environment variable before the command of Claude Code, also with
+// a CLI path and the other options. Code Mode off adds nothing, and the other types get
+// no variable.
+func TestCodeModeCommand(t *testing.T) {
+	for _, test := range []struct {
+		kind, command, model, effort, permission string
+		codeMode                                 bool
+		want                                     string
+	}{
+		{Claude, "claude", "", "", "", true, "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude"},
+		{Claude, "~/bin/claude", "opus", "high", "auto", true, "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 ~/bin/claude --model opus --effort high --permission-mode auto"},
+		{Claude, "claude", "opus", "", "", false, "claude --model opus"},
+		{Codex, "codex --no-alt-screen", "", "", "", true, "codex --no-alt-screen"},
+		{Custom, "claude", "", "", "", true, "claude"},
+	} {
+		if got := Command(test.kind, test.command, test.model, test.effort, test.permission, test.codeMode); got != test.want {
+			t.Errorf("Command(%q, %q, %q, %q, %q, %v) = %q, want %q", test.kind, test.command, test.model, test.effort, test.permission, test.codeMode, got, test.want)
+		}
+	}
+}
+
+// Only Claude Code accepts Code Mode.
+func TestValidateCodeMode(t *testing.T) {
+	for _, test := range []struct {
+		kind string
+		ok   bool
+	}{
+		{Claude, true}, {Codex, false}, {Agy, false}, {CodePuppy, false}, {Custom, false}, {"", false},
+	} {
+		if err := Validate(test.kind, "", "", "", true); (err == nil) != test.ok {
+			t.Errorf("Validate(%q) with Code Mode = %v, want ok %v", test.kind, err, test.ok)
+		}
+		if err := Validate(test.kind, "", "", "", false); err != nil {
+			t.Errorf("Validate(%q) without Code Mode = %v", test.kind, err)
 		}
 	}
 }

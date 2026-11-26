@@ -71,6 +71,15 @@ requests through an automatic review. The `/permissions` menu of Codex describes
 "Only ask for actions detected as potentially unsafe." See
 [Permission modes](SPEC.md#permission-modes) for the options of each mode.
 
+**Code Mode** of Claude Code is an experiment of Claude Code. In it, Claude writes
+JavaScript that calls several tools in one step. Select **On** to start Claude Code in
+Code Mode. bbflow then puts `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1` before the command.
+The first time, Claude Code asks you to confirm in the terminal. Select **Yes, turn on
+Code Mode**, and Claude Code restarts. If Code Mode causes a problem, select **CLI
+default**. bbflow then starts Claude Code as before. To use Code Mode in each new Claude
+Code session, set **Default Code Mode** of Claude Code to **On**. See
+[Code Mode](SPEC.md#code-mode) for the limits.
+
 In a worktree, bbflow also tells Antigravity to trust the session folder for that
 session. Thus Antigravity does not ask about each new worktree. It does this also when
 you did not trust the project folder in Antigravity. Antigravity can then read, edit,
@@ -109,7 +118,7 @@ See [Project menu](SPEC.md#project-menu) for the rules.
 
 ## Start a session
 
-<img src="images/draft.png" alt="The Prepare a session form of a draft. The session name is first. Below it, the tool Claude Code, its model, its thinking effort, and its permissions share a row, with the command that bbflow submits. Use worktree, the starting branch, and the Start session button follow. The message editor is below the form.">
+<img src="images/draft.png" alt="The Prepare a session form of a draft. The session name is first. Below it, the tool Claude Code, its model, its thinking effort, and its permissions share a row. Code Mode is on the next row, with the command that bbflow submits. Use worktree, the starting branch, and the Start session button follow. The message editor is below the form.">
 
 1. Click **＋** beside a project to create a draft. As an alternative, click
    **＋ New session** on Home, then select the project.

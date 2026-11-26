@@ -94,7 +94,7 @@ func TestDraftsTakeToolDefaultsAndLaunchWithTheChosenModelAndPermissions(t *test
 		{"script", "", "", "", "Script", "echo script"},
 		{"", "", "", "", "Shell", ""},
 	} {
-		name, command, err := s.continueTool(c.tool, c.model, c.effort, c.permission, project.Workspace)
+		name, command, err := s.continueTool(c.tool, c.model, c.effort, c.permission, false, project.Workspace)
 		if err != nil || name != c.name || command != c.command {
 			t.Fatalf("continue %q %q %q %q: %q %q %v", c.tool, c.model, c.effort, c.permission, name, command, err)
 		}
@@ -103,8 +103,82 @@ func TestDraftsTakeToolDefaultsAndLaunchWithTheChosenModelAndPermissions(t *test
 	// permission mode.
 	for _, invalid := range [][4]string{{"builtin-codex", "gpt; id", "", ""}, {"builtin-code-puppy", "codex-gpt-6-luna", "high", ""}, {"script", "gpt-6-luna", "", ""}, {"", "gpt-6-luna", "", ""}, {"", "", "high", ""},
 		{"builtin-codex", "", "", "plan"}, {"script", "", "", "approve-for-me"}, {"", "", "", "yolo"}} {
-		if _, _, err = s.continueTool(invalid[0], invalid[1], invalid[2], invalid[3], project.Workspace); err == nil {
+		if _, _, err = s.continueTool(invalid[0], invalid[1], invalid[2], invalid[3], false, project.Workspace); err == nil {
 			t.Fatalf("a new terminal accepted %q", invalid)
+		}
+	}
+}
+
+// A draft copies Code Mode from the Claude Code tool, and the launch puts the variable
+// before the command. Code Mode off adds nothing. Only Claude Code accepts Code Mode, in
+// a draft and in a new terminal.
+func TestCodeModeInDraftsAndNewTerminals(t *testing.T) {
+	s, _ := composerServer(t)
+	project, err := s.addProject("Code Mode project", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := s.store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range settings.Tools {
+		tool := &settings.Tools[i]
+		tool.Enabled = true
+		if tool.Type == models.Claude {
+			tool.Model, tool.Permission, tool.CodeMode = "opus", "auto", true
+		}
+	}
+	settings.DefaultTool = "builtin-claude"
+	if _, err = s.store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	draft, err := s.prepareProject(context.Background(), project.ID, "")
+	if err != nil || !draft.Preparation.CodeMode || draft.Preparation.Command != "claude" {
+		t.Fatalf("the draft did not copy Code Mode: %+v %v", draft.Preparation, err)
+	}
+	save := func(tool string, codeMode bool) (history.Session, error) {
+		current, err := s.store.Session(draft.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.savePreparation(&protocol.Request{Session: draft.ID, Preparation: &protocol.PreparationConfig{
+			Revision: current.Preparation.Revision, ToolID: tool, Model: "opus", CodeMode: codeMode}})
+	}
+	for _, tool := range []string{"builtin-codex", ""} {
+		if _, err = save(tool, true); err == nil {
+			t.Fatalf("a draft of %q accepted Code Mode", tool)
+		}
+	}
+	saved, err := save("builtin-claude", false)
+	if err != nil || saved.Preparation.CodeMode {
+		t.Fatalf("the draft did not turn Code Mode off: %+v %v", saved.Preparation, err)
+	}
+	if saved, err = save("builtin-claude", true); err != nil || !saved.Preparation.CodeMode {
+		t.Fatalf("the draft did not turn Code Mode on: %+v %v", saved.Preparation, err)
+	}
+	_, run, err := s.launchPrepared(context.Background(), draft.ID, saved.Preparation.Revision, protocol.Size{Rows: 24, Cols: 80})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude --model opus"; run.Command != want {
+		t.Fatalf("launch command %q, want %q", run.Command, want)
+	}
+	for _, c := range []struct {
+		tool     string
+		codeMode bool
+		command  string
+	}{
+		{"builtin-claude", true, "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude --permission-mode auto"},
+		{"builtin-claude", false, "claude --permission-mode auto"},
+	} {
+		if _, command, err := s.continueTool(c.tool, "", "", "auto", c.codeMode, project.Workspace); err != nil || command != c.command {
+			t.Fatalf("continue with Code Mode %v: %q %v", c.codeMode, command, err)
+		}
+	}
+	for _, tool := range []string{"builtin-codex", ""} {
+		if _, _, err := s.continueTool(tool, "", "", "", true, project.Workspace); err == nil {
+			t.Fatalf("a new terminal of %q accepted Code Mode", tool)
 		}
 	}
 }

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fallbackTool, toolSwitch, defaultLabels, duplicateGroupError, duplicateName, duplicateNameError, duplicatePromptError, groupEdit, groupMove, groupProblem, groupRemoval, maxPromptGroups, failedTitleChange, maxPrompts, mergeToolEdit, parsePort, FieldEdit, portStatus, portText, promptEdit, promptMove, promptProblem, promptRemoval, RemoteChanged, remoteStatus, remoteValue, sameSettings, SettingsSaves, statusText, titleControls, toolEdit, toolRemoval } from './dist/settings-model.js';
 
-const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', permission: '', path: '', builtin: false, enabled: true };
-const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', permission: '', path: '', builtin: false, enabled: true };
+const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', permission: '', codeMode: false, path: '', builtin: false, enabled: true };
+const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', permission: '', codeMode: false, path: '', builtin: false, enabled: true };
 const settings = { revision: 4, appearance: 'system', defaultTool: 'a', worktree: false, base: 'HEAD', tools: [agent, other] };
 
 test('an unchanged tool or defaults do not need another save', () => {
@@ -18,7 +18,7 @@ test('a saved edit applies its changed fields to the latest tool', () => {
   const latest = { ...agent, command: 'agent --new' };
   assert.deepEqual(mergeToolEdit([other, latest], renamed, agent), [
     other,
-    { id: 'a', name: 'Renamed', command: 'agent --new', type: 'custom', model: '', effort: '', permission: '', path: '', builtin: false, enabled: true },
+    { id: 'a', name: 'Renamed', command: 'agent --new', type: 'custom', model: '', effort: '', permission: '', codeMode: false, path: '', builtin: false, enabled: true },
   ]);
   assert.throws(() => mergeToolEdit([other], renamed, agent), /removed/);
 });
@@ -39,6 +39,14 @@ test('an edit of the permission mode saves only that mode, and another edit keep
   assert.deepEqual(mergeToolEdit([latest], { ...codex, permission: 'approve-for-me' }, codex), [{ ...latest, permission: 'approve-for-me' }]);
   assert.deepEqual(mergeToolEdit([latest], { ...codex, path: '/opt/codex' }, codex), [{ ...latest, path: '/opt/codex' }]);
   assert.ok(!sameSettings(settings, { ...settings, tools: [{ ...agent, permission: 'yolo' }, other] }));
+});
+
+test('an edit of Code Mode saves only Code Mode, and another edit keeps the latest Code Mode', () => {
+  const claude = { ...agent, type: 'claude', model: 'opus', permission: '', codeMode: false };
+  const latest = { ...claude, permission: 'auto', codeMode: true };
+  assert.deepEqual(mergeToolEdit([{ ...claude, permission: 'auto' }], { ...claude, codeMode: true }, claude), [latest]);
+  assert.deepEqual(mergeToolEdit([latest], { ...claude, path: '/opt/claude' }, claude), [{ ...latest, path: '/opt/claude' }]);
+  assert.ok(!sameSettings(settings, { ...settings, tools: [{ ...agent, codeMode: true }, other] }));
 });
 
 test('adding the same tool twice keeps one copy', () => {

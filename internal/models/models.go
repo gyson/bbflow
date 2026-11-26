@@ -1,6 +1,6 @@
 // Package models knows the agent CLIs that bbflow can start with a chosen model, thinking
-// effort, and permission mode. It builds the options of a startup command, and it reads
-// the model list of each CLI.
+// effort, permission mode, and, for Claude Code, Code Mode. It builds the options of a
+// startup command, and it reads the model list of each CLI.
 package models
 
 import (
@@ -73,6 +73,7 @@ var presetArgs = map[string]string{Codex: "--no-alt-screen"}
 // BuiltinCommand returns the startup command of a built-in tool: its CLI path, or the
 // plain CLI name when the path is empty, then the fixed arguments of its type. The launch
 // then adds the model, effort, and permission options at the end. See Command.
+// Code Mode adds an environment variable at the start.
 func BuiltinCommand(kind, path string) string {
 	program := path
 	if program == "" {
@@ -91,15 +92,16 @@ var (
 	effortPattern = regexp.MustCompile(`^[a-z]{1,20}$`)
 )
 
-// Validate checks a tool type with its model, effort, and permission mode. An empty
-// model, effort, or permission mode selects the default of the CLI.
-func Validate(kind, model, effort, permission string) error {
+// Validate checks a tool type with its model, effort, permission mode, and Code Mode. An
+// empty model, effort, or permission mode selects the default of the CLI. Only Claude
+// Code has Code Mode. Code Mode off adds nothing, so the CLI uses its own setting.
+func Validate(kind, model, effort, permission string, codeMode bool) error {
 	if kind != "" && kind != Custom && !Typed(kind) {
 		return errors.New("tool type must be codex, claude, agy, code-puppy, or custom")
 	}
 	if !Typed(kind) {
-		if model != "" || effort != "" || permission != "" {
-			return errors.New("a custom tool has no model, effort, or permissions; put them in its command")
+		if model != "" || effort != "" || permission != "" || codeMode {
+			return errors.New("a custom tool has no model, effort, permissions, or Code Mode; put them in its command")
 		}
 		return nil
 	}
@@ -116,9 +118,18 @@ func Validate(kind, model, effort, permission string) error {
 		return errors.New("choose an Antigravity model before its effort")
 	case permission != "" && permissionOptions(kind, permission) == "":
 		return fmt.Errorf("%s has no permission mode %q", Name(kind), permission)
+	case codeMode && kind != Claude:
+		return fmt.Errorf("%s has no Code Mode; only Claude Code has it", Name(kind))
 	}
 	return nil
 }
+
+// CodeModePrefix turns on the experimental Code Mode of Claude Code. Claude Code has no
+// option for it. Its documentation turns it on with this environment variable in the
+// shell, so the launch puts the variable before the command. The variable then applies
+// to that process only. A "0" in the settings of the user or in managed settings still
+// keeps Code Mode off.
+const CodeModePrefix = "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 "
 
 // Permission is one choice of the Permissions menu of a tool type. Value is the saved
 // value. Options are the options that the launch adds. The web view has the same list,
@@ -174,8 +185,19 @@ func permissionOptions(kind, permission string) string {
 
 // Command returns the startup command with the model, effort, and permission options of
 // the type. The options go at the end, so the command must end with the agent call. An
-// empty model, effort, or permission mode adds no option.
-func Command(kind, command, model, effort, permission string) string {
+// empty model, effort, or permission mode adds no option. For Claude Code, Code Mode
+// puts CodeModePrefix before the command, so the command must start with the agent call
+// too. Code Mode off adds nothing.
+func Command(kind, command, model, effort, permission string, codeMode bool) string {
+	command = withOptions(kind, command, model, effort, permission)
+	if codeMode && kind == Claude {
+		return CodeModePrefix + command
+	}
+	return command
+}
+
+// withOptions adds the model, effort, and permission options of the type to the command.
+func withOptions(kind, command, model, effort, permission string) string {
 	var options []string
 	switch kind {
 	case Codex:

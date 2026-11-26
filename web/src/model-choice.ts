@@ -68,8 +68,17 @@ export function permissionOptions(type: string, permission: string): string {
   return permissionModes[type]?.find(mode => mode.value === permission)?.options ?? '';
 }
 
-// launchCommand adds the model, effort, and permission options of the type to the command.
-export function launchCommand(type: string, command: string, model: string, effort: string, permission = ''): string {
+// codeModePrefix turns on the experimental Code Mode of Claude Code. It matches
+// models.CodeModePrefix.
+export const codeModePrefix = 'CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 ';
+
+// codeModeChoices lists the Code Mode choices. CLI default adds nothing, so Claude Code
+// uses its own setting.
+export const codeModeChoices: readonly Choice[] = [{ value: '', label: 'CLI default' }, { value: 'on', label: 'On' }];
+
+// launchCommand adds the model, effort, and permission options of the type to the end of
+// the command. For Claude Code, Code Mode puts codeModePrefix before the command.
+export function launchCommand(type: string, command: string, model: string, effort: string, permission = '', codeMode = false): string {
   const options: string[] = [];
   if (type === 'codex') {
     if (model) options.push(`--model ${model}`);
@@ -85,14 +94,15 @@ export function launchCommand(type: string, command: string, model: string, effo
   }
   const mode = permissionOptions(type, permission);
   if (mode) options.push(mode);
-  return options.length ? `${command.replace(/ +$/, '')} ${options.join(' ')}` : command;
+  const full = options.length ? `${command.replace(/ +$/, '')} ${options.join(' ')}` : command;
+  return codeMode && type === 'claude' ? codeModePrefix + full : full;
 }
 
 // draftCommand returns the command that a draft submits. A draft keeps the snapshot of
 // its saved tool. A newly selected tool, which is not saved yet, brings its own type and
 // command. Shell, with the empty ID, has no command.
 export function draftCommand(saved: { toolId: string; toolType: string; command: string }, selected: string,
-  tools: readonly { id: string; type: string; command: string }[], model: string, effort: string, permission: string): string {
+  tools: readonly { id: string; type: string; command: string }[], model: string, effort: string, permission: string, codeMode = false): string {
   let type = saved.toolType, command = saved.command;
   if (selected !== saved.toolId) {
     const tool = tools.find(candidate => candidate.id === selected);
@@ -100,7 +110,7 @@ export function draftCommand(saved: { toolId: string; toolType: string; command:
     command = tool?.command ?? '';
   }
   const agent = typed(type);
-  return launchCommand(type, command, agent ? model : '', agent ? effort : '', agent ? permission : '');
+  return launchCommand(type, command, agent ? model : '', agent ? effort : '', agent ? permission : '', agent && codeMode);
 }
 
 // modelSummary is the short text of a model and an effort, such as "gpt-6-luna · Medium".
@@ -197,8 +207,9 @@ function loadList(server: ServerInfo, type: string, refresh: boolean, send: type
   return list;
 }
 
-// ModelPicker shows the model and effort controls with one prefix. With permission, it
-// also shows the Permissions menu. The fields element holds all controls. It is hidden
+// ModelPicker shows the model and effort controls with one prefix. A launch picker also
+// shows the Permissions menu, and the Code Mode menu for Claude Code. The fields element
+// holds all controls. It is hidden
 // for Shell and for a Custom tool. changed runs after each change by the user. A quiet
 // picker shows no notes about the list and the options. It shows only a failure of the
 // list, with Refresh list.
@@ -211,10 +222,13 @@ export class ModelPicker {
   private readonly effortSelect: HTMLSelectElement;
   private readonly effortHelp: HTMLElement;
   private readonly permissionSelect: HTMLSelectElement | null = null;
+  private readonly codeModeField: HTMLElement | null = null;
+  private readonly codeModeSelect: HTMLSelectElement | null = null;
   private type = '';
   private chosen = '';
   private chosenEffort = '';
   private chosenPermission = '';
+  private chosenCodeMode = false;
   private other = false;
   private list: ToolModels | null = null;
   private error = '';
@@ -225,7 +239,7 @@ export class ModelPicker {
   // shared list, and the next set reads the new one.
   private from: Promise<ToolModels> | undefined;
 
-  constructor(prefix: string, private readonly host: { server(): ServerInfo | null; changed(): void; send?: typeof call; quiet?: boolean; permission?: boolean }) {
+  constructor(prefix: string, private readonly host: { server(): ServerInfo | null; changed(): void; send?: typeof call; quiet?: boolean; launch?: boolean }) {
     this.fields = element(`${prefix}-models`, HTMLElement);
     this.modelSelect = element(`${prefix}-model`, HTMLSelectElement);
     this.otherInput = element(`${prefix}-model-other`, HTMLInputElement);
@@ -249,9 +263,13 @@ export class ModelPicker {
     };
     this.otherInput.oninput = () => { this.chosen = this.otherInput.value.trim(); this.render(); this.host.changed(); };
     this.effortSelect.onchange = () => { this.chosenEffort = this.effortSelect.value; this.render(); this.host.changed(); };
-    if (host.permission) {
+    if (host.launch) {
       const select = this.permissionSelect = element(`${prefix}-permission`, HTMLSelectElement);
       select.onchange = () => { this.chosenPermission = select.value; this.render(); this.host.changed(); };
+      this.codeModeField = element(`${prefix}-code-mode-field`, HTMLElement);
+      const codeMode = this.codeModeSelect = element(`${prefix}-code-mode`, HTMLSelectElement);
+      codeMode.replaceChildren(...codeModeChoices.map(choice => new Option(choice.label, choice.value)));
+      codeMode.onchange = () => { this.chosenCodeMode = codeMode.value === 'on'; this.render(); this.host.changed(); };
     }
     this.refresh.onclick = () => void this.load(true);
     pickers.add(this);
@@ -260,12 +278,14 @@ export class ModelPicker {
   get model(): string { return this.chosen; }
   get effort(): string { return this.chosenEffort; }
   get permission(): string { return this.chosenPermission; }
+  // codeMode is true only for Claude Code. Another type keeps no Code Mode.
+  get codeMode(): boolean { return this.chosenCodeMode && this.type === 'claude'; }
 
-  // set shows the type with a model, an effort, and a permission mode, and loads the model
-  // list of the type.
-  set(type: string, model: string, effort: string, permission = ''): void {
+  // set shows the type with a model, an effort, a permission mode, and Code Mode, and
+  // loads the model list of the type.
+  set(type: string, model: string, effort: string, permission = '', codeMode = false): void {
     const sameType = type === this.type;
-    this.type = type; this.chosen = model; this.chosenEffort = effort; this.chosenPermission = permission; this.other = false;
+    this.type = type; this.chosen = model; this.chosenEffort = effort; this.chosenPermission = permission; this.chosenCodeMode = codeMode; this.other = false;
     this.otherInput.value = '';
     const server = this.host.server();
     const shared = server && typed(type) ? lists.get(listKey(server, type)) : undefined;
@@ -352,6 +372,11 @@ export class ModelPicker {
       select.replaceChildren(...permissionChoices(type, this.chosenPermission).map(choice => new Option(choice.label, choice.value)));
       select.value = this.chosenPermission;
       select.disabled = this.locked;
+    }
+    if (this.codeModeField && this.codeModeSelect) {
+      this.codeModeField.hidden = type !== 'claude';
+      this.codeModeSelect.value = this.chosenCodeMode ? 'on' : '';
+      this.codeModeSelect.disabled = this.locked;
     }
   }
 }

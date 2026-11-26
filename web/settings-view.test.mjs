@@ -70,7 +70,7 @@ const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-
   'settings-remote-status',
   'settings-error', 'settings-status', 'settings-builtin-tools', 'settings-tools', 'tool-error', 'tool-add', 'tool-editor-dialog', 'tool-editor', 'tool-close',
   'tool-editor-title', 'tool-name', 'tool-command', 'tool-command-help', 'tool-path-field', 'tool-path', 'tool-path-help', 'tool-builtin-note', 'tool-identity', 'tool-command-field', 'tool-models',
-  'tool-model', 'tool-model-other', 'tool-model-help', 'tool-model-refresh', 'tool-effort', 'tool-effort-help', 'tool-permission',
+  'tool-model', 'tool-model-other', 'tool-model-help', 'tool-model-refresh', 'tool-effort', 'tool-effort-help', 'tool-permission', 'tool-code-mode-field', 'tool-code-mode',
   'tool-preview', 'tool-submit', 'tool-cancel', 'tool-editor-error', 'tool-remove-dialog', 'tool-remove-form',
   'cancel-tool-remove', 'tool-remove-summary', 'tool-remove-default', 'title-settings', 'title-tool', 'title-spinner',
   'title-builtin', 'title-tool-command', 'title-custom', 'title-custom-command', 'title-custom-save', 'title-test',
@@ -84,8 +84,8 @@ const ids = ['settings-view', 'settings-form', 'settings-appearance', 'settings-
   'prompt-group-remove-form', 'prompt-group-remove-title', 'prompt-group-remove-choice', 'prompt-group-keep', 'prompt-group-keep-text',
   'prompt-group-destination', 'prompt-group-drop', 'prompt-group-drop-text', 'prompt-group-drop-names', 'prompt-group-remove-submit',
   'cancel-prompt-group-remove'];
-const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', permission: '', builtin: false, enabled: true, path: '' };
-const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', permission: '', builtin: false, enabled: true, path: '' };
+const agent = { id: 'a', name: 'Agent', command: 'agent', type: 'custom', model: '', effort: '', permission: '', codeMode: false, builtin: false, enabled: true, path: '' };
+const other = { id: 'b', name: 'Other', command: 'other', type: 'custom', model: '', effort: '', permission: '', codeMode: false, builtin: false, enabled: true, path: '' };
 const saved = { revision: 4, appearance: 'system', defaultTool: '', worktree: false, base: 'HEAD', tools: [agent, other],
   titleTool: 'none', titleCommand: '', titleModel: '', titleEffort: '', updateCheck: true, port: 0, remoteOn: false, remoteHost: '', remoteLogin: '',
   prompts: [{ id: 'p1', name: 'Review PR', text: 'Review PR #', group: '' }, { id: 'p2', name: 'Run checks', text: 'Run make test.', group: '' }], promptGroups: [] };
@@ -241,7 +241,7 @@ test('Add custom tool adds a Custom tool with a name and a command, in a dialog'
   await tick();
   const request = await reply('settings-save');
   const added = request.settings.tools.at(-1);
-  assert.deepEqual({ ...added, id: '' }, { id: '', name: 'Codex search', command: 'codex --no-alt-screen --search', type: 'custom', model: '', effort: '', permission: '', builtin: false, enabled: true, path: '' });
+  assert.deepEqual({ ...added, id: '' }, { id: '', name: 'Codex search', command: 'codex --no-alt-screen --search', type: 'custom', model: '', effort: '', permission: '', codeMode: false, builtin: false, enabled: true, path: '' });
   assert.ok(!nodes['tool-editor-dialog'].open);
   assert.ok(!nodes['tool-add'].disabled);
 
@@ -759,7 +759,7 @@ test('a save of one remote field keeps the error of the other field', async () =
 });
 
 test('each tool has a switch, a built-in tool has no Remove or move, and turning off the default tool selects Shell', async () => {
-  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex', type: 'codex', model: '', effort: '', permission: '', builtin: true, enabled: true, path: '' };
+  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex', type: 'codex', model: '', effort: '', permission: '', codeMode: false, builtin: true, enabled: true, path: '' };
   const { nodes, reply, view, savedTools } = await setup();
   // The read of the open gives the saved tools to the sidebar.
   assert.deepEqual(savedTools, [saved.tools]);
@@ -856,7 +856,7 @@ test('a title tool of an agent CLI waits for Save and test, with its default mod
 });
 
 test('a built-in tool shows only its CLI path, model, effort, and permissions, and a tool of the user has no path', async () => {
-  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', permission: '', builtin: true, enabled: true, path: '' };
+  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', permission: '', codeMode: false, builtin: true, enabled: true, path: '' };
   const { nodes, pending, reply, view, type } = await setup();
   view.saves.update({ ...view.saves.saved, revision: 9, tools: [builtin, agent] });
   document.getElementById('tool-edit-a').onclick();
@@ -889,6 +889,31 @@ test('a built-in tool shows only its CLI path, model, effort, and permissions, a
   assert.ok(pending.some(call => call.request.operation === 'title-tools'));
 });
 
+test('the editor of the built-in Claude Code tool shows Default Code Mode, and other types hide it', async () => {
+  const claude = { id: 'builtin-claude', name: 'Claude Code', command: 'claude', type: 'claude', model: '', effort: '', permission: '', codeMode: false, builtin: true, enabled: true, path: '' };
+  const codex = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', permission: '', codeMode: false, builtin: true, enabled: true, path: '' };
+  const { nodes, reply, view } = await setup();
+  view.saves.update({ ...view.saves.saved, revision: 9, tools: [codex, claude, agent] });
+  document.getElementById('tool-edit-builtin-codex').onclick();
+  assert.ok(nodes['tool-code-mode-field'].hidden);
+  nodes['tool-cancel'].onclick();
+  document.getElementById('tool-edit-builtin-claude').onclick();
+  assert.ok(!nodes['tool-code-mode-field'].hidden);
+  const codeMode = nodes['tool-code-mode'];
+  assert.deepEqual(codeMode.children.map(option => option.text), ['CLI default', 'On']);
+  assert.equal(nodes['tool-preview'].textContent, 'claude');
+  codeMode.value = 'on';
+  codeMode.onchange();
+  assert.equal(nodes['settings-status'].textContent, 'Not saved: Edit of Claude Code');
+  // The variable goes before the command. Code Mode off adds nothing.
+  assert.equal(nodes['tool-preview'].textContent, 'CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude');
+  nodes['tool-editor'].onsubmit(event);
+  await tick();
+  const request = await reply('settings-save');
+  assert.equal(request.settings.tools[1].codeMode, true);
+  assert.equal(request.settings.tools[0].codeMode, false);
+});
+
 test('Shell has a switch in the built-in tools, and turning it off removes it from Default tool', async () => {
   const { nodes, reply, view } = await setup();
   view.saves.update({ ...view.saves.saved, revision: 9, defaultTool: '' });
@@ -907,7 +932,7 @@ test('Shell has a switch in the built-in tools, and turning it off removes it fr
 
 test('Refresh list in one picker reaches the other pickers of the same type', async () => {
   const codex = { id: 'codex', name: 'Codex', command: 'codex exec -', type: 'codex', prefix: 'codex exec', suffix: ' -', model: '', effort: '' };
-  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', permission: '', builtin: true, enabled: true, path: '' };
+  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', permission: '', codeMode: false, builtin: true, enabled: true, path: '' };
   const { nodes, pending, reply, view } = await setup([codex]);
   view.saves.update({ ...view.saves.saved, revision: 9, tools: [builtin, agent] });
   const list = id => ({ type: 'codex', source: 'codex debug models', loaded: 'now', efforts: [], models: [{ id, name: id, efforts: [] }] });
@@ -962,7 +987,7 @@ test('an unsaved title model goes after a close, and a newer model from another 
 
 test('of two refreshes that overlap, the later one reaches every picker', async () => {
   const codex = { id: 'codex', name: 'Codex', command: 'codex exec -', type: 'codex', prefix: 'codex exec', suffix: ' -', model: '', effort: '' };
-  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', permission: '', builtin: true, enabled: true, path: '' };
+  const builtin = { id: 'builtin-codex', name: 'Codex', command: 'codex --no-alt-screen', type: 'codex', model: '', effort: '', permission: '', codeMode: false, builtin: true, enabled: true, path: '' };
   const { nodes, reply, view } = await setup([codex]);
   view.saves.update({ ...view.saves.saved, revision: 9, tools: [builtin, agent] });
   const list = id => ({ type: 'codex', source: 'codex debug models', loaded: 'now', efforts: [], models: [{ id, name: id, efforts: [] }] });

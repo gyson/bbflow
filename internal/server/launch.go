@@ -47,7 +47,7 @@ func (s *Server) prepareProject(ctx context.Context, projectID, parentID string)
 	for _, tool := range settings.Tools {
 		if tool.ID == p.ToolID {
 			p.ToolName, p.ToolType, p.Command = tool.Name, tool.Type, tool.Command
-			p.Model, p.Effort, p.Permission = tool.Model, tool.Effort, tool.Permission
+			p.Model, p.Effort, p.Permission, p.CodeMode = tool.Model, tool.Effort, tool.Permission, tool.CodeMode
 		}
 	}
 	workspace, err := agent.Canonical(project.Workspace)
@@ -97,7 +97,8 @@ func (s *Server) savePreparation(request *protocol.Request) (history.Session, er
 	}
 	p, edit := *session.Preparation, request.Preparation
 	// A change of the tool copies its name, type, and command. The view sends the model,
-	// the effort, and the permission mode, also the defaults of a newly selected tool.
+	// the effort, the permission mode, and Code Mode, also the defaults of a newly
+	// selected tool.
 	if edit.ToolID != p.ToolID {
 		p.ToolID, p.ToolName, p.ToolType, p.Command = edit.ToolID, "Shell", "", ""
 		settings, err := s.store.Settings()
@@ -117,7 +118,7 @@ func (s *Server) savePreparation(request *protocol.Request) (history.Session, er
 		}
 	}
 	p.Revision, p.Worktree, p.Base, p.Branch = edit.Revision, edit.Worktree, edit.Base, edit.Branch
-	p.Model, p.Effort, p.Permission = edit.Model, edit.Effort, edit.Permission
+	p.Model, p.Effort, p.Permission, p.CodeMode = edit.Model, edit.Effort, edit.Permission, edit.CodeMode
 	return s.store.SavePreparation(session.ID, request.Name, p)
 }
 
@@ -149,7 +150,7 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 		}
 		workspace = parent.Workspace
 	}
-	command := models.Command(p.ToolType, p.Command, p.Model, p.Effort, p.Permission)
+	command := models.Command(p.ToolType, p.Command, p.Model, p.Effort, p.Permission, p.CodeMode)
 	run, err := prepareRun(&protocol.Run{Workspace: workspace, Title: session.Title, Command: command, Size: size})
 	if err != nil {
 		return session, nil, err
