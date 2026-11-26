@@ -1064,7 +1064,7 @@ Archived has no stop items, because archived sessions have no live terminal.
 
 Below the list, a row holds **＋ Project**, **Archived**, **Usage**, and **Settings**.
 In a narrow sidebar, **Usage** and **Settings** go to a second line together. **Usage**
-opens the [Usage dialog](#usage-dialog). **Usage** shows only when a tool with a
+opens the [Usage dialog](#usage-dialog), and it shows only when a tool with a
 [usage check](#usage-limits) is on. A newer release or a failed update shows as a
 [dot on Settings](#dot-on-settings). The instance directory shows below the row. The
 sidebar shows the server connection only while the server is unavailable.
@@ -2149,8 +2149,12 @@ no history.
   when it loads. A read or a save of the settings in the tab, in Settings or in the
   dialog, shows or hides **Usage** again. If the read at load fails, **Usage** stays
   hidden until a reload or until Settings opens.
+- Each read has its own connection, so its reply can come after the reply of a newer
+  read or save. A reply with an older settings revision does not change **Usage**.
 - A close of the dialog moves the focus to **Usage**. If the dialog hid **Usage**, the
-  close moves the focus to **Settings**.
+  close moves the focus to **Settings**. If the sidebar is hidden, the close moves the
+  focus to the sidebar button of the toolbar. ⌘B or a narrow window can hide the
+  sidebar while the dialog is open.
 - Each section has a row for each limit. A row shows the name of the limit, a bar, the
   part that is left, and the reset time. An example is **5-hour**, **62% left**, and
   **Resets 6:32 AM · in 3 h 52 min**.
@@ -5227,9 +5231,16 @@ A later browser check with the demo instance verified the saves in Settings:
   a tool that has a check, and shown with one. In Settings, a switch of Codex showed and
   hid **Usage** without a reload. A tab that loaded before a change in another client
   hid **Usage** when its dialog opened. The close of that dialog moved the focus to
-  **Settings**. With a tool on, a close with **Done** or Escape after a mouse click or
+  **Settings**. With a tool on, a close with **Close** or Escape after a mouse click or
   Enter on **Usage** moved the focus to **Usage**. Without **Usage**, the bottom row was on one line in a 900-pixel
   window.
+- A browser check of a demo instance delayed the reply of the read of the Usage dialog
+  by 2 seconds. A switch of Codex to off saved while the read waited. The late reply,
+  with the older revision and Codex on, did not show **Usage**, also after Settings
+  opened again. Without the revision check, the same steps showed **Usage**.
+- A browser check opened the Usage dialog, then hid the sidebar with ⌘B, or narrowed
+  the window of Settings to 600 pixels. The close of the dialog moved the focus to the
+  sidebar button of the toolbar.
 - A Settings fixture verifies that the sidebar gets the saved tools at the open of
   Settings and the tools of the reply after a tool switch.
 - A second browser check used a temporary server and a script in place of Claude Code,

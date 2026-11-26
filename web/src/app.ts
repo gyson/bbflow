@@ -1,5 +1,5 @@
 import { call, errorMessage, sessionTitle, VERSION } from './protocol.js';
-import type { Handoff, PreparedSession, Project, Preparation, Run, TerminalInfo, Tool, Worktree, ServerInfo, SessionInfo, Size, StreamRequest } from './protocol.js';
+import type { Handoff, PreparedSession, Project, Preparation, Run, Settings, TerminalInfo, Tool, Worktree, ServerInfo, SessionInfo, Size, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
 import { ComposerMenu } from './composer-menu.js';
 import { HistorySearch } from './history-search.js';
@@ -243,12 +243,14 @@ const composer = new Composer({
 const sessionSplit = new SessionSplit();
 const sessionMenu = new ActionMenu('session-menu');
 const rowMenus = new RowMenus(() => renderSessions(), $('row-menu-status'));
-const usageDialog = new UsageDialog({ server: () => server, tools: showUsageButton });
+const usageDialog = new UsageDialog({ server: () => server, settings: showUsageButton });
 // A close returns the focus to Usage. The browser cannot do it: Usage is off during the
 // read of the open, so the dialog can have no opener. The read can also hide Usage. The
-// focus then goes to Settings, the next button of the row.
+// focus then goes to Settings, the next button of the row. A hidden sidebar, after ⌘B
+// or in the drawer layout, gives the focus to the sidebar button of the toolbar.
 element('usage-dialog', HTMLDialogElement).addEventListener('close', () => {
-  ($('usage-open').hidden ? $('settings-open') : $('usage-open')).focus();
+  if (element('sidebar', HTMLElement).hidden) element('sidebar-toggle', HTMLButtonElement).focus();
+  else ($('usage-open').hidden ? $('settings-open') : $('usage-open')).focus();
 });
 const handoffPrompt = new HandoffPrompt({ blocked: () => composer.insertBlocked(), insert: text => composer.insert(text), problem: text => composer.problem(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
@@ -311,12 +313,16 @@ new FileListWidth();
 
 let showingSettings = false;
 // Usage shows only when a tool with a usage check is on. The page load, Settings, and the
-// Usage dialog read the settings, and each read updates it. The server does not tell this
-// tab about a change in another tab.
-function showUsageButton(tools: readonly Tool[]): void {
-  $('usage-open').hidden = !usageTools(tools).length;
+// Usage dialog read the settings, and each read updates it. Each read has its own
+// connection, so a reply can come after a newer one. An older revision changes nothing.
+// The server does not tell this tab about a change in another tab.
+let usageRevision = -1;
+function showUsageButton(settings: Settings): void {
+  if (settings.revision < usageRevision) return;
+  usageRevision = settings.revision;
+  $('usage-open').hidden = !usageTools(settings.tools).length;
 }
-const settingsView = new SettingsView(() => server, updateTerminalTheme, (title, detail) => toasts.show(title, detail), settings => showUsageButton(settings.tools));
+const settingsView = new SettingsView(() => server, updateTerminalTheme, (title, detail) => toasts.show(title, detail), showUsageButton);
 const preparation = new PreparationEditor({
   server: () => server,
   changed(session) {
@@ -1979,7 +1985,7 @@ async function initialize() {
     $('instance-dir').textContent = server.dataDir;
     $('instance-dir').title = server.dataDir;
     await refreshSessions();
-    void call(info, { operation: 'settings-get' }).then(settings => showUsageButton(settings.tools), () => {});
+    void call(info, { operation: 'settings-get' }).then(showUsageButton, () => {});
     watchStatuses(info);
     void composerMenu.refresh();
     const route = parseRoute(location.pathname);
