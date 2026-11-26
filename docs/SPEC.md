@@ -1905,8 +1905,7 @@ folder:
 
 The server keeps each list in memory until **Refresh list** or a server restart. A failed
 command keeps no list, and its error shows below the menu. **Other…** still works then.
-The tool editor in Settings also tells where each list comes from, and it has **Refresh
-list**. A draft and the **Continue in new terminal** dialog show only the error of a
+The tool editor in Settings also has **Refresh list**. A draft and the **Continue in new terminal** dialog show only the error of a
 failed list. A refresh also updates each other
 model menu of the type that is in view. A chosen model stays, also when the new list does
 not have it. When two refreshes overlap, only the later one updates the menus.
@@ -3363,7 +3362,8 @@ sessions. Closing it leaves recording and the active session connection running.
 
 The selected session is the default scope. This scope includes all its earlier
 terminals. The project option shows the name of the project, or **This project**
-without a name. It uses current project membership. **All sessions** includes
+without a name. A long name shrinks the menu to the width of the dialog, and **Match
+case** keeps its place. The option uses current project membership. **All sessions** includes
 standalone sessions and other projects. Every scope includes archived sessions. Without
 a selected session, the dialog selects **All sessions** and waits for search text.
 **Search this project** in the [project menu](#project-menu) selects the project option
