@@ -375,9 +375,11 @@ the same executable continue on the previous version until you restart them.
 
 ### Update from the web UI
 
-The web UI can start the same update without this command. When the server finds a
-newer release, the sidebar shows it above **Settings**. The update starts only after
-you confirm in its dialog. See [update from the web UI](SPEC.md#update-from-the-web-ui).
+The web UI can start the same update without this command. The **Updates** card of
+Settings shows the result of the last release check, and **Check now** checks at once.
+When the server finds a newer release, a dot shows on **Settings** in the sidebar. The
+update starts only after you confirm in its dialog. See
+[update from the web UI](SPEC.md#update-from-the-web-ui).
 
 ## Query SQLite
 
@@ -638,7 +640,7 @@ the command prints the result.
 | `worktree` | `true` or `false`. No other spelling is a value. `true` selects **Use worktree** for new drafts in Git folders. A new installation starts with `true`. An upgrade keeps the saved value. |
 | `base` | The default starting branch or commit. An empty value selects `HEAD`. |
 | `shell` | `true` or `false`. `false` turns off the built-in Shell, so it is not a choice for new sessions. If Shell is the default tool, the first tool that is on becomes the default tool. |
-| `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
+| `update-check` | `true` or `false`. `true` lets the server read the latest release from GitHub when it starts and then once a day. A newer release then shows in the web UI. `false` stops only the daily check. **Check now** in Settings still checks. A new installation and an upgrade start with `true`. See [release check](SPEC.md#release-check). |
 | `port` | A port from 1024 to 65535, or `0` for the automatic port. The server uses it from the next start. A new installation and an upgrade start with `0`. The save fails when another program holds a new port, or when browsers refuse the port, such as 6000 and 10080. See [Instance directory](#instance-directory). |
 | `remote` | `true` or `false`. The switch of remote access. `true` turns remote access on while `remote-host` and `remote-login` are set. `false` turns it off and keeps both values. A new installation starts with `false`. See [remote access](SPEC.md#remote-access). |
 | `remote-host` | The host name of this computer in Tailscale Serve, such as `my-mac.example.ts.net`, with an optional port. An empty value, `""`, removes it. The server saves the name in lower case. See [remote access](SPEC.md#remote-access). |

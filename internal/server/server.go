@@ -40,6 +40,8 @@ type Server struct {
 	jobs sync.WaitGroup
 	// titles counts title changes. A status watch sends it, so that views read titles again.
 	titles atomic.Int64
+	// version is the bbflow version of the running server.
+	version string
 	// releases is nil for a build that cannot update, such as a development build.
 	releases Releases
 	updates  updates
@@ -61,9 +63,9 @@ type Server struct {
 // owns the archive and the exclusive server lock for its directory. Serve publishes
 // server.json and returns the published identity. The caller removes that descriptor
 // after its own cleanup, immediately before it releases the lock. Until then, clients
-// can identify a server that is shutting down. A nil releases turns off the release
-// check and the update operation.
-func Serve(ctx context.Context, listener net.Listener, store *history.Store, releases Releases) (protocol.ServerInfo, error) {
+// can identify a server that is shutting down. version is the bbflow version of the
+// server. A nil releases turns off the release check and the update operations.
+func Serve(ctx context.Context, listener net.Listener, store *history.Store, version string, releases Releases) (protocol.ServerInfo, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	executable, _ := os.Executable()
@@ -71,7 +73,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store, rel
 		Protocol: protocol.Version, Instance: history.ID(), PID: os.Getpid(),
 		DataDir: filepath.Dir(store.Path), Port: listener.Addr().(*net.TCPAddr).Port,
 		Executable: executable,
-	}, releases: releases, open: desktop.OpenInBrowser, reveal: desktop.Reveal}
+	}, version: version, releases: releases, open: desktop.OpenInBrowser, reveal: desktop.Reveal}
 	s.updates.load(store)
 	// Remote access stays off when the settings cannot be read.
 	if settings, err := store.Settings(); err == nil {
@@ -243,6 +245,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "worktree-remove":
 		err := s.removeWorktree(ctx, request.Session)
 		s.reply(conn, map[string]bool{"removed": err == nil}, err)
+	case "update-check":
+		err := s.checkNow()
+		s.reply(conn, map[string]bool{"checking": err == nil}, err)
 	case "update-start":
 		err := s.startUpdate(request.Version, request.Revision)
 		s.reply(conn, map[string]bool{"updating": err == nil}, err)

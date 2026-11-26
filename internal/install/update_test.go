@@ -86,6 +86,18 @@ func TestUpdateCheckDownloadsNoBinaries(t *testing.T) {
 	}
 }
 
+// The server shows the reason of a failed check in the web UI. It gets the installer
+// messages, not only the exit status.
+func TestFailedCheckGivesTheInstallerReason(t *testing.T) {
+	f := newFixture(t)
+	f.existing("0.0.1")
+	f.use("TEST_AUTH_FAIL=1")
+	_, err := CheckContext(t.Context(), f.destination)
+	if err == nil || !strings.HasPrefix(err.Error(), "cannot read release") || strings.Contains(err.Error(), "exit status") {
+		t.Fatal("failed check:", err)
+	}
+}
+
 func TestReleaseOrdering(t *testing.T) {
 	for _, tc := range []struct {
 		installed, available string

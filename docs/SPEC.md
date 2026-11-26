@@ -300,26 +300,35 @@ The web UI can start the same update after a release check. See
 ### Release check
 
 The server of a release build on macOS checks for a newer release by itself, at start
-and then once a day. It offers a newer version to the web UI. A setting turns the check
-off.
+and then once a day. **Check now** in Settings starts a check at once. The server offers
+a newer version to the web UI. A setting turns off the daily check.
 
 #### Schedule and setting
 
 - Development builds, other platforms, and a renamed executable do not check. For a
   renamed executable, `server.log` tells why.
-- While the **Check for a new version every day** setting is on, the server runs the
-  embedded installer with `--check`, as `bbflow update` does. The check downloads no
-  binaries.
-- The first check runs when the server starts. The next check runs 24 hours after the
-  previous check. Each server start checks again.
+- A check runs the embedded installer with `--check`, as `bbflow update` does. The
+  check downloads no binaries.
+- While the **Check for a new version every day** setting is on, the first check runs
+  when the server starts. The next check runs 24 hours after the previous check. Each
+  server start checks again.
+- `update-check` starts a check at once, also while the setting is off. **Check now**
+  sends it. A running check answers the request. The next daily check runs 24 hours
+  after it.
 - The result stays only in server memory.
 - A settings save applies at once, even while a check runs.
-- While the setting is off, the server sends no request and shows no offer, and a view
-  cannot start an update.
-- When the setting changes to on, the view shows the result of the last check again.
-  When the setting changes to on after a check is due, the check runs at once.
-- A failed check keeps the result of the last successful check. It writes its reason to
-  `server.log` and shows no error in the UI.
+- While the setting is off, the server sends no request by itself. The result of the
+  last check stays, and a view can start its update.
+- When the setting changes to on after a check is due, the check runs at once.
+- A check that ends during an update applies only if the update fails, because the
+  server then continues. Until then, the views show the update in progress and the
+  earlier check. The checks then apply in order. Thus a failed check keeps the offer
+  of a successful check before it.
+- The reason of a failed update stays with the release of that update until the next
+  update starts. A check that changes the offer or removes it keeps the reason.
+- A failed check keeps the offer of the last successful check. It writes its reason to
+  `server.log`. The status watch sends the reason, and the **Updates** card shows it.
+  The reason is the last message of the installer, as for a failed update.
 
 #### Offered version
 
@@ -339,23 +348,62 @@ terminal, so Ctrl+C in that terminal stops the installer.
 
 ### Update from the web UI
 
-The sidebar shows an offer when the release check finds a newer version. A click opens
-a confirmation dialog. After confirmation, the server installs the release and restarts
-itself. The restart stops all live sessions.
+The **Updates** card of Settings shows the release check state of the server. A dot on
+**Settings** in the sidebar tells of a newer version or a failed update. **Update…**, or
+**Restart…** for an installed version, opens a confirmation dialog. After confirmation, the server installs the release and restarts itself. The
+restart stops all live sessions.
 
-#### Offer and dialog
+#### Updates card
 
-- The [status watch](PROTOCOL.md#session-status) sends the offer to every view.
-- The sidebar then shows a button above **Settings**: **Update available: 0.0.15**, or
-  **Restart to use 0.0.15** for an offer that only restarts the server.
-- The button opens a confirmation dialog. The dialog shows the two versions and the
-  steps. It also links to the release notes on GitHub. **Cancel** changes nothing.
+The [status watch](PROTOCOL.md#release-check-state) sends the release check state to
+every view. The **Updates** card shows it:
+
+- The running version, for example **bbflow 0.0.14**.
+- A status line. It is one of these:
+
+  | State | Status line |
+  | --- | --- |
+  | Build that cannot check | **This build cannot check for a new version.** It also says that only a release build on macOS can check and update. |
+  | No check since the server started | **No check since the server started.** |
+  | Check running, no offer | **Checking for a new version…** |
+  | No newer version | **This is the newest version.** and the time of the last check. |
+  | Offer of a download | **bbflow 0.0.15 is available.** and the time of the last check. |
+  | Offer of a restart | **bbflow 0.0.15 is installed. A restart starts it.** and the time of the last check. |
+  | Update in progress | **Updating to 0.0.15…** |
+
+- The reason of a failed check, with its time, and the reason of a failed update.
+- **Update…**, or **Restart…** for an offer that only restarts the server. The button
+  opens the dialog. It shows only for an offer that can start.
+- **Check now**. It shows **Checking…** and is off while a check runs. It is also off
+  during an update. A build that cannot check does not show it.
+- **Release notes ↗** for an offer. The link opens the release on GitHub.
+- The **Check for a new version every day** setting. See
+  [Updates setting](#updates-setting).
+
+The time of the last check names the day for a check on an earlier day. A failed
+`update-check` request shows **Could not check:** and the reason. A later check removes
+it.
+
+#### Dot on Settings
+
+- The **Settings** button of the sidebar shows a dot for an offer that can start, and
+  for a failed update. The dot is red for a failed update, also without an offer.
+- The tooltip and the accessible name of the button name the failed update, if there is
+  one. Otherwise they name the offer.
+- A click on **Settings** with the dot opens Settings at the **Updates** card.
+- An update in progress shows in the page bar instead of the dot.
+
+#### Dialog
+
+- The dialog shows the two versions and the steps. It also links to the release notes
+  on GitHub. **Cancel** changes nothing.
 - The dialog names up to five live sessions that the restart stops and counts the
   others. It takes the live sessions from the same status message as the offer. Their
   titles come from the current session list, even after a rename.
-- While the status watch has no connection, the view does not know the live sessions.
-  Then the button and the dialog close until the watch sends the offer again.
-- An update in progress stays in the sidebar.
+- While the status watch has no connection, the view does not know the release check
+  state or the live sessions. Then the card shows **Waiting for the server.**, and the
+  dialog closes until the watch sends the state again.
+- An update in progress stays in the card.
 
 #### Confirmation
 
@@ -364,8 +412,7 @@ itself. The restart stops all live sessions.
 - A confirmation applies only to the offer that the dialog showed.
 - After confirmation, the view saves its message draft and its project draft form. Then
   it sends `update-start` with the version and the revision of that offer.
-- The server rejects another version, an earlier revision, a second update, and an
-  offer that the off setting hides.
+- The server rejects another version, an earlier revision, and a second update.
 - The offer can change, or the status watch can lose its connection, while the drafts
   save. Then the dialog stays open but does not change.
 - If the start fails, the dialog shows the error and allows no other attempt. The user
@@ -373,15 +420,16 @@ itself. The restart stops all live sessions.
 
 #### Server steps
 
-All views then show **Updating to 0.0.15…** in the sidebar. The server does these steps
-in the background:
+All views then show **Updating to 0.0.15…** in the **Updates** card and in the page
+bar. The server does these steps in the background:
 
 1. Lock the directory of the executable, as the update command does. If another update
    holds the lock, stop with an error. Do not wait.
 2. Read the version of the executable on disk. If it is the offered version, skip the
    download. The executable can disagree with the confirmed offer: the offer only
    restarts, or the executable has a newer version. Then stop and change nothing. The
-   sidebar shows the failure, and the server checks again at once. The views then show
+   card shows the failure, and the server checks again at once, also while the setting
+   is off. The views then show
    the new offer, which the user must confirm again. A late confirmation of the earlier
    offer from another view fails, because its revision is earlier.
 3. Download, verify, and install the offered release while the server continues. The
@@ -396,9 +444,10 @@ with an edit that was not saved keeps the edit and asks the user to reload.
 #### Failures of the server update
 
 A failure before step 4 leaves the server running. A failure before the rename in step
-3 also leaves the executable unchanged. The sidebar then shows
-**Update to 0.0.15 failed**. The dialog shows the reason, and the user can try again.
-If the updater ends while the server still runs, the offer shows that the restart failed
+3 also leaves the executable unchanged. The card then shows
+**The update to 0.0.15 failed:** and the reason. The dialog of the same release shows
+the reason too, and the user can try again.
+If the updater ends while the server still runs, the card shows that the restart failed
 and names `update.log`. A server that stops during the download stops the installer and
 does not start again. If it stops after the rename, the next server start uses the new
 executable.
@@ -738,8 +787,8 @@ about:
   the restart bar replaces it.
 - An update in progress and a server restart show in a bar at the top of the main area.
   The update bar follows the update state of the status watch in each view. Thus a
-  failed update removes it, and the sidebar shows the failure. A restart replaces the
-  update bar. The restart bar has **Reload page**.
+  failed update removes it, and the **Updates** card of Settings shows the failure. A
+  restart replaces the update bar. The restart bar has **Reload page**.
 - After **Copy session ID**, the More actions button shows **Session ID copied** as its
   tooltip for a short time.
 - After **Copy folder path**, the ⋯ button of the project shows **Folder path copied**
@@ -971,9 +1020,9 @@ the home page shows `bbflow`.
 
 Below the list, a row holds **＋ Project**, **Archived**, **Usage**, and **Settings**.
 In a narrow sidebar, **Usage** and **Settings** go to a second line together. **Usage**
-opens the [Usage dialog](#usage-dialog). A newer release shows above this row. The
-instance directory shows below the row. The sidebar shows the server connection only
-while the server is unavailable.
+opens the [Usage dialog](#usage-dialog). A newer release or a failed update shows as a
+[dot on Settings](#dot-on-settings). The instance directory shows below the row. The
+sidebar shows the server connection only while the server is unavailable.
 
 ### Session families
 
@@ -1631,9 +1680,11 @@ without CSS `light-dark()` support uses the Light palette.
 
 #### Updates setting
 
-**Updates** has the **Check for a new version every day** setting. It saves at once.
-New installations and upgrades start with the setting on. See
-[Release check](#release-check).
+**Updates** shows the running version and the result of the last release check. It has
+**Check now** and the **Check for a new version every day** setting. The setting saves
+at once and controls only the daily check. New installations and upgrades start with
+the setting on. See [Release check](#release-check) and
+[Updates card](#updates-card).
 
 #### Session defaults and tool commands
 
@@ -4420,21 +4471,40 @@ CLI versions.
   restart without a download when the executable already has the release, the reason of
   a failed download, and an unchanged server after it.
 - A server stop during a hanging check ends at once and leaves no temporary files.
+- A failed server check gives the installer message as its reason, not the exit status.
 - An in-process server fixture with a fake release source verifies a single check across
   setting changes, the offer in the status watch, rejected versions, a second update,
-  and a failed restart. It also verifies that an off setting during a slow check hides
-  the result and rejects its start.
+  and a failed restart. The offer stays when the setting changes to off.
+- The fixture verifies that the status watch shows a running check, the check time, and
+  a failed check, which keeps the earlier offer.
+- `update-check` runs a check while the setting is off. A request during a running
+  check starts no other check. A view can start the offer of that check.
+- Quick checks with the same result change the status watch by their count, also when
+  the watch does not see them run.
+- The checks that end during an update apply after the update fails. The failure
+  stays with its release when a check finds the same release, a newer release, or no
+  newer release. A failed check keeps the offer of a successful check before it, and
+  a successful check after a failed one applies. Until the failure, the state keeps
+  the update in progress and the earlier check time. At most two held results remain.
+- A development build sends its version and no check state. It rejects `update-check`
+  and `update-start`.
 - A newer save can reply first, and an earlier save does not then apply.
 - A stale offer starts a check at once.
 - A release fixture changes the executable back to 0.0.1 after a restart offer: the
   confirmed restart downloads nothing, and the server offers the download.
 - A second confirmation of the restart then fails.
 - A check of the same release and action keeps the revision.
-- Web fixtures verify the sidebar labels, the dialog text, and the session warning.
+- Web fixtures verify the text of the **Updates** card, the check times, the dialog
+  text, and the session warning.
 - A fake DOM fixture verifies that the open dialog counts the live sessions of the
   latest status message and shows the titles of the current list. It also verifies that
   a new offer closes the dialog, that the view confirms the revision of the shown offer,
   and that a lost status watch hides the offer.
+- The fixture verifies the dot on **Settings** and its accessible name. A failure stays
+  when the offer changes or goes, and the red dot shows it. **Check now** shows
+  **Checking…** until the status watch reports the check. A status message from before
+  the request does not end it. A new count of checks ends it, also with the same check
+  time. A failed request shows its reason until a later check.
 - A lost watch during a pending start that then fails allows no other attempt.
 - A failed start without a change allows one.
 - A failed settings update in migration 12 rolls back and keeps format 11.

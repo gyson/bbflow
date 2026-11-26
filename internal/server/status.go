@@ -101,12 +101,19 @@ func (s *Server) liveStatuses(now time.Time) map[string]string {
 	return statuses
 }
 
-func sameUpdate(a, b *protocol.Update) bool {
+func sameRelease(a, b protocol.Release) bool {
+	pointers := same(a.Offer, b.Offer) && same(a.Failed, b.Failed)
+	a.Offer, b.Offer, a.Failed, b.Failed = nil, nil, nil, nil
+	return pointers && a == b
+}
+
+// same compares the values of two pointers. Two nil pointers are the same.
+func same[T comparable](a, b *T) bool {
 	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }
 
 // watchStatus sends the status of each live terminal, then all of them again after each
-// change. It also sends them after a session title changes or the release offer
+// change. It also sends them after a session title changes or the release check state
 // changes. The statuses come from memory, not from the archive. A session whose terminal
 // ended is absent. The view must send ping at least every 30 seconds. Closing the view
 // only removes the watch.
@@ -127,14 +134,14 @@ func (s *Server) watchStatus(ctx context.Context, conn *protocol.Conn) {
 	defer ticker.Stop()
 	var sent map[string]string
 	var titles int64
-	var offer *protocol.Update
+	var shown protocol.Release
 	for {
-		next, revision, update := s.liveStatuses(time.Now()), s.titles.Load(), s.updates.current()
-		if sent == nil || !maps.Equal(sent, next) || revision != titles || !sameUpdate(offer, update) {
-			if conn.Send(protocol.Message{Type: "statuses", Statuses: next, Revision: revision, Update: update}) != nil {
+		next, revision, release := s.liveStatuses(time.Now()), s.titles.Load(), s.release()
+		if sent == nil || !maps.Equal(sent, next) || revision != titles || !sameRelease(shown, release) {
+			if conn.Send(protocol.Message{Type: "statuses", Statuses: next, Revision: revision, Release: &release}) != nil {
 				return
 			}
-			sent, titles, offer = next, revision, update
+			sent, titles, shown = next, revision, release
 		}
 		select {
 		case <-ctx.Done():

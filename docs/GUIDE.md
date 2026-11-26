@@ -221,6 +221,33 @@ learn these queries. See [COMMANDS.md](COMMANDS.md).
 Remote access from another device, such as a phone, is off by default. It works through
 Tailscale Serve. See [Remote access with Tailscale Serve](REMOTE.md) for the setup.
 
+## Update bbflow
+
+A dot on **Settings** at the bottom of the sidebar tells you that a new version of
+bbflow is available. A red dot tells you that an update failed. To update from the web
+UI, do these steps:
+
+1. Click **Settings**. Settings opens at the **Updates** card.
+2. Optional: to ask GitHub for the latest release now, click **Check now**.
+3. Click the button that the card shows. The dialog names the live sessions that the
+   restart stops.
+   - **Update…** is for a new version that bbflow must download.
+   - **Restart…** is for a version that the executable already has. Another instance
+     of bbflow can install it.
+4. Click **Update and restart**, or **Restart**.
+
+An update downloads the new version, replaces the executable, and restarts the server.
+A restart only restarts the server. The restart ends the live sessions. Their recorded
+history stays. Open tabs reload when the new server starts. **Check now** works also
+when **Check for a new version every day** is off.
+
+If the dot is red, the card shows the version of the failed update and the reason. If
+the card also shows **Update…** or **Restart…**, you can try again. If it shows neither
+button, bbflow knows no newer version now. To check again, click **Check now**.
+
+See [Update from the web UI](SPEC.md#update-from-the-web-ui) for the rules, and
+[Update bbflow](COMMANDS.md#update-bbflow) for the `bbflow update` command.
+
 ## Tips
 
 - **Keep more output for the handoff.** Run agents in the normal screen. A program that
