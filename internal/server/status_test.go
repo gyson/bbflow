@@ -217,6 +217,15 @@ func TestChangeThatIsChangedBackIsQuiet(t *testing.T) {
 			t.Fatalf("%s: status %s, classified %d, quiet events %v; expected %s, %d, %v", reason, s, got, quiet, status, classified, marked)
 		}
 	}
+	// lasts checks that a burst that counts gives the time of its latest change. The
+	// session is running until idleAfter after that change.
+	lasts := func(reason string, change time.Time) {
+		t.Helper()
+		before, after := r.status(change.Add(idleAfter-time.Millisecond)), r.status(change.Add(idleAfter))
+		if before != "running" || after != "idle" {
+			t.Fatalf("%s: status %s before and %s at %v after the latest change, expected running and idle", reason, before, after, idleAfter)
+		}
+	}
 	// The frames that Claude Code 2.1.332 wrote in a session with 173 columns.
 	notice := "\x1b[?25l\x1b[2D\x1b[3B\r\x1b[148C\x1b[1A\x1b[38;2;153;153;153mChecking for updates…\x1b[39m\r\r\n\x1b[2C\x1b[3A\x1b[?25h"
 	erase := "\x1b[?25l\x1b[2D\x1b[3B\r\x1b[148C\x1b[1A\x1b[K\r\r\n\x1b[2C\x1b[3A\x1b[?25h"
@@ -235,10 +244,12 @@ func TestChangeThatIsChangedBackIsQuiet(t *testing.T) {
 	// A notice that stays is activity.
 	wait(time.Minute)
 	publish("\x1b7\x1b[3;1H※ recap: the goal is a fix\x1b8") // 3
+	change := now
 	check("a notice that stays", "idle", 2, 1, 2)
 	wait(settleTime)
 	settle(false)
 	check("the settled notice", "running", 3, 1, 2)
+	lasts("the settled notice", change)
 
 	// A burst counts settleTime after its first change, also when a later change came
 	// less than settleTime before.
@@ -247,22 +258,26 @@ func TestChangeThatIsChangedBackIsQuiet(t *testing.T) {
 	publish("\x1b7\x1b[2;1HReading files\x1b8") // 4
 	wait(900 * time.Millisecond)
 	publish("\x1b7\x1b[3;1HRead 2 files\x1b8") // 5
+	change = now
 	wait(settleTime - 900*time.Millisecond - time.Millisecond)
 	settle(false)
 	check("two changes before one second", "idle", 3, 1, 2)
 	wait(time.Millisecond)
 	settle(false)
 	check("two changes after one second", "running", 5, 1, 2)
+	lasts("two changes", change)
 
 	// A blink that keeps changing the screen for settleTime is activity, also when the
 	// screen is then as it was.
 	wait(time.Minute)
 	idle()
 	for _, cell := range []string{" ", "●", " ", "●", " ", "●"} { // 6 to 11
+		change = now
 		publish("\x1b7\x1b[1;1H" + cell + "\x1b8")
 		wait(200 * time.Millisecond)
 	}
 	check("a blink for one second", "running", 11, 1, 2)
+	lasts("a blink", change)
 
 	// The echo after a view action ends a burst, when the echo comes before the view
 	// action ends the burst. The burst is quiet when the screen was back as it was.

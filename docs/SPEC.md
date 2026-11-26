@@ -2290,6 +2290,11 @@ process.
 - The session status uses the times of screen changes only. It cannot tell a completed
   task from a permission question. It shows `idle` for a command that works without a
   change on the screen.
+- An application that works also shows `idle` when it puts its screen back within 1
+  second after each change, and the screen then stays the same for 1 second. For
+  example, a footer text that shows for 500 milliseconds every 2 seconds never counts.
+  The same text every second shows `running`, because the screen changes 1 second after
+  the first change of the burst.
 - An application that changes its screen while it waits shows as `running`. A notice
   that stays for more than 1 second counts, also when the application erases it later.
 - `running` shows up to 1 second after the first change of a burst, when the burst
@@ -5092,7 +5097,8 @@ A later browser check with the demo instance verified the saves in Settings:
   notice and its erase keep `idle`, and they become quiet 1 second after the erase.
   Until then, the classified sequence stays before the burst. A notice that stays and a
   blink for 1 second show `running`. Two changes 900 milliseconds apart show `running`
-  1 second after the first change. An echo after an erased notice ends the burst as
+  1 second after the first change. Each of these three shows `running` until 10 seconds
+  after its latest change, and `idle` from then. An echo after an erased notice ends the burst as
   quiet. An echo during a change ends the burst as activity, and the echo stays quiet.
   The end of the terminal ends a burst at once.
 - A server fixture sends an input that the application does not echo. The input ends
