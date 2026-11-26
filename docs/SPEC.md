@@ -1335,8 +1335,15 @@ a finger drag. Thus the page handles a finger drag in the session terminal and i
   drag keeps its direction until the finger leaves the screen.
 - A horizontal drag does not scroll the terminal and sends no report, also when it
   drifts up or down.
-- After a fast release, the scroll continues and gets slower. A touch stops it. Typed
-  input in the terminal also stops it, because typed input shows the cursor row.
+- After a fast release, the scroll continues and gets slower. This is a glide. A touch
+  stops it. Typed input in the terminal also stops it, because typed input shows the
+  cursor row.
+- A vertical drag is not a tap. A touch that stops a glide is not a tap either. The
+  page cancels the end of such a touch, so that the browser does not send a click. A
+  click makes xterm.js give the focus to the terminal input, and a phone then shows
+  its keyboard.
+- Each other touch keeps its browser behavior. That includes a touch that moves less
+  than 8 pixels.
 - The browser does not pan the page for a vertical drag that starts in a terminal. A
   horizontal drag and a pinch keep their browser behavior.
 - A drag on the scroll bar of the terminal moves the scroll bar, as before.
@@ -5662,6 +5669,11 @@ repository, and a folder outside Git, each with a shell session.
   shown row does the same in the other direction. With mouse reports on, the movement
   sends 4 wheel events. A horizontal swipe with a drift moves nothing. A glide ends
   when the stop function of typed input runs, and when a touch starts.
+- Web fixtures check the end of a touch. A vertical drag cancels it, also a drag of 9
+  pixels that scrolls no row. A touch that stops a glide cancels it too. A tap, a
+  movement of less than 8 pixels, a horizontal swipe, a tap after the end of a glide,
+  and a touch cancel do not cancel it. The fixtures do not run a browser. No check
+  used a phone or a simulator with real touches.
 - Web fixtures check the shown part of a lower view after a frame. Without a drag, the
   view shows the new cursor row. After a drag, the view keeps its part until typed
   input, a size change, or a drag back to the cursor row. Other fixtures check the

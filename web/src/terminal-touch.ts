@@ -92,8 +92,13 @@ export function rowSteps(rest: number, distance: number, cell: number): { rows: 
 // effect of a mouse wheel in xterm.js. xterm.js then sends one wheel report for each
 // row. Such a drag has no glide, so that the application gets reports only for the
 // rows that the finger passes.
+//
+// A vertical drag and a touch that stops a glide are not taps. The browser follows a
+// touch that it takes as a tap with a click. Then xterm.js gives the focus to its
+// input, and a phone shows its keyboard. Thus the end of such a touch is canceled,
+// and the browser sends no click.
 export function touchScroll(container: HTMLElement, view: () => Terminal | null): () => void {
-  let drag: { id: number; target: Element; x: number; y: number; vertical: boolean; rest: number; samples: Sample[] } | null = null;
+  let drag: { id: number; target: Element; x: number; y: number; vertical: boolean; stopped: boolean; rest: number; samples: Sample[] } | null = null;
   let frame = 0;
 
   // The mouse wheel of a terminal scrolls its history when no mouse reports are on.
@@ -127,6 +132,8 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
   const find = (touches: TouchList) => [...touches].find(touch => touch.identifier === drag?.id);
 
   container.addEventListener('touchstart', event => {
+    // A touch during a glide stops the glide, as in a regular scroll view on iOS.
+    const stopped = frame !== 0;
     stopGlide();
     const touch = event.touches[0];
     const target = event.target;
@@ -135,7 +142,7 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
       drag = null;
       return;
     }
-    drag = { id: touch.identifier, target, x: touch.clientX, y: touch.clientY, vertical: false, rest: 0, samples: [{ time: event.timeStamp, y: touch.clientY }] };
+    drag = { id: touch.identifier, target, x: touch.clientX, y: touch.clientY, vertical: false, stopped, rest: 0, samples: [{ time: event.timeStamp, y: touch.clientY }] };
   }, { passive: true });
 
   container.addEventListener('touchmove', event => {
@@ -157,6 +164,7 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
     const current = drag;
     if (!current || find(event.touches)) return;
     drag = null;
+    if ((current.vertical || current.stopped) && event.type === 'touchend' && event.cancelable) event.preventDefault();
     if (!current.vertical) return;
     let speed = event.type === 'touchend' ? releaseSpeed(current.samples, event.timeStamp) : 0;
     let time = performance.now();
@@ -173,7 +181,8 @@ export function touchScroll(container: HTMLElement, view: () => Terminal | null)
     };
     if (speed) frame = requestAnimationFrame(step);
   };
-  container.addEventListener('touchend', end, { passive: true });
+  // The end of a touch can be canceled. A scroll does not wait for this event.
+  container.addEventListener('touchend', end, { passive: false });
   container.addEventListener('touchcancel', end, { passive: true });
   return stopGlide;
 }
