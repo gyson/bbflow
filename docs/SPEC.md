@@ -37,7 +37,7 @@ The Web client section has these features:
 | [Pinned sessions](#pinned-sessions) | The Pinned group at the top of the sidebar, and the pin rules. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
 | [Projects and launches](#projects-and-launches) | Projects, the project menu, Start session, the shell, the terminal view, and reconnection. |
-| [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, built-in tools, tool types, model lists, permission modes, the launch preparation of a session, and managed worktrees. |
+| [Session preparation, settings, and worktrees](#session-preparation-settings-and-worktrees) | The Settings page, built-in tools, tool types, model lists, permission modes, Code Mode, the launch preparation of a session, and managed worktrees. |
 | [Usage limits](#usage-limits) | The Usage dialog, the check of each agent CLI, and the cache of the server. |
 | [Session status](#session-status) | The four statuses, the sidebar icon, the session toolbar, and the More actions menu. |
 | [Session titles](#session-titles) | User titles, derived titles, and the title tools. |
@@ -1439,10 +1439,11 @@ paths. Requests cannot override the shell or environment.
 
 A selected tool supplies an optional startup command to submit through that shell. For
 a tool with a type other than Custom, the launch adds the options of the chosen model,
-effort, and permission mode to the end of the command. In a managed worktree, an
-Antigravity launch also adds an option that trusts the workspace. See
-[Tool types and models](#tool-types-and-models) and
-[Permission modes](#permission-modes). The
+effort, and permission mode to the end of the command. For Claude Code, Code Mode puts
+an environment variable before the command. In a managed worktree, an Antigravity
+launch also adds an option that trusts the workspace. See
+[Tool types and models](#tool-types-and-models),
+[Permission modes](#permission-modes), and [Code Mode](#code-mode). The
 server inherits its startup environment and sets `TERM=xterm-256color`. The launch
 stores the tool name and workspace basename as the derived title, even when the user set
 a title.
@@ -1624,11 +1625,11 @@ is no semantic chat transcript.
 This section has three related parts:
 
 - **Settings** is one page for the instance. It has the appearance, the server port,
-  remote access, the tools with their startup commands, types, default models, and
-  default permission modes, and the session defaults.
+  remote access, the tools with their startup commands, types, default models, default
+  permission modes, and the default Code Mode of Claude Code, and the session defaults.
 - A **preparation** holds the launch choices of a session that did not start: the
-  project, the tool with its model, thinking effort, and permission mode, and the
-  worktree choices. The message draft saves separately.
+  project, the tool with its model, thinking effort, permission mode, and Code Mode,
+  and the worktree choices. The message draft saves separately.
   Start does not send it. It stays in the editor for the user to send.
 - A **managed worktree** gives a session its own checkout and branch. bbflow creates it
   at Start from a base commit.
@@ -1792,10 +1793,11 @@ dialog, so a long tool list needs no scroll to reach it:
   command**. bbflow submits the command unchanged, so it holds all options of the tool.
 - For a built-in tool, the editor has only **CLI path**, **Default model**, **Default
   thinking effort**, and **Default permissions**, with a note that bbflow keeps its name
-  and command. See [Tool program](#tool-program) and
-  [Permission modes](#permission-modes).
+  and command. The Claude Code tool also has **Default Code Mode**. See
+  [Tool program](#tool-program), [Permission modes](#permission-modes), and
+  [Code Mode](#code-mode).
 - **New sessions submit** shows the command with the options of the model, the effort,
-  and the permission mode.
+  and the permission mode, and with the variable of Code Mode.
 - **Add tool** or **Save** saves the tool and closes the dialog. **Cancel**, **✕**, and
   Escape discard the entry. An error keeps the dialog and its values. The dialog stays
   open while a save runs.
@@ -1830,7 +1832,7 @@ The page sends one settings save at a time. If another view or the CLI saved fir
 the page applies the requested change to the latest settings. An edit keeps the latest
 value of each tool field that the user did not change. The type, the model, and the
 effort count as one field, because the model and the effort belong to the type. The
-permission mode is a separate field.
+permission mode and Code Mode are separate fields.
 
 #### Theme
 
@@ -1887,8 +1889,8 @@ its switch, because Shell has no command, model, or path. The settings save Shel
 **Shell (off)**.
 
 bbflow keeps the name, the type, and the command of a built-in tool. The user sets only
-its [CLI path](#tool-program), its default model, effort, and permission mode, and
-whether it is on. The
+its [CLI path](#tool-program), its default model, effort, and permission mode, the
+default [Code Mode](#code-mode) of Claude Code, and whether it is on. The
 tool cannot be removed. For other options or a wrapper, the user adds a Custom tool. A
 save with another name or command for a built-in tool keeps the kept values, and a save
 with another type fails. A settings save without a built-in tool keeps it. Only the
@@ -1947,7 +1949,8 @@ Code**, **Antigravity**, or **Code Puppy**, saved as `codex`, `claude`, `agy`, a
 its command starts an agent. A save of a tool of the user with another type fails. A
 built-in tool also has a default model, a default thinking effort, and a default
 [permission mode](#permission-modes). An empty value selects the default of the CLI and
-adds no option.
+adds no option. The built-in Claude Code tool also has a default
+[Code Mode](#code-mode).
 
 The launch adds the options at the end of the command, so the command must end with the
 agent call:
@@ -2107,6 +2110,63 @@ the value of the table. The launch adds the options after the model and effort o
   approval or confirmation prompts. For Code Puppy, this is the `/help` text of YOLO
   mode.
 
+#### Code Mode
+
+The **Code Mode** menu turns on the experimental Code Mode of Claude Code. In Code Mode,
+Claude writes JavaScript that calls its tools, in place of one tool call at a time. The
+Claude Code tool has the menu in the tool editor as **Default Code Mode**, in a draft,
+and in the **Continue in new terminal** dialog. The menu is hidden for the other tools.
+
+The choices are **CLI default** and **On**. The settings and the preparation save
+`codeMode` as `false` or `true`.
+
+- **CLI default** adds nothing. The command is the same as without the menu, so Claude
+  Code uses its own setting.
+- **On** puts `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1` and a space before the command.
+  The model, effort, and permission options stay at the end:
+
+  ```sh
+  CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude --model opus --permission-mode auto
+  ```
+
+Claude Code has no command option for Code Mode. Its
+[Code Mode documentation](https://code.claude.com/docs/en/code-mode) turns Code Mode on
+with this environment variable in the shell. The variable applies only to the process
+of the command. bbflow does not change a settings file of Claude Code.
+
+- The server accepts Code Mode only for the Claude Code tool. It rejects Code Mode for
+  another type, a Custom tool, and Shell.
+- A newly selected tool brings its default Code Mode, with its default model, effort,
+  and permission mode.
+- The title tools have no Code Mode.
+
+#### Limits of Code Mode
+
+- The shell of the session must accept the form `NAME=value command`. sh, bash, and zsh
+  accept it. fish accepts it from version 3.1. csh and tcsh do not accept it. In such a
+  shell, the terminal shows the error of the shell. Choose **CLI default** to start
+  Claude Code without the variable.
+- Code Mode is an experiment of Claude Code. Its documentation says that it can change
+  or be removed in any release. It requires Claude Code 2.1.323 or later.
+- Claude Code decides if Code Mode is available. Its account, provider, model, and
+  organization settings can make it unavailable. Claude Code then shows the reason in
+  the terminal and in `/status`.
+- A `0` in the user settings of Claude Code, in its managed settings, or in a
+  `--settings` file keeps Code Mode off. Claude Code 2.1.332 then shows no line about
+  Code Mode. bbflow cannot detect this case.
+- The first start in Code Mode asks for a confirmation in the terminal. Its default
+  choice starts without Code Mode. After **Yes, turn on Code Mode**, Claude Code restarts
+  in the same terminal. Claude Code saves the answer for later starts.
+- Claude Code resumes a Code Mode session only with Code Mode on, for example with
+  `claude --resume`. **Continue in new terminal** is not a native resume, so it does not
+  depend on this.
+- The terminal shows the tool calls of the code, not the JavaScript. Claude Code shows
+  the code only in its transcript viewer. Thus the recording has the code only when the
+  user opens that viewer.
+- Code can run for up to 10 minutes, or up to 2 hours in the background, without a
+  change on the screen. The session then shows `idle`. See
+  [Activity detection](#activity-detection).
+
 #### Preparation
 
 The server copies defaults when it creates a preparation. Non-Git folders do not enable
@@ -2114,14 +2174,14 @@ the worktree default. A preparation stores its chosen tool name and command
 independently of later preset changes, including deletion. Startup commands are edited
 only in Settings. When the user selects a different tool, the server copies its current
 name, type, and command. Shell clears the command. The view then selects the default
-model, effort, and permission mode of the tool.
+model, effort, permission mode, and Code Mode of the tool.
 
 **Session name** has its own row. Below it, one group holds **Tool**, **Model**,
-**Thinking effort**, and **Permissions**. The fields wrap to a second row when the group
-is too narrow. A line above and below the group separates it from the other fields.
-**Model**, **Thinking effort**, and **Permissions** are hidden for Shell and for a Custom
-tool. A change of the model, the effort, or the permission mode applies only to the
-draft. The draft shows no notes about the model list or the options. Only a failed
+**Thinking effort**, and **Permissions**, and **Code Mode** for Claude Code. The fields
+wrap to a second row when the group is too narrow. A line above and below the group
+separates it from the other fields. **Model**, **Thinking effort**, and **Permissions**
+are hidden for Shell and for a Custom tool. A change of the model, the effort, the
+permission mode, or Code Mode applies only to the draft. The draft shows no notes about the model list or the options. Only a failed
 model list shows its error in the draft, with **Refresh list**. In Settings, the model
 field also shows **Loading the model list…** and **Refresh list**, and the effort notes
 of Antigravity and Code Puppy stay. No form names the source of the model list or the
@@ -3358,16 +3418,16 @@ state `ready` to enable the button. If the worktree state blocks the action, hov
 the button or use Tab to see the reason.
 
 The dialog shows the session workspace, the tool group of a draft, the handoff prompt,
-and a Copy button. The tool group has **Tool**, **Model**, **Thinking effort**, and
-**Permissions**, then the **bbflow submits** line with the command. These fields work as
-in a [draft](#preparation). A newly selected tool brings its default model, effort, and
-permission mode. **Model**, **Thinking effort**, and **Permissions** are hidden for Shell
-and for a Custom tool.
+and a Copy button. The tool group has **Tool**, **Model**, **Thinking effort**,
+**Permissions**, and **Code Mode** for Claude Code, then the **bbflow submits** line
+with the command. These fields work as in a [draft](#preparation). A newly selected tool
+brings its default model, effort, permission mode, and Code Mode. **Model**, **Thinking
+effort**, and **Permissions** are hidden for Shell and for a Custom tool.
 
 The dialog selects the tool of the latest terminal, the last choice of the user. If that
 tool is no longer a choice, it selects the tool that the session started with, then the
-default tool, then Shell. The model, the effort, and the permission mode are the
-defaults of the selected tool in Settings. For an `interrupted` run, the dialog warns that an agent from a crashed
+default tool, then Shell. The model, the effort, the permission mode, and Code Mode are
+the defaults of the selected tool in Settings. For an `interrupted` run, the dialog warns that an agent from a crashed
 server can still run in the workspace.
 
 If the session changes while the dialog opens, an error toast explains why continuation
@@ -3386,8 +3446,8 @@ launch lock and rejects the request in these conditions:
 - The managed worktree is not `ready`, or the session workspace no longer exists.
   bbflow does not create a replacement worktree.
 - The selected tool no longer exists.
-- The model, the effort, or the permission mode is not valid for the tool type. The
-  rules are those of a draft. Shell and a Custom tool take none of them.
+- The model, the effort, the permission mode, or Code Mode is not valid for the tool
+  type. The rules are those of a draft. Shell and a Custom tool take none of them.
 
 A rejected request writes no files and starts no process. Otherwise the server writes
 the handoff folder, then starts `$SHELL -i` in the session's recorded workspace. The
@@ -3424,7 +3484,8 @@ agent to check the current files, summarize where the work stopped, and wait for
 next message.
 
 bbflow records and submits the startup command of the selected tool once, with the
-options of the selected model, effort, and permission mode. In a managed worktree, an
+options of the selected model, effort, and permission mode, and the variable of Code
+Mode. In a managed worktree, an
 Antigravity command also gets the trust option. See
 [Tool types and models](#tool-types-and-models). Shell starts without a command. The
 user can copy the handoff prompt from the dialog.
@@ -4592,8 +4653,8 @@ fork ancestry, or inherited history yet.
 ### Database upgrades
 
 The server upgrades the database by itself at start, in one transaction. A failed
-upgrade changes nothing and stops the start. The current format is 23. Formats 3
-through 23 are supported. Format 3 shipped in v0.0.1.
+upgrade changes nothing and stops the start. The current format is 24. Formats 3
+through 24 are supported. Format 3 shipped in v0.0.1.
 
 #### Upgrade transaction
 
@@ -4609,7 +4670,7 @@ WAL is enabled after the schema transaction commits.
 
 #### Formats
 
-- Empty databases run the format 3 baseline, then migrations 4 through 23. In the same
+- Empty databases run the format 3 baseline, then migrations 4 through 24. In the same
   transaction, a new database sets `worktree` to true in the settings JSON, so new
   installations select **Use worktree** by default. Upgrades keep the saved value.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
@@ -4694,7 +4755,11 @@ WAL is enabled after the schema transaction commits.
   [saved prompts](#saved-prompts), in the settings JSON through migration 23. Each saved
   prompt gains `group: ""`, so it stays at the top level of the ＋ menu. The order of
   the prompts, the settings revision, and the other values stay.
-- Format 23 opens without running scripts or rewriting history, settings, or metadata.
+- Format 23 gains `codeMode: false` on each tool in the settings JSON and on each
+  preparation, through migration 24. [Code Mode](#code-mode) off adds nothing, so each
+  launch submits the same command as before. The order of the tools, the settings
+  revision, and the preparation revisions stay.
+- Format 24 opens without running scripts or rewriting history, settings, or metadata.
 
 #### Preserved data
 
@@ -5344,6 +5409,24 @@ detected as potentially unsafe." The other modes were checked only in the help o
 CLI. No check verified what a mode does inside its CLI, and no fixture starts a real
 agent from a bbflow session with a mode.
 
+Code Mode fixtures verify that the variable goes before the command of Claude Code,
+also with a CLI path that starts with `~/` and with the other options at the end. Code
+Mode off adds nothing, and the other types get no variable. They verify that only Claude
+Code accepts Code Mode, in Settings, in a draft, and in a new terminal. Server fixtures
+verify that a draft copies the default Code Mode of its tool and launches with the
+variable. Web fixtures verify the command of a draft, that the editor of the Claude Code
+tool shows **Default Code Mode** and the editor of Codex does not, the saved value, and
+an edit of Code Mode that keeps the latest values of the other fields.
+
+A live run of Claude Code 2.1.332 in a PTY submitted
+`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude` through an interactive zsh and an
+interactive bash, as a session does. The banner showed "Code Mode (experimental) is on",
+and `/status` named the shell environment as the source. A `0` from `--settings` kept
+Code Mode off, with no line about Code Mode. An exported `0` in the shell did not, because
+the prefix replaces it. The first start showed the confirmation, and Claude Code then
+restarted in the same terminal. This run did not use a bbflow session, and it sent no
+prompt to the model. fish, csh, and tcsh were not available for a live check.
+
 Web fixtures cover settings comparison, edits that preserve fields changed by another
 view, and repeated add requests. View fixtures run the Settings view on a small fake DOM
 and send each server reply at a chosen time. They cover a tool save, a port, a default,
@@ -5930,10 +6013,11 @@ other connection. No send in these checks lost its receipt.
 - Request fixtures reject live terminals, old run IDs, running records, archived
   sessions, removed worktrees, missing workspaces, and unknown tools. They also reject
   an effort or a permission mode for Shell, a model for a Custom tool, an effort that is
-  not one word, and a permission mode of another type.
+  not one word, a permission mode of another type, and Code Mode for Codex.
 - A rejected request writes no handoff folder.
 - Request fixtures verify the command, the tool name, and the tool ID of a new terminal,
-  also with the model, the effort, and the permission mode of a built-in tool.
+  also with the model, the effort, and the permission mode of a built-in tool, and with
+  Code Mode on and off for Claude Code.
 - Store fixtures read the tool ID of a start event, also the empty ID of Shell. An older
   first run without a tool ID uses its preparation, and an older later run has no known
   ID.
@@ -6543,7 +6627,7 @@ The final display kept its recorded width. This check did not run a real agent C
 
 ### Checks of storage and upgrades
 
-- Frozen schemas from repository history test upgrades from formats 3–22 to format 23
+- Frozen schemas from repository history test upgrades from formats 3–23 to format 24
   and verify that reopen preserves the upgraded data. The format 16 fixture has Codex
   and Code Puppy tools, and the upgrade gives them their types. A blocked preparation
   update rolls back migration 17. The format 17 fixture has both values of remote
@@ -6555,8 +6639,9 @@ The final display kept its recorded width. This check did not run a real agent C
   tool and each preparation the empty permission mode, and a blocked settings or
   preparation update rolls back migration 22. Each upgrade adds an empty prompt group
   list and puts each saved prompt at the top level, and a blocked settings update rolls
-  back migration 23. Four concurrent opens upgrade a format 19,
-  20, or 21 archive once.
+  back migration 23. Each upgrade turns Code Mode off in each tool and each preparation,
+  and a blocked settings or preparation update rolls back migration 24. Four concurrent
+  opens upgrade a format 19, 20, 21, or 23 archive once.
 - Fixtures compare original blobs, archive flags, metadata, and event allocation state.
   They test rollback of the entire upgrade after SQL, schema, or foreign-key failures.
   They also cover repeated opens, concurrent upgrades, and unsupported formats.

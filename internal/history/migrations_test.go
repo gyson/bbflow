@@ -177,6 +177,12 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 					prompt.(map[string]any)["group"] = ""
 				}
 			}
+			// Migration 24 turns Code Mode off in each tool.
+			for _, tool := range original["tools"].([]any) {
+				if _, exists := tool.(map[string]any)["codeMode"]; !exists {
+					tool.(map[string]any)["codeMode"] = false
+				}
+			}
 			if !reflect.DeepEqual(saved, original) {
 				t.Fatal("migration changed existing settings", saved, original)
 			}
@@ -200,6 +206,9 @@ func assertSnapshot(t *testing.T, db *sql.DB, snapshot map[string][][]any, inclu
 				}
 				if _, exists := original["permission"]; !exists {
 					original["permission"] = ""
+				}
+				if _, exists := original["codeMode"]; !exists {
+					original["codeMode"] = false
 				}
 				if !reflect.DeepEqual(saved, original) {
 					t.Fatal("migration changed an existing preparation", saved, original)
@@ -286,7 +295,7 @@ func inferredType(command string) string {
 }
 
 func TestMigrationsPreserveReleasedArchives(t *testing.T) {
-	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22} {
+	for _, version := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path, db := oldDatabase(t, version)
 			before := snapshotDatabase(t, db)
@@ -354,7 +363,7 @@ func TestMigrationsPreserveReleasedArchives(t *testing.T) {
 			if version == 5 && (session.Preparation.Command != "old-tool --interactive" || session.Worktree.Commit != "abcdef") {
 				t.Fatal("lost launch metadata", session)
 			}
-			if version >= 5 && (session.Preparation.ToolType != "custom" || session.Preparation.Model != "" || session.Preparation.Effort != "" || session.Preparation.Permission != "") {
+			if version >= 5 && (session.Preparation.ToolType != "custom" || session.Preparation.Model != "" || session.Preparation.Effort != "" || session.Preparation.Permission != "" || session.Preparation.CodeMode) {
 				t.Fatal("wrong tool type of an old preparation", session.Preparation)
 			}
 			if version == 16 {
@@ -701,6 +710,62 @@ func TestPromptGroupsUpgrade(t *testing.T) {
 	}
 }
 
+// A blocked settings or preparation update rolls back migration 24 and keeps format 23.
+func TestCodeModeUpgradeRollsBack(t *testing.T) {
+	for _, table := range []string{"settings", "preparations"} {
+		t.Run(table, func(t *testing.T) {
+			path, db := oldDatabase(t, 23)
+			execSQL(t, db, "CREATE TRIGGER reject_update BEFORE UPDATE ON "+table+" BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+			before := snapshotDatabase(t, db)
+			db.Close()
+			if store, err := Open(path); err == nil {
+				store.Close()
+				t.Fatal("accepted a blocked Code Mode update")
+			} else if !strings.Contains(err.Error(), "apply history migration 24") {
+				t.Fatal(err)
+			}
+			assertSnapshot(t, rawDatabase(t, path), before, true)
+		})
+	}
+}
+
+// Migration 24 turns Code Mode off in each tool and each preparation, so that the
+// commands stay the same. It keeps the order of the tools, the other values, and the
+// revisions. The Claude Code tool can then save Code Mode.
+func TestCodeModeUpgrade(t *testing.T) {
+	path, db := oldDatabase(t, 23)
+	db.Close()
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings, err := store.Settings()
+	if err != nil || settings.Revision != 9 || len(settings.Tools) != 5 || settings.Tools[1].Permission != "auto" || settings.Tools[1].Model != "opus" || settings.Tools[4].ID != "example" || len(settings.PromptGroups) != 1 || settings.Prompts[1].Group != "git" {
+		t.Fatal("wrong settings after the upgrade", settings, err)
+	}
+	if got := sqlRows(t, store.db, "SELECT json_extract(t.value, '$.id'), json_type(t.value, '$.codeMode') FROM settings, json_each(settings.data, '$.tools') AS t ORDER BY t.key"); len(got) != 5 || got[0][0] != "builtin-codex" || got[4][0] != "example" {
+		t.Fatal("the upgrade changed the tool list", got)
+	} else {
+		for _, row := range got {
+			if row[1] != "false" {
+				t.Fatal("a tool has no Code Mode value", got)
+			}
+		}
+	}
+	if got := sqlRows(t, store.db, "SELECT revision, json_type(data, '$.codeMode') FROM preparations"); len(got) != 1 || got[0][0] != int64(7) || got[0][1] != "false" {
+		t.Fatal("wrong preparation after the upgrade", got)
+	}
+	settings.Tools[1].CodeMode = true
+	if saved, err := store.SaveSettings(settings); err != nil || saved.Revision != 10 || !saved.Tools[1].CodeMode {
+		t.Fatal("cannot save Code Mode after the upgrade", saved, err)
+	}
+	settings.Tools[0].CodeMode = true
+	if _, err := store.SaveSettings(settings); err == nil {
+		t.Fatal("saved Code Mode for Codex")
+	}
+}
+
 // Migration 18 turns the switch of remote access on only where both values are saved,
 // because only there remote access was on. It keeps the values and the revision.
 func TestRemoteSwitchUpgrade(t *testing.T) {
@@ -761,7 +826,7 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17, 18, 19, 20, 21} {
+	for _, version := range []int{3, 6, 7, 8, 9, 11, 12, 17, 18, 19, 20, 21, 23} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
 	}
 }

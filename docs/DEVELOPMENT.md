@@ -101,7 +101,7 @@ screenshots use only the dark appearance.
 | File | View | Viewport |
 | --- | --- | --- |
 | `session.png` | A Claude Code session in the demo project **Orbit API** | 1200 x 836 |
-| `draft.png` | The demo draft **Plan release notes**, with the tool **Claude Code** | 1200 x 920 |
+| `draft.png` | The demo draft **Plan release notes**, with the tool **Claude Code** | 1200 x 1000 |
 
 To capture the screenshots again, do these steps:
 

@@ -169,7 +169,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   The one exception is the folder trust of Antigravity in a managed worktree. See
   [Tool types and models](docs/SPEC.md#tool-types-and-models). A permission mode that
   the user chooses in bbflow is not an exception. It is a CLI argument of the user. See
-  [Permission modes](docs/SPEC.md#permission-modes). Do not inject prompts
+  [Permission modes](docs/SPEC.md#permission-modes). Code Mode of Claude Code is also a
+  choice of the user. It adds an environment variable before the command. See
+  [Code Mode](docs/SPEC.md#code-mode). Do not inject prompts
   into a new run. Let the user send the handoff prompt when the
   agent is ready.
 - Keep project metadata in SQLite. Projects supply launch defaults. Sessions retain

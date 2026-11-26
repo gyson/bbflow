@@ -59,7 +59,7 @@
           <div class="launch-grid">
             <label class="wide">Session name<input id="launch-name" maxlength="200" placeholder="What are you working on?"></label>
             <fieldset id="launch-tool-group" class="wide launch-tool-group">
-              <legend class="sr-only">Tool, model, and permissions</legend>
+              <legend class="sr-only">Tool, model, permissions, and Code Mode</legend>
               <label>Tool<select id="launch-tool"></select></label>
               <div id="launch-models" class="model-fields" hidden>
                 <div class="model-field"><label for="launch-model">Model</label><select id="launch-model"></select>
@@ -67,6 +67,7 @@
                   <p class="model-help"><span id="launch-model-help"></span> <button type="button" id="launch-model-refresh" class="link-button">Refresh list</button></p></div>
                 <div class="model-field"><label for="launch-effort">Thinking effort</label><select id="launch-effort"></select><p id="launch-effort-help" class="model-help"></p></div>
                 <div class="model-field"><label for="launch-permission">Permissions</label><select id="launch-permission"></select></div>
+                <div id="launch-code-mode-field" class="model-field" hidden><label for="launch-code-mode">Code Mode</label><select id="launch-code-mode"></select></div>
               </div>
               <p class="form-help launch-command">bbflow submits <code id="launch-command"></code></p>
             </fieldset>
@@ -318,6 +319,7 @@
           <p class="model-help"><span id="tool-model-help"></span> <button type="button" id="tool-model-refresh" class="link-button">Refresh list</button></p></div>
         <div class="model-field"><label for="tool-effort">Default thinking effort</label><select id="tool-effort"></select><p id="tool-effort-help" class="model-help"></p></div>
         <div class="model-field"><label for="tool-permission">Default permissions</label><select id="tool-permission"></select></div>
+        <div id="tool-code-mode-field" class="model-field" hidden><label for="tool-code-mode">Default Code Mode</label><select id="tool-code-mode"></select></div>
       </div>
       <p class="tool-preview">New sessions submit <code id="tool-preview"></code></p>
       <p id="tool-editor-error" class="form-error" role="alert" hidden></p>
@@ -388,7 +390,7 @@
       <p class="form-help">The new terminal gets a read-only handoff folder with the earlier terminals and your sent messages.</p>
       <p id="continue-workspace" class="continue-path"></p>
       <fieldset class="launch-tool-group">
-        <legend class="sr-only">Tool, model, and permissions</legend>
+        <legend class="sr-only">Tool, model, permissions, and Code Mode</legend>
         <label>Tool<select id="continue-tool"></select></label>
         <div id="continue-models" class="model-fields" hidden>
           <div class="model-field"><label for="continue-model">Model</label><select id="continue-model"></select>
@@ -396,6 +398,7 @@
             <p class="model-help"><span id="continue-model-help"></span> <button type="button" id="continue-model-refresh" class="link-button">Refresh list</button></p></div>
           <div class="model-field"><label for="continue-effort">Thinking effort</label><select id="continue-effort"></select><p id="continue-effort-help" class="model-help"></p></div>
           <div class="model-field"><label for="continue-permission">Permissions</label><select id="continue-permission"></select></div>
+          <div id="continue-code-mode-field" class="model-field" hidden><label for="continue-code-mode">Code Mode</label><select id="continue-code-mode"></select></div>
         </div>
         <p class="form-help launch-command">bbflow submits <code id="continue-command"></code></p>
       </fieldset>

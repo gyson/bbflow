@@ -422,13 +422,13 @@ func TestAntigravityTrustsTheWorkspaceOfAManagedWorktree(t *testing.T) {
 		{"builtin-agy", filepath.Join(s.info.DataDir, "worktrees"), nil},
 		{"builtin-codex", workspace, nil},
 	} {
-		_, command, err := s.continueTool(c.tool, "", "", "", c.workspace)
+		_, command, err := s.continueTool(c.tool, "", "", "", false, c.workspace)
 		if err != nil || !slices.Equal(trusted(command), c.trusted) {
 			t.Fatalf("continue %s in %q: %q %v", c.tool, c.workspace, command, err)
 		}
 	}
 	// The trust option follows the options of the permission mode.
-	if _, command, err := s.continueTool("builtin-agy", "", "", "plan", workspace); err != nil || !strings.HasPrefix(command, "agy --mode plan --settings ") || !slices.Equal(trusted(command), []string{workspace}) {
+	if _, command, err := s.continueTool("builtin-agy", "", "", "plan", false, workspace); err != nil || !strings.HasPrefix(command, "agy --mode plan --settings ") || !slices.Equal(trusted(command), []string{workspace}) {
 		t.Fatalf("continue with a permission mode: %q %v", command, err)
 	}
 	// The command stays within the limit of one submitted line, without the option.

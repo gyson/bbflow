@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { builtinCommand, draftCommand, effortChoices, fitEffort, launchCommand, modelChoices, modelSummary, otherModel, permissionChoices, permissionOptions } from './dist/model-choice.js';
+import { builtinCommand, codeModeChoices, draftCommand, effortChoices, fitEffort, launchCommand, modelChoices, modelSummary, otherModel, permissionChoices, permissionOptions } from './dist/model-choice.js';
 
 const codex = { type: 'codex', source: 'codex debug models', loaded: 'now', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], models: [
   { id: 'gpt-6-luna', name: 'gpt-6-luna', efforts: ['low', 'medium', 'high'], default: 'medium' },
@@ -40,6 +40,16 @@ test('the launch command adds the options of each type at the end', () => {
   // A mode of another type adds nothing. The server rejects it.
   assert.equal(launchCommand('codex', 'codex', '', '', 'plan'), 'codex');
   assert.equal(launchCommand('custom', './review.sh', '', '', 'yolo'), './review.sh');
+});
+
+test('Code Mode puts the variable before the command of Claude Code only', () => {
+  assert.equal(launchCommand('claude', 'claude', '', '', '', true), 'CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude');
+  assert.equal(launchCommand('claude', '~/bin/claude', 'opus', 'high', 'auto', true), 'CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 ~/bin/claude --model opus --effort high --permission-mode auto');
+  // Code Mode off adds nothing. Another type gets no variable. The server rejects it.
+  assert.equal(launchCommand('claude', 'claude', 'opus', '', '', false), 'claude --model opus');
+  assert.equal(launchCommand('codex', 'codex --no-alt-screen', '', '', '', true), 'codex --no-alt-screen');
+  assert.equal(launchCommand('custom', 'claude', '', '', '', true), 'claude');
+  assert.deepEqual(codeModeChoices.map(choice => choice.label), ['CLI default', 'On']);
 });
 
 test('the Permissions menu lists the modes of the type after the CLI default', () => {
@@ -104,8 +114,10 @@ test('a draft shows the command of the tool that it selects, also Shell before a
   assert.equal(draftCommand(saved, 'codex', tools, 'gpt-6-luna', 'high', ''), 'codex --no-alt-screen --model gpt-6-luna -c model_reasoning_effort=high');
   assert.equal(draftCommand(saved, 'codex', tools, '', '', 'approve-for-me'), 'codex --no-alt-screen --approve-for-me');
   assert.equal(draftCommand(saved, 'claude', tools, 'opus', '', 'plan'), 'claude --model opus --permission-mode plan');
-  // Shell has no command, and no model or permission options.
-  assert.equal(draftCommand(saved, '', tools, 'gpt-6-luna', 'high', 'approve-for-me'), '');
+  assert.equal(draftCommand(saved, 'claude', tools, '', '', '', true), 'CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude');
+  assert.equal(draftCommand(saved, 'codex', tools, '', '', '', true), 'codex --no-alt-screen');
+  // Shell has no command, and no model, permission, or Code Mode options.
+  assert.equal(draftCommand(saved, '', tools, 'gpt-6-luna', 'high', 'approve-for-me', true), '');
   // A saved tool that is no longer in Settings keeps its snapshot.
   assert.equal(draftCommand(saved, 'codex', [], '', '', ''), 'codex --no-alt-screen');
 });

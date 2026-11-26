@@ -228,9 +228,12 @@ func TestPrepareContinueChecksSessionAndUsesStartupCommand(t *testing.T) {
 		r.Model, r.Effort, r.Permission = model, effort, permission
 		return r
 	}
-	fails("an effort for Shell", choice("", "", "high", ""), "Shell has no model, effort, or permissions")
-	fails("a permission mode for Shell", choice("", "", "", "approve-for-me"), "Shell has no model, effort, or permissions")
-	fails("a model for a Custom tool", choice("agent", "gpt-6-luna", "", ""), "no model, effort, or permissions")
+	fails("an effort for Shell", choice("", "", "high", ""), "Shell has no model, effort, permissions, or Code Mode")
+	fails("a permission mode for Shell", choice("", "", "", "approve-for-me"), "Shell has no model, effort, permissions, or Code Mode")
+	fails("a model for a Custom tool", choice("agent", "gpt-6-luna", "", ""), "no model, effort, permissions, or Code Mode")
+	codeMode := choice("builtin-codex", "", "", "")
+	codeMode.CodeMode = true
+	fails("Code Mode for Codex", codeMode, "Codex has no Code Mode")
 	fails("an unsafe effort", choice("builtin-codex", "gpt-6-sol", "high; id", ""), "one lowercase word")
 	fails("a permission mode of another type", choice("builtin-codex", "", "", "accept-edits"), `Codex has no permission mode "accept-edits"`)
 	s.sessions[session.ID] = &runningSession{id: session.ID}

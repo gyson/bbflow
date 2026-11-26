@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/49`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/50`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/49",
+    "protocol": "bbflow/50",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/49",
+    "protocol": "bbflow/50",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -187,7 +187,7 @@ replies.
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
 | `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, an optional `toolId`, `status`, `started`, and `ended`. |
 | `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
-| `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), optional `model`, `effort`, and `permission`, terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
+| `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), optional `model`, `effort`, `permission`, and `codeMode`, terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
 
 ### History operations
 
@@ -740,7 +740,7 @@ current revision.
 
 - Settings contain revision, defaultTool (empty means Shell), worktree, base (default
   HEAD), and an ordered tools array. Each tool has a stable client-generated id, name,
-  command, type, model, effort, permission, builtin, enabled, and path.
+  command, type, model, effort, permission, codeMode, builtin, enabled, and path.
 - path is the optional [CLI path](SPEC.md#tool-program) of a built-in tool. A save with
   a path for another tool fails.
 - A save holds at most 100 custom tools. The built-in tools do not count.
@@ -760,7 +760,9 @@ current revision.
   [Tool types and models](SPEC.md#tool-types-and-models) for the options that each type
   adds and for the accepted names. permission is a value of the table in
   [Permission modes](SPEC.md#permission-modes), such as `approve-for-me` for Codex. A
-  save with a mode of another type, or with a mode for a Custom tool, fails.
+  save with a mode of another type, or with a mode for a Custom tool, fails. codeMode
+  is the default [Code Mode](SPEC.md#code-mode) of the Claude Code tool. A save with a
+  true codeMode for another tool fails.
 - A startup command is one shell line of at most 1,000 bytes, without control
   characters. The server submits it once after the PTY opens. It records the command as
   input, separate from the composer draft.
@@ -865,15 +867,17 @@ server](SPEC.md#cache-of-the-server).
 ### Preparation
 
 A prepared session includes preparation with revision, state, toolId, toolName,
-toolType, command, model, effort, permission, worktree, base, and branch. Configuration
-saves send the current preparation revision with toolId, model, effort, permission,
-worktree, base, and branch, plus name for the session title. Project, workspace,
+toolType, command, model, effort, permission, codeMode, worktree, base, and branch.
+Configuration saves send the current preparation revision with toolId, model, effort,
+permission, codeMode, worktree, base, and branch, plus name for the session title. Project, workspace,
 toolName, toolType, command, and state are not writable configuration fields. A change
 to toolId copies the name, type, and command of the selected tool from Settings. The
-save takes model, effort, and permission from the request, also for a new toolId, so
-the client sends the defaults of a newly selected tool. An omitted model, effort, or
-permission is empty. The server rejects a model, an effort, or a permission mode that
-the type does not accept. Start adds their options to the command. In a managed
+save takes model, effort, permission, and codeMode from the request, also for a new
+toolId, so the client sends the defaults of a newly selected tool. An omitted model,
+effort, or permission is empty, and an omitted codeMode is false. The server rejects a
+model, an effort, a permission mode, or Code Mode that the type does not accept. Start
+adds their options to the end of the command. For Claude Code, Code Mode puts an
+environment variable before the command. See [Code Mode](SPEC.md#code-mode). In a managed
 worktree, an Antigravity start also adds an option that trusts the workspace. See
 [Tool types and models](SPEC.md#tool-types-and-models).
 
@@ -918,10 +922,11 @@ when a terminal is live, when `latestRun` is not the latest run, or when that ru
 not ended. It also rejects archived sessions, sessions without a run, a managed worktree
 that is not `ready`, a missing workspace, and an unknown tool.
 
-`model`, `effort`, and `permission` are the choices of the new terminal. An empty value
-selects the default of the CLI, as in the `preparation` of a draft. The server checks
-them with the rules of a draft. It rejects a model, an effort, or a permission mode for
-Shell and for a Custom tool. The web UI sends the defaults of the selected tool, unless
+`model`, `effort`, `permission`, and `codeMode` are the choices of the new terminal. An
+empty value or a false `codeMode` selects the default of the CLI, as in the
+`preparation` of a draft. The server checks them with the rules of a draft. It rejects
+a model, an effort, a permission mode, or Code Mode for Shell and for a Custom tool, and
+Code Mode for a type other than Claude Code. The web UI sends the defaults of the selected tool, unless
 the user changes them.
 
 A rejected request writes no files and starts no process. A repeated request with the
@@ -930,8 +935,8 @@ response, read session-config. If its latest run changed, use session-resume to 
 the new terminal. Do not send session-continue again only because a response was lost.
 
 The server records and submits the `command` of the selected tool once, with the
-options of the model, the effort, and the permission mode. In a managed worktree, an
-Antigravity command also gets the trust option of
+options of the model, the effort, and the permission mode, and the variable of Code
+Mode. In a managed worktree, an Antigravity command also gets the trust option of
 [Tool types and models](SPEC.md#tool-types-and-models). Shell submits nothing. The
 client shows the handoff prompt for the user to send. The start event of the new run
 records `tool`, `toolId` (the empty ID for Shell), `continues` (the previous run ID),
@@ -1372,13 +1377,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/49") {
+    if (message.server.protocol !== "bbflow/50") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/49", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/50", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1527,6 +1532,10 @@ versions.
   [saved prompts](SPEC.md#saved-prompts), to settings, and `group` to each prompt. No
   operation is new. SQLite format 23 adds an empty group list and puts each prompt at
   the top level.
+- Protocol 50 adds `codeMode`, the [Code Mode](SPEC.md#code-mode) of Claude Code, to
+  each tool, to the preparation, to the configuration save of `session-config`, and to
+  [`session-continue`](#session-continue). No operation is new. SQLite format 24 turns
+  Code Mode off in each tool and each preparation, which adds nothing to the command.
 
 ## Source files
 

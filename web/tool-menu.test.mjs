@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sortedBuiltins, toolGroups } from './dist/tool-menu.js';
 
-const tool = (id, name, builtin, enabled = true) => ({ id, name, command: id, type: builtin ? id : 'custom', model: '', effort: '', permission: '', builtin, enabled, path: '' });
+const tool = (id, name, builtin, enabled = true) => ({ id, name, command: id, type: builtin ? id : 'custom', model: '', effort: '', permission: '', codeMode: false, builtin, enabled, path: '' });
 const tools = [
   tool('codex', 'Codex', true), tool('claude', 'Claude Code', true), tool('agy', 'Antigravity', true, false), tool('code-puppy', 'Code Puppy', true),
   tool('zeta', 'Zeta script', false), tool('alpha', 'alpha wrapper', false), tool('off', 'Off script', false, false),

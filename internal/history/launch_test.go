@@ -61,14 +61,20 @@ func TestSettingsPersistAndRejectStaleEdits(t *testing.T) {
 	if err != nil || agent.Preparation.Permission != "approve-for-me" {
 		t.Fatal("lost the permission mode of a draft", agent.Preparation, err)
 	}
-	for _, p := range []Preparation{{ToolID: "builtin-codex", ToolType: "codex", Command: "codex", Permission: "plan"}, {Permission: "approve-for-me"}} {
+	// Code Mode saves only for Claude Code.
+	for _, p := range []Preparation{{ToolID: "builtin-codex", ToolType: "codex", Command: "codex", Permission: "plan"}, {Permission: "approve-for-me"},
+		{ToolID: "builtin-codex", ToolType: "codex", Command: "codex", CodeMode: true}, {CodeMode: true}} {
 		if _, err := store.CreatePreparation("Invalid", project.Workspace, project.ID, p); err == nil {
-			t.Fatal("accepted a permission mode", p)
+			t.Fatal("accepted a permission mode or Code Mode", p)
 		}
 		p.Revision = agent.Preparation.Revision
 		if _, err := store.SavePreparation(agent.ID, "", p); err == nil {
-			t.Fatal("saved a permission mode", p)
+			t.Fatal("saved a permission mode or Code Mode", p)
 		}
+	}
+	claude := Preparation{ToolID: "builtin-claude", ToolName: "Claude Code", ToolType: "claude", Command: "claude", CodeMode: true}
+	if code, err := store.CreatePreparation("Claude draft", project.Workspace, project.ID, claude); err != nil || !code.Preparation.CodeMode {
+		t.Fatal("lost Code Mode of a draft", code.Preparation, err)
 	}
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
@@ -409,6 +415,7 @@ func TestToolTypesModelsAndEfforts(t *testing.T) {
 	settings.Tools = append(settings.Tools, Tool{ID: "search", Name: "Codex search", Command: "codex --search"}, Tool{ID: "script", Name: "Script", Command: "./run.sh"})
 	settings.Tools[1].Model, settings.Tools[1].Effort = "opus", "high"
 	settings.Tools[0].Permission, settings.Tools[1].Permission = "approve-for-me", "accept-edits"
+	settings.Tools[1].CodeMode = true
 	if settings, err = store.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -420,6 +427,8 @@ func TestToolTypesModelsAndEfforts(t *testing.T) {
 	}
 	if saved, err := store.Settings(); err != nil || saved.Tools[0].Permission != "approve-for-me" || saved.Tools[1].Permission != "accept-edits" || saved.Tools[2].Permission != "" {
 		t.Fatal("the built-in tools lost their permission modes", saved.Tools, err)
+	} else if !saved.Tools[1].CodeMode || saved.Tools[0].CodeMode {
+		t.Fatal("the Claude Code tool lost Code Mode", saved.Tools)
 	}
 	for _, change := range []func(*Settings){
 		func(s *Settings) { s.Tools[4].Type = "codex" },
@@ -430,6 +439,9 @@ func TestToolTypesModelsAndEfforts(t *testing.T) {
 		func(s *Settings) { s.Tools[0].Permission = "accept-edits" },
 		func(s *Settings) { s.Tools[4].Permission = "approve-for-me" },
 		func(s *Settings) { s.Tools[1].Permission = "bypassPermissions" },
+		// Only Claude Code has Code Mode.
+		func(s *Settings) { s.Tools[0].CodeMode = true },
+		func(s *Settings) { s.Tools[4].CodeMode = true },
 	} {
 		changed := settings
 		changed.Tools = slices.Clone(settings.Tools)

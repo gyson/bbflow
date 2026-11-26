@@ -13,7 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/49"
+const Version = "bbflow/50"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -32,14 +32,15 @@ type Run struct {
 }
 
 // The server owns command and workspace snapshots. Forms cannot supply these fields.
-// Model, Effort, and Permission are the choices of the draft. An empty value selects the
-// default of the CLI.
+// Model, Effort, Permission, and CodeMode are the choices of the draft. An empty value or
+// false selects the default of the CLI.
 type PreparationConfig struct {
 	Revision   int64  `json:"revision"`
 	ToolID     string `json:"toolId"`
 	Model      string `json:"model"`
 	Effort     string `json:"effort"`
 	Permission string `json:"permission"`
+	CodeMode   bool   `json:"codeMode"`
 	Worktree   bool   `json:"worktree"`
 	Base       string `json:"base"`
 	Branch     string `json:"branch"`
@@ -70,11 +71,12 @@ type Request struct {
 	Run       string   `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
 	Shell     string   `json:"shell,omitempty"`     // A side terminal shell. Empty selects the live shell.
 	Tool      string   `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
-	// Model, Effort, and Permission are the choices of session-continue for the new
-	// terminal. An empty value selects the default of the CLI, as in a draft.
+	// Model, Effort, Permission, and CodeMode are the choices of session-continue for the
+	// new terminal. An empty value or false selects the default of the CLI, as in a draft.
 	Model      string   `json:"model,omitempty"`
 	Effort     string   `json:"effort,omitempty"`
 	Permission string   `json:"permission,omitempty"`
+	CodeMode   bool     `json:"codeMode,omitempty"`
 	ToolType   string   `json:"toolType,omitempty"` // The tool type of tool-models and tool-usage.
 	Refresh    bool     `json:"refresh,omitempty"`  // tool-models and tool-usage run their command again.
 	Limit      int      `json:"limit,omitempty"`
