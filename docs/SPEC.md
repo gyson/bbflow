@@ -2147,7 +2147,9 @@ no history.
   one on in Settings.
 - Without a tool that has a check, **Usage** is hidden. The page reads the settings
   when it loads. A read or a save of the settings in the tab, in Settings or in the
-  dialog, shows or hides **Usage** again.
+  dialog, shows or hides **Usage** again. If the read at load fails, **Usage** stays
+  hidden until a reload or until Settings opens.
+- If the dialog hides **Usage**, its close moves the focus to **Settings**.
 - Each section has a row for each limit. A row shows the name of the limit, a bar, the
   part that is left, and the reset time. An example is **5-hour**, **62% left**, and
   **Resets 6:32 AM · in 3 h 52 min**.
@@ -2226,9 +2228,10 @@ server, in an empty temporary folder:
   IDs of the reply.
 - An account without plan limits, such as a login with an API key, shows the error of
   the CLI.
-- A change of the tools in another browser tab does not show or hide **Usage**. The tab
-  shows the change after a reload, after Settings opens, or after the dialog opens. A
-  stale **Usage** opens the dialog with the message to turn a tool on.
+- A change of the tools in another client does not show or hide **Usage**. Another
+  client is another browser tab, or a `bbflow tool enable` or `bbflow tool disable`
+  command. The tab shows the change after a reload, after Settings opens, or after the
+  dialog opens. A stale **Usage** opens the dialog with the message to turn a tool on.
 - A check uses the installation, authentication, and account of the user. The CLI sends
   its own request to its provider. bbflow adds no history, message, or file to it.
 - When Claude Code cannot read its limits, it can show the last values that it read in
@@ -5222,8 +5225,11 @@ A later browser check with the demo instance verified the saves in Settings:
 - A browser check of a demo instance verified that **Usage** is hidden at load without
   a tool that has a check, and shown with one. In Settings, a switch of Codex showed and
   hid **Usage** without a reload. A tab that loaded before a change in another client
-  hid **Usage** when its dialog opened. Without **Usage**, the bottom row was on one
-  line in a 900-pixel window.
+  hid **Usage** when its dialog opened. The close of that dialog moved the focus to
+  **Settings**. Without **Usage**, the bottom row was on one line in a 900-pixel
+  window.
+- A Settings fixture verifies that the sidebar gets the saved tools at the open of
+  Settings and the tools of the reply after a tool switch.
 - A second browser check used a temporary server and a script in place of Claude Code,
   at a CLI path of 226 characters. After one good check, **Check now** failed. The
   warning with the long error wrapped in the dialog, without a side scroll.

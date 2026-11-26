@@ -244,6 +244,11 @@ const sessionSplit = new SessionSplit();
 const sessionMenu = new ActionMenu('session-menu');
 const rowMenus = new RowMenus(() => renderSessions(), $('row-menu-status'));
 const usageDialog = new UsageDialog({ server: () => server, tools: showUsageButton });
+// The dialog can hide Usage, the button that opened it. The browser then cannot return
+// the focus to it, so the focus goes to Settings, the next button of the row.
+element('usage-dialog', HTMLDialogElement).addEventListener('close', () => {
+  if ($('usage-open').hidden) $('settings-open').focus();
+});
 const handoffPrompt = new HandoffPrompt({ blocked: () => composer.insertBlocked(), insert: text => composer.insert(text), problem: text => composer.problem(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
 // final screen. The live process continues while a view shows an earlier terminal.
