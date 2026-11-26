@@ -361,9 +361,10 @@ order, newest first, breaks remaining ties.
 
 A quiet event has `quiet` 1 in the `events` table. It is a focus report or a mouse
 report of a view, or output that is not application output: output that changes
-nothing on the screen, and output in the 300 milliseconds after an `input`, a `resize`,
-or a `signal`. Output counts only after the server sets its flag, also for a terminal
-that starts during the list read. See [session list order](SPEC.md#session-list-order).
+nothing on the screen, the output of a burst of changes that leaves the screen as it
+was, and output in the 300 milliseconds after an `input`, a `resize`, or a `signal`.
+Output counts only after its flag is final, also for a terminal that starts during the
+list read. See [session list order](SPEC.md#session-list-order).
 
 View changes, focus changes, the redraw after a size change, drafts, attachments,
 terminal replies, and saved screens do not affect order. Reattaching at the same
@@ -996,7 +997,9 @@ The stored status of a run and the state of a preparation keep their values.
 The server derives `running` and `idle` from the times of application output only. It
 keeps the times in memory and tracks them without views. Application output changes
 what a view shows: a cell of the screen, or the rows in history. A cursor move, a
-title, or a bell alone is not application output. See
+title, or a bell alone is not application output. A burst of changes that leaves the
+screen as it was within 1 second is not application output either, so the server
+knows about a change up to 1 second after the first change of its burst. See
 [activity detection](SPEC.md#activity-detection). Output in the 300 milliseconds after
 an `input`, a `resize` that changes the PTY size, or a `signal` is not application
 output. This excludes the echo of typed input and the redraw after a size change. A

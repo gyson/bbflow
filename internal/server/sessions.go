@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,8 +43,23 @@ type runningSession struct {
 	received func(id string, data []byte)
 	// quiet records that a recorded output is not session activity. It can be nil.
 	quiet func(seq int64) error
-	// classified is the sequence of the latest event that publish completed. The quiet
-	// flags of the events up to it are final. See history.OutputBounds.
+	// classifyMu orders publish and settle. Each of them sets quiet flags, then moves
+	// classified.
+	classifyMu sync.Mutex
+	// burst holds the latest changes of the screen until the server knows whether they
+	// last. It is nil between bursts.
+	burst *burst
+	// settler calls settle at the next deadline of a burst. It is nil in fixtures, which
+	// call settle.
+	settler *time.Timer
+	// unmarked holds the quiet events whose flag is not written yet, oldest first. A
+	// failed write leaves them here for the next publish or settle. Requires classifyMu.
+	unmarked []int64
+	// published is the sequence of the latest event that apply completed.
+	published int64
+	// classified is the sequence of the latest event whose quiet flag is final: the
+	// latest published event, or the event before a burst or an unwritten flag. See
+	// history.OutputBounds.
 	classified int64
 	shell      string // Identifies the shell of a side terminal.
 }
@@ -209,10 +225,17 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 	}
 	// The runtime ignores a resize to the current PTY size, so the application does not
 	// redraw. Such a resize must not hide the application output that follows it.
-	if len(controls) > 0 && (message.Type != "resize" || message.Size != r.terminal.Size()) {
+	action := len(controls) > 0 && (message.Type != "resize" || message.Size != r.terminal.Size())
+	if action {
 		r.activity.viewAction(time.Now())
 	}
+	burst := action && r.burst != nil
 	r.mu.Unlock()
+	// A view action ends a burst before the PTY gets the control, so the comparison
+	// does not include an echo or a redraw. The application does not always echo.
+	if burst {
+		r.settleNow(true)
+	}
 	for _, control := range controls {
 		select {
 		case r.controls <- control:
@@ -226,52 +249,155 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 
 // publish gives a recorded event to the emulator and wakes the views. Output of a
 // session is application activity when it changes what a view shows after the echo
-// window of a view action. publish marks other output as quiet in the archive.
+// window of a view action, and the change lasts. Such output starts a burst, see
+// settleTime. A burst that puts the screen back as it was is not activity, as a notice
+// that the application shows and erases. A view action ends a burst at once, see
+// control. publish also ends a burst before the echo or the redraw, when the output
+// comes before control ends the burst. publish and settle mark other output as quiet in
+// the archive.
 func (r *runningSession) publish(event history.Event) ([]byte, error) {
-	responses, quiet, err := r.apply(event)
-	if err == nil && quiet && r.quiet != nil {
-		err = r.quiet(event.Seq)
-	}
+	return r.publishAt(event, time.Now())
+}
+
+func (r *runningSession) publishAt(event history.Event, now time.Time) ([]byte, error) {
+	r.classifyMu.Lock()
+	defer r.classifyMu.Unlock()
+	responses, quiet, err := r.apply(event, now)
 	if err == nil {
-		r.mu.Lock()
-		r.classified = event.Seq
-		r.mu.Unlock()
+		err = r.markQuiet(quiet)
 	}
 	return responses, err
 }
 
-func (r *runningSession) apply(event history.Event) (responses []byte, quiet bool, err error) {
+// apply returns the events that it found quiet.
+func (r *runningSession) apply(event history.Event, now time.Time) (responses []byte, quiet []int64, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.terminal == nil {
 		r.terminal = terminal.New(protocol.Size{Cols: 80, Rows: 24})
 	}
-	now := time.Now()
 	switch {
 	case event.Kind != "output" || r.side:
+		// A start or a size change. The size change ends a burst before its redraw.
+		quiet = r.endBurst()
 		responses, err = r.terminal.Apply(event)
 	case !r.activity.afterEcho(now):
 		// The echo of typed input or the redraw after a size change. A comparison would
-		// not change the status.
+		// not change the status. The view action ends a burst before this output.
+		quiet = append(r.endBurst(), event.Seq)
 		responses, err = r.terminal.Apply(event)
-		quiet = true
 	default:
+		if r.burst == nil {
+			r.terminal.Mark()
+		}
 		var changed bool
 		responses, changed, err = r.terminal.ApplyChange(event)
-		if changed {
-			r.activity.applicationOutput(now)
+		if !changed {
+			quiet = []int64{event.Seq}
+			break
 		}
-		quiet = !changed
+		if r.burst == nil {
+			r.burst = &burst{start: now}
+			if r.settler != nil {
+				r.settler.Reset(settleTime)
+			}
+		}
+		r.burst.last = now
+		r.burst.events = append(r.burst.events, event.Seq)
+		if now.Sub(r.burst.start) >= settleTime {
+			// The screen changed again settleTime after the first change. That is
+			// activity, also when the screen is then as it was.
+			r.activity.applicationOutput(now)
+			r.burst = nil
+		}
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
 	r.runID = event.RunID
+	r.published = event.Seq
 	r.revision++
 	for client := range r.clients {
 		client.wake()
 	}
 	return responses, quiet, nil
+}
+
+// endBurst ends the burst now. A burst that put the screen back as it was is not
+// activity, so endBurst returns its events. Requires r.mu.
+func (r *runningSession) endBurst() []int64 {
+	b := r.burst
+	if b == nil {
+		return nil
+	}
+	r.burst = nil
+	if r.terminal.SameAsMark() {
+		return b.events
+	}
+	r.activity.applicationOutput(b.last)
+	return nil
+}
+
+// settle ends a burst at a deadline. settleTime after the first change, a burst counts
+// when the screen differs from the screen before the burst. A burst that put the screen
+// back as it was ends when the screen stayed the same for settleTime. With end, settle
+// ends any burst now: at a view action, and after the last publish of the terminal.
+func (r *runningSession) settle(now time.Time, end bool) error {
+	r.classifyMu.Lock()
+	defer r.classifyMu.Unlock()
+	r.mu.Lock()
+	var quiet []int64
+	if b := r.burst; b != nil {
+		lasted := now.Sub(b.start) >= settleTime && !r.terminal.SameAsMark()
+		if end || lasted || now.Sub(b.last) >= settleTime {
+			quiet = r.endBurst()
+		} else if r.settler != nil {
+			next := b.start.Add(settleTime)
+			if !now.Before(next) {
+				next = b.last.Add(settleTime)
+			}
+			r.settler.Reset(next.Sub(now))
+		}
+	}
+	r.mu.Unlock()
+	return r.markQuiet(quiet)
+}
+
+// settleNow calls settle at the current time. A flag that settle cannot write stays in
+// unmarked for a later write, so settleNow only logs the error. Until that write, the
+// output keeps quiet 0 and the session list does not count it.
+func (r *runningSession) settleNow(end bool) {
+	if err := r.settle(time.Now(), end); err != nil {
+		log.Printf("session %s: %v", r.id, err)
+	}
+}
+
+// markQuiet sets the quiet flag of each event and of each earlier event whose write
+// failed. Then it moves classified. The flags of the events of a burst are not final,
+// so classified stays before its first event, and before the first unwritten flag.
+// Requires r.classifyMu.
+func (r *runningSession) markQuiet(events []int64) error {
+	r.unmarked = append(r.unmarked, events...)
+	if r.quiet == nil {
+		r.unmarked = nil
+	}
+	var err error
+	for len(r.unmarked) > 0 {
+		if err = r.quiet(r.unmarked[0]); err != nil {
+			break
+		}
+		r.unmarked = r.unmarked[1:]
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.classified = r.published
+	if r.burst != nil {
+		r.classified = r.burst.events[0] - 1
+	}
+	if len(r.unmarked) > 0 {
+		r.classified = min(r.classified, r.unmarked[0]-1)
+	}
+	return err
 }
 
 // finish ends the terminal. Each view gets the exit code, the recorded run status, and
@@ -297,6 +423,8 @@ func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, ses
 	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool, toolID: run.ToolID, activity: activity{output: time.Now()}}
 	r.received = func(id string, data []byte) { s.titleAfterReceipt(session.ID, id, data) }
 	r.quiet = s.store.MarkQuiet
+	r.settler = time.AfterFunc(settleTime, func() { r.settleNow(false) })
+	r.settler.Stop()
 	s.sessions[session.ID] = r
 	s.mu.Unlock()
 	launch := func() {
@@ -305,7 +433,10 @@ func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, ses
 			defer s.wg.Done()
 			defer cancel()
 			code, err := agent.Run(runContext, s.store, session, *run, r.controls, r.publish)
-			err = errors.Join(err, s.saveScreen(r))
+			// Each quiet flag must be final before the terminal leaves the sessions. A flag
+			// that this cannot write keeps quiet 0, so the output counts.
+			r.settler.Stop()
+			err = errors.Join(err, r.settle(time.Now(), true), s.saveScreen(r))
 			// A run that failed before its start event has no recorded status.
 			status := ""
 			if run, lookupErr := s.store.SessionRun(session.ID, r.run()); lookupErr == nil {

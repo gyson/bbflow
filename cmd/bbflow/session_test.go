@@ -118,6 +118,22 @@ func fixtureAgent() {
 				emitted = true
 			}
 		}
+	case "notice":
+		// An agent CLI that waits for input. On the trigger, it shows a notice in its
+		// footer and erases it 200 milliseconds later, as Claude Code 2.1.332 does with
+		// "Checking for updates…" every 30 minutes.
+		ticker := time.NewTicker(20 * time.Millisecond)
+		defer ticker.Stop()
+		fmt.Print("READY\r\n> ")
+		emitted := false
+		for range ticker.C {
+			if _, err := os.Stat(os.Args[3]); err == nil && !emitted {
+				fmt.Print("\x1b7\x1b[24;50HChecking for updates…\x1b8")
+				time.Sleep(200 * time.Millisecond)
+				fmt.Print("\x1b7\x1b[24;50H\x1b[K\x1b8")
+				emitted = true
+			}
+		}
 	case "scope":
 		fmt.Println("READY")
 		cmd := exec.Command(os.Args[0], "query", "SELECT session_id FROM events WHERE session_id='"+os.Getenv("BBFLOW_SESSION")+"'")

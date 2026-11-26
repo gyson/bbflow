@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -30,18 +31,17 @@ func TestActivityFollowsApplicationOutput(t *testing.T) {
 	check("background output", 10*time.Second, "running")
 	check("the last output", 20*time.Second-time.Millisecond, "running")
 	check("the last output", 20*time.Second, "idle")
+	// The server knows that output is activity only after its burst ends. A burst that
+	// ends later with an older change does not move the time back.
+	a.applicationOutput(start.Add(5 * time.Second))
+	check("an older change", 20*time.Second-time.Millisecond, "running")
 
-	// The echo of typed input and the redraw after a size change are not activity.
-	for at := 20 * time.Second; at < 30*time.Second; at += 200 * time.Millisecond {
-		a.viewAction(start.Add(at))
-		a.applicationOutput(start.Add(at + echoWindow - time.Millisecond))
+	// Output in the 300 milliseconds after a view action is the echo of typed input or
+	// the redraw after a size change.
+	a.viewAction(start.Add(30 * time.Second))
+	if a.afterEcho(start.Add(30*time.Second+echoWindow-time.Millisecond)) || !a.afterEcho(start.Add(30*time.Second+echoWindow)) {
+		t.Fatalf("the echo window is not %v", echoWindow)
 	}
-	check("typed input", 30*time.Second, "idle")
-
-	// Output continues after the view action, as when an agent starts to work.
-	a.viewAction(start.Add(40 * time.Second))
-	a.applicationOutput(start.Add(40*time.Second + echoWindow))
-	check("output after the echo window", 40*time.Second+echoWindow, "running")
 }
 
 func TestSessionStatusHasFourValues(t *testing.T) {
@@ -123,6 +123,9 @@ func TestOnlyChangedResizeStartsEchoWindow(t *testing.T) {
 		if _, err := r.publish(history.Event{Kind: "output", Data: []byte("line\r\n")}); err != nil {
 			t.Fatal(err)
 		}
+		if err := r.settle(time.Now().Add(settleTime), false); err != nil {
+			t.Fatal(err)
+		}
 		if got := r.status(time.Now()); got != test.want {
 			t.Fatalf("output after %s has status %s, expected %s", test.name, got, test.want)
 		}
@@ -136,14 +139,20 @@ func TestOutputThatChangesNothingIsQuiet(t *testing.T) {
 	var quiet []int64
 	r := &runningSession{id: "fixture", terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
 		quiet: func(seq int64) error { quiet = append(quiet, seq); return nil }}
-	idle := time.Now().Add(-time.Minute)
+	now := time.Unix(1000, 0)
+	idle := now.Add(-time.Minute)
 	r.activity = activity{output: idle, view: idle}
+	// publish gives the event to the server, and then the screen stays the same.
 	publish := func(reason string, event history.Event, status string, marked ...int64) {
 		t.Helper()
-		if _, err := r.publish(event); err != nil {
+		if _, err := r.publishAt(event, now); err != nil {
 			t.Fatal(err)
 		}
-		if got := r.status(time.Now()); got != status || fmt.Sprint(quiet) != fmt.Sprint(marked) {
+		now = now.Add(settleTime)
+		if err := r.settle(now, false); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.status(now); got != status || fmt.Sprint(quiet) != fmt.Sprint(marked) {
 			t.Fatalf("%s: status %s and quiet events %v, expected %s and %v", reason, got, quiet, status, marked)
 		}
 	}
@@ -157,13 +166,252 @@ func TestOutputThatChangesNothingIsQuiet(t *testing.T) {
 	// Claude Code rings the bell while it waits for input.
 	publish("a bell", output(3, "\x07"), "idle", 2, 3)
 	// The application answers a focus report of a view.
-	r.activity.viewAction(time.Now())
+	r.activity.viewAction(now)
 	publish("the reply to a focus report", output(4, "\x1b(B\x1b[?2004h"), "idle", 2, 3, 4)
 	// The echo of typed input changes the screen, but it is not application activity.
+	r.activity.viewAction(now)
 	publish("the echo of typed input", output(5, "x"), "idle", 2, 3, 4, 5)
-	r.activity.view = idle
 	publish("a notice", output(6, "\r\nnotice"), "running", 2, 3, 4, 5)
 	publish("a size change", history.Event{Seq: 7, Kind: "resize", Data: []byte(`{"cols":40,"rows":10}`)}, "running", 2, 3, 4, 5)
+}
+
+// Claude Code 2.1.332 shows "Checking for updates…" in its footer every 30 minutes, and
+// it erases the notice about 0.2 seconds later. A burst of changes that puts the screen
+// back as it was is not activity: the session stays idle, and its output is quiet. The
+// session list waits for the end of the burst.
+func TestChangeThatIsChangedBackIsQuiet(t *testing.T) {
+	var quiet []int64
+	r := &runningSession{id: "fixture", terminal: terminal.New(protocol.Size{Cols: 173, Rows: 30}),
+		quiet: func(seq int64) error { quiet = append(quiet, seq); return nil }}
+	now := time.Unix(1000, 0)
+	wait := func(d time.Duration) { now = now.Add(d) }
+	// idle makes the latest application output old, so a change shows as running.
+	idle := func() { r.activity.output = now.Add(-time.Minute) }
+	idle()
+	r.activity.view = now.Add(-time.Minute)
+	// A dot in the first cell, and the prompt of Claude Code. The cursor is in the third
+	// column of the prompt.
+	if _, err := r.terminal.Apply(history.Event{Kind: "output", Data: []byte("●\x1b[6;1H❯ ")}); err != nil {
+		t.Fatal(err)
+	}
+	var seq int64
+	publish := func(data string) {
+		t.Helper()
+		seq++
+		if _, err := r.publishAt(history.Event{Seq: seq, Kind: "output", Data: []byte(data)}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settle := func(final bool) {
+		t.Helper()
+		if err := r.settle(now, final); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(reason, status string, classified int64, marked ...int64) {
+		t.Helper()
+		r.mu.Lock()
+		got := r.classified
+		r.mu.Unlock()
+		if s := r.status(now); s != status || got != classified || fmt.Sprint(quiet) != fmt.Sprint(marked) {
+			t.Fatalf("%s: status %s, classified %d, quiet events %v; expected %s, %d, %v", reason, s, got, quiet, status, classified, marked)
+		}
+	}
+	// lasts checks that a burst that counts gives the time of its latest change. The
+	// session is running until idleAfter after that change.
+	lasts := func(reason string, change time.Time) {
+		t.Helper()
+		before, after := r.status(change.Add(idleAfter-time.Millisecond)), r.status(change.Add(idleAfter))
+		if before != "running" || after != "idle" {
+			t.Fatalf("%s: status %s before and %s at %v after the latest change, expected running and idle", reason, before, after, idleAfter)
+		}
+	}
+	// The frames that Claude Code 2.1.332 wrote in a session with 173 columns.
+	notice := "\x1b[?25l\x1b[2D\x1b[3B\r\x1b[148C\x1b[1A\x1b[38;2;153;153;153mChecking for updates…\x1b[39m\r\r\n\x1b[2C\x1b[3A\x1b[?25h"
+	erase := "\x1b[?25l\x1b[2D\x1b[3B\r\x1b[148C\x1b[1A\x1b[K\r\r\n\x1b[2C\x1b[3A\x1b[?25h"
+	publish(notice) // 1
+	check("the notice", "idle", 0)
+	wait(200 * time.Millisecond)
+	publish(erase) // 2
+	check("the erased notice", "idle", 0)
+	wait(settleTime - time.Millisecond)
+	settle(false)
+	check("the screen before it settles", "idle", 0)
+	wait(time.Millisecond)
+	settle(false)
+	check("the settled screen", "idle", 2, 1, 2)
+
+	// A notice that stays is activity.
+	wait(time.Minute)
+	publish("\x1b7\x1b[3;1H※ recap: the goal is a fix\x1b8") // 3
+	change := now
+	check("a notice that stays", "idle", 2, 1, 2)
+	wait(settleTime)
+	settle(false)
+	check("the settled notice", "running", 3, 1, 2)
+	lasts("the settled notice", change)
+
+	// A burst counts settleTime after its first change, also when a later change came
+	// less than settleTime before.
+	wait(time.Minute)
+	idle()
+	publish("\x1b7\x1b[2;1HReading files\x1b8") // 4
+	wait(900 * time.Millisecond)
+	publish("\x1b7\x1b[3;1HRead 2 files\x1b8") // 5
+	change = now
+	wait(settleTime - 900*time.Millisecond - time.Millisecond)
+	settle(false)
+	check("two changes before one second", "idle", 3, 1, 2)
+	wait(time.Millisecond)
+	settle(false)
+	check("two changes after one second", "running", 5, 1, 2)
+	lasts("two changes", change)
+
+	// A blink that keeps changing the screen for settleTime is activity, also when the
+	// screen is then as it was.
+	wait(time.Minute)
+	idle()
+	for _, cell := range []string{" ", "●", " ", "●", " ", "●"} { // 6 to 11
+		change = now
+		publish("\x1b7\x1b[1;1H" + cell + "\x1b8")
+		wait(200 * time.Millisecond)
+	}
+	check("a blink for one second", "running", 11, 1, 2)
+	lasts("a blink", change)
+
+	// The echo after a view action ends a burst, when the echo comes before the view
+	// action ends the burst. The burst is quiet when the screen was back as it was.
+	wait(time.Minute)
+	idle()
+	publish(notice) // 12
+	wait(200 * time.Millisecond)
+	publish(erase) // 13
+	wait(300 * time.Millisecond)
+	r.activity.viewAction(now)
+	wait(50 * time.Millisecond)
+	publish("x") // 14, the echo
+	check("an input after the erased notice", "idle", 14, 1, 2, 12, 13, 14)
+	// The burst is activity when its change still shows. The echo stays quiet.
+	wait(time.Minute)
+	publish("\x1b7\x1b[4;1H? for shortcuts\x1b8") // 15
+	r.activity.viewAction(now)
+	wait(50 * time.Millisecond)
+	publish("\x08 \x08") // 16, the echo
+	check("an input during the change", "running", 16, 1, 2, 12, 13, 14, 16)
+
+	// The end of the terminal ends a burst at once.
+	wait(time.Minute)
+	idle()
+	publish(notice) // 17
+	wait(100 * time.Millisecond)
+	publish(erase) // 18
+	check("a burst at the end of the terminal", "idle", 16, 1, 2, 12, 13, 14, 16)
+	settle(true)
+	check("the end of the terminal", "idle", 18, 1, 2, 12, 13, 14, 16, 17, 18)
+}
+
+// A view action ends a burst when the server accepts it, also when the application
+// writes no echo.
+func TestViewActionEndsABurst(t *testing.T) {
+	size := protocol.Size{Cols: 80, Rows: 24}
+	var quiet []int64
+	r := &runningSession{id: "fixture", controls: make(chan agent.Control, 16), done: make(chan struct{}), terminal: terminal.New(size),
+		quiet: func(seq int64) error { quiet = append(quiet, seq); return nil }}
+	view := r.subscribe(nil, size)
+	idle := time.Now().Add(-time.Minute)
+	r.activity = activity{output: idle, view: idle}
+	publish := func(seq int64, data string) {
+		t.Helper()
+		// The output comes now, or after the echo window of the latest view action.
+		at := time.Now()
+		r.mu.Lock()
+		if after := r.activity.view.Add(echoWindow); after.After(at) {
+			at = after
+		}
+		r.mu.Unlock()
+		if _, err := r.publishAt(history.Event{Seq: seq, Kind: "output", Data: []byte(data)}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := func() {
+		t.Helper()
+		r.control(view, protocol.Message{Type: "input", Data: []byte("x")})
+		if control := <-r.controls; control.Type != "input" {
+			t.Fatalf("the runtime got %+v", control)
+		}
+	}
+	check := func(reason, status string, classified int64, marked ...int64) {
+		t.Helper()
+		r.mu.Lock()
+		got := r.classified
+		r.mu.Unlock()
+		if s := r.status(time.Now()); s != status || got != classified || fmt.Sprint(quiet) != fmt.Sprint(marked) {
+			t.Fatalf("%s: status %s, classified %d, quiet events %v; expected %s, %d, %v", reason, s, got, quiet, status, classified, marked)
+		}
+	}
+	// A notice, and an erase after the input. The input ends the burst while the notice
+	// shows, so the notice counts. The erase is a change that lasts too.
+	publish(1, "\x1b7\x1b[24;50Hnotice\x1b8")
+	input()
+	check("an input during the notice", "running", 1)
+	publish(2, "\x1b7\x1b[24;50H\x1b[K\x1b8")
+	if err := r.settle(time.Now().Add(time.Minute), false); err != nil {
+		t.Fatal(err)
+	}
+	check("the erase after the input", "running", 2)
+	// A notice and its erase before the input. The burst is quiet.
+	r.activity.output = idle
+	publish(3, "\x1b7\x1b[24;50Hnotice\x1b8")
+	publish(4, "\x1b7\x1b[24;50H\x1b[K\x1b8")
+	input()
+	check("an input after the erased notice", "idle", 4, 3, 4)
+}
+
+// A quiet flag that the server cannot write stays pending. The session list does not
+// count the output until a later write succeeds.
+func TestFailedQuietFlagIsWrittenLater(t *testing.T) {
+	var quiet []int64
+	failed := false
+	r := &runningSession{id: "fixture", terminal: terminal.New(protocol.Size{Cols: 80, Rows: 24}),
+		quiet: func(seq int64) error {
+			if seq == 2 && !failed {
+				failed = true
+				return errors.New("injected failure")
+			}
+			quiet = append(quiet, seq)
+			return nil
+		}}
+	now := time.Unix(1000, 0)
+	r.activity = activity{output: now.Add(-time.Minute), view: now.Add(-time.Minute)}
+	publish := func(seq int64, data string) error {
+		_, err := r.publishAt(history.Event{Seq: seq, Kind: "output", Data: []byte(data)}, now)
+		return err
+	}
+	check := func(reason string, classified int64, marked ...int64) {
+		t.Helper()
+		r.mu.Lock()
+		got := r.classified
+		r.mu.Unlock()
+		if got != classified || fmt.Sprint(quiet) != fmt.Sprint(marked) {
+			t.Fatalf("%s: classified %d, quiet events %v; expected %d, %v", reason, got, quiet, classified, marked)
+		}
+	}
+	if publish(1, "\x1b7\x1b[24;50Hnotice\x1b8") != nil || publish(2, "\x1b7\x1b[24;50H\x1b[K\x1b8") != nil {
+		t.Fatal("publish failed")
+	}
+	now = now.Add(settleTime)
+	if err := r.settle(now, false); err == nil {
+		t.Fatal("the injected failure did not reach settle")
+	}
+	check("a failed flag", 1, 1)
+	// A frame that changes nothing writes the pending flag first.
+	if err := publish(3, "\x1b[?25h"); err != nil {
+		t.Fatal(err)
+	}
+	check("the next publish", 3, 1, 2, 3)
+	if got := r.status(now); got != "idle" {
+		t.Fatalf("the erased notice gave the status %s", got)
+	}
 }
 
 // The runtime records output before the server compares the screen and sets the quiet
@@ -224,8 +472,13 @@ func TestSessionListWaitsForTheQuietFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	first("a frame with its quiet flag", other.ID)
+	// The server knows that a change is activity only after its burst ends.
 	publish(record(session.ID, "output", "answer"))
-	first("output that changes the screen", session.ID)
+	first("a change before the end of its burst", other.ID)
+	if err = live.settle(time.Now().Add(settleTime), false); err != nil {
+		t.Fatal(err)
+	}
+	first("a change after the end of its burst", session.ID)
 }
 
 // A terminal can start while the server reads the session list. The list must not count

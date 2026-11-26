@@ -123,8 +123,10 @@ Event kinds:
 Only `input` and `output` events can be quiet. Events of other kinds always have `0`.
 A focus report or a mouse report of a view is a quiet `input`. An `output` is quiet when
 it changed nothing on the screen, or when it came in the 300 milliseconds after an
-input, a size change, or a signal from a view. The server sets the flag of an `output`
-just after it records the output, so a query can see `0` for a short time. Events from
+input, a size change, or a signal from a view. An `output` is also quiet when it was
+part of a short burst of changes that left the screen as it was, such as a notice that
+the application erased within 1 second. The server sets the flag of an `output` up to 2
+seconds after it records the output, so a query can see `0` for that time. Events from
 before the `quiet` column have `0`.
 
 The session list orders sessions by their latest `start`, `run`, `input`, `output`, or
