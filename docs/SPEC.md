@@ -1064,7 +1064,8 @@ Archived has no stop items, because archived sessions have no live terminal.
 
 Below the list, a row holds **＋ Project**, **Archived**, **Usage**, and **Settings**.
 In a narrow sidebar, **Usage** and **Settings** go to a second line together. **Usage**
-opens the [Usage dialog](#usage-dialog). A newer release or a failed update shows as a
+opens the [Usage dialog](#usage-dialog). **Usage** shows only when a tool with a
+[usage check](#usage-limits) is on. A newer release or a failed update shows as a
 [dot on Settings](#dot-on-settings). The instance directory shows below the row. The
 sidebar shows the server connection only while the server is unavailable.
 
@@ -2144,6 +2145,9 @@ no history.
   **Codex**, **Claude Code**, and **Antigravity**, sorted by name. Shell, Code Puppy,
   and custom tools have no check. Without such a tool, the dialog tells the user to turn
   one on in Settings.
+- Without a tool that has a check, **Usage** is hidden. The page reads the settings
+  when it loads. A read or a save of the settings in the tab, in Settings or in the
+  dialog, shows or hides **Usage** again.
 - Each section has a row for each limit. A row shows the name of the limit, a bar, the
   part that is left, and the reset time. An example is **5-hour**, **62% left**, and
   **Resets 6:32 AM · in 3 h 52 min**.
@@ -2222,6 +2226,9 @@ server, in an empty temporary folder:
   IDs of the reply.
 - An account without plan limits, such as a login with an API key, shows the error of
   the CLI.
+- A change of the tools in another browser tab does not show or hide **Usage**. The tab
+  shows the change after a reload, after Settings opens, or after the dialog opens. A
+  stale **Usage** opens the dialog with the message to turn a tool on.
 - A check uses the installation, authentication, and account of the user. The CLI sends
   its own request to its provider. bbflow adds no history, message, or file to it.
 - When Claude Code cannot read its limits, it can show the last values that it read in
@@ -5212,6 +5219,11 @@ A later browser check with the demo instance verified the saves in Settings:
   CLI path, and the phone layout without a side scroll. It also verified the bottom row
   on one line at the default sidebar width of a 1200-pixel window, and **Usage** and
   **Settings** together on a second line in a 900-pixel window.
+- A browser check of a demo instance verified that **Usage** is hidden at load without
+  a tool that has a check, and shown with one. In Settings, a switch of Codex showed and
+  hid **Usage** without a reload. A tab that loaded before a change in another client
+  hid **Usage** when its dialog opened. Without **Usage**, the bottom row was on one
+  line in a 900-pixel window.
 - A second browser check used a temporary server and a script in place of Claude Code,
   at a CLI path of 226 characters. After one good check, **Check now** failed. The
   warning with the long error wrapped in the dialog, without a side scroll.

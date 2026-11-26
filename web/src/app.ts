@@ -7,7 +7,7 @@ import { DiffPane } from './diff-pane.js';
 import { SideTerminal } from './side-terminal.js';
 import { WorkspacePane } from './workspace-pane.js';
 import { fillToolMenu, toolGroups } from './tool-menu.js';
-import { UsageDialog } from './usage.js';
+import { UsageDialog, usageTools } from './usage.js';
 import { continueAction, continueDialogError, continueDialogProblem, defaultContinueTool } from './continue.js';
 import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, stopMembers, stopShows, stopText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
@@ -243,7 +243,7 @@ const composer = new Composer({
 const sessionSplit = new SessionSplit();
 const sessionMenu = new ActionMenu('session-menu');
 const rowMenus = new RowMenus(() => renderSessions(), $('row-menu-status'));
-const usageDialog = new UsageDialog({ server: () => server });
+const usageDialog = new UsageDialog({ server: () => server, tools: showUsageButton });
 const handoffPrompt = new HandoffPrompt({ blocked: () => composer.insertBlocked(), insert: text => composer.insert(text), problem: text => composer.problem(text) });
 // A view shows one terminal of the selected session. Earlier terminals show their saved
 // final screen. The live process continues while a view shows an earlier terminal.
@@ -304,7 +304,13 @@ const mobileLayout = matchMedia(mobileQuery);
 new FileListWidth();
 
 let showingSettings = false;
-const settingsView = new SettingsView(() => server, updateTerminalTheme, (title, detail) => toasts.show(title, detail));
+// Usage shows only when a tool with a usage check is on. The page load, Settings, and the
+// Usage dialog read the settings, and each read updates it. The server does not tell this
+// tab about a change in another tab.
+function showUsageButton(tools: readonly Tool[]): void {
+  $('usage-open').hidden = !usageTools(tools).length;
+}
+const settingsView = new SettingsView(() => server, updateTerminalTheme, (title, detail) => toasts.show(title, detail), settings => showUsageButton(settings.tools));
 const preparation = new PreparationEditor({
   server: () => server,
   changed(session) {
@@ -1967,6 +1973,7 @@ async function initialize() {
     $('instance-dir').textContent = server.dataDir;
     $('instance-dir').title = server.dataDir;
     await refreshSessions();
+    void call(info, { operation: 'settings-get' }).then(settings => showUsageButton(settings.tools), () => {});
     watchStatuses(info);
     void composerMenu.refresh();
     const route = parseRoute(location.pathname);

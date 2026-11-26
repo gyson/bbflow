@@ -85,7 +85,8 @@ export class UsageDialog {
   // A close ends the requests of the dialog. Their answers then change nothing.
   private generation = 0;
 
-  constructor(private readonly host: { server(): ServerInfo | null }) {
+  // tools runs with the tools of the settings that the dialog reads.
+  constructor(private readonly host: { server(): ServerInfo | null, tools(tools: readonly Tool[]): void }) {
     element('usage-close', HTMLButtonElement).onclick = element('usage-done', HTMLButtonElement).onclick = () => this.dialog.close();
     this.check.onclick = () => this.load(true);
     this.dialog.addEventListener('close', () => { this.generation++; });
@@ -98,6 +99,7 @@ export class UsageDialog {
     const settings = await call(server, { operation: 'settings-get' });
     this.generation++;
     this.tools = usageTools(settings.tools);
+    this.host.tools(settings.tools);
     this.reports.clear();
     this.failures.clear();
     this.pending.clear();

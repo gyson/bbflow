@@ -145,10 +145,12 @@ export class SettingsView {
   private visits = 0;
 
   // report shows an error toast. It tells about an entry that did not save when the user
-  // left Settings, because the view keeps no entry and no error of it. send is the server
-  // call. A fixture replaces it to control the time of each reply.
+  // left Settings, because the view keeps no entry and no error of it. onSaved runs after
+  // each change of the saved settings. send is the server call. A fixture replaces it to
+  // control the time of each reply.
   constructor(private readonly server: () => ServerInfo | null, private readonly updateAppearance: () => void,
-    private readonly report: (title: string, detail: string) => void, private readonly send: typeof call = call) {
+    private readonly report: (title: string, detail: string) => void, private readonly onSaved: (settings: Settings) => void,
+    private readonly send: typeof call = call) {
     this.toolModels = new ModelPicker('tool', { server: () => this.server(), changed: () => this.editorChanged(), send: this.send, permission: true });
     this.toolName.oninput = this.toolCommand.oninput = this.toolPath.oninput = () => this.editorChanged();
     this.toolAdd.onclick = () => this.openEditor(null);
@@ -168,7 +170,10 @@ export class SettingsView {
       save: settings => this.send(connected(), { operation: 'settings-save', settings }),
       get: () => this.send(connected(), { operation: 'settings-get' }),
       conflict: error => error instanceof ConnectionError && error.fromServer,
-    }, () => this.render(), () => this.showStatus());
+    }, () => {
+      this.render();
+      if (this.saves.saved) this.onSaved(this.saves.saved);
+    }, () => this.showStatus());
     this.prompts = new PromptSettings({
       saves: this.saves,
       visits: () => this.visits,

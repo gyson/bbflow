@@ -131,7 +131,7 @@ async function setup(titleTools = [{ id: 'codex', name: 'Codex', command: 'codex
     await tick();
   };
   const toasts = [];
-  const view = new SettingsView(() => server, () => {}, (title, detail) => toasts.push([title, detail]), send);
+  const view = new SettingsView(() => server, () => {}, (title, detail) => toasts.push([title, detail]), () => {}, send);
   const opening = view.open();
   await tick();
   await reply('title-tools', { tools: titleTools, sample: 'Sample' });
