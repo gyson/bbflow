@@ -108,6 +108,10 @@ saves the message as a draft. Click **Send** after the agent is ready.
   also paste or drop files in the editor.
 - Close the tab when you want. The session and its recording continue in the server.
 - To end the session, click **Stop session** in the **More actions** (⋯) menu.
+- To end a session or a sub-session from the sidebar, point to it and click its ⋯
+  button. Click **Stop session**. Then confirm in the dialog.
+- To end a top-level session and its sub-sessions together, click **Stop family** in the
+  ⋯ menu of the top-level session. This item shows while a sub-session is live.
 
 ### Go to a sent message
 

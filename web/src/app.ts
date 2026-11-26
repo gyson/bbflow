@@ -9,7 +9,7 @@ import { WorkspacePane } from './workspace-pane.js';
 import { fillToolMenu, toolGroups } from './tool-menu.js';
 import { UsageDialog } from './usage.js';
 import { continueAction, continueDialogError, continueDialogProblem, defaultContinueTool } from './continue.js';
-import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, terminalsChanged } from './session-status.js';
+import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, stopMembers, stopShows, stopText, terminalsChanged } from './session-status.js';
 import type { EndReason } from './session-status.js';
 import { Watch } from './watch.js';
 import { Terminal } from '@xterm/xterm';
@@ -90,6 +90,15 @@ const elements = {
   'archive-members': element('archive-members', HTMLElement),
   'archive-error': element('archive-error', HTMLElement),
   'archive-submit': element('archive-submit', HTMLButtonElement),
+  'stop-dialog': element('stop-dialog', HTMLDialogElement),
+  'stop-form': element('stop-form', HTMLFormElement),
+  'stop-title': element('stop-title', HTMLElement),
+  'stop-summary': element('stop-summary', HTMLElement),
+  'stop-members': element('stop-members', HTMLElement),
+  'stop-note': element('stop-note', HTMLElement),
+  'stop-error': element('stop-error', HTMLElement),
+  'stop-submit': element('stop-submit', HTMLButtonElement),
+  'cancel-stop': element('cancel-stop', HTMLButtonElement),
   'cancel-archive': element('cancel-archive', HTMLButtonElement),
   'copy-session-id': element('copy-session-id', HTMLButtonElement),
   'rename-dialog': element('rename-dialog', HTMLDialogElement),
@@ -184,8 +193,9 @@ let renderedSidebar = '';
 // The status elements of each session row in the list. A status change updates them in
 // place, so the buttons and the keyboard focus stay. place tells where a sub-session
 // works. The archive item and the ⋯ button of the row menu follow the status too. fixed
-// is true when the menu has an item that applies in each status.
-const statusMarks: { session: SessionInfo; button: HTMLElement; icon: HTMLElement; label: HTMLElement; place: string; archive: HTMLButtonElement; menu: HTMLButtonElement; fixed: boolean }[] = [];
+// is true when the menu has an item that applies in each status. Each stop item follows
+// the statuses of the sessions that it stops. family is true for Stop family.
+const statusMarks: { session: SessionInfo; button: HTMLElement; icon: HTMLElement; label: HTMLElement; place: string; archive: HTMLButtonElement; menu: HTMLButtonElement; fixed: boolean; stops: { item: HTMLButtonElement; members: SessionInfo[]; family: boolean }[] }[] = [];
 let selected: SessionView | null = null;
 let continueRun: string | undefined;
 // The reason that the open Continue dialog shows for a session change, or empty.
@@ -367,6 +377,7 @@ const dialogErrors = new Map([
   [$('project-dialog'), $('project-error')],
   [$('remove-project-dialog'), $('remove-project-error')],
   [$('archive-dialog'), $('archive-error')],
+  [$('stop-dialog'), $('stop-error')],
   [$('rename-dialog'), $('rename-error')],
   [$('continue-dialog'), $('continue-error')],
 ]);
@@ -530,7 +541,7 @@ function controls() {
   const organize = !showingSettings && !!selected?.id && !selected.archived;
   $('new-sub-session').hidden = !organize || !projects.some(project => project.id === selected?.projectId);
   $('new-sub-session').textContent = selected?.parentId ? 'New sub-session in this family' : 'New sub-session';
-  $('new-sub-session').disabled = $('archive-submit').disabled = busy;
+  $('new-sub-session').disabled = $('archive-submit').disabled = $('stop-submit').disabled = busy;
   // The More menu lists only the actions that apply. A live session keeps its worktree.
   $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed' || live(selected.status);
   $('remove-worktree').disabled = $('rename-session').disabled = $('copy-session-id').disabled = busy;
@@ -619,12 +630,29 @@ function sessionRow(session: SessionInfo, options: RowOptions): HTMLElement {
   const canPin = !parent && !context && !archivedList;
   if (canPin) actions.push({ label: session.pinned ? 'Unpin' : 'Pin', run: keyboard => void pinFromList(session, keyboard) });
   // A context row is not in this collection. Its own row in the other list changes it.
-  if (!context) actions.push({ label: session.archived ? 'Restore' : 'Archive', run: keyboard => void archiveFromList(session, keyboard) });
+  const archive: RowAction = { label: session.archived ? 'Restore' : 'Archive', run: keyboard => void archiveFromList(session, keyboard) };
+  if (!context) actions.push(archive);
+  // A stop ends a process, so the stop items are the last items, below a line. Stop
+  // session stops the session of the row only. Stop family stops a top-level session and
+  // its sub-sessions. Archived sessions have no live terminal.
+  const stops: { action: RowAction; members: SessionInfo[]; family: boolean }[] = [];
+  if (!context && !archivedList) {
+    stops.push({ action: { label: 'Stop session', danger: true, divider: true, run: keyboard => void action(() => showStop(session, false, keyboard), failed('stop', session)) }, members: [session], family: false });
+    if (!parent && family?.children.length) {
+      stops.push({ action: { label: 'Stop family', danger: true, run: keyboard => void action(() => showStop(session, true, keyboard), failed('stop the family of', session)) }, members: [family.root, ...family.children], family: true });
+    }
+  }
+  actions.push(...stops.map(stop => stop.action));
   const mark = { session, button, icon, label, place };
   if (actions.length) {
     const menu = rowMenus.create(title.textContent, `menu:${session.id}`, actions);
     row.append(menu.box);
-    if (!context) statusMarks.push({ ...mark, archive: menu.items.at(-1)!, menu: menu.button, fixed: canAdd || canPin });
+    if (!context) {
+      statusMarks.push({
+        ...mark, archive: menu.items[actions.indexOf(archive)]!, menu: menu.button, fixed: canAdd || canPin,
+        stops: stops.map(stop => ({ item: menu.items[actions.indexOf(stop.action)]!, members: stop.members, family: stop.family })),
+      });
+    }
   }
   // A context row is not in the status watch of this list. It shows the listed status.
   if (context) showRowStatus(mark, session.status);
@@ -728,16 +756,22 @@ function shownSessionKeys(): string[] {
     .map(item => item.dataset.focus!);
 }
 
+// Return the status of a session in the list. A live view and the status watch get
+// status changes at once. The list is older.
+function rowStatus(session: SessionInfo): string {
+  return connection?.peer?.active && selected?.id === session.id ? selected.status : listStatus(session, liveStatuses);
+}
+
 // Show the current status of each session in the list, without new buttons.
 function showListStatuses() {
   for (const mark of statusMarks) {
-    // A live view and the status watch get status changes at once. The list is older.
-    const shown = connection?.peer?.active && selected?.id === mark.session.id ? selected.status : listStatus(mark.session, liveStatuses);
+    const shown = rowStatus(mark.session);
     showRowStatus(mark, shown);
-    // The server archives only drafts and ended sessions. A menu without items does not
-    // show its button.
+    // The server archives only drafts and ended sessions. See stopShows for the stop
+    // items. A menu without items does not show its button.
     mark.archive.hidden = live(shown);
-    mark.menu.hidden = !mark.fixed && mark.archive.hidden;
+    for (const stop of mark.stops) stop.item.hidden = !stopShows(stop.members.map(member => ({ ...member, status: rowStatus(member) })), stop.family);
+    mark.menu.hidden = !mark.fixed && mark.archive.hidden && mark.stops.every(stop => stop.item.hidden);
   }
 }
 
@@ -1519,12 +1553,54 @@ let archiving: { session: ArchiveTarget; members: string[] } | null = null;
 // The server rejects a family archive when the sub-sessions changed after the check.
 const familyChanged = 'sub-sessions of this family changed';
 
-// Read the sub-sessions of a top-level session that are not archived. A pinned family is
-// in Pinned. Another view can pin or unpin it at any time, so read both groups.
-async function familyChildren(session: ArchiveTarget): Promise<SessionInfo[]> {
+// Read a top-level session and its sub-sessions that are not archived, with their current
+// status. For a sub-session, read only that session. A pinned family is in Pinned. Another
+// view can pin or unpin it at any time, so read both groups.
+async function readFamily(session: ArchiveTarget): Promise<SessionInfo[]> {
   if (!server) return [];
   const page = await call(server, { operation: 'session-list', groups: [pinnedGroup, groupKey(session.projectId)], limit: 1, session: session.id });
-  return page.sessions.filter(item => item.parentId === session.id && !item.archived);
+  return page.sessions.filter(item => (item.id === session.id || item.parentId === session.id) && !item.archived);
+}
+
+// Read the sub-sessions of a top-level session that are not archived.
+async function familyChildren(session: ArchiveTarget): Promise<SessionInfo[]> {
+  return (await readFamily(session)).filter(item => item.parentId === session.id);
+}
+
+// The session that the stop dialog asks about, and the sessions that it lists. family is
+// true for Stop family, and then session is a top-level session. A family stop sends only
+// the listed members, so a member that starts later continues. keyboard is true when the user chose the item with
+// the keyboard.
+let stopping: { session: SessionInfo; family: boolean; members: string[]; keyboard: boolean } | null = null;
+
+// Ask before a stop from the sidebar, because the view may not show the session. Stop
+// session asks about the session of the row. Stop family lists the members with a live
+// terminal and their status, and it names the members that cannot stop yet. When no
+// session to stop has a live terminal now, the list refresh shows that, and no dialog
+// opens.
+async function showStop(session: SessionInfo, family: boolean, keyboard: boolean): Promise<void> {
+  const read = await readFamily(session);
+  const current = read.find(member => member.id === session.id) ?? session;
+  const { stop, starting } = stopMembers(family ? read : [current]);
+  if (!stop.length) {
+    await refreshSessions();
+    return;
+  }
+  stopping = { session, family, members: stop.map(member => member.id), keyboard };
+  const text = stopText(current, stop, starting, family);
+  $('stop-title').textContent = text.title;
+  $('stop-summary').textContent = text.summary;
+  $('stop-members').replaceChildren(...text.lines.map(line => {
+    const item = document.createElement('li');
+    item.textContent = line;
+    return item;
+  }));
+  $('stop-members').hidden = !text.lines.length;
+  $('stop-note').textContent = text.note;
+  $('stop-note').hidden = !text.note;
+  $('stop-submit').textContent = text.submit;
+  $('stop-error').hidden = true;
+  showDialog($('stop-dialog'));
 }
 
 // Show the members of a family in the archive dialog.
@@ -1611,6 +1687,31 @@ async function initialize() {
     if (selected?.id) await setPinned({ ...selected, id: selected.id }, !selected.pinned);
   }, failed(selected?.pinned ? 'unpin' : 'pin', selected));
   $('cancel-archive').onclick = () => $('archive-dialog').close();
+  $('cancel-stop').onclick = () => $('stop-dialog').close();
+  $('stop-form').onsubmit = event => {
+    event.preventDefault();
+    if (!stopping) return;
+    const { session, family, members, keyboard } = stopping;
+    void action(async () => {
+      if (!server) return;
+      try {
+        await call(server, { operation: 'session-stop', session: session.id, ...(family ? { members } : {}) });
+      } catch (error) {
+        // The sessions that stopped show in the list. The dialog stays open for a retry.
+        $('stop-error').textContent = errorMessage(error);
+        $('stop-error').hidden = false;
+        await refreshSessions();
+        return;
+      }
+      $('stop-dialog').close();
+      // A view of the live terminal gets the exit message. A view of an earlier terminal
+      // reads the stored status of the stopped run.
+      await refreshSessions();
+      if (selected?.id && members.includes(selected.id)) await loadTerminals(selected.id);
+    }, failed(family ? 'stop the family of' : 'stop', session)).then(() => {
+      if (keyboard && !$('stop-dialog').open) refocusSidebar(`menu:${session.id}`);
+    });
+  };
   $('page-bar-reload').onclick = () => location.reload();
   // A click shows the start warning on devices without hover. A focus loss hides it.
   $('workspace-warning').onclick = () => $('workspace-warning').classList.toggle('tip-open');

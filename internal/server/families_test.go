@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"bbflow/internal/history"
@@ -205,5 +206,90 @@ func TestSessionSummariesCarryTheLatestRunStatus(t *testing.T) {
 	// status.
 	if statuses["Failed run"] != "ended/failed" || statuses["Composer fixture"] != "ended/" {
 		t.Fatal(statuses)
+	}
+}
+
+// fakeTerminal returns a live terminal that ends at once when it is stopped. stopped
+// reports the stop.
+func fakeTerminal(id string) (r *runningSession, stopped func() bool) {
+	done := make(chan struct{})
+	var once sync.Once
+	r = &runningSession{id: id, done: done, cancel: func() { once.Do(func() { close(done) }) }}
+	return r, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}
+}
+
+func TestFamilyStopEndsOnlyTheConfirmedMembers(t *testing.T) {
+	ctx := context.Background()
+	s, _ := composerServer(t)
+	project, err := s.addProject("Family", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := func(parent string) string {
+		t.Helper()
+		session, err := s.prepareProject(ctx, project.ID, parent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return session.ID
+	}
+	parent := draft("")
+	first, second := draft(parent), draft(parent)
+	other := draft("")
+	otherChild := draft(other)
+	stopped := map[string]func() bool{}
+	s.sessions = map[string]*runningSession{}
+	for _, id := range []string{parent, first, second, otherChild} {
+		s.sessions[id], stopped[id] = fakeTerminal(id)
+	}
+	result := func(value any) bool { return value.(map[string]bool)["stopped"] }
+
+	// A member of another family, a sub-session as the family, and a missing session stop
+	// nothing.
+	for _, request := range []struct {
+		id      string
+		members []string
+	}{
+		{parent, []string{first, otherChild}},
+		{first, []string{first}},
+		{parent, []string{parent, "missing"}},
+	} {
+		if _, err := s.stopSession(request.id, request.members); err == nil {
+			t.Fatal(request, "stopped")
+		}
+		for id, done := range stopped {
+			if done() {
+				t.Fatal(request, id, "stopped")
+			}
+		}
+	}
+
+	// The confirmed members stop. A live sub-session that the user did not confirm
+	// continues, and so does another family.
+	value, err := s.stopSession(parent, []string{parent, first, first})
+	if err != nil || !result(value) {
+		t.Fatal(value, err)
+	}
+	if !stopped[parent]() || !stopped[first]() || stopped[second]() || stopped[otherChild]() {
+		t.Fatal("wrong members stopped")
+	}
+
+	// Members without a live terminal are skipped.
+	delete(s.sessions, parent)
+	delete(s.sessions, first)
+	if value, err = s.stopSession(parent, []string{parent, first}); err != nil || result(value) {
+		t.Fatal(value, err)
+	}
+
+	// Without members, a stop ends only the session itself.
+	if value, err = s.stopSession(second, nil); err != nil || !result(value) || !stopped[second]() || stopped[otherChild]() {
+		t.Fatal(value, err)
 	}
 }

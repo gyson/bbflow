@@ -292,6 +292,17 @@
       <button id="archive-submit" type="submit" class="primary">Archive family</button>
     </form>
   </dialog>
+  <dialog id="stop-dialog" aria-labelledby="stop-title" aria-describedby="stop-summary stop-help">
+    <form id="stop-form">
+      <div class="dialog-heading"><h2 id="stop-title">Stop this session?</h2><button type="button" id="cancel-stop" class="text-button" aria-label="Close stop">✕</button></div>
+      <p id="stop-summary" class="form-help"></p>
+      <ul id="stop-members" class="archive-members" hidden></ul>
+      <p id="stop-note" class="form-help" hidden></p>
+      <p id="stop-help" class="form-help">A stop ends each terminal at once. A running session had a screen change in the last 10 seconds, so its agent can still work. The history stays, and side terminals continue.</p>
+      <p id="stop-error" class="form-error" role="alert" hidden></p>
+      <button id="stop-submit" type="submit" class="primary">Stop session</button>
+    </form>
+  </dialog>
   <dialog id="tool-editor-dialog" class="tool-editor-dialog" aria-labelledby="tool-editor-title">
     <form id="tool-editor" class="tool-editor">
       <div class="dialog-heading"><h2 id="tool-editor-title">New tool</h2><button type="button" id="tool-close" class="text-button" aria-label="Close the tool editor">✕</button></div>

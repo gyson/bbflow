@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -671,18 +672,68 @@ func (s *Server) archiveSession(id string, archived bool, members []string) erro
 	return nil
 }
 
-func (s *Server) stopSession(id string) (any, error) {
-	if r := s.running(id); r != nil {
-		r.cancel()
+// stopSession ends the live terminal of a session. With members, it stops a family:
+// id is a top-level session, and members are the sessions of its family that the user
+// confirmed. They can include id. Every member must be id or a sub-session of id, or
+// nothing stops. A member without a live terminal is skipped, for example one that ended
+// after the confirmation. Other live sessions of the family continue. stopped is true when
+// the request ended at least one terminal. Side terminals continue.
+func (s *Server) stopSession(id string, members []string) (any, error) {
+	family := members != nil
+	if family {
+		if err := s.checkFamily(id, members); err != nil {
+			return nil, err
+		}
+	} else {
+		members = []string{id}
+	}
+	var stopping []*runningSession
+	for _, member := range members {
+		if r := s.running(member); r != nil && !slices.Contains(stopping, r) {
+			r.cancel()
+			stopping = append(stopping, r)
+		}
+	}
+	if !family && len(stopping) == 0 {
+		if _, err := s.store.Session(id); err != nil {
+			return nil, err
+		}
+	}
+	deadline := time.After(10 * time.Second)
+	for _, r := range stopping {
 		select {
 		case <-r.done:
-			return map[string]bool{"stopped": true}, nil
-		case <-time.After(10 * time.Second):
+		case <-deadline:
+			if family {
+				return nil, errors.New("a session of this family has not finished stopping")
+			}
 			return nil, errors.New("session has not finished stopping")
 		}
 	}
-	if _, err := s.store.Session(id); err != nil {
-		return nil, err
+	return map[string]bool{"stopped": len(stopping) > 0}, nil
+}
+
+// checkFamily reports an error unless id is a top-level session and each member is id or
+// a sub-session of id.
+func (s *Server) checkFamily(id string, members []string) error {
+	root, err := s.store.Session(id)
+	if err != nil {
+		return err
 	}
-	return map[string]bool{"stopped": false}, nil
+	if root.ParentID != "" {
+		return errors.New("a family stop needs a top-level session")
+	}
+	for _, member := range members {
+		if member == id {
+			continue
+		}
+		session, err := s.store.Session(member)
+		if err != nil {
+			return err
+		}
+		if session.ParentID != id {
+			return errors.New("a session to stop is not in this family")
+		}
+	}
+	return nil
 }

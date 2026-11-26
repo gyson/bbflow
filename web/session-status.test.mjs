@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, terminalsChanged } from './dist/session-status.js';
+import { endReasonText, exitReason, hasTerminal, listStatus, listStatusLabel, listStatusText, live, statusIcon, statusText, stopMembers, stopShows, stopText, terminalsChanged } from './dist/session-status.js';
 
 test('only running and idle sessions are live', () => {
   for (const status of ['running', 'idle']) assert.equal(live(status), true, status);
@@ -82,4 +82,72 @@ test('an ended session does not show the status of a run that is not ended', () 
     assert.equal(endReasonText(null, { id: 'run-1', status }), '', status);
     assert.equal(endReasonText({ run: 'run-1', text: 'exit 3' }, { id: 'run-2', status }), '', status);
   }
+});
+
+test('Stop family stops the members with a live terminal and names the members that create their worktree', () => {
+  const member = (id, status, extra = {}) => ({ id, title: id, autoTitle: '', status, ...extra });
+  const family = [
+    member('Parent', 'idle'),
+    member('Ended', 'ended'),
+    member('Draft', 'draft'),
+    member('Tests', 'running'),
+    member('Docs', 'running', { preparation: { state: 'creating' } }),
+  ];
+  const { stop, starting } = stopMembers(family);
+  assert.deepEqual(stop.map(item => item.id), ['Parent', 'Tests']);
+  assert.deepEqual(starting.map(item => item.id), ['Docs']);
+  assert.deepEqual(stopText(family[0], stop, starting, true), {
+    title: 'Stop this family?',
+    summary: 'This stops 2 sessions of the family “Parent”:',
+    lines: ['Parent · Idle', 'Tests · Running'],
+    note: '“Docs” creates its worktree and has no terminal yet. It does not stop.',
+    submit: 'Stop family',
+  });
+});
+
+test('the Stop family text counts one session, uses derived titles, and joins several names', () => {
+  const root = { title: '', autoTitle: 'Fix links', status: 'ended' };
+  const untitled = { title: '', autoTitle: '', status: 'idle' };
+  const starting = ['A', 'B', 'C'].map(title => ({ title, status: 'running', preparation: { state: 'creating' } }));
+  assert.deepEqual(familyText(root, [untitled], []), { summary: 'This stops 1 session of the family “Fix links”:', lines: ['Untitled session · Idle'], note: '' });
+  assert.equal(stopText(root, [untitled], starting.slice(0, 2), true).note, '“A” and “B” create their worktrees and have no terminals yet. They do not stop.');
+  assert.equal(stopText(root, [untitled], starting, true).note, '“A”, “B”, and “C” create their worktrees and have no terminals yet. They do not stop.');
+});
+
+function familyText(root, stop, starting) {
+  const { summary, lines, note } = stopText(root, stop, starting, true);
+  return { summary, lines, note };
+}
+
+test('Stop session names one session and its status', () => {
+  const root = { title: '', autoTitle: 'Build tide chart', status: 'running' };
+  assert.deepEqual(stopMembers([root]), { stop: [root], starting: [] });
+  assert.deepEqual(stopText(root, [root], [], false), {
+    title: 'Stop this session?',
+    summary: 'This stops “Build tide chart”. It is running.',
+    lines: [],
+    note: '',
+    submit: 'Stop session',
+  });
+  // A session that creates its worktree has no terminal yet, so Stop session does not apply.
+  assert.deepEqual(stopMembers([{ ...root, preparation: { state: 'creating' } }]).stop, []);
+});
+
+test('Stop session shows while its session has a live terminal', () => {
+  const session = status => ({ title: 'Review the refactor', status });
+  assert.equal(stopShows([session('running')], false), true);
+  assert.equal(stopShows([session('idle')], false), true);
+  assert.equal(stopShows([session('ended')], false), false);
+  assert.equal(stopShows([session('draft')], false), false);
+  assert.equal(stopShows([{ ...session('running'), preparation: { state: 'creating' } }], false), false);
+});
+
+test('Stop family shows only while a sub-session has a live terminal', () => {
+  const member = (title, status, extra = {}) => ({ title, status, ...extra });
+  // With only the top-level session live, Stop family would stop what Stop session stops.
+  assert.equal(stopShows([member('Parent', 'running'), member('Child', 'ended')], true), false);
+  assert.equal(stopShows([member('Parent', 'idle'), member('Child', 'running')], true), true);
+  assert.equal(stopShows([member('Parent', 'ended'), member('Child', 'draft'), member('Tests', 'idle')], true), true);
+  assert.equal(stopShows([member('Parent', 'running'), member('Docs', 'running', { preparation: { state: 'creating' } })], true), false);
+  assert.equal(stopShows([member('Parent', 'ended'), member('Child', 'ended')], true), false);
 });

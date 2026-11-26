@@ -31,7 +31,7 @@ The Web client section has these features:
 | [Page and connection](#page-and-connection) | The page URL, the server check, the favicon, and the home screen icon. |
 | [Page messages](#page-messages) | The place of each warning and error. |
 | [Mobile layout](#mobile-layout) | The layout of a very narrow window: the sidebar drawer, the short toolbar, the message editor, the file list, and the on-screen keyboard. |
-| [Sidebar](#sidebar) | Projects, session groups, width, search, and refresh. |
+| [Sidebar](#sidebar) | Projects, session groups, width, search, refresh, and stops from the row menu. |
 | [Session families](#session-families) | Sub-sessions and their parent. |
 | [Pinned sessions](#pinned-sessions) | The Pinned group at the top of the sidebar, and the pin rules. |
 | [Archive](#archive) | Archive and restore of drafts and ended sessions. |
@@ -804,7 +804,8 @@ it. The page keeps the three newest toasts.
 
 Archive, restore, stop, and worktree removal show no confirmation. The list, the status,
 and the workspace line show the result. Project removal asks first. See
-[the project menu](#project-menu).
+[the project menu](#project-menu). A stop from the sidebar asks first too, because the
+view may not show the session. See [Stop from the sidebar](#stop-from-the-sidebar).
 
 ### Mobile layout
 
@@ -1016,6 +1017,39 @@ move a session into or out of the shown part of a group.
 The browser tab title shows the session or draft name. Settings shows `Settings`, and
 the home page shows `bbflow`.
 
+#### Stop from the sidebar
+
+The row menu of a session can stop that session. The row menu of a top-level session
+can also stop the whole family. The stop items are the last items of the row menu, below
+a line. The line shows only while an item above it shows. Archived has no stop items,
+because archived sessions have no live terminal.
+
+- **Stop session** shows while the session of the row has a live terminal. Top-level
+  sessions and sub-sessions have it. It stops that session only. The other sessions of
+  its family continue.
+- **Stop family** shows on a top-level session while one of its sub-sessions has a live
+  terminal. It stops the members with a live terminal together, also the top-level
+  session. See [session families](#session-families).
+- While only the top-level session of a family is live, **Stop family** does not show.
+  It would then stop only what **Stop session** stops.
+- Each item first reads the session or the family from the server. When no session to
+  stop has a live terminal then, the list refreshes and no dialog opens.
+- The family dialog lists the members that are live at that time. If the sub-sessions
+  ended after the menu opened, it lists only the top-level session.
+- A dialog asks first, because the view may not show the session. **Stop this
+  session?** names the session and its status. **Stop this family?** lists each member
+  with a live terminal, with its status: **Running** or **Idle**. A running session had
+  a screen change in the last 10 seconds, so its agent can still work.
+- A member that creates its worktree has no terminal yet. The family dialog names it
+  below the list, and it does not stop.
+- **Stop family** in the dialog stops only the listed members. A member that starts a
+  terminal after the dialog opened continues.
+- Each stop is the same as **Stop session** in the toolbar. Side terminals continue. The
+  history of each session stays.
+- After the stop, the dialog closes, and the list shows the ended statuses. An error
+  shows in the dialog, and the dialog stays open.
+- After a choice with the keyboard, the focus returns to the ⋯ button of the row.
+
 #### Bottom row
 
 Below the list, a row holds **＋ Project**, **Archived**, **Usage**, and **Settings**.
@@ -1039,7 +1073,8 @@ inherits no history, draft, or settings from its parent.
   families form only through **New sub-session**.
 - Sessions from before families stay top-level sessions.
 - Each session keeps its own terminal, status, and lifecycle. **Stop session** stops
-  one session only.
+  one session only. **Stop family** in the row menu of the top-level session stops the
+  live members of a family together. See [Stop from the sidebar](#stop-from-the-sidebar).
 - The sidebar is the only place that shows the family of a session. The toolbar of a
   sub-session is the same as the toolbar of a top-level session.
 
@@ -1183,7 +1218,9 @@ all recorded data. There is no permanent delete action.
   always shows.
 - The row menu has **New sub-session** for a top-level session, **Pin** or **Unpin** for
   a top-level session outside Archived, and **Archive**, or **Restore** in Archived. A
-  row without such an item has no ⋯ button.
+  live session also has **Stop session**. A top-level session has **Stop family** while
+  one of its sub-sessions is live. See [Stop from the sidebar](#stop-from-the-sidebar).
+  A row without such an item has no ⋯ button.
 - While a row menu is open, a list refresh keeps the buttons of the list. The list then
   changes after the menu closes.
 - Escape, a choice, or a click outside the menu closes it. The Up and Down arrow keys
@@ -4692,6 +4729,26 @@ at window widths of 1200, 1600, and 1920 pixels.
 - Server fixtures verify the base from a parent worktree after a branch switch and on a
   detached commit, and the rejection of a parent workspace before the first terminal of
   the parent.
+- Server fixtures verify that a family stop ends only the confirmed members. A live
+  sub-session that the user did not confirm continues, and so does another family. A
+  member of another family, a sub-session in place of the top-level session, and a
+  missing session stop nothing. Members without a live terminal are skipped.
+- Web fixtures verify the sessions that Stop session and Stop family list, when each
+  item shows, a member that creates its worktree, and the dialog text.
+- A browser check of a demo instance stopped a family with three live members and one
+  draft. It used the Demo agent and the Busy agent. The dialog listed the live members
+  with their status, and not the draft. The members ended with the run status
+  `stopped`. Live sessions outside the family continued. A stop with the keyboard only
+  ended a selected sub-session and returned the focus to the ⋯ button of the row.
+- A second browser check used **Stop session** on a top-level session without
+  sub-sessions, and on a family parent with a live sub-session. Each dialog named one
+  session. Only that session stopped, and the sub-session continued. The menu of the
+  parent then showed **Stop family** below its line, and it stopped the sub-session.
+- A third browser check used the row menus of a family. While only the parent was live,
+  its menu had **Stop session** and no **Stop family**. With a live sub-session, the
+  parent had both items, and the sub-session had **Stop session** with no line above
+  it. **Stop session** on the sub-session stopped only the sub-session. The parent
+  continued, and its menu then had no **Stop family**. Other live sessions continued.
 
 ### Checks of pinned sessions
 

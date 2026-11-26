@@ -12,7 +12,7 @@ each operation, and each stream. See [COMMANDS.md](COMMANDS.md) for user command
 | [Transport](#transport) | The endpoint, the message format, and the protocol version. |
 | [Connections and requests](#connections-and-requests) | The greeting, its verification, shutdown, the request message, and replies. |
 | [Operations](#operations) | Each operation, with its request fields and its reply. |
-| [Sessions and projects](#sessions-and-projects) | New sessions, session fields, projects, the session list, and archive. |
+| [Sessions and projects](#sessions-and-projects) | New sessions, session fields, projects, the session list, archive, stop, and pins. |
 | [Recorded-output search](#recorded-output-search) | `history-search` and `history-context`. |
 | [Workspace changes](#workspace-changes) | The operations of the Changes and Files views. |
 | [Settings and prepared launches](#settings-and-prepared-launches) | Settings, model lists, usage limits, the preparation of a session, and managed worktrees. |
@@ -57,7 +57,7 @@ codes.
 ### Protocol version
 
 This is an early development protocol. The server greeting and first request verify
-version `bbflow/46`. The protocol needs no WebSocket subprotocol header. Session
+version `bbflow/47`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -82,7 +82,7 @@ The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bbflow/46",
+    "protocol": "bbflow/47",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bbflow",
@@ -121,7 +121,7 @@ seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bbflow/46",
+    "protocol": "bbflow/47",
     "operation": "session-list",
     "groups": [""],
     "limit": 10
@@ -179,7 +179,7 @@ replies.
 | `session-config` | `session`, optional `preparation` plus `name` | `result`, session with its derived [`status`](#session-status). Configuration saves require the current revision. |
 | `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. Before `session`, a `status` of `running` comes every 5 seconds while the server fetches the base and creates the worktree. |
 | `session-resume` | `session` ID, `size`, and optional `run` (an earlier run of the session) | `session`, then a terminal stream or recorded history. With `run`, the recorded history of that run. |
-| `session-stop` | `session` ID | `result`, containing `stopped`. `stopped` is false when the session has no live terminal, for example during worktree creation. |
+| `session-stop` | `session` ID, optional `members` (the sessions of the family of `session` to stop) | `result`, containing `stopped`. `stopped` is false when no session to stop has a live terminal, for example during worktree creation. See [Session stop](#session-stop). |
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed`. An empty `name` removes the user title. |
 | `session-list` | See [Session list](#session-list). | `result`, containing `sessions` (session summaries) and `more` (group keys). Each summary has a derived [`status`](#session-status), `parentId`, `pinned`, an optional `context` flag, and an optional `runStatus`, the stored status of the latest run. |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore), optional `members` (the sub-session IDs that the user confirmed; missing confirms none) | `result`, containing `archived`. Applies to the family. See [Session archive](#session-archive). Rejects active runs and unfinished launch claims. |
@@ -386,6 +386,19 @@ dimensions does not resize the PTY or request an application redraw.
   Restoration starts no process.
 - Direct reads, composer operations, and read-only SQL can still access archived data.
 - Archive removes the pin of each archived session. Restore does not pin it again.
+
+### Session stop
+
+- `session-stop` without `members` ends the live terminal of `session`.
+- With `members`, `session` must be a top-level session. Each member must be `session`
+  or one of its sub-sessions. Otherwise the request fails, and nothing stops.
+- The server ends the live terminal of each member at the same time. A member without a
+  live terminal is skipped, for example a member that ended after the confirmation or
+  that creates its worktree. Other live sessions of the family continue.
+- `stopped` is true when the request ended at least one terminal.
+- The request waits up to 10 seconds for the terminals to end. Then it fails with an
+  error, and the terminals that ended stay ended.
+- A stop does not end the [side terminal](#side-terminals) of a session.
 
 ### Session pins
 
@@ -1340,13 +1353,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bbflow/46") {
+    if (message.server.protocol !== "bbflow/47") {
       socket.close();
       throw new Error("Unsupported bbflow protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bbflow/46", operation: "session-list", groups: [""], limit: 10 }
+      request: { protocol: "bbflow/47", operation: "session-list", groups: [""], limit: 10 }
     }));
   } else {
     console.log(message);
@@ -1485,6 +1498,8 @@ versions.
   field of the offer move to `failed` in the release object. See
   [Release check state](#release-check-state). `update-start` no longer rejects an
   offer while the daily check setting is off. The SQLite format does not change.
+- Protocol 47 adds the optional `members` field of [`session-stop`](#session-stop). One
+  request stops several sessions of a family. The SQLite format does not change.
 
 ## Source files
 

@@ -13,7 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bbflow/46"
+const Version = "bbflow/47"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -53,8 +53,10 @@ type Request struct {
 	Revision    int64              `json:"revision,omitempty"`
 	Project     string             `json:"project,omitempty"`
 	Parent      string             `json:"parent,omitempty"` // The parent session of a new sub-session draft.
-	// Members are the sub-sessions that the user confirmed for an archive. Nil confirms
-	// none. The archive fails if the session has other sub-sessions.
+	// Members are the sessions of a family that the user confirmed. For session-archive,
+	// they are the sub-sessions. Nil confirms none, and the archive fails if the session
+	// has other sub-sessions. For session-stop, they are the sessions to stop, and they can
+	// include Session. Nil stops only Session.
 	Members   []string `json:"members,omitempty"`
 	Name      string   `json:"name,omitempty"`
 	Workspace string   `json:"workspace,omitempty"`
