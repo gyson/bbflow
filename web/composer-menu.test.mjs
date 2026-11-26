@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComposerMenu, matches, summary } from './dist/composer-menu.js';
+import { ComposerMenu, summary } from './dist/composer-menu.js';
 import { VERSION } from './dist/protocol.js';
 
 const server = { protocol: VERSION, instance: 'fixture', dataDir: '/fixture', port: 1234 };
@@ -26,14 +26,13 @@ async function fixture(t, replies, room = false) {
     closest() { return this; }
     click() { this.onclick?.({ detail: 1, stopPropagation() {} }); }
   }
-  const ids = ['composer-menu-box', 'composer-menu-open', 'composer-menu', 'composer-menu-status', 'composer-prompt-filter-box', 'composer-prompt-filter',
+  const ids = ['composer-menu-box', 'composer-menu-open', 'composer-menu', 'composer-menu-status',
     'composer-menu-actions', 'composer-attach', 'composer-prompts-label', 'composer-prompts', 'composer-prompts-note', 'composer-prompts-manage', 'composer-flyout'];
   const nodes = Object.fromEntries(ids.map(id => [id, new Node()]));
   nodes['composer-menu-box'].append(nodes['composer-menu-open'], nodes['composer-menu']);
-  nodes['composer-prompt-filter-box'].hidden = nodes['composer-flyout'].hidden = true;
-  nodes['composer-prompt-filter-box'].append(nodes['composer-prompt-filter']);
+  nodes['composer-flyout'].hidden = true;
   nodes['composer-menu-actions'].append(nodes['composer-attach']);
-  nodes['composer-menu'].append(nodes['composer-prompt-filter-box'], nodes['composer-menu-actions'], nodes['composer-prompts-label'], nodes['composer-prompts'],
+  nodes['composer-menu'].append(nodes['composer-menu-actions'], nodes['composer-prompts-label'], nodes['composer-prompts'],
     nodes['composer-prompts-note'], nodes['composer-prompts-manage'], nodes['composer-flyout']);
   class Socket {
     readyState = 1;
@@ -240,7 +239,6 @@ test('the menu shows the prompts without a group, then one item for each group w
   await settle();
   assert.deepEqual(items(), [['Review PR', review.text], ['Git and PRs', '›'], ['Tests', '›']]);
   assert.ok(!nodes['composer-prompts-label'].hidden);
-  assert.ok(!nodes['composer-prompt-filter-box'].hidden);
   assert.equal(nodes['composer-prompts'].children[1].getAttribute('aria-haspopup'), 'menu');
 });
 
@@ -304,71 +302,6 @@ test('with room, a group opens a flyout at the right, and Left or Escape closes 
   assert.deepEqual(host.inserted, [pr.text]);
 });
 
-test('the filter searches every group, and Enter inserts the first match', async t => {
-  const { nodes, host, toggle, items, key } = await fixture(t, [grouped]);
-  toggle();
-  await settle();
-  const filter = nodes['composer-prompt-filter'];
-  filter.focus();
-  filter.value = 'the';
-  filter.oninput();
-  // A word in a name ranks before a word in the text. The others keep the menu order.
-  assert.ok(nodes['composer-prompts-label'].hidden && nodes['composer-menu-actions'].hidden);
-  assert.deepEqual(items(), [['Write the PR description', pr.text], ['Review PR', review.text], ['Commit', commit.text], ['Race', race.text]]);
-  filter.value = 'pr desc';
-  filter.oninput();
-  assert.deepEqual(items(), [['Write the PR description', pr.text]]);
-  assert.match(nodes['composer-prompts'].children[0].className, /first/);
-  assert.ok(key('Enter'));
-  assert.deepEqual(host.inserted, [pr.text]);
-  // A filter without a match tells how to clear it. Escape clears it first.
-  filter.value = 'nothing';
-  filter.oninput();
-  assert.deepEqual(items(), []);
-  assert.equal(nodes['composer-prompts-note'].textContent, 'No matches.');
-  assert.ok(key('Escape'));
-  assert.equal(filter.value, '');
-  assert.equal(items().length, 3);
-  assert.ok(nodes['composer-prompts-note'].hidden);
-  // A letter on an item moves the focus to the filter, so the user can type at once.
-  nodes['composer-prompts'].children[0].focus();
-  assert.ok(!key('r'));
-  assert.equal(document.activeElement, filter);
-});
-
-test('a filter match ranks words in the name before the group and the text', () => {
-  const ranked = matches(grouped.prompts, grouped.promptGroups, 'test');
-  assert.deepEqual(ranked.map(prompt => prompt.id), ['r']);
-  assert.deepEqual(matches(grouped.prompts, grouped.promptGroups, 'git').map(prompt => prompt.id), ['c', 'd'], 'a group name matches its prompts');
-  assert.deepEqual(matches(grouped.prompts, grouped.promptGroups, 'COMMIT clear').map(prompt => prompt.id), ['c']);
-  assert.deepEqual(matches(grouped.prompts, grouped.promptGroups, 'review').map(prompt => prompt.id), ['p1']);
-});
-
-test('Enter in an empty filter inserts nothing', async t => {
-  const { nodes, host, toggle, key } = await fixture(t, [grouped]);
-  toggle();
-  await settle();
-  nodes['composer-prompt-filter'].focus();
-  assert.ok(key('Enter'));
-  assert.deepEqual(host.inserted, []);
-});
-
-test('a filter closes an open group, so a clear of the filter returns to the items of the menu', async t => {
-  const { nodes, toggle, items, key } = await fixture(t, [grouped]);
-  toggle();
-  await settle();
-  nodes['composer-prompts'].children[1].click();
-  assert.equal(items()[0], '‹ Git and PRs');
-  const filter = nodes['composer-prompt-filter'];
-  filter.focus();
-  filter.value = 'race';
-  filter.oninput();
-  assert.deepEqual(items(), [['Race', race.text]]);
-  assert.ok(key('Escape'));
-  assert.deepEqual(items(), [['Review PR', review.text], ['Git and PRs', '›'], ['Tests', '›']]);
-  assert.ok(!nodes['composer-menu-actions'].hidden);
-});
-
 test('a pointer on any item without a group closes the flyout, and a pointer that leaves cancels an open', async t => {
   const { nodes, toggle, point, leave } = await fixture(t, [grouped], true);
   toggle();
@@ -395,14 +328,4 @@ test('a pointer on any item without a group closes the flyout, and a pointer tha
   toggle();
   await wait(120);
   assert.ok(nodes['composer-flyout'].hidden);
-});
-
-test('the focus goes to Manage prompts when another view removes the last prompt while the filter has it', async t => {
-  const { nodes, menu, toggle } = await fixture(t, [[review], []]);
-  toggle();
-  await settle();
-  nodes['composer-prompt-filter'].focus();
-  await menu.refresh();
-  assert.ok(nodes['composer-prompt-filter-box'].hidden);
-  assert.equal(document.activeElement, nodes['composer-prompts-manage']);
 });

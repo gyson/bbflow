@@ -34,27 +34,6 @@ export function summary(text: string, limit: number): string {
   return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line;
 }
 
-// menuOrder lists the prompts in the order of the menu: the top level first, then the
-// prompts of each group, in the order of the groups.
-export function menuOrder(prompts: Prompt[], groups: PromptGroup[]): Prompt[] {
-  return [...groupPrompts(prompts, ''), ...groups.flatMap(group => groupPrompts(prompts, group.id))];
-}
-
-// matches lists the prompts that have each word of query in the name, the name of the
-// group, or the text, without regard to case. A word at the start of the name ranks
-// first, then a word in the name, the group, and the text. Equal ranks keep the menu
-// order.
-export function matches(prompts: Prompt[], groups: PromptGroup[], query: string): Prompt[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const groupNames = new Map(groups.map(group => [group.id, group.name.toLowerCase()]));
-  return menuOrder(prompts, groups).flatMap((prompt, index) => {
-    const name = prompt.name.toLowerCase(), group = groupNames.get(prompt.group) ?? '', text = prompt.text.toLowerCase();
-    if (!words.every(word => name.includes(word) || group.includes(word) || text.includes(word))) return [];
-    const rank = words.reduce((sum, word) => sum + (name.startsWith(word) ? 8 : name.includes(word) ? 4 : group.includes(word) ? 2 : 1), 0);
-    return [{ prompt, rank, index }];
-  }).sort((a, b) => b.rank - a.rank || a.index - b.index).map(match => match.prompt);
-}
-
 // The ＋ menu of the message editor attaches files, shows the handoff prompt, and puts a
 // saved prompt at the cursor of the editor. It never sends. The saved prompts come from
 // the settings. Another view can change them, so the menu reads them again each time it
@@ -63,13 +42,11 @@ export function matches(prompts: Prompt[], groups: PromptGroup[], query: string)
 // The prompts without a group come first, then one item for each group with prompts. A
 // group opens a flyout at the right of the menu, from a resting pointer, a click, or the
 // Right key. Without the room for the flyout, as on a phone, the prompts of the group
-// replace the items of the menu instead. The filter field searches all groups.
+// replace the items of the menu instead.
 export class ComposerMenu {
   private readonly menu: ActionMenu;
   private readonly menuElement = element('composer-menu', HTMLElement);
   private readonly actions = element('composer-menu-actions', HTMLElement);
-  private readonly filterBox = element('composer-prompt-filter-box', HTMLElement);
-  private readonly filter = element('composer-prompt-filter', HTMLInputElement);
   private readonly label = element('composer-prompts-label', HTMLElement);
   private readonly list = element('composer-prompts', HTMLElement);
   private readonly note = element('composer-prompts-note', HTMLElement);
@@ -81,29 +58,19 @@ export class ComposerMenu {
   private failed = false;
   // The number of the latest read. Only its reply changes the list.
   private reads = 0;
-  // The text of the filter field, the group that replaces the items of the menu, and the
-  // group of the open flyout.
-  private query = '';
+  // The group that replaces the items of the menu, and the group of the open flyout.
   private path: string | null = null;
   private fly: string | null = null;
-  private found = 0;
   private flyTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly host: Host) {
     this.menu = new ActionMenu('composer-menu', () => {
-      this.reset();
-      this.render();
-      void this.refresh();
-    }, () => this.firstFocus());
-    this.manageButton.onclick = () => this.host.manage();
-    // A filter shows the matches of all groups, so an open group or flyout closes.
-    this.filter.oninput = () => {
-      this.query = this.filter.value;
       this.path = null;
       this.closeFlyout();
       this.render();
-      this.list.scrollTop = 0;
-    };
+      void this.refresh();
+    });
+    this.manageButton.onclick = () => this.host.manage();
     this.menuElement.addEventListener('keydown', event => this.key(event));
     this.menuElement.addEventListener('pointerover', event => this.hover(event));
     // A pointer that leaves the menu and the flyout cancels a pending open or switch.
@@ -130,7 +97,6 @@ export class ComposerMenu {
     else if (!this.loaded) note = 'Loading the saved prompts…';
     else if (blocked) note = blocked;
     else if (!this.prompts.length) note = 'No saved prompts yet. Add one with Manage prompts.';
-    else if (this.query.trim() && !this.found) note = 'No matches.';
     if (this.note.textContent !== note) this.note.textContent = note;
     this.note.hidden = !note;
     this.keepFocus();
@@ -140,12 +106,9 @@ export class ComposerMenu {
   // Escape no longer reaches the menu. The editor turns off Attach files, the first item,
   // and the lock turns off the saved prompts. When the focused item of the menu is off,
   // Manage prompts gets the focus, because it is always on.
-  // The filter hides when another view removes the last prompt. Its focus then goes to
-  // Manage prompts too.
   private keepFocus(): void {
     const active = document.activeElement;
-    const off = active instanceof HTMLButtonElement && active.disabled && this.menuElement.contains(active);
-    if (off || (active === this.filter && this.filterBox.hidden)) this.manageButton.focus();
+    if (active instanceof HTMLButtonElement && active.disabled && this.menuElement.contains(active)) this.manageButton.focus();
   }
 
   // refresh reads the saved prompts. A failed read keeps the prompts of the last read.
@@ -170,19 +133,6 @@ export class ComposerMenu {
     }
   }
 
-  private reset(): void {
-    this.query = this.filter.value = '';
-    this.path = null;
-    this.closeFlyout();
-  }
-
-  // The filter gets the focus when the menu opens, if the device has a fine pointer. On
-  // a touch screen the focus would open the on-screen keyboard over the menu.
-  private firstFocus(): HTMLElement | undefined {
-    const fine = typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches;
-    return fine && !this.filterBox.hidden ? this.filter : undefined;
-  }
-
   // The groups that the menu shows: the groups with prompts.
   private shownGroups(): PromptGroup[] {
     return this.groups.filter(group => this.prompts.some(prompt => prompt.group === group.id));
@@ -194,20 +144,13 @@ export class ComposerMenu {
   private render(): void {
     const active = document.activeElement;
     const focused = active instanceof HTMLElement && (this.list.contains(active) || this.flyout.contains(active)) ? itemKey(active) : undefined;
-    const query = this.query.trim();
     const groups = this.shownGroups();
-    if (this.path !== null && !groups.some(group => group.id === this.path)) this.path = null;
-    this.filterBox.hidden = !this.prompts.length;
-    // The filter field names the matches, and the back item names its group, so the label
-    // shows only above the items of the menu.
-    this.label.hidden = !!query || this.path !== null;
+    const group = groups.find(candidate => candidate.id === this.path);
+    if (!group) this.path = null;
+    // An open group replaces the other items. Its back item names it, so the label hides.
+    this.label.hidden = this.actions.hidden = !!group;
     let items: HTMLElement[];
-    if (query) {
-      const found = matches(this.prompts, this.groups, query);
-      this.found = found.length;
-      items = found.map((prompt, index) => this.item(prompt, index === 0));
-    } else if (this.path !== null) {
-      const group = groups.find(candidate => candidate.id === this.path)!;
+    if (group) {
       const back = document.createElement('button');
       back.type = 'button';
       back.setAttribute('role', 'menuitem');
@@ -223,26 +166,23 @@ export class ComposerMenu {
     } else {
       items = [...groupPrompts(this.prompts, '').map(prompt => this.item(prompt)), ...groups.map(group => this.groupItem(group))];
     }
-    this.actions.hidden = !!query || this.path !== null;
     this.list.replaceChildren(...items);
     if (this.fly !== null) {
-      if (!query && this.path === null && groups.some(group => group.id === this.fly)) this.openFlyout(this.fly, false);
+      if (!group && groups.some(group => group.id === this.fly)) this.openFlyout(this.fly, false);
       else this.closeFlyout();
     }
     this.update();
-    // The browser can move the focus of a hidden filter to the page before keepFocus runs.
-    if (active === this.filter && this.filterBox.hidden) this.manageButton.focus();
     if (focused !== undefined) {
       const item = [...this.list.children, ...this.flyout.children].find(candidate => candidate instanceof HTMLButtonElement && itemKey(candidate) === focused && !candidate.disabled);
       (item instanceof HTMLButtonElement ? item : this.manageButton).focus();
     }
   }
 
-  private item(prompt: Prompt, first = false): HTMLButtonElement {
+  private item(prompt: Prompt): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.setAttribute('role', 'menuitem');
-    button.className = first ? 'prompt-item first' : 'prompt-item';
+    button.className = 'prompt-item';
     button.dataset.promptId = prompt.id;
     button.title = summary(prompt.text, tipLength);
     const name = document.createElement('span');
@@ -365,7 +305,7 @@ export class ComposerMenu {
   // the menu, such as Attach files or Manage prompts, closes the flyout. A pointer in the
   // flyout keeps it open. Touch screens open a group with a tap.
   private hover(event: PointerEvent): void {
-    if (event.pointerType !== 'mouse' || this.query.trim() || this.path !== null) return;
+    if (event.pointerType !== 'mouse' || this.path !== null) return;
     const item = event.target instanceof Element ? event.target.closest('button') : null;
     if (!(item instanceof HTMLButtonElement) || !this.menuElement.contains(item)) return;
     clearTimeout(this.flyTimer);
@@ -379,26 +319,24 @@ export class ComposerMenu {
     }, this.fly === null ? openDelay : switchDelay);
   }
 
-  // The items that Up and Down move between: the filter, the items of the menu that show
-  // and are on, and Manage prompts. In the flyout, they move between its prompts.
+  // The items that Up and Down move between: the items of the menu that show and are on,
+  // and Manage prompts. In the flyout, they move between its prompts.
   private navigation(inFlyout: boolean): HTMLElement[] {
     const on = (parent: HTMLElement) => [...parent.children].filter((item): item is HTMLButtonElement => item instanceof HTMLButtonElement && !item.hidden && !item.disabled);
     if (inFlyout) return on(this.flyout).filter(item => item.dataset.promptId !== undefined);
     return [
-      ...(this.filterBox.hidden ? [] : [this.filter]),
       ...(this.actions.hidden ? [] : on(this.actions)),
       ...on(this.list),
       ...(this.manageButton.disabled ? [] : [this.manageButton]),
     ];
   }
 
-  // key handles the keys of the filter, the groups, and the flyout. The action menu
-  // handles Escape when no filter, group, or flyout is open, and Tab.
+  // key handles the keys of the groups and the flyout. The action menu handles Escape
+  // when no group or flyout is open, and Tab.
   private key(event: KeyboardEvent): void {
     const target = document.activeElement;
-    const inFilter = target === this.filter;
     const inFlyout = target instanceof HTMLElement && this.flyout.contains(target);
-    const group = target instanceof HTMLElement && !inFilter && !inFlyout ? target.dataset.groupId : undefined;
+    const group = target instanceof HTMLElement && !inFlyout ? target.dataset.groupId : undefined;
     const handled = () => { event.preventDefault(); event.stopPropagation(); };
     switch (event.key) {
       case 'ArrowDown':
@@ -422,36 +360,16 @@ export class ComposerMenu {
         if (inFlyout) {
           handled();
           this.closeFlyout(true);
-        } else if (!inFilter && this.path !== null && !this.query.trim()) {
+        } else if (this.path !== null) {
           handled();
           this.back();
         }
         return;
       case 'Escape':
         if (this.fly !== null) this.closeFlyout(true);
-        else if (this.query) {
-          this.query = this.filter.value = '';
-          this.render();
-          this.filter.focus();
-        } else if (this.path !== null) this.back();
+        else if (this.path !== null) this.back();
         else return;
         handled();
-        return;
-      case 'Enter':
-        // Enter in the filter inserts the first match. Without filter text, no item shows
-        // as the first match, so Enter does nothing.
-        if (inFilter) {
-          handled();
-          if (!this.query.trim()) return;
-          const first = [...this.list.children].find(item => item instanceof HTMLButtonElement && item.dataset.promptId !== undefined && !item.disabled);
-          if (first instanceof HTMLButtonElement) first.click();
-        }
-        return;
-    }
-    // A letter on an item goes to the filter, so that the user can type at once.
-    if (!this.filterBox.hidden && !inFilter && event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      this.closeFlyout();
-      this.filter.focus();
     }
   }
 }

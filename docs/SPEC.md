@@ -2823,7 +2823,6 @@ edge. It has these items, in this order:
 
 | Item | Effect |
 | --- | --- |
-| Filter field | Shows only the saved prompts that match the typed words. The field shows when at least one prompt is saved. See [Filter of the Add to message menu](#filter-of-the-add-to-message-menu). |
 | **Attach files…** | Opens the file selection of the browser. See [Attachments](#attachments). |
 | **Handoff prompt…** | Opens the dialog of the [handoff prompt](#handoff-prompt). The item shows only when the handoff folder of the session has its README. |
 | Saved prompts | Below the label **Saved prompts**: one item for each [saved prompt](#saved-prompts) without a group, then one item for each [prompt group](#groups-in-the-add-to-message-menu) with prompts. A click on a prompt puts its text at the cursor. |
@@ -2843,17 +2842,13 @@ edge. It has these items, in this order:
   list.
 - While a send may have reached the terminal, the draft is locked. Then **Attach
   files…** and the saved prompts are off, and a note tells why. The items of the groups,
-  the filter, **Handoff prompt…**, and **Manage prompts…** stay on, so **Copy prompt**
+  **Handoff prompt…**, and **Manage prompts…** stay on, so **Copy prompt**
   still works. An open menu follows each change of the lock, also a send from another
   view. When the focused item turns off, **Manage prompts…** gets the focus.
 - When another view changes the order of the prompts, the focused prompt or group keeps
   the focus. When another view removes it, **Manage prompts…** gets the focus.
-- Up and Down move between the filter and the items that are on. Escape and Tab close
-  the menu, as does a click outside it. Escape first closes an open group, or clears a
-  filter that has text.
-- When the menu opens on a device with a fine pointer that hovers, the filter has the
-  focus. On a touch screen, the first item that is on has the focus, so that the
-  on-screen keyboard does not cover the menu.
+- Up and Down move between the items that are on. Escape and Tab close the menu, as
+  does a click outside it. Escape first closes an open group.
 
 #### Groups in the Add to message menu
 
@@ -2878,27 +2873,6 @@ right of the menu:
 - In a group that replaces the items, the back item, Left, and Escape return to the
   items of the menu. The item of the group then has the focus.
 - A scroll of the list of the menu closes the flyout.
-
-#### Filter of the Add to message menu
-
-The filter searches the saved prompts of all groups at once:
-
-- A prompt matches when each word of the filter is in its name, in the name of its
-  group, or in its text, without regard to letter case.
-- A word at the start of the name ranks first, then a word elsewhere in the name, in
-  the name of the group, and in the text. Matches of the same rank keep the order of the
-  menu.
-- While the filter has text, the label **Saved prompts**, **Attach files…**, and
-  **Handoff prompt…** hide. The matches show without their groups. An open group
-  closes.
-- Enter in the filter inserts the first match. The first match shows as selected while
-  the filter has the focus. Without filter text, Enter does nothing.
-- Without a match, the note **No matches.** shows. Escape in a filter with text clears
-  it, and the filter keeps the focus.
-- A letter or a digit on an item of the menu moves the focus to the filter, so that the
-  user can type at once. Space still selects the item.
-- The filter hides when no prompt is saved. When another view removes the last prompt
-  while the filter has the focus, **Manage prompts…** gets the focus.
 
 #### Saved prompts
 
@@ -5602,10 +5576,6 @@ Fixtures check the [Add to message menu](#add-to-message-menu) and the
   room, and the keys Right, Left, Up, Down, and Escape. They also check that a pointer on
   **Manage prompts…** closes the flyout, that a pointer in the flyout keeps it open, and
   that a pointer that leaves the menu or a close of the menu cancels a waiting open.
-- Web fixtures check the filter: matches in all groups, the rank of the matches, Enter on the first match, the note without a match, Escape, and a
-  letter that moves the focus to the filter. They also check that Enter without filter
-  text inserts nothing, that the filter closes an open group, and that the focus goes to
-  **Manage prompts…** when the filter hides.
 - Web fixtures check the Prompts card: the editor, a revision conflict during an edit,
   moves, removals, and the toast after **Done**.
 - Web fixtures check the groups of the Prompts card: a new group, **＋ Add prompt** of a
@@ -5634,15 +5604,13 @@ A check with headless Chrome 158 and the demo instance used the dark appearance 
 A check of the groups with headless Chrome 158 and the demo instance used the dark
 appearance at 1200 x 836 and the light appearance at 390 x 844:
 
-- At 1200 px, **＋** opened the menu with the focus in the filter. The menu listed
-  **Summarize the branch**, then **Reviews**, **Checks**, and **Docs**.
+- At 1200 px, **＋** opened the menu with the focus on **Attach files…**. The menu
+  listed **Summarize the branch**, then **Reviews**, **Checks**, and **Docs**.
 - A mouse pointer that rested on **Reviews** opened its flyout 3 px at the right of the
   menu, inside the height of the menu, with **Review PR** and **Review for security**.
-- The filter `run` listed **Run all checks** and **Run the race detector**.
 - At 390 px, a tap on **Reviews** replaced the items with **‹ Reviews** and the prompts
-  of the group, and **Review PR** had the focus. The menu fit the
-  width. The emulation did not use touch, so the filter had the focus when the menu
-  opened.
+  of the group, and **Review PR** had the focus. The menu fit the width. Escape
+  returned to the items of the menu.
 - The Prompts card showed **Top level** and the three groups. At 390 px, the text of
   each prompt went below its name and buttons.
 - **Remove** of **Checks** with **Remove its 2 prompts** showed the names and
@@ -5650,11 +5618,10 @@ appearance at 1200 x 836 and the light appearance at 390 x 844:
 
 A later check with headless Chrome 158 and the demo instance found these results:
 
-- At 1200 px, Enter in the empty filter inserted nothing, and the menu stayed open.
 - A pointer that passed over **Reviews** and left the menu within 20 ms opened no
   flyout. A pointer on **Manage prompts…** closed an open flyout.
-- At 390 px, a filter in the open group **Reviews**, then Escape, showed the items of
-  the menu with **Attach files…**.
+- Right on **Reviews** moved the focus to its first prompt in the flyout. Escape
+  returned the focus to **Reviews**, and a second Escape closed the menu.
 - In the removal dialog of **Checks**, a click on the destination list after **Remove
   its 2 prompts** selected the move. The list is not inside a `label`. No browser
   errors were reported.

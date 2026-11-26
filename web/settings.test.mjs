@@ -746,10 +746,10 @@ test('the Settings page has prompt blocks, one editor dialog, a group dialog, an
   assert.match(html, /<dialog id="prompt-remove-dialog"/);
   // The server counts code points, so the name field has no maxlength in code units.
   assert.match(html, /<input id="prompt-name" placeholder="Review PR" autocomplete="off">/);
-  // The ＋ menu of the message editor has the filter, the file item, the handoff prompt,
-  // the saved prompts, Manage prompts, and the flyout of a group, in this order.
+  // The ＋ menu of the message editor has the file item, the handoff prompt, the saved
+  // prompts, Manage prompts, and the flyout of a group, in this order.
   const menu = html.slice(html.indexOf('<div id="composer-menu"'), html.indexOf('<input id="composer-picker"'));
-  const order = ['id="composer-prompt-filter"', 'id="composer-attach"', 'id="handoff-open"', 'id="composer-prompts"', 'id="composer-prompts-note"', 'id="composer-prompts-manage"', 'id="composer-flyout"'].map(id => menu.indexOf(id));
+  const order = ['id="composer-attach"', 'id="handoff-open"', 'id="composer-prompts"', 'id="composer-prompts-note"', 'id="composer-prompts-manage"', 'id="composer-flyout"'].map(id => menu.indexOf(id));
   assert.ok(order.every((index, i) => index >= 0 && (i === 0 || index > order[i - 1])), order.join());
-  assert.doesNotMatch(html, /＋ Attach files|Put in message editor/);
+  assert.doesNotMatch(html, /＋ Attach files|Put in message editor|composer-prompt-filter/);
 });

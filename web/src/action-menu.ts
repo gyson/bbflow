@@ -5,8 +5,7 @@ import { element } from './dom.js';
 // The host shows or hides each item. The menu button shows only when an item shows.
 // The page has a box `<id>-box`, a menu button `<id>-open`, a menu `<id>`, and a status
 // element `<id>-status` for each menu. opened runs before the menu opens, so that the
-// host can update its items. first can name the element that gets the focus when the
-// menu opens. Without it, the first item that is on gets the focus.
+// host can update its items.
 export class ActionMenu {
   private readonly box: HTMLElement;
   private readonly button: HTMLButtonElement;
@@ -16,7 +15,7 @@ export class ActionMenu {
   private confirmTimer: ReturnType<typeof setTimeout> | undefined;
   private expanded = false;
 
-  constructor(id: string, private readonly opened?: () => void, private readonly first?: () => HTMLElement | undefined) {
+  constructor(id: string, private readonly opened?: () => void) {
     this.box = element(`${id}-box`, HTMLElement);
     this.button = element(`${id}-open`, HTMLButtonElement);
     this.menu = element(id, HTMLElement);
@@ -94,6 +93,6 @@ export class ActionMenu {
     this.expanded = open;
     this.menu.hidden = !open;
     this.button.setAttribute('aria-expanded', String(open));
-    if (open) (this.first?.() ?? this.items().find(item => !item.disabled))?.focus();
+    if (open) this.items().find(item => !item.disabled)?.focus();
   }
 }

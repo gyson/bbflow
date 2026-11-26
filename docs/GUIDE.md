@@ -198,9 +198,6 @@ To use a prompt of a group, click **＋**, then point to the group. Its prompts 
 the right of the menu. Click a prompt. On a phone, tap the group. Its prompts then
 replace the menu, and **‹** with the name of the group goes back.
 
-To find a prompt in any group, type in the filter field at the top of the **＋** menu.
-Press Enter to insert the first match.
-
 When you remove a group, bbflow asks what to do with its prompts. By default, they move
 to **Top level** or to another group that you select. The other choice removes them
 too.
