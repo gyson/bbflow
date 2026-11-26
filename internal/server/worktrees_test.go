@@ -328,8 +328,8 @@ func TestAntigravityTrustsTheWorkspaceOfAManagedWorktree(t *testing.T) {
 	s, _ := composerServer(t)
 	t.Setenv("SHELL", "/bin/sh")
 	ctx := context.Background()
-	// A quote in the data folder checks the shell quotes of the option.
-	s.info.DataDir = filepath.Join(t.TempDir(), "it's data")
+	// Quotes and a backslash in the data folder check the shell quotes of the option.
+	s.info.DataDir = filepath.Join(t.TempDir(), `it's a\b "data"`)
 	if err := os.MkdirAll(s.info.DataDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -362,6 +362,13 @@ func TestAntigravityTrustsTheWorkspaceOfAManagedWorktree(t *testing.T) {
 		if !found {
 			return nil
 		}
+		// Inside single quotes, fish reads \\ and \' as escapes. The text has neither, so
+		// fish passes the same argument as sh.
+		text, opened := strings.CutPrefix(option, "'")
+		text, closed := strings.CutSuffix(text, "'")
+		if !opened || !closed || strings.Contains(text, "'") || strings.Contains(text, `\\`) {
+			t.Fatalf("option %q is not one single-quoted text without \\\\ and '", option)
+		}
 		out, err := exec.Command("/bin/sh", "-c", "printf %s "+option).Output()
 		var parsed struct {
 			TrustedWorkspaces []string `json:"trustedWorkspaces"`
@@ -384,6 +391,24 @@ func TestAntigravityTrustsTheWorkspaceOfAManagedWorktree(t *testing.T) {
 	workspace := filepath.Join(launched.Worktree.Path, "sub")
 	if run.Workspace != workspace || !strings.HasPrefix(run.Command, "agy --model gemini-4-neon-high --settings ") || !slices.Equal(trusted(run.Command), []string{workspace}) {
 		t.Fatalf("launch: workspace %q, command %q", run.Workspace, run.Command)
+	}
+	// A sub-session without its own worktree starts in the worktree of its parent, after
+	// the first terminal of the parent.
+	if _, err = s.store.NewRun(launched.ID); err != nil {
+		t.Fatal(err)
+	}
+	child, err := s.prepareProject(ctx, "", launched.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := *child.Preparation
+	p.Worktree = false
+	if child, err = s.store.SavePreparation(child.ID, child.Title, p); err != nil {
+		t.Fatal(err)
+	}
+	sub, subRun, err := s.launchPrepared(ctx, child.ID, child.Preparation.Revision, protocol.Size{Rows: 24, Cols: 80})
+	if err != nil || sub.Worktree != nil || subRun.Workspace != workspace || !slices.Equal(trusted(subRun.Command), []string{workspace}) {
+		t.Fatalf("sub-session: %+v %+v %v", sub, subRun, err)
 	}
 	// A new terminal adds the option in a managed worktree only, and only for
 	// Antigravity.

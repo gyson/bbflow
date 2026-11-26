@@ -156,7 +156,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   command once through the shell. Keep message drafts separate. Resolve the shell from
   PATH or its configured absolute path. Do not search application bundles.
 - Preserve normal CLI arguments, terminal interaction, authentication, and permissions.
-  Do not inject prompts into a new run. Let the user send the handoff prompt when the
+  The one exception is the folder trust of Antigravity in a managed worktree. See
+  [Tool types and models](docs/SPEC.md#tool-types-and-models). Do not inject prompts
+  into a new run. Let the user send the handoff prompt when the
   agent is ready.
 - Keep project metadata in SQLite. Projects supply launch defaults. Sessions retain
   their actual workspace path. Project removal must preserve session history, files,

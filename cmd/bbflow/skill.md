@@ -164,7 +164,7 @@ One row for each session that has launch choices.
 | `session_id` | Session of the choices. |
 | `revision` | Revision of the choices. |
 | `state` | Launch state. `draft` is a session that has not started. |
-| `data` | JSON with the selected tool, its type and command, the chosen `model` and `effort`, and the worktree choices. The launch adds the options of the model and the effort to the command. |
+| `data` | JSON with the selected tool, its type and command, the chosen `model` and `effort`, and the worktree choices. The launch adds the options of the model and the effort to the command. In a managed worktree, an Antigravity launch also adds a `--settings` option that trusts the workspace. |
 
 ### `settings`
 

@@ -114,7 +114,10 @@ func (s *Server) trustWorktree(kind, command, workspace string) string {
 	settings, _ := json.Marshal(struct {
 		TrustedWorkspaces []string `json:"trustedWorkspaces"`
 	}{[]string{workspace}})
-	trusted := strings.TrimRight(command, " ") + " --settings " + shellQuote(string(settings))
+	// Inside single quotes, fish reads \\ and \' as escapes. Other JSON escapes for these
+	// characters remove both sequences, so sh, bash, zsh, and fish pass the same text.
+	option := strings.NewReplacer(`\\`, `\u005c`, `'`, `\u0027`).Replace(string(settings))
+	trusted := strings.TrimRight(command, " ") + " --settings '" + option + "'"
 	if history.ValidateCommand(trusted) != nil {
 		return command
 	}
