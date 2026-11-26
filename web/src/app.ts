@@ -1700,9 +1700,14 @@ async function initialize() {
   }, failed(selected?.pinned ? 'unpin' : 'pin', selected));
   $('cancel-archive').onclick = () => $('archive-dialog').close();
   $('cancel-stop').onclick = () => $('stop-dialog').close();
-  // A cancel, the ✕ button, or Escape closes the dialog. A submit clears stopping before
-  // it closes the dialog, and it returns the focus after the list refresh.
+  // Escape is Cancel. The dialog stays open while a stop runs, so its result shows there.
+  // A browser can still close it, for example after a second Escape.
+  $('stop-dialog').oncancel = event => { if (busy) event.preventDefault(); };
+  // The ✕ button or Escape closes the dialog. A close while a stop runs leaves the focus
+  // to the submit, because the ⋯ button is disabled until the stop ends. A submit clears
+  // stopping before it closes the dialog, and it returns the focus after the list refresh.
   $('stop-dialog').addEventListener('close', () => {
+    if (busy) return;
     const closed = stopping;
     stopping = null;
     if (closed?.keyboard) refocusSidebar(`menu:${closed.session.id}`);
@@ -1713,14 +1718,24 @@ async function initialize() {
     const { session, family, members, keyboard } = stopping;
     void action(async () => {
       if (!server) return;
+      // The ✕ button waits for the reply, as Escape does.
+      $('cancel-stop').disabled = true;
       try {
         await call(server, { operation: 'session-stop', session: session.id, ...(family ? { members } : {}) });
       } catch (error) {
-        // The sessions that stopped show in the list. The dialog stays open for a retry.
-        $('stop-error').textContent = errorMessage(error);
-        $('stop-error').hidden = false;
+        // The sessions that stopped show in the list. An open dialog shows the error and
+        // stays open for a retry. After a close by the browser, a toast shows the error.
+        const open = $('stop-dialog').open;
+        if (open) {
+          $('stop-error').textContent = errorMessage(error);
+          $('stop-error').hidden = false;
+        }
         await refreshSessions();
-        return;
+        if (open) return;
+        stopping = null;
+        throw error;
+      } finally {
+        $('cancel-stop').disabled = false;
       }
       stopping = null;
       $('stop-dialog').close();

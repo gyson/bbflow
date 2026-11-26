@@ -1051,6 +1051,11 @@ Archived has no stop items, because archived sessions have no live terminal.
   history of each session stays.
 - After the stop, the dialog closes, and the list shows the ended statuses. An error
   shows in the dialog, and the dialog stays open.
+- While the stop runs, the dialog stays open. Its ✕ button is disabled, and Escape does
+  not close it. The server can wait up to 10 seconds for the terminals to end.
+- A browser can still close the dialog while the stop runs, for example after a second
+  Escape. An error then shows in an error toast. The focus of a keyboard user returns
+  to the ⋯ button after the stop.
 - After a choice with the keyboard, the focus returns to the ⋯ button of the row. This
   applies after the stop, after a cancel of the dialog, and when no dialog opens. If the
   row has no ⋯ button then, the focus goes to the search box.
@@ -4762,6 +4767,16 @@ at window widths of 1200, 1600, and 1920 pixels.
   - When another view had stopped and archived the session, no dialog opened.
   - When another view had removed the project of the session, the dialog still opened.
   - After the stop, the focus returned to the ⋯ button.
+- A fifth browser check used shells that ignore SIGHUP, so each stop took the 2 seconds
+  before SIGKILL. It chose **Stop session** with the keyboard in these cases:
+  - Escape and the ✕ button during the stop left the dialog open. The ✕ button was
+    disabled. After the stop, the focus returned to the ⋯ button.
+  - A second Escape closed the dialog during the stop. After the stop, the focus
+    returned to the ⋯ button.
+  - With the server stopped, a submit and a close in the same task showed the error in
+    a toast, and the focus returned to the ⋯ button. Without the close, the error
+    showed in the open dialog and no toast showed.
+  - When the dialog opened, the ✕ button was enabled and had the focus.
 
 ### Checks of pinned sessions
 
