@@ -862,7 +862,9 @@ state are not writable configuration fields. A change to toolId copies the name,
 and command of the selected tool from Settings. The save takes model and effort from the
 request, also for a new toolId, so the client sends the defaults of a newly selected
 tool. An omitted model or effort is empty. The server rejects a model or an effort that
-the type does not accept. Start adds their options to the command.
+the type does not accept. Start adds their options to the command. In a managed
+worktree, an Antigravity start also adds an option that trusts the workspace. See
+[Tool types and models](SPEC.md#tool-types-and-models).
 
 An empty ID selects Shell and clears the command. Keeping the same tool preserves the
 existing snapshot, including a removed preset. Start uses that snapshot without
@@ -916,7 +918,9 @@ response, read session-config. If its latest run changed, use session-resume to 
 the new terminal. Do not send session-continue again only because a response was lost.
 
 The server records and submits the `command` of the selected tool once, with the
-options of the model and the effort. Shell submits nothing. The client shows the handoff
+options of the model and the effort. In a managed worktree, an Antigravity command also
+gets the trust option of [Tool types and models](SPEC.md#tool-types-and-models). Shell
+submits nothing. The client shows the handoff
 prompt for the user to send. The start event of the new run records `tool`, `toolId`
 (the empty ID for Shell), `continues` (the previous run ID), and `handoff` (the
 folder).

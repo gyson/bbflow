@@ -1340,7 +1340,8 @@ paths. Requests cannot override the shell or environment.
 
 A selected tool supplies an optional startup command to submit through that shell. For
 a tool with a type other than Custom, the launch adds the options of the chosen model and
-effort to the end of the command. See [Tool types and models](#tool-types-and-models). The
+effort to the end of the command. In a managed worktree, an Antigravity launch also adds
+an option that trusts the workspace. See [Tool types and models](#tool-types-and-models). The
 server inherits its startup environment and sets `TERM=xterm-256color`. The launch
 stores the tool name and workspace basename as the derived title, even when the user set
 a title.
@@ -1351,7 +1352,8 @@ environment-variable expansion are unsupported. The directory must exist. Histor
 its canonical absolute path. Multiple sessions may share it.
 
 The shell reads its normal startup files. Agents retain their arguments, authentication,
-and permissions. bbflow submits only the configured startup command. It does not submit
+and permissions. The one exception is the folder trust of Antigravity in a managed
+worktree. bbflow submits only the configured startup command. It does not submit
 the message draft automatically. After an agent exits, the shell remains available.
 After the shell exits, the session ends.
 
@@ -1359,7 +1361,8 @@ After the shell exits, the session ends.
 
 xterm.js displays server-rendered frames and forwards keyboard input, paste and resize
 requests through the shared stream. The server submits the saved tool command with only
-the model and effort options of its type. It adds no prompts. Source terminal queries are answered by the server,
+the options that its type adds. See [Tool types and models](#tool-types-and-models). It
+adds no prompts. Source terminal queries are answered by the server,
 including while detached. Generated frames exclude hyperlinks, clipboard requests and
 other non-display source escape sequences.
 
@@ -1808,7 +1811,9 @@ path, or the plain CLI name when the path is empty: `codex`, `claude`, `agy`, or
 `code-puppy`. bbflow runs the program in five places:
 
 - The sessions of the built-in tool. Its command is the program, then `--no-alt-screen`
-  for Codex. The launch adds the model and effort options.
+  for Codex. The launch adds the model and effort options. In a managed worktree, it
+  also adds the trust option of Antigravity. See
+  [Tool types and models](#tool-types-and-models).
 
 - The [model list](#model-lists) of the type, for example
   `/opt/homebrew/bin/codex debug models`.
@@ -1856,6 +1861,26 @@ the names safe in a shell line without quotes. The server rejects a model or an 
 for a Custom tool or Shell, an effort for Code Puppy, and an Antigravity effort without
 a model.
 
+Antigravity asks whether the user trusts each folder that its settings do not list.
+Each managed worktree is a new folder. Thus, when the workspace of an Antigravity tool
+is in a [managed worktree](#checkout), the launch adds one more option after the model
+option:
+
+```sh
+--settings '{"trustedWorkspaces":["WORKSPACE"]}'
+```
+
+`WORKSPACE` is the canonical workspace path. It can be a project subfolder of the
+worktree, because Antigravity trusts only the exact folder where it starts. The JSON
+writes a backslash as `\u005c` and a single quote as `\u0027`. Thus the quoted text has
+no `\\` and no `\'`, which fish reads as escapes inside single quotes. sh, bash, zsh,
+and fish then pass the same text. Antigravity uses the option for that session only
+and does not save it in its settings file. The option applies to these launches:
+
+- The first terminal of a draft with its own worktree.
+- The first terminal of a sub-session in the worktree of its parent.
+- **Continue in new terminal** in a session whose workspace is in a managed worktree.
+
 #### Model lists
 
 The **Model** menus suggest the models of each type. The first choice is **CLI
@@ -1899,6 +1924,22 @@ effort is part of the model ID. Code Puppy has no effort.
 - The session records its startup command, with the options, in its start event. The
   toolbar shows only the tool name. A model change inside the agent, such as `/model`, is
   not recorded.
+- The trust option depends only on the workspace path. bbflow does not read whether
+  Antigravity trusts the project folder. Thus Antigravity starts trusted in each managed
+  worktree, also when the user never trusted the project folder or declined it there.
+  Antigravity can then read, edit, and run the files of the worktree without the
+  question. These files are the committed files of the repository at the base. A remote
+  base can bring commits that the user has not seen locally. See
+  [Base and fetch](#base-and-fetch).
+- Only the built-in Antigravity tool gets the trust option. A Custom tool that runs
+  `agy`, and `agy` typed in Shell, still ask about the folder.
+- The launch leaves out the trust option when the option would make the command longer
+  than 1000 bytes. Antigravity then asks about the folder.
+- **bbflow submits** in a draft and in the **Continue in new terminal** dialog does not
+  show the trust option. **New sessions submit** in Settings does not show it either. A
+  draft has no worktree path before Start. The start event records the option.
+- The trust option was verified with Antigravity CLI 1.5.18. Other versions can change
+  `--settings` or the trust check.
 
 #### Preparation
 
@@ -2873,7 +2914,8 @@ SQLite.
 The cache is not authoritative. HTTP does not serve it. Send appends quoted local paths
 to the user's text. This is not a native provider or multimodal upload. File access
 depends on the agent's capabilities and workspace permissions. bbflow does not change
-permissions for the agent.
+permissions for the agent. The one exception is the folder trust of Antigravity in a
+managed worktree. See [Tool types and models](#tool-types-and-models).
 
 #### Limits
 
@@ -3134,7 +3176,9 @@ agent to check the current files, summarize where the work stopped, and wait for
 next message.
 
 bbflow records and submits the startup command of the selected tool once, with the
-options of the selected model and effort. Shell starts without a command. The user can
+options of the selected model and effort. In a managed worktree, an Antigravity command
+also gets the trust option. See [Tool types and models](#tool-types-and-models). Shell
+starts without a command. The user can
 copy the handoff prompt from the dialog.
 
 The prompt stays available after the new terminal starts. When the handoff folder of the
@@ -3904,7 +3948,9 @@ stop, or when the server stops. The [side terminal](#side-terminal) is not recor
 
 Before launching a shell, bbflow records its resolved command, arguments, workspace, and
 terminal size. The server launches it in a new PTY and process group. Commands retain
-their normal authentication, terminal interface, and permissions.
+their normal authentication, terminal interface, and permissions. The one exception is
+the folder trust of Antigravity in a managed worktree. See
+[Tool types and models](#tool-types-and-models).
 
 Input bytes are committed before PTY delivery. Output bytes and derived text are
 committed before updating the server emulator. Input records describe attempted
@@ -4889,6 +4935,17 @@ subfolder and linked-checkout detection, clean creation, and rejection of remova
 active or dirty worktrees. Synthetic sh, bash, and zsh runs verify one startup input,
 shell availability afterward, reconnect without replay, and an untouched composer draft.
 These shell fixtures do not establish model availability or agent CLI compatibility.
+
+Worktree fixtures verify the Antigravity trust option. An Antigravity launch in a
+managed worktree trusts the project subfolder. A sub-session without its own worktree
+trusts the same subfolder in the worktree of its parent. The data folder name has single
+quotes, double quotes, and a backslash. sh reads the option as one JSON argument, and the
+quoted text has no `\\` and no `'`. A new terminal adds the option only for
+Antigravity and only in a managed worktree. A command near the length limit stays
+unchanged. A manual check with Antigravity CLI 1.5.18 and zsh verified that the option
+stops the trust question, also for such a folder name, and leaves the settings file of
+Antigravity unchanged. It also verified that a trusted parent folder does not cover a
+subfolder. fish was not available for a live check.
 
 Title model fixtures verify that the default models give the commands of earlier
 releases and that a chosen model goes between the fixed start and end of a title

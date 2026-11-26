@@ -82,7 +82,7 @@ func TestToolsThatAreOffAreNoChoice(t *testing.T) {
 	if _, err = s.savePreparation(request); err == nil || !strings.Contains(err.Error(), "is off") {
 		t.Fatal("a draft selected a tool that is off", err)
 	}
-	if _, _, err = s.continueTool("builtin-codex", "", ""); err == nil || !strings.Contains(err.Error(), "is off") {
+	if _, _, err = s.continueTool("builtin-codex", "", "", ""); err == nil || !strings.Contains(err.Error(), "is off") {
 		t.Fatal("a new terminal used a tool that is off", err)
 	}
 	// Shell that is off is no choice either.
@@ -93,7 +93,7 @@ func TestToolsThatAreOffAreNoChoice(t *testing.T) {
 		if _, err = s.store.SaveSettings(settings); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err = s.continueTool("", "", ""); err == nil || !strings.Contains(err.Error(), "Shell is off") {
+		if _, _, err = s.continueTool("", "", "", ""); err == nil || !strings.Contains(err.Error(), "Shell is off") {
 			t.Fatal("a new terminal used Shell that is off", err)
 		}
 		shell := &protocol.Request{Session: draft.ID, Preparation: &protocol.PreparationConfig{Revision: draft.Preparation.Revision, ToolID: "script"}}

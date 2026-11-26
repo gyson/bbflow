@@ -95,7 +95,7 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 	if _, err = agent.Canonical(session.Workspace); err != nil {
 		return session, nil, fmt.Errorf("the session workspace is not available: %w", err)
 	}
-	tool, command, err := s.continueTool(request.Tool, request.Model, request.Effort)
+	tool, command, err := s.continueTool(request.Tool, request.Model, request.Effort, session.Workspace)
 	if err != nil {
 		return session, nil, err
 	}
@@ -112,8 +112,9 @@ func (s *Server) prepareContinue(request *protocol.Request) (history.Session, *a
 
 // continueTool returns the tool name and its startup command, with the options of the
 // model and the effort. An empty model or effort selects the default of the CLI, as in a
-// draft. The view sends the defaults of the tool, unless the user changes them.
-func (s *Server) continueTool(id, model, effort string) (name, command string, err error) {
+// draft. The view sends the defaults of the tool, unless the user changes them. In a
+// managed worktree, an Antigravity command also trusts the workspace. See trustWorktree.
+func (s *Server) continueTool(id, model, effort, workspace string) (name, command string, err error) {
 	settings, err := s.store.Settings()
 	if err != nil {
 		return "", "", err
@@ -131,7 +132,7 @@ func (s *Server) continueTool(id, model, effort string) (name, command string, e
 	if err = models.Validate(tool.Type, model, effort); err != nil {
 		return "", "", err
 	}
-	return tool.Name, models.Command(tool.Type, tool.Command, model, effort), nil
+	return tool.Name, s.trustWorktree(tool.Type, models.Command(tool.Type, tool.Command, model, effort), workspace), nil
 }
 
 // handoffTerminal is one earlier terminal in the handoff folder. Number counts from 1 in

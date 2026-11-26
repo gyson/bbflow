@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"bbflow/internal/history"
+	"bbflow/internal/models"
 	agent "bbflow/internal/runtime"
 )
 
@@ -87,6 +89,39 @@ func inspectRepository(ctx context.Context, workspace string) RepositoryInfo {
 func within(parent, path string) bool {
 	relative, err := filepath.Rel(parent, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+// trustWorktree adds the Antigravity option that trusts the workspace for one session,
+// when the workspace is in a managed worktree. Antigravity asks about each folder that
+// its settings do not list, and each worktree is a new folder. Antigravity trusts only
+// the exact folder where it starts, so the option names the workspace, not the worktree
+// root. Antigravity does not save the option. The command stays unchanged for another
+// tool type, for a workspace outside the managed worktrees, and when the option would
+// make the command too long.
+func (s *Server) trustWorktree(kind, command, workspace string) string {
+	if kind != models.Agy {
+		return command
+	}
+	dataDir, err := agent.Canonical(s.info.DataDir)
+	if err != nil {
+		return command
+	}
+	workspace, err = agent.Canonical(workspace)
+	root := filepath.Join(dataDir, "worktrees")
+	if err != nil || workspace == root || !within(root, workspace) {
+		return command
+	}
+	settings, _ := json.Marshal(struct {
+		TrustedWorkspaces []string `json:"trustedWorkspaces"`
+	}{[]string{workspace}})
+	// Inside single quotes, fish reads \\ and \' as escapes. Other JSON escapes for these
+	// characters remove both sequences, so sh, bash, zsh, and fish pass the same text.
+	option := strings.NewReplacer(`\\`, `\u005c`, `'`, `\u0027`).Replace(string(settings))
+	trusted := strings.TrimRight(command, " ") + " --settings '" + option + "'"
+	if history.ValidateCommand(trusted) != nil {
+		return command
+	}
+	return trusted
 }
 
 // fetchTimeout limits the base fetch. A remote that does not answer must not hold the
