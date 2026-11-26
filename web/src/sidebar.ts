@@ -31,7 +31,7 @@ function mainArea(): HTMLElement {
 
 // Sidebar holds the width and the visibility of the sidebar. In the mobile layout, the
 // sidebar is a drawer above the main area. The drawer has its own state. It starts
-// closed, except on the welcome view, and a change of the layout sets it again.
+// closed, and a change of the layout closes it again.
 export class Sidebar {
   private readonly sidebar = element('sidebar', HTMLElement);
   private readonly scrim = element('sidebar-scrim', HTMLElement);
@@ -42,16 +42,14 @@ export class Sidebar {
   // A null width uses the default width from the style sheet.
   private width: number | null = null;
   private visible = true;
-  private drawer: boolean;
+  private drawer = false;
   // The element that had the focus before the drawer opened. It gets the focus again when
   // the drawer closes.
   private returnFocus: HTMLElement | null = null;
   private readonly drawerLayout = matchMedia(mobileQuery);
   private readonly stopDrag: () => void;
 
-  // home tells if the page shows the welcome view.
-  constructor(private readonly home: () => boolean) {
-    this.drawer = home();
+  constructor() {
     // The drawer takes the focus when no row of the drawer can take it.
     this.sidebar.tabIndex = -1;
     this.stopDrag = dragDivider(this.divider, 'x', 'resizing-sidebar', {
@@ -93,7 +91,7 @@ export class Sidebar {
     });
     this.drawerLayout.addEventListener('change', () => {
       this.stopDrag();
-      this.drawer = this.home();
+      this.drawer = false;
       this.apply();
     });
     window.addEventListener('resize', () => this.layout());
