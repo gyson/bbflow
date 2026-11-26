@@ -1080,8 +1080,13 @@ of its session, and a mark when the session has an unsent message.
   the sidebar. A long menu scrolls.
 - An item creates a draft in its project and opens the draft, as **＋** beside the
   project does. See [Refresh and selection](#refresh-and-selection).
-- Without a project, Home shows no **＋ New session** and no groups. It shows **No
-  projects yet.** and a **＋ Project** button, which opens the Add project dialog.
+- Without a project, a **＋ Project** button takes the place of **＋ New session**. It
+  opens the Add project dialog.
+- Without a project and without a live session, Home shows **No projects yet.** in
+  place of the groups. A session of a removed project stays live, so Home can show rows
+  without a project.
+- The buttons of Home are off while an action runs, as the buttons of the sidebar are.
+  This applies to **＋ New session**, **＋ Project**, and each row.
 
 #### Groups of Home
 
@@ -1125,12 +1130,15 @@ its age below.
   [Session list order](#session-list-order).
 - The sidebar list holds only the most recent families of each group. For a live
   session outside that list, Home reads `session-config`.
+- A row of a sub-session shows the title of its top-level session. When that session
+  has no live terminal and the list does not hold it, Home reads `session-config` for
+  it. That session does not become a row.
 - For each row, Home reads `composer-sent` for the latest sent message and
   `composer-draft` for the saved draft. A row also reads `session-terminals` for the
   tool, until one reply gives the terminals. Before that reply, the row shows the tool
   of the launch.
 - Home reads this data when Home opens, and for a row when its status changes. A hidden
-  Home reads nothing.
+  Home reads nothing, also when a reply arrives after Home hides.
 - Home shows a message only as plain text.
 
 #### Unavailable server on Home
@@ -4987,7 +4995,13 @@ at window widths of 1200, 1600, and 1920 pixels.
   also when a newer read replaces the first reply and when the first read fails. A row
   keeps its data after a failed read. Home reads each row again when it opens. A
   session that ends leaves Home. A live session outside the list reads its session
-  data first.
+  data first. A row reads its top-level session when no list holds that session.
+- Web fixtures run the view of Home with a small page of simulated elements. They check
+  the rows of a removed project with **＋ Project** in place of **＋ New session**, the
+  text without a project and without a live session, and both headings with **0**. They
+  check that a hidden Home starts no read when a reply arrives. They check that the
+  buttons are off while an action runs, also on new rows, and the text of an
+  unavailable server.
 - A browser check used a demo instance at widths of 1280 and 390 pixels. It checked the
   two groups, the New session menu, a draft from the menu, and a click on a row. It
   checked **Unsent message** after a saved draft, and the latest message after a send.
@@ -5005,6 +5019,11 @@ at window widths of 1200, 1600, and 1920 pixels.
   check at widths of 1280 and 390 pixels showed Home with four live sessions. It showed
   both headings with **0** after a server restart, and **No projects yet.** with
   **＋ Project** in a new instance.
+- A browser check with a demo instance started a sub-session, stopped its top-level
+  session, and opened Archived. The row of the sub-session kept **↳** with the title of
+  the top-level session. The check then removed both projects while four sessions were
+  live. Home showed the four rows with their workspaces, and **＋ Project** in place of
+  **＋ New session**.
 - Safari in an iPhone 18 Pro simulator with iOS 27.2 showed Home of the demo instance
   with the drawer closed. That check only loaded the page.
 - The checks used simulated agents and a mouse. They did not use a phone, touch input,

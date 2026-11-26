@@ -235,11 +235,14 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 .action-menu [role="separator"] { height: 1px; margin: 4px 6px; background: var(--border); }
 .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: var(--accent-text); background: var(--selected); border-radius: 5px; padding: 6px 9px; }
 /* Home has the New session menu, then the live sessions of all projects in two groups.
-   Without a project, the middle of the page has a text and the Project button. */
+   Without a project, the Project button takes the place of the menu. Without a project
+   and without a live session, a text is in the middle of the page. */
 .home { flex: 1; width: 100%; max-width: 920px; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; padding: 26px 30px 40px; }
 .home:has(> .home-empty:not([hidden])) { max-width: none; }
 /* The New session menu opens below its button, at its left edge. A long list of
-   projects scrolls. */
+   projects scrolls. Without a project, the button does not show, and its box takes no
+   place. */
+.home-new:has(> #home-new-open[hidden]) { display: none; }
 .home-new .action-menu { right: auto; left: 0; max-width: min(420px, 100cqi - 28px); max-height: min(340px, 60dvh); overflow-y: auto; }
 .home-new .action-menu > button { flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
 #home-problem { align-self: stretch; font-size: 12px; }
@@ -263,8 +266,7 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; overflow: hidden; text-overfl
 .home-message { align-self: stretch; display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-top: 3px; padding-left: 8px; border-left: 2px solid var(--border); font-size: 12px; }
 .home-message-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-chip { margin-top: 3px; padding: 2px 8px; border-radius: 999px; background: var(--info-surface); color: var(--info); font-size: 11px; font-weight: 600; }
-.home-empty { margin: auto; max-width: 460px; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 30px 10px; text-align: center; color: var(--text-muted); line-height: 1.7; }
-.home-empty p { margin: 0; }
+.home-empty { margin: auto; padding: 30px 10px; text-align: center; color: var(--text-muted); line-height: 1.7; }
 /* In a narrow main area, the message takes two lines, with its time below. */
 @container main (max-width: 560px) {
   .home { gap: 18px; padding: 16px 14px 28px; }

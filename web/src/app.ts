@@ -31,7 +31,7 @@ import { onTerminalInput } from './terminal-input.js';
 import { Sidebar, mobileQuery, nearestRow } from './sidebar.js';
 import { FileListWidth } from './file-list-width.js';
 import { familyGroup, mergeSessions, pinLimit, pinnedGroup, placeText, sessionGroups, sessionWindow, shownChildren } from './projects.js';
-import { HomeView } from './home.js';
+import { HomeView, serverReads } from './home.js';
 import type { Family } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
@@ -310,7 +310,7 @@ const sidebar = new Sidebar();
 // Home shows the live sessions of all projects. It stays hidden while the page opens the
 // session or Settings of its URL.
 const home = new HomeView({
-  server: () => server,
+  reads: () => server ? serverReads(server) : null,
   open: session => void action(() => openSession(session), failed('open', session)),
   draft: project => void action(() => showLaunch(project.id), `Could not add a draft to ${project.name}.`),
   addProject: () => showProject(),

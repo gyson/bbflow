@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HomeRows, elapsedText, homeGroups, homeText, lastMessage, listedSession, placeLine, since, unlisted, unsent } from './dist/home.js';
+import { HomeRows, HomeView, elapsedText, homeGroups, homeText, lastMessage, listedSession, placeLine, since, unlisted, unsent } from './dist/home.js';
 
 const session = (id, extra = {}) => ({ id, projectId: 'repo', parentId: '', title: id, autoTitle: '', workspace: '/work/repo', updated: '', status: 'ended', archived: false, pinned: false, viewers: 0, ...extra });
 const ids = groups => ({ running: groups.running.map(item => item.id), idle: groups.idle.map(item => item.id) });
@@ -79,9 +79,10 @@ test('the place line names the project, the tool, the worktree, and the parent',
   assert.equal(placeLine(session('a'), projects, session('parent', { title: '' })), 'Orbit API · ↳ Untitled session');
 });
 
-test('Home has a text only without a project', () => {
-  assert.equal(homeText(0), 'No projects yet.');
-  assert.equal(homeText(2), '');
+test('Home has a text only without a project and without a live session', () => {
+  assert.equal(homeText(0, 0), 'No projects yet.');
+  assert.equal(homeText(0, 1), '', 'a session of a removed project stays live');
+  assert.equal(homeText(2, 0), '');
 });
 
 test('the saved data of a session becomes a list row without an update time', () => {
@@ -94,6 +95,7 @@ test('the saved data of a session becomes a list row without an update time', ()
 function fixture() {
   const log = [], waiting = [];
   let changes = 0, available = true;
+  const setAvailable = value => { available = value; };
   const ask = (kind, id) => new Promise((resolve, reject) => { log.push(`${kind}:${id}`); waiting.push({ kind, id, resolve, reject }); });
   const reads = { session: id => ask('session', id), sent: id => ask('sent', id), draft: id => ask('draft', id), terminals: id => ask('terminals', id) };
   const rows = new HomeRows(() => available ? reads : null, () => { changes += 1; });
@@ -110,7 +112,7 @@ function fixture() {
     terminals?.resolve(tools.map((tool, index) => ({ number: index + 1, run: `r${index}`, tool, status: 'running', started: '', ended: '' })));
     await settled();
   };
-  return { rows, log, answer, take, settled, changes: () => changes, unavailable: () => { available = false; } };
+  return { rows, reads, log, waiting, answer, take, settled, changes: () => changes, setAvailable };
 }
 const launched = (id, status) => session(id, { status, preparation: { toolName: 'Codex' } });
 
@@ -222,7 +224,7 @@ test('Home reads a live session outside the list, and then the data of its row',
   await settled();
   assert.deepEqual(rows.groups().idle.map(item => item.id), ['x']);
   assert.equal(rows.session('x').parentId, 'p');
-  assert.deepEqual(log.slice(2), ['sent:x', 'draft:x', 'terminals:x']);
+  assert.deepEqual(log.slice(2), ['sent:x', 'draft:x', 'terminals:x', 'session:p'], 'the row data, then the top-level session');
   await answer('x');
   assert.equal(rows.detail('x').tool, 'Claude Code');
   rows.update([], {});
@@ -232,10 +234,158 @@ test('Home reads a live session outside the list, and then the data of its row',
 });
 
 test('Home reads nothing while the server is not known', () => {
-  const { rows, log, unavailable } = fixture();
-  unavailable();
+  const { rows, log, setAvailable } = fixture();
+  setAvailable(false);
   rows.update([launched('a', 'idle')], { a: 'idle', x: 'running' });
   rows.load();
   assert.deepEqual(log, []);
   assert.deepEqual(rows.groups().idle.map(item => item.id), ['a']);
+});
+
+test('a reply that arrives while the reads are not available starts no read', async () => {
+  const { rows, log, take, settled, setAvailable } = fixture();
+  rows.update([], { x: 'idle' });
+  rows.load();
+  setAvailable(false);
+  take('session', 'x').resolve({ archived: false, pinned: false, id: 'x', projectId: 'repo', title: 'Older session', workspace: '/w', status: 'idle' });
+  await settled();
+  assert.deepEqual(log, ['session:x'], 'the row of the session reads nothing');
+  setAvailable(true);
+  rows.reopen();
+  rows.load();
+  assert.deepEqual(log.slice(1), ['session:x', 'sent:x', 'draft:x', 'terminals:x']);
+});
+
+test('Home reads the top-level session of a row when no list holds it', async () => {
+  const { rows, log, answer, take, settled, changes } = fixture();
+  const parent = { archived: false, pinned: false, id: 'p', projectId: 'repo', title: 'Refactor orbit', workspace: '/w', status: 'ended' };
+  rows.update([session('c', { status: 'idle', parentId: 'p' })], { c: 'idle' });
+  rows.load();
+  rows.load();
+  assert.deepEqual(log, ['sent:c', 'draft:c', 'terminals:c', 'session:p'], 'one read asks for the top-level session');
+  assert.equal(rows.session('p'), undefined);
+  take('session', 'p').resolve(parent);
+  await settled();
+  assert.equal(rows.session('p').title, 'Refactor orbit');
+  assert.equal(changes(), 1);
+  assert.deepEqual(rows.groups().idle.map(item => item.id), ['c'], 'the ended session is not a row');
+  await answer('c');
+  rows.update([session('p'), session('c', { status: 'idle', parentId: 'p' })], { c: 'idle' });
+  rows.load();
+  assert.equal(log.length, 4, 'a listed top-level session needs no read');
+  rows.update([session('c', { status: 'idle', parentId: 'live' })], { c: 'idle', live: 'running' });
+  rows.load();
+  assert.deepEqual(log.slice(4), ['session:live'], 'a live top-level session comes with the sessions outside the list');
+  rows.update([], {});
+  rows.load();
+  assert.equal(rows.session('p'), undefined, 'Home forgets the top-level session of a row that left');
+});
+
+// A small page for HomeView: the elements that it reads, with their children.
+class Node {
+  constructor(tag = 'div') { this.tagName = tag; }
+  hidden = false;
+  disabled = false;
+  className = '';
+  textContent = '';
+  title = '';
+  dataset = {};
+  attributes = {};
+  children = [];
+  names = new Set();
+  classList = { toggle: (name, on) => { if (on) this.names.add(name); else this.names.delete(name); } };
+  append(...nodes) { for (const node of nodes) if (node instanceof Node) this.children.push(node); }
+  replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
+  setAttribute(key, value) { this.attributes[key] = value; }
+  addEventListener() {}
+  contains(node) { return node === this || this.children.some(child => child.contains(node)); }
+  querySelectorAll(selector) {
+    const matches = node => selector.startsWith('.') ? node.className.split(' ').includes(selector.slice(1)) : node.tagName === selector;
+    return this.children.flatMap(child => [...(matches(child) ? [child] : []), ...child.querySelectorAll(selector)]);
+  }
+  focus() {}
+  get text() { return [this.textContent, ...this.children.map(child => child.text)].filter(Boolean).join(' | '); }
+}
+
+function page() {
+  const nodes = new Map();
+  globalThis.HTMLElement = globalThis.HTMLButtonElement = Node;
+  globalThis.document = {
+    activeElement: null,
+    getElementById(id) { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); },
+    createElement: tag => new Node(tag),
+    addEventListener() {},
+  };
+  // HomeView starts a timer for the times of the rows. A test must not keep it.
+  const timer = globalThis.setInterval;
+  globalThis.setInterval = () => 0;
+  const { reads, log, take, settled, setAvailable } = fixture();
+  let available = true;
+  const opened = [];
+  const view = new HomeView({ reads: () => available ? reads : null, open: item => opened.push(item.id), draft() {}, addProject() {} });
+  globalThis.setInterval = timer;
+  const $ = id => document.getElementById(id);
+  return { view, $, log, take, settled, opened, rows: () => $('home-groups').querySelectorAll('.home-row'), setAvailable, noServer: () => { available = false; } };
+}
+const repo = [{ id: 'repo', name: 'Orbit API', workspace: '/work/repo' }];
+
+test('Home shows the live sessions of a removed project, with Project in place of New session', () => {
+  const { view, $, rows, noServer } = page();
+  noServer();
+  view.update([], [session('a', { status: 'idle', projectId: '' })], { a: 'idle' });
+  assert.equal($('home-groups').hidden, false);
+  assert.equal($('home-text').hidden, true);
+  assert.equal($('home-add-project').hidden, false);
+  assert.equal($('home-new-open').hidden, true);
+  assert.deepEqual(rows().map(row => row.text), ['a | /work/repo']);
+  view.update([], [session('a')], {});
+  assert.equal($('home-groups').hidden, true, 'without a project and a live session, the text replaces the groups');
+  assert.equal($('home-text').textContent, 'No projects yet.');
+  assert.equal($('home-text').hidden, false);
+  assert.equal($('home-add-project').hidden, false);
+  view.update(repo, [session('a')], {});
+  assert.equal($('home-groups').hidden, false);
+  assert.equal($('home-groups').text, 'Running | 0 | Idle | 0', 'a group without a session shows only its heading');
+  assert.equal($('home-text').hidden, true);
+  assert.equal($('home-add-project').hidden, true);
+  assert.equal($('home-new-open').hidden, false);
+});
+
+test('a hidden Home starts no read when a reply arrives', async () => {
+  const { view, log, take, settled } = page();
+  view.update(repo, [], { x: 'idle' });
+  assert.deepEqual(log, ['session:x']);
+  view.show(false);
+  take('session', 'x').resolve({ archived: false, pinned: false, id: 'x', projectId: 'repo', title: 'Older session', workspace: '/w', status: 'idle' });
+  await settled();
+  assert.deepEqual(log, ['session:x']);
+  view.show(true);
+  assert.deepEqual(log.slice(1), ['session:x', 'sent:x', 'draft:x', 'terminals:x']);
+});
+
+test('the buttons of Home are off while an action runs, also on new rows', () => {
+  const { view, $, rows, opened, noServer } = page();
+  noServer();
+  view.update(repo, [session('a', { status: 'idle' })], { a: 'idle' });
+  rows()[0].onclick();
+  assert.deepEqual(opened, ['a']);
+  view.controls(true);
+  assert.deepEqual([$('home-add-project').disabled, $('home-new-open').disabled, rows()[0].disabled], [true, true, true]);
+  view.update(repo, [session('a', { status: 'idle' }), session('b', { status: 'running' })], { a: 'idle', b: 'running' });
+  assert.deepEqual(rows().map(row => row.disabled), [true, true]);
+  view.controls(false);
+  assert.deepEqual([$('home-add-project').disabled, $('home-new-open').disabled, ...rows().map(row => row.disabled)], [false, false, false, false]);
+});
+
+test('Home shows why the page cannot read the session list, also before the first list', () => {
+  const { view, $ } = page();
+  view.problem('Cannot connect to the bbflow server.');
+  assert.equal($('home-problem').textContent, 'Cannot connect to the bbflow server.');
+  assert.equal($('home-problem').hidden, false);
+  assert.equal($('home-groups').children.length, 0, 'Home shows no groups before the first list');
+  view.update(repo, [session('a', { status: 'idle' })], { a: 'idle' });
+  assert.equal($('home').names.has('stale'), true, 'the rows can be out of date');
+  view.problem('');
+  assert.equal($('home-problem').hidden, true);
+  assert.equal($('home').names.has('stale'), false);
 });

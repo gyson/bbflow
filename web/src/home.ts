@@ -84,10 +84,12 @@ export function placeLine(session: SessionInfo, projects: Project[], parent: Ses
   ].filter(Boolean).join(' · ');
 }
 
-// Return the text that Home shows without a project, above its ＋ Project button. With
-// a project, the groups and their counts show the state, so Home needs no text.
-export function homeText(projects: number): string {
-  return projects ? '' : 'No projects yet.';
+// Return the text that Home shows in place of the groups, or ''. Home has this text only
+// without a project and without a live session. A session of a removed project stays
+// live, so Home can have rows without a project. With a project, the groups and their
+// counts show the state.
+export function homeText(projects: number, liveSessions: number): string {
+  return projects || liveSessions ? '' : 'No projects yet.';
 }
 
 // Convert the saved data of one session to a row of the session list. The update time
@@ -123,6 +125,11 @@ export class HomeRows {
   // asked for since Home opened.
   private readonly extra = new Map<string, SessionInfo>();
   private readonly asked = new Set<string>();
+  // The top-level sessions of the rows that the list and extra do not hold, and the IDs
+  // that a read asked for since Home opened. Such a session has no live terminal, so it
+  // is not a row.
+  private readonly parents = new Map<string, SessionInfo>();
+  private readonly askedParents = new Set<string>();
   private readonly details = new Map<string, RowDetail>();
   // The status of each row at its latest read, and the number of that read.
   private readonly read = new Map<string, { status: string; turn: number }>();
@@ -144,6 +151,7 @@ export class HomeRows {
     this.read.clear();
     this.tools.clear();
     this.asked.clear();
+    this.askedParents.clear();
   }
 
   groups(): HomeGroups { return homeGroups(this.listed, [...this.extra.values()], this.statuses); }
@@ -151,7 +159,9 @@ export class HomeRows {
   detail(id: string): RowDetail | undefined { return this.details.get(id); }
 
   // Return a session by its ID, for the top-level session of a row.
-  session(id: string): SessionInfo | undefined { return this.listed.find(session => session.id === id) ?? this.extra.get(id); }
+  session(id: string): SessionInfo | undefined {
+    return this.listed.find(session => session.id === id) ?? this.extra.get(id) ?? this.parents.get(id);
+  }
 
   // Read the data that the rows need. A row reads again when its status changes, because
   // a send starts output.
@@ -170,10 +180,12 @@ export class HomeRows {
       }).catch(() => { this.asked.delete(id); });
     }
     const { running, idle } = this.groups();
-    const shown = new Set<string>();
+    const shown = new Set<string>(), needed = new Set<string>();
     for (const [status, sessions] of [['running', running], ['idle', idle]] as const) {
-      for (const { id } of sessions) {
+      for (const { id, parentId } of sessions) {
         shown.add(id);
+        // A live top-level session outside the list comes with the extra sessions.
+        if (parentId && !(parentId in this.statuses) && !this.listed.some(session => session.id === parentId)) needed.add(parentId);
         if (this.read.get(id)?.status === status) continue;
         const turn = ++this.turns;
         this.read.set(id, { status, turn });
@@ -201,10 +213,22 @@ export class HomeRows {
     for (const id of [...this.read.keys()]) if (!shown.has(id)) this.read.delete(id);
     for (const id of [...this.tools]) if (!shown.has(id)) this.tools.delete(id);
     for (const id of [...this.extra.keys()]) if (!(id in this.statuses)) { this.extra.delete(id); this.asked.delete(id); }
+    for (const id of needed) {
+      if (this.askedParents.has(id)) continue;
+      this.askedParents.add(id);
+      void reads.session(id).then(session => {
+        if (!this.askedParents.has(id)) return;
+        this.parents.set(id, listedSession(session));
+        this.changed();
+      // The next load asks again.
+      }).catch(() => { this.askedParents.delete(id); });
+    }
+    for (const id of [...this.parents.keys()]) if (!needed.has(id)) { this.parents.delete(id); this.askedParents.delete(id); }
   }
 }
 
-const serverReads = (server: ServerInfo): HomeReads => ({
+// Return the reads of the row data from a server.
+export const serverReads = (server: ServerInfo): HomeReads => ({
   session: id => call(server, { operation: 'session-config', session: id }),
   sent: id => call(server, { operation: 'composer-sent', session: id }),
   draft: id => call(server, { operation: 'composer-draft', session: id }),
@@ -212,7 +236,8 @@ const serverReads = (server: ServerInfo): HomeReads => ({
 });
 
 interface Host {
-  server(): ServerInfo | null;
+  // Return the reads of the row data, or null while the server is not known.
+  reads(): HomeReads | null;
   // Open a session of Home.
   open(session: SessionInfo): void;
   // Create a draft in a project and open it.
@@ -228,9 +253,9 @@ export class HomeView {
   private readonly view = element('home', HTMLElement);
   private readonly problemLine = element('home-problem', HTMLElement);
   private readonly groups = element('home-groups', HTMLElement);
-  private readonly empty = element('home-empty', HTMLElement);
   private readonly text = element('home-text', HTMLElement);
   private readonly addProject = element('home-add-project', HTMLButtonElement);
+  private readonly newSession = element('home-new-open', HTMLButtonElement);
   private readonly items = element('home-new', HTMLElement);
   private readonly menu = new ActionMenu('home-new');
   private readonly rows: HomeRows;
@@ -238,14 +263,13 @@ export class HomeView {
   // The first session list arrived. Before it, Home shows only a problem.
   private loaded = false;
   private trouble = '';
+  private off = false;
   private rendered = '';
   private menuProjects = '';
 
   constructor(private readonly host: Host) {
-    this.rows = new HomeRows(() => {
-      const server = host.server();
-      return server ? serverReads(server) : null;
-    }, () => this.render());
+    // A hidden Home reads nothing, also when a reply arrives after Home hides.
+    this.rows = new HomeRows(() => this.visible ? host.reads() : null, () => this.render());
     this.addProject.onclick = () => host.addProject();
     // The times of the rows change without a message from the server.
     setInterval(() => this.render(), 30000);
@@ -279,8 +303,13 @@ export class HomeView {
     this.render();
   }
 
-  // Turn the Add project button off while the page cannot add a project.
-  controls(off: boolean): void { this.addProject.disabled = off; }
+  // Turn the buttons of Home off while an action runs or the server is not known, as
+  // for the buttons of the sidebar. A click then has no effect.
+  controls(off: boolean): void {
+    this.off = off;
+    this.addProject.disabled = this.newSession.disabled = off;
+    for (const row of this.groups.querySelectorAll<HTMLButtonElement>('.home-row')) row.disabled = off;
+  }
 
   private refresh(): void {
     if (this.loaded && this.visible) this.rows.load();
@@ -313,16 +342,20 @@ export class HomeView {
         unsent: !!detail?.unsent,
       };
     };
-    const model = { text: homeText(this.projects.length), running: running.map(session => row(session, 'running')), idle: idle.map(session => row(session, 'idle')) };
+    const model = {
+      text: homeText(this.projects.length, running.length + idle.length), projects: this.projects.length,
+      running: running.map(session => row(session, 'running')), idle: idle.map(session => row(session, 'idle')),
+    };
     const fingerprint = JSON.stringify(model);
     if (fingerprint === this.rendered) return;
     this.rendered = fingerprint;
     this.text.textContent = model.text;
-    this.empty.hidden = !model.text;
+    this.text.hidden = !model.text;
+    // Without a project, ＋ Project takes the place of ＋ New session.
+    this.addProject.hidden = model.projects > 0;
     // New buttons replace the rows. Give the keyboard focus to the new button of the same session.
     const focused = document.activeElement instanceof HTMLElement && this.groups.contains(document.activeElement) ? document.activeElement.dataset.session : undefined;
     this.groups.replaceChildren();
-    // Without a project, no session can start from Home, so Home shows no groups.
     this.groups.hidden = !!model.text;
     if (model.text) return;
     const byId = new Map([...running, ...idle].map(session => [session.id, session]));
@@ -348,6 +381,7 @@ export class HomeView {
         const button = document.createElement('button');
         button.className = 'home-row';
         button.dataset.session = item.id;
+        button.disabled = this.off;
         const icon = document.createElement('span');
         icon.className = `status-icon ${item.status}`;
         icon.title = item.tip;
